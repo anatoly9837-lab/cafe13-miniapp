@@ -121,11 +121,11 @@ var SCREENS = {
 
       '<div class="card quiet"><div class="row">' +
         '<div class="col"><span class="label">Баланс</span><span class="big num">' + money(m.balance) + ' ฿</span></div>' +
-        '<span class="small" style="text-align:right;max-width:130px">Пополняется в кассе — наличными или картой</span>' +
+        '<span class="small" style="text-align:right;max-width:130px">Пополняется в кассе</span>' +
       '</div></div>' +
 
       (next ? '<div class="group"><span class="label">Вы записаны</span>' +
-        '<button type="button" class="listitem accent card" data-go="bookings">' +
+        '<button type="button" class="listitem accent" data-go="bookings">' +
           '<span class="grow"><b>' + esc(next.title) + '</b><span class="small">' + esc(next.when) + '</span></span>' +
           svg(ICON.chev, 'chev') +
         '</button></div>' : '') +
@@ -329,7 +329,7 @@ var SCREENS = {
 
 function eventRow(e) {
   var k = KIND[e.kind];
-  return '<button type="button" class="listitem' + (e.kind === 'paid' ? ' accent card' : '') + '" data-event="' + e.id + '">' +
+  return '<button type="button" class="listitem' + (e.kind === 'paid' ? ' accent' : '') + '" data-event="' + e.id + '">' +
     '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.part) + '</span></span>' +
     '<span class="grow"><b>' + esc(e.title) + '</b>' +
     '<span class="small">ведёт ' + esc(e.master) + ' · ' + (e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats) + '</span></span>' +
