@@ -597,6 +597,16 @@ var TITLES = {
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга'
 };
 
+/* Куда ведёт «назад» с каждого экрана. Без карты всё падало на первую
+   вкладку, и из мероприятия человек улетал на главную вместо списка. */
+function homeOf() {
+  return DATA.role === 'guest' ? 'guest' : DATA.role === 'staff' ? 'staff' : 'home';
+}
+var BACK = {
+  event: 'events', eventNew: 'organizer', eventManage: 'organizer',
+  serviceNew: 'partner'
+};
+
 var current = 'home';
 var param = null;
 
@@ -696,7 +706,7 @@ document.addEventListener('click', function (ev) {
 });
 
 document.getElementById('back').addEventListener('click', function () {
-  go(current === 'event' ? 'events' : (TABS[DATA.role] || [['home']])[0][0]);
+  go(BACK[current] || homeOf());
 });
 document.getElementById('demo-btn').addEventListener('click', function () { go('demo'); });
 
