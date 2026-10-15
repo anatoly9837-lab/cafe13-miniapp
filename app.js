@@ -566,11 +566,18 @@ function rolePanel() {
   return '';
 }
 
+/* FLASH может быть строкой или парой {text, note}: не всякое сообщение
+   что-то сохраняет, и писать «сохранено» под результатом сканирования —
+   значит утверждать неверное. */
 function flash() {
   var t = FLASH; FLASH = null;
+  var text = typeof t === 'string' ? t : t.text;
+  var note = typeof t === 'string'
+    ? 'Сохранено только в этой вкладке: сервера пока нет, при перезагрузке исчезнет.'
+    : t.note;
   return '<div class="card quiet"><div class="col">' +
-    '<b style="font-size:13px">' + esc(t) + '</b>' +
-    '<span class="small">Сохранено только в этой вкладке: сервера пока нет, при перезагрузке исчезнет.</span>' +
+    '<b style="font-size:13px">' + esc(text) + '</b>' +
+    (note ? '<span class="small">' + esc(note) + '</span>' : '') +
   '</div></div>';
 }
 
@@ -762,13 +769,14 @@ function haptic(kind) {                       // 6.1
 
 function scanPass() {                         // 6.4
   if (!tgHas('6.4') || !tg.showScanQrPopup) {
-    FLASH = 'Сканер доступен в приложении Telegram — здесь его нет';
+    FLASH = { text: 'Сканер доступен в приложении Telegram', note: 'Эта страница открыта в обычном браузере.' };
     render();
     return;
   }
   tg.showScanQrPopup({ text: 'Наведите на код пропуска' }, function (text) {
     haptic('ok');
-    FLASH = 'Пропуск прочитан: ' + String(text).slice(0, 40);
+    FLASH = { text: 'Пропуск прочитан: ' + String(text).slice(0, 40),
+              note: 'Сервера нет — отметить вход пока некуда, код только показан.' };
     tg.closeScanQrPopup();
     render();
     return true;
@@ -783,7 +791,8 @@ function askPhone() {                          // 6.9
   }
   tg.requestContact(function (ok) {
     haptic(ok ? 'ok' : 'warn');
-    FLASH = ok ? 'Телефон получен — он нужен кассе, чтобы найти вас' : 'Без телефона тоже можно';
+    FLASH = { text: ok ? 'Телефон получен' : 'Без телефона тоже можно',
+              note: ok ? 'Сервера нет — сохранить его пока некуда.' : '' };
     render();
   });
 }
