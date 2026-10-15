@@ -200,6 +200,15 @@ var SCREENS = {
 
   guest: function () {
     return '' +
+      (DATA.role === 'partner'
+        ? '<button type="button" class="btn" data-go="serviceNew">' +
+            svg('<path d="M12 5v14M5 12h14"/>') + 'Добавить услугу</button>' +
+          '<button type="button" class="listitem" data-go="partner">' +
+            '<span class="grow"><b>Моё направление</b>' +
+            '<span class="small">мои услуги и отчётность</span></span>' +
+            '<span class="pill gold">' + DATA.myServices.length + '</span>' +
+          '</button>'
+        : '') +
       '<div class="group"><span class="label">Услуги острова</span>' +
         DATA.services.map(function (s) {
           return '<button type="button" class="listitem">' +
@@ -475,8 +484,6 @@ var SCREENS = {
 
   partner: function () {
     return (FLASH ? flash() : '') +
-      '<button type="button" class="btn" data-go="serviceNew">' +
-        svg('<path d="M12 5v14M5 12h14"/>') + 'Добавить услугу</button>' +
       '<div class="group"><span class="label">Мои услуги</span>' +
         (DATA.myServices.length ? DATA.myServices.map(function (x) {
           return '<div class="card"><div class="row top">' +
@@ -556,13 +563,7 @@ function rolePanel() {
       '<span class="pill gold">' + DATA.myEvents.length + '</span>' +
     '</button>';
   }
-  if (DATA.role === 'partner') {
-    return '<button type="button" class="listitem" data-go="partner">' +
-      '<span class="grow"><b>Моё направление</b>' +
-      '<span class="small">добавить услугу, отчётность</span></span>' +
-      '<span class="pill gold">' + DATA.myServices.length + '</span>' +
-    '</button>';
-  }
+  // партнёрское живёт во вкладке «Услуги», а не на главной клуба
   return '';
 }
 
@@ -614,7 +615,7 @@ function homeOf() {
 }
 var BACK = {
   event: 'events', eventNew: 'organizer', eventManage: 'organizer',
-  serviceNew: 'partner'
+  serviceNew: 'guest', partner: 'guest'
 };
 
 var current = 'home';
@@ -723,7 +724,7 @@ function doAction(a) {
       DATA.services.push({ title: st, about: val('s-about') || '—' });
       FLASH = 'Услуга «' + st + '» отправлена директору на проверку';
       haptic('ok');
-      go('partner');
+      go('guest');
       return;
     }
 
