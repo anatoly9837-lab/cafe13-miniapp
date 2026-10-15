@@ -16,7 +16,7 @@ var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : nu
 var DATA = {
   role: 'member',            // guest | member | organizer | staff — ставит сервер
   member: {
-    name: 'Гость',
+    name: '[ваше имя]',   // вне Telegram; внутри — имя из initDataUnsafe, только для приветствия
     level: 'Член клуба',
     until: '14 ноября',
     balance: 1250,
