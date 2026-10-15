@@ -474,7 +474,7 @@ var SCREENS = {
     return (FLASH ? flash() : '') +
       '<button type="button" class="btn" data-go="serviceNew">' +
         svg('<path d="M12 5v14M5 12h14"/>') + 'Добавить услугу</button>' +
-      '<div class="group"><span class="label">Моё направление</span>' +
+      '<div class="group"><span class="label">Мои услуги</span>' +
         (DATA.myServices.length ? DATA.myServices.map(function (x) {
           return '<div class="card"><div class="row top">' +
             '<div class="col"><b>' + esc(x.title) + '</b><span class="small">' + esc(x.about) + '</span></div>' +
