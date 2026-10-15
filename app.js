@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v4 · 15.10.2026';
+var VERSION = 'v5 · 15.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -144,6 +144,8 @@ var ICON = {
   till: '<path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M3 12h18"/>',
   cam:  '<path d="M3 7h3l2-3h8l2 3h3v12H3z"/><circle cx="12" cy="13" r="3.5"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  star: '<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
+  case: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 12h18"/>',
   chev: '<path d="M9 6l6 6-6 6"/>'
 };
 function svg(paths, cls) { return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + paths + '</svg>'; }
@@ -205,15 +207,6 @@ var SCREENS = {
 
   guest: function () {
     return '' +
-      (DATA.role === 'partner'
-        ? '<button type="button" class="btn" data-go="serviceNew">' +
-            svg('<path d="M12 5v14M5 12h14"/>') + 'Добавить услугу</button>' +
-          '<button type="button" class="listitem" data-go="partner">' +
-            '<span class="grow"><b>Моё направление</b>' +
-            '<span class="small">мои услуги и отчётность</span></span>' +
-            '<span class="pill gold">' + DATA.myServices.length + '</span>' +
-          '</button>'
-        : '') +
       '<div class="group"><span class="label">Услуги острова</span>' +
         DATA.services.map(function (s) {
           return '<button type="button" class="listitem">' +
@@ -380,7 +373,22 @@ var SCREENS = {
   },
 
   organizer: function () {
+    var signed = DATA.myEvents.reduce(function (a, e) { return a + e.signed; }, 0);
+    var seats = DATA.myEvents.reduce(function (a, e) { return a + e.of; }, 0);
+    var due = DATA.myEvents.reduce(function (a, e) {
+      return a + (e.kind === 'paid' ? e.signed * e.price : 0);
+    }, 0);
     return (FLASH ? flash() : '') +
+      '<div class="group"><span class="label">Ваши мероприятия в этом месяце</span>' +
+        '<div class="rows">' +
+          '<div><span class="small">Событий</span><b class="num">' + DATA.myEvents.length + '</b></div>' +
+          '<div><span class="small">Записалось</span><b class="num">' + signed + ' из ' + seats + '</b></div>' +
+          '<div><span class="small">Наполненность</span><b class="num">' +
+            (seats ? Math.round(signed / seats * 100) : 0) + ' %</b></div>' +
+          '<div><span class="small">Соберёте с платных</span><b class="num">' + money(due) + ' ฿</b></div>' +
+        '</div>' +
+        '<span class="small">Наполненность события — сильнее любой цены: по нашему расчёту рост с 5 до 15 человек меняет картину вдвое больше, чем правка тарифа.</span>' +
+      '</div>' +
       '<button type="button" class="btn" data-go="eventNew">' +
         svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' +
       '<div class="group"><span class="label">Мои мероприятия</span>' +
@@ -489,6 +497,8 @@ var SCREENS = {
 
   partner: function () {
     return (FLASH ? flash() : '') +
+      '<button type="button" class="btn" data-go="serviceNew">' +
+        svg('<path d="M12 5v14M5 12h14"/>') + 'Добавить услугу</button>' +
       '<div class="group"><span class="label">Мои услуги</span>' +
         (DATA.myServices.length ? DATA.myServices.map(function (x) {
           return '<div class="card"><div class="row top">' +
@@ -562,14 +572,8 @@ var SCREENS = {
 /* У каждой роли свои действия. Пересечений нет: организатор не заводит
    услуги, партнёр не создаёт мероприятия. */
 function rolePanel() {
-  if (DATA.role === 'organizer') {
-    return '<button type="button" class="listitem" data-go="organizer">' +
-      '<span class="grow"><b>Мои мероприятия</b>' +
-      '<span class="small">создать новое, посмотреть записавшихся</span></span>' +
-      '<span class="pill gold">' + DATA.myEvents.length + '</span>' +
-    '</button>';
-  }
-  // партнёрское живёт во вкладке «Услуги», а не на главной клуба
+  // у организатора и партнёра есть собственная вкладка — на главной клуба
+  // их рабочие кнопки не дублируются
   return '';
 }
 
@@ -603,8 +607,10 @@ function eventRow(e) {
 var TABS = {
   guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
   member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
-  organizer: [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
-  partner:   [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
+  organizer: [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
+              ['organizer', 'События', ICON.star], ['bookings', 'Записи', ICON.cal]],
+  partner:   [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
+              ['partner', 'Моё дело', ICON.case], ['bookings', 'Записи', ICON.cal]],
   staff:     [['staff', 'Касса', ICON.till], ['home', 'Клуб', ICON.home]]
 };
 var TITLES = {
@@ -621,7 +627,7 @@ function homeOf() {
 }
 var BACK = {
   event: 'events', eventNew: 'organizer', eventManage: 'organizer',
-  serviceNew: 'guest', partner: 'guest'
+  serviceNew: 'partner'
 };
 
 var current = 'home';
@@ -730,7 +736,7 @@ function doAction(a) {
       DATA.services.push({ title: st, about: val('s-about') || '—' });
       FLASH = 'Услуга «' + st + '» отправлена директору на проверку';
       haptic('ok');
-      go('guest');
+      go('partner');
       return;
     }
 
