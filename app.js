@@ -738,8 +738,17 @@ document.getElementById('demo-btn').addEventListener('click', function () { go('
    стоять клиент постарше: спрашиваем isVersionAtLeast, а не наличие метода.
    Вне Telegram всё это молча выключено, и страница работает как обычная. */
 
+/* ⚠ Скрипт Telegram подключается на любой странице, и вне Telegram он всё
+   равно отдаёт MainButton и прочее — вызовы проходят вхолостую. Поэтому
+   «SDK есть» и «мы внутри Telegram» — разные вопросы: вне клиента platform
+   равен 'unknown'. Без этой проверки своя кнопка пряталась под несуществующую
+   нативную, и действие становилось недоступно в обычном браузере. */
+function inTelegram() {
+  return !!(tg && tg.platform && tg.platform !== 'unknown');
+}
+
 function tgHas(v) {
-  return !!(tg && tg.isVersionAtLeast && tg.isVersionAtLeast(v));
+  return !!(inTelegram() && tg.isVersionAtLeast && tg.isVersionAtLeast(v));
 }
 
 function haptic(kind) {                       // 6.1
@@ -820,7 +829,7 @@ var mainHandler = null;
 var backHandler = null;
 
 function tgChrome() {
-  if (!tg) return;
+  if (!inTelegram()) return;
 
   // системная «назад» вместо нарисованной
   if (tg.BackButton && tgHas('6.1')) {
@@ -836,7 +845,7 @@ function tgChrome() {
   }
 
   var mb = tg.MainButton;
-  if (!mb) return;
+  if (!mb || !mb.setText) return;
   if (mainHandler) { mb.offClick(mainHandler); mainHandler = null; }
   var m = mainFor();
   if (m) {
