@@ -180,9 +180,10 @@ b.num, .big { white-space: nowrap; }
 .note svg { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 2px; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .note span { font-size: 12px; color: var(--muted); }
 
-.field { display: flex; flex-direction: column; gap: 6px; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field label { font-size: 12px; color: var(--muted); }
 .field input {
+  width: 100%; min-width: 0;
   min-height: 46px; border: 1px solid var(--line); border-radius: 9px;
   padding: 0 14px; background: var(--paper); color: var(--ink);
   font-family: Manrope, sans-serif; font-size: 15px;

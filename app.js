@@ -382,8 +382,7 @@ var SCREENS = {
 
   eventNew: function () {
     var paid = FORM.kind === 'paid';
-    return '<div class="col"><h1>Новое мероприятие</h1>' +
-        '<span class="small">Появится в афише клуба сразу после публикации.</span></div>' +
+    return '<p style="font-size:13px">Появится в афише клуба сразу после публикации.</p>' +
 
       '<div class="field"><label for="f-title">Название</label>' +
         '<input id="f-title" type="text" value="' + keep('f-title') + '" placeholder="Например: звуковая практика"></div>' +
@@ -498,8 +497,7 @@ var SCREENS = {
   },
 
   serviceNew: function () {
-    return '<div class="col"><h1>Новая услуга</h1>' +
-        '<span class="small">Появится в разделе «Услуги» после проверки директором.</span></div>' +
+    return '<p style="font-size:13px">Появится в разделе «Услуги» после проверки директором.</p>' +
       '<div class="field"><label for="s-title">Название</label>' +
         '<input id="s-title" type="text" placeholder="Например: аренда байка"></div>' +
       '<div class="field"><label for="s-about">Коротко, что это</label>' +
