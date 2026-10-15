@@ -53,8 +53,34 @@ var DATA = {
     { title: 'Аренда байка', about: 'По дням, с залогом и доставкой' },
     { title: 'Доставка воды', about: 'Разово или по расписанию' },
     { title: 'Помощь на дороге', about: 'Сантехник, электрик, механик' }
+  ],
+  // что ведёт организатор
+  myEvents: [
+    { id: 'sound', title: 'Звуковая практика', day: 'Сегодня, четверг', time: '19:00',
+      signed: 10, of: 14, kind: 'paid', price: 400, state: 'опубликовано' }
+  ],
+  signed: [
+    { name: '[имя члена]', when: 'записался 14:02', paid: true },
+    { name: '[имя члена]', when: 'записался 13:40', paid: true },
+    { name: '[имя члена]', when: 'записался 11:15', paid: false }
+  ],
+  // что ведёт бизнес-партнёр
+  myServices: [
+    { title: 'Аренда байка', about: 'По дням, с залогом и доставкой', price: '250 ฿/день', state: 'работает' }
   ]
 };
+
+/* Доли спроса по времени суток — наш замер 04.09.2026: 522 позиции дайджеста
+   острова за 19 дней. Организатору это нужнее любой подсказки про цену. */
+var DEMAND = [
+  { part: 'утро',  hours: '08–12', share: 19 },
+  { part: 'день',  hours: '12–16', share: 17 },
+  { part: 'вечер', hours: '16–24', share: 62 }
+];
+
+/* Состояние форм. Сервера нет: созданное живёт до перезагрузки вкладки. */
+var FORM = { kind: 'paid', filmed: false };
+var FLASH = null;
 
 var KIND = {
   paid:     { label: function (e) { return e.price + ' ฿'; }, pill: 'gold' },
@@ -69,9 +95,28 @@ function esc(s) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
+function val(id) {
+  var el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+function dayWord(iso) {
+  if (!iso) return 'Скоро';
+  var d = new Date(iso + 'T00:00:00');
+  if (isNaN(d)) return 'Скоро';
+  var days = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+  var today = new Date(); today.setHours(0,0,0,0);
+  var diff = Math.round((d - today) / 86400000);
+  if (diff === 0) return 'Сегодня, ' + days[d.getDay()];
+  if (diff === 1) return 'Завтра, ' + days[d.getDay()];
+  return d.getDate() + '.' + (d.getMonth() + 1) + ', ' + days[d.getDay()];
+}
+function partOf(t) {
+  var h = parseInt((t || '19:00').split(':')[0], 10);
+  return h < 12 ? 'утро' : h < 16 ? 'день' : 'вечер';
+}
 function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
 function byId(id) { return DATA.events.filter(function (e) { return e.id === id; })[0]; }
-function isMember() { return DATA.role === 'member' || DATA.role === 'organizer'; }
+function isMember() { return ['member', 'organizer', 'partner'].indexOf(DATA.role) !== -1; }
 
 var ICON = {
   home: '<path d="M4 10l8-6 8 6v9a1 1 0 01-1 1h-5v-6h-4v6H5a1 1 0 01-1-1z"/>',
@@ -129,6 +174,8 @@ var SCREENS = {
           '<span class="grow"><b>' + esc(next.title) + '</b><span class="small">' + esc(next.when) + '</span></span>' +
           svg(ICON.chev, 'chev') +
         '</button></div>' : '') +
+
+      rolePanel() +
 
       '<div class="group">' +
         '<div class="row"><span class="label">На этой неделе</span>' +
@@ -301,11 +348,168 @@ var SCREENS = {
       '</div>';
   },
 
+  organizer: function () {
+    return (FLASH ? flash() : '') +
+      '<button type="button" class="btn" data-go="eventNew">' +
+        svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' +
+      '<div class="group"><span class="label">Мои мероприятия</span>' +
+        (DATA.myEvents.length ? DATA.myEvents.map(function (e) {
+          return '<button type="button" class="listitem" data-manage="' + esc(e.id) + '">' +
+            '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.day.split(',')[0]) + '</span></span>' +
+            '<span class="grow"><b>' + esc(e.title) + '</b>' +
+            '<span class="small">записалось ' + e.signed + ' из ' + e.of + ' · ' + esc(e.state) + '</span></span>' +
+            svg(ICON.chev, 'chev') + '</button>';
+        }).join('') : '<div class="card quiet"><span class="small">Пока ни одного. Создайте первое.</span></div>') +
+      '</div>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Цену своего мероприятия назначаете вы. Клуб берёт за уровень организатора, а не долю со входа.</span>' +
+      '</div>';
+  },
+
+  eventNew: function () {
+    var paid = FORM.kind === 'paid';
+    return '<div class="col"><h1>Новое мероприятие</h1>' +
+        '<span class="small">Появится в афише клуба сразу после публикации.</span></div>' +
+
+      '<div class="field"><label for="f-title">Название</label>' +
+        '<input id="f-title" type="text" placeholder="Например: звуковая практика"></div>' +
+
+      '<div class="row" style="gap:10px;align-items:stretch">' +
+        '<div class="field" style="flex:1 1 0"><label for="f-date">День</label>' +
+          '<input id="f-date" type="date"></div>' +
+        '<div class="field" style="flex:1 1 0"><label for="f-time">Начало</label>' +
+          '<input id="f-time" type="time" value="19:00"></div>' +
+      '</div>' +
+
+      '<div class="card quiet"><div class="col">' +
+        '<b style="font-size:13px">Когда на острове ходят на события</b>' +
+        '<span class="small">Доли спроса по 522 позициям афиши острова за 19 дней, наш замер.</span>' +
+        '<div class="rows" style="margin-top:6px">' +
+          DEMAND.map(function (d) {
+            return '<div><span class="small">' + d.part + ' · ' + d.hours + '</span>' +
+              '<b class="num">' + d.share + ' %</b></div>';
+          }).join('') +
+        '</div>' +
+        '<span class="small" style="margin-top:6px">Пик — 19:00: каждое шестое событие острова.</span>' +
+      '</div></div>' +
+
+      '<div class="row" style="gap:10px;align-items:stretch">' +
+        '<div class="field" style="flex:1 1 0"><label for="f-dur">Длительность</label>' +
+          '<input id="f-dur" type="text" value="90 мин"></div>' +
+        '<div class="field" style="flex:1 1 0"><label for="f-seats">Мест</label>' +
+          '<input id="f-seats" type="number" inputmode="numeric" value="12"></div>' +
+      '</div>' +
+
+      '<div class="group"><span class="label">Участие</span>' +
+        '<div class="seg">' +
+          [['paid','Платное'],['free','Бесплатное'],['donation','Донейшн']].map(function (k) {
+            return '<button type="button" data-kind="' + k[0] + '" aria-pressed="' +
+              (FORM.kind === k[0]) + '">' + k[1] + '</button>';
+          }).join('') +
+        '</div>' +
+        (paid ? '<div class="field"><label for="f-price">Цена входа, ฿</label>' +
+                '<input id="f-price" type="number" inputmode="numeric" value="400"></div>'
+              : '<div class="note">' + svg(ICON.info) + '<span>' + (FORM.kind === 'free'
+                  ? 'Бесплатное: человек просто записывается, место держится за ним.'
+                  : 'Донейшн: сумма необязательна, и её отсутствие не мешает записаться.') +
+                '</span></div>') +
+      '</div>' +
+
+      '<div class="field"><label for="f-about">Описание</label>' +
+        '<input id="f-about" type="text" placeholder="Что будет и что взять с собой"></div>' +
+
+      '<button type="button" class="listitem" data-toggle="filmed" aria-pressed="' + FORM.filmed + '">' +
+        svg(ICON.cam, 'chev') +
+        '<span class="grow"><b>Ведётся съёмка</b>' +
+        '<span class="small">' + (FORM.filmed
+          ? 'Участники увидят это и дадут согласие отдельно'
+          : 'Отметьте, если снимаете: согласие участники дают отдельно') + '</span></span>' +
+        '<span class="pill' + (FORM.filmed ? ' on' : '') + '">' + (FORM.filmed ? 'да' : 'нет') + '</span>' +
+      '</button>' +
+
+      '<button type="button" class="btn" data-action="create-event">Опубликовать в афише</button>';
+  },
+
+  eventManage: function (id) {
+    var e = DATA.myEvents.filter(function (x) { return x.id === id; })[0] || DATA.myEvents[0];
+    if (!e) return '<div class="card quiet"><span class="small">Мероприятие не найдено.</span></div>';
+    var paidCount = DATA.signed.filter(function (p) { return p.paid; }).length;
+    return '<div class="col"><h1>' + esc(e.title) + '</h1>' +
+        '<span class="small">' + esc(e.day) + ' · ' + esc(e.time) + '</span></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">Записалось</span><b class="num">' + e.signed + ' из ' + e.of + '</b></div>' +
+        (e.kind === 'paid'
+          ? '<div><span class="small">Оплатили</span><b class="num">' + paidCount + ' из ' + DATA.signed.length + '</b></div>' +
+            '<div><span class="small">Соберёте</span><b class="num">' + money(paidCount * e.price) + ' ฿</b></div>'
+          : '<div><span class="small">Участие</span><b>' + (e.kind === 'free' ? 'Бесплатно' : 'Донейшн') + '</b></div>') +
+      '</div>' +
+      '<div class="group"><span class="label">Кто идёт</span>' +
+        DATA.signed.map(function (p) {
+          return '<div class="card"><div class="row">' +
+            '<div class="col"><b>' + esc(p.name) + '</b><span class="small">' + esc(p.when) + '</span></div>' +
+            '<span class="pill' + (p.paid ? ' on' : '') + '">' + (p.paid ? 'оплачено' : 'не оплачено') + '</span>' +
+          '</div></div>';
+        }).join('') +
+      '</div>' +
+      '<button type="button" class="btn ghost" data-action="cancel-event">Отменить мероприятие</button>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Отменить можно, стереть — нет: запись об отмене останется, и записавшиеся получат уведомление.</span>' +
+      '</div>';
+  },
+
+  partner: function () {
+    return (FLASH ? flash() : '') +
+      '<button type="button" class="btn" data-go="serviceNew">' +
+        svg('<path d="M12 5v14M5 12h14"/>') + 'Добавить услугу</button>' +
+      '<div class="group"><span class="label">Моё направление</span>' +
+        (DATA.myServices.length ? DATA.myServices.map(function (x) {
+          return '<div class="card"><div class="row top">' +
+            '<div class="col"><b>' + esc(x.title) + '</b><span class="small">' + esc(x.about) + '</span></div>' +
+            '<span class="pill' + (x.state === 'работает' ? ' on' : '') + '">' + esc(x.state) + '</span>' +
+          '</div><div class="row"><span class="small">Цена</span><b class="num">' + esc(x.price) + '</b></div></div>';
+        }).join('') : '<div class="card quiet"><span class="small">Пока ни одной.</span></div>') +
+      '</div>' +
+      '<div class="group"><span class="label">Отчётность направления</span>' +
+        '<div class="rows">' +
+          '<div><span class="small">Выручка за месяц</span><b class="num">[сумма]</b></div>' +
+          '<div><span class="small">Расходы и закуп</span><b class="num">[сумма]</b></div>' +
+          '<div><span class="small">Чистая прибыль</span><b class="num">[сумма]</b></div>' +
+          '<div><span class="small">Ваши 70 %</span><b class="num">[сумма]</b></div>' +
+          '<div><span class="small">Клубу 30 %</span><b class="num">[сумма]</b></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Суммы собираются из кассы: каждая строка внесена работником и может быть отменена, но не исправлена задним числом.</span>' +
+      '</div>';
+  },
+
+  serviceNew: function () {
+    return '<div class="col"><h1>Новая услуга</h1>' +
+        '<span class="small">Появится в разделе «Услуги» после проверки директором.</span></div>' +
+      '<div class="field"><label for="s-title">Название</label>' +
+        '<input id="s-title" type="text" placeholder="Например: аренда байка"></div>' +
+      '<div class="field"><label for="s-about">Коротко, что это</label>' +
+        '<input id="s-about" type="text" placeholder="По дням, с залогом и доставкой"></div>' +
+      '<div class="field"><label for="s-price">Цена</label>' +
+        '<input id="s-price" type="text" placeholder="250 ฿/день"></div>' +
+      '<div class="field"><label for="s-contact">Кто выполняет</label>' +
+        '<input id="s-contact" type="text" placeholder="Вы сами или ваш работник"></div>' +
+      '<div class="card quiet"><div class="col">' +
+        '<b style="font-size:13px">Фотографии</b>' +
+        '<span class="small">Прикладываются после проверки. Снимки должны быть ваши: чужие из каталогов публиковать нельзя.</span>' +
+      '</div></div>' +
+      '<button type="button" class="btn" data-action="create-service">Отправить на проверку</button>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Новые направления в клубе принимает директор — он же назначает бизнес-партнёров.</span>' +
+      '</div>';
+  },
+
   demo: function () {
     var roles = [
       ['guest', 'Гость', 'без членства: только услуги'],
       ['member', 'Член клуба', 'пропуск, афиша, записи'],
       ['organizer', 'Организатор', 'то же плюс свои мероприятия'],
+      ['partner', 'Бизнес-партнёр', 'то же плюс своё направление и его отчётность'],
       ['staff', 'Работник', 'касса: внести и отменить']
     ];
     return '<div class="card quiet"><div class="col">' +
@@ -327,6 +531,34 @@ var SCREENS = {
   }
 };
 
+/* У каждой роли свои действия. Пересечений нет: организатор не заводит
+   услуги, партнёр не создаёт мероприятия. */
+function rolePanel() {
+  if (DATA.role === 'organizer') {
+    return '<button type="button" class="listitem" data-go="organizer">' +
+      '<span class="grow"><b>Мои мероприятия</b>' +
+      '<span class="small">создать новое, посмотреть записавшихся</span></span>' +
+      '<span class="pill gold">' + DATA.myEvents.length + '</span>' +
+    '</button>';
+  }
+  if (DATA.role === 'partner') {
+    return '<button type="button" class="listitem" data-go="partner">' +
+      '<span class="grow"><b>Моё направление</b>' +
+      '<span class="small">добавить услугу, отчётность</span></span>' +
+      '<span class="pill gold">' + DATA.myServices.length + '</span>' +
+    '</button>';
+  }
+  return '';
+}
+
+function flash() {
+  var t = FLASH; FLASH = null;
+  return '<div class="card quiet"><div class="col">' +
+    '<b style="font-size:13px">' + esc(t) + '</b>' +
+    '<span class="small">Сохранено только в этой вкладке: сервера пока нет, при перезагрузке исчезнет.</span>' +
+  '</div></div>';
+}
+
 function eventRow(e) {
   var k = KIND[e.kind];
   return '<button type="button" class="listitem' + (e.kind === 'paid' ? ' accent' : '') + '" data-event="' + e.id + '">' +
@@ -343,11 +575,14 @@ var TABS = {
   guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
   member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
   organizer: [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
+  partner:   [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
   staff:     [['staff', 'Касса', ICON.till], ['home', 'Клуб', ICON.home]]
 };
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', events: 'Афиша',
-  event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим'
+  event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
+  organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
+  eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга'
 };
 
 var current = 'home';
@@ -390,8 +625,51 @@ function go(screen, p) {
 }
 
 document.addEventListener('click', function (ev) {
-  var el = ev.target.closest('[data-go],[data-event],[data-role]');
+  var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-toggle],[data-manage],[data-action]');
   if (!el) return;
+
+  if (el.hasAttribute('data-kind')) { FORM.kind = el.getAttribute('data-kind'); render(); return; }
+  if (el.hasAttribute('data-toggle')) { FORM.filmed = !FORM.filmed; render(); return; }
+  if (el.hasAttribute('data-manage')) { go('eventManage', el.getAttribute('data-manage')); return; }
+
+  if (el.hasAttribute('data-action')) {
+    var a = el.getAttribute('data-action');
+
+    if (a === 'create-event') {
+      var title = (val('f-title') || 'Без названия');
+      var time = val('f-time') || '19:00';
+      var seats = parseInt(val('f-seats'), 10) || 12;
+      var price = parseInt(val('f-price'), 10) || 0;
+      var id = 'own-' + Date.now();
+      DATA.myEvents.unshift({ id: id, title: title, day: dayWord(val('f-date')), time: time,
+        signed: 0, of: seats, kind: FORM.kind, price: price, state: 'опубликовано' });
+      DATA.events.push({ id: id, title: title, day: dayWord(val('f-date')), time: time,
+        part: partOf(time), until: '', master: DATA.member.name, seats: seats, of: seats,
+        kind: FORM.kind, price: price, filmed: FORM.filmed,
+        about: val('f-about') || 'Описание не заполнено.' });
+      FLASH = 'Мероприятие «' + title + '» опубликовано в афише';
+      FORM = { kind: 'paid', filmed: false };
+      go('organizer');
+      return;
+    }
+
+    if (a === 'cancel-event') {
+      FLASH = 'Мероприятие отменено. Запись об отмене осталась.';
+      go('organizer');
+      return;
+    }
+
+    if (a === 'create-service') {
+      var st = val('s-title') || 'Без названия';
+      DATA.myServices.unshift({ title: st, about: val('s-about') || '—',
+        price: val('s-price') || '[цена]', state: 'на проверке' });
+      DATA.services.push({ title: st, about: val('s-about') || '—' });
+      FLASH = 'Услуга «' + st + '» отправлена директору на проверку';
+      go('partner');
+      return;
+    }
+  }
+
   if (el.hasAttribute('data-role')) {
     DATA.role = el.getAttribute('data-role');
     go(DATA.role === 'staff' ? 'staff' : DATA.role === 'guest' ? 'guest' : 'home');
