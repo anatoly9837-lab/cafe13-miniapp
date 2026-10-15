@@ -662,6 +662,11 @@ document.addEventListener('click', function (ev) {
   var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-toggle],[data-manage],[data-action]');
   if (!el) return;
 
+  if (el.hasAttribute('data-role')) {
+    DATA.role = el.getAttribute('data-role');
+    go(DATA.role === 'staff' ? 'staff' : DATA.role === 'guest' ? 'guest' : 'home');
+    return;
+  }
   if (el.hasAttribute('data-kind')) {
     grabForm(EVENT_FIELDS); FORM.kind = el.getAttribute('data-kind'); haptic(); saveDraft(); render(); return;
   }
@@ -721,11 +726,6 @@ function doAction(a) {
   }
 }
 
-  if (el.hasAttribute('data-role')) {
-    DATA.role = el.getAttribute('data-role');
-    go(DATA.role === 'staff' ? 'staff' : DATA.role === 'guest' ? 'guest' : 'home');
-    return;
-  }
 document.getElementById('back').addEventListener('click', function () {
   go(BACK[current] || homeOf());
 });
