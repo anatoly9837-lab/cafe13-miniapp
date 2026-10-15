@@ -256,8 +256,10 @@ var SCREENS = {
                 : '<button type="button" class="btn ghost">' + (t.split ? 'Обсудить с директором' : 'Перейти на уровень') + '</button>') +
       '</div>';
     }).join('') +
+    (FLASH ? flash() : '') +
+    '<button type="button" class="btn ghost" data-action="phone">Поделиться телефоном</button>' +
     '<div class="note">' + svg(ICON.info) +
-      '<span>Оплата — в кассе клуба, наличными или картой. Работник отметит её, и уровень обновится здесь.</span>' +
+      '<span>Телефон нужен кассе, чтобы найти вас без поиска по имени. Оплата — в кассе, наличными или картой: работник отметит её, и уровень обновится здесь.</span>' +
     '</div>';
   },
 
@@ -282,10 +284,10 @@ var SCREENS = {
     var k = KIND[e.kind];
     var foot;
     if (e.kind === 'paid') {
-      foot = '<button type="button" class="btn">Оплатить ' + e.price + ' ฿ и записаться</button>' +
+      foot = '<button type="button" class="btn dup-main" data-action="book">Оплатить ' + e.price + ' ฿ и записаться</button>' +
              '<span class="small" style="text-align:center">Место держится 15 минут, пока идёт оплата. Не оплачено — место возвращается в афишу.</span>';
     } else if (e.kind === 'free') {
-      foot = '<button type="button" class="btn">Записаться</button>' +
+      foot = '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
              '<span class="small" style="text-align:center">Если передумали — отмените запись, чтобы место досталось другому.</span>';
     } else {
       foot = '<div class="card" style="border-color:var(--clay)">' +
@@ -296,7 +298,7 @@ var SCREENS = {
           '<div class="field"><label for="own">Своя сумма, можно оставить пустым</label>' +
           '<input id="own" type="text" inputmode="numeric" placeholder="— ฿"></div>' +
         '</div>' +
-        '<button type="button" class="btn">Записаться</button>' +
+        '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
         '<span class="small" style="text-align:center">Взнос можно передать мастеру на месте или оставить в кассе после практики.</span>';
     }
     return '<div class="col"><h1>' + esc(e.title) + '</h1>' +
@@ -333,7 +335,8 @@ var SCREENS = {
 
   staff: function () {
     var total = DATA.shift.reduce(function (a, r) { return r.cancelled ? a : a + r.sum; }, 0);
-    return '<button type="button" class="btn">' + svg(ICON.till) + 'Сканировать пропуск</button>' +
+    return (FLASH ? flash() : '') +
+      '<button type="button" class="btn" data-action="scan">' + svg(ICON.till) + 'Сканировать пропуск</button>' +
       '<div class="group"><span class="label">Принять деньги</span>' +
         '<div class="seg">' +
           '<button type="button">Членство</button><button type="button">На баланс</button><button type="button">Событие</button>' +
@@ -440,7 +443,7 @@ var SCREENS = {
         '<span class="pill' + (FORM.filmed ? ' on' : '') + '">' + (FORM.filmed ? 'да' : 'нет') + '</span>' +
       '</button>' +
 
-      '<button type="button" class="btn" data-action="create-event">Опубликовать в афише</button>';
+      '<button type="button" class="btn dup-main" data-action="create-event">Опубликовать в афише</button>';
   },
 
   eventManage: function (id) {
@@ -510,7 +513,7 @@ var SCREENS = {
         '<b style="font-size:13px">Фотографии</b>' +
         '<span class="small">Прикладываются после проверки. Снимки должны быть ваши: чужие из каталогов публиковать нельзя.</span>' +
       '</div></div>' +
-      '<button type="button" class="btn" data-action="create-service">Отправить на проверку</button>' +
+      '<button type="button" class="btn dup-main" data-action="create-service">Отправить на проверку</button>' +
       '<div class="note">' + svg(ICON.info) +
         '<span>Новые направления в клубе принимает директор — он же назначает бизнес-партнёров.</span>' +
       '</div>';
@@ -636,6 +639,7 @@ function render() {
       svg(t[2]) + '<span>' + t[1] + '</span></button>';
   }).join('');
 
+  tgChrome();
   window.scrollTo(0, 0);
 }
 
@@ -644,6 +648,14 @@ function go(screen, p) {
   current = screen;
   param = p || null;
   render();
+  if (screen === 'eventNew') {
+    loadDraft(function (restored) {
+      if (restored && current === 'eventNew') {
+        FLASH = 'Черновик восстановлен';
+        render();
+      }
+    });
+  }
 }
 
 document.addEventListener('click', function (ev) {
@@ -651,16 +663,20 @@ document.addEventListener('click', function (ev) {
   if (!el) return;
 
   if (el.hasAttribute('data-kind')) {
-    grabForm(EVENT_FIELDS); FORM.kind = el.getAttribute('data-kind'); render(); return;
+    grabForm(EVENT_FIELDS); FORM.kind = el.getAttribute('data-kind'); haptic(); saveDraft(); render(); return;
   }
   if (el.hasAttribute('data-toggle')) {
-    grabForm(EVENT_FIELDS); FORM.filmed = !FORM.filmed; render(); return;
+    grabForm(EVENT_FIELDS); FORM.filmed = !FORM.filmed; haptic(); saveDraft(); render(); return;
   }
   if (el.hasAttribute('data-manage')) { go('eventManage', el.getAttribute('data-manage')); return; }
 
-  if (el.hasAttribute('data-action')) {
-    var a = el.getAttribute('data-action');
+  if (el.hasAttribute('data-action')) { doAction(el.getAttribute('data-action')); return; }
+  if (el.hasAttribute('data-event')) { go('event', el.getAttribute('data-event')); return; }
+  go(el.getAttribute('data-go'));
+});
 
+function doAction(a) {
+  {
     if (a === 'create-event') {
       var title = (val('f-title') || 'Без названия');
       var time = val('f-time') || '19:00';
@@ -674,13 +690,16 @@ document.addEventListener('click', function (ev) {
         kind: FORM.kind, price: price, filmed: FORM.filmed,
         about: val('f-about') || 'Описание не заполнено.' });
       FLASH = 'Мероприятие «' + title + '» опубликовано в афише';
+      haptic('ok');
       FORM = { kind: 'paid', filmed: false, v: {} };
+      dropDraft();
       go('organizer');
       return;
     }
 
     if (a === 'cancel-event') {
       FLASH = 'Мероприятие отменено. Запись об отмене осталась.';
+      haptic('warn');
       go('organizer');
       return;
     }
@@ -691,26 +710,146 @@ document.addEventListener('click', function (ev) {
         price: val('s-price') || '[цена]', state: 'на проверке' });
       DATA.services.push({ title: st, about: val('s-about') || '—' });
       FLASH = 'Услуга «' + st + '» отправлена директору на проверку';
+      haptic('ok');
       go('partner');
       return;
     }
+
+    if (a === 'scan') { scanPass(); return; }
+    if (a === 'phone') { askPhone(); return; }
+    if (a === 'book')  { haptic('ok'); FLASH = 'Вы записаны'; go('bookings'); return; }
   }
+}
 
   if (el.hasAttribute('data-role')) {
     DATA.role = el.getAttribute('data-role');
     go(DATA.role === 'staff' ? 'staff' : DATA.role === 'guest' ? 'guest' : 'home');
     return;
   }
-  if (el.hasAttribute('data-event')) { go('event', el.getAttribute('data-event')); return; }
-  go(el.getAttribute('data-go'));
-});
-
 document.getElementById('back').addEventListener('click', function () {
   go(BACK[current] || homeOf());
 });
 document.getElementById('demo-btn').addEventListener('click', function () { go('demo'); });
 
 /* ── запуск ──────────────────────────────────────────── */
+
+/* ── нативное в Telegram ──────────────────────────────
+   Каждая возможность появилась в своей версии Bot API, и у человека может
+   стоять клиент постарше: спрашиваем isVersionAtLeast, а не наличие метода.
+   Вне Telegram всё это молча выключено, и страница работает как обычная. */
+
+function tgHas(v) {
+  return !!(tg && tg.isVersionAtLeast && tg.isVersionAtLeast(v));
+}
+
+function haptic(kind) {                       // 6.1
+  if (!tgHas('6.1') || !tg.HapticFeedback) return;
+  try {
+    if (kind === 'ok') tg.HapticFeedback.notificationOccurred('success');
+    else if (kind === 'warn') tg.HapticFeedback.notificationOccurred('warning');
+    else tg.HapticFeedback.selectionChanged();
+  } catch (e) { /* старый клиент — тишина вместо падения */ }
+}
+
+function scanPass() {                         // 6.4
+  if (!tgHas('6.4') || !tg.showScanQrPopup) {
+    FLASH = 'Сканер доступен в приложении Telegram — здесь его нет';
+    render();
+    return;
+  }
+  tg.showScanQrPopup({ text: 'Наведите на код пропуска' }, function (text) {
+    haptic('ok');
+    FLASH = 'Пропуск прочитан: ' + String(text).slice(0, 40);
+    tg.closeScanQrPopup();
+    render();
+    return true;
+  });
+}
+
+function askPhone() {                          // 6.9
+  if (!tgHas('6.9') || !tg.requestContact) {
+    FLASH = 'Телефон запрашивается только внутри Telegram';
+    render();
+    return;
+  }
+  tg.requestContact(function (ok) {
+    haptic(ok ? 'ok' : 'warn');
+    FLASH = ok ? 'Телефон получен — он нужен кассе, чтобы найти вас' : 'Без телефона тоже можно';
+    render();
+  });
+}
+
+/* Черновик формы: CloudStorage, 6.9. ⚠ Он виден только этому человеку и
+   не заменяет сервер — бармен в нём ничего не увидит. */
+function saveDraft() {
+  if (!tgHas('6.9') || !tg.CloudStorage) return;
+  var d = JSON.stringify({ v: FORM.v, kind: FORM.kind, filmed: FORM.filmed });
+  if (d.length > 4096) return;                 // предел значения
+  try { tg.CloudStorage.setItem('draft_event', d, function () {}); } catch (e) {}
+}
+function loadDraft(done) {
+  if (!tgHas('6.9') || !tg.CloudStorage) { done(false); return; }
+  try {
+    tg.CloudStorage.getItem('draft_event', function (err, value) {
+      if (err || !value) { done(false); return; }
+      try {
+        var d = JSON.parse(value);
+        FORM.v = d.v || {}; FORM.kind = d.kind || 'paid'; FORM.filmed = !!d.filmed;
+        done(true);
+      } catch (e) { done(false); }
+    });
+  } catch (e) { done(false); }
+}
+function dropDraft() {
+  if (!tgHas('6.9') || !tg.CloudStorage) return;
+  try { tg.CloudStorage.removeItem('draft_event', function () {}); } catch (e) {}
+}
+
+/* Главная кнопка внизу — там, где у экрана есть одно главное действие. */
+function mainFor() {
+  if (current === 'eventNew') return { text: 'Опубликовать в афише', a: 'create-event' };
+  if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
+  if (current === 'event') {
+    var e = byId(param) || DATA.events[0];
+    return { text: e && e.kind === 'paid' ? 'Оплатить ' + e.price + ' ฿ и записаться' : 'Записаться', a: 'book' };
+  }
+  return null;
+}
+
+var mainHandler = null;
+var backHandler = null;
+
+function tgChrome() {
+  if (!tg) return;
+
+  // системная «назад» вместо нарисованной
+  if (tg.BackButton && tgHas('6.1')) {
+    document.getElementById('back').hidden = true;
+    if (backHandler) { tg.BackButton.offClick(backHandler); backHandler = null; }
+    if (BACK[current] || !(TABS[DATA.role] || []).some(function (t) { return t[0] === current; })) {
+      backHandler = function () { go(BACK[current] || homeOf()); };
+      tg.BackButton.onClick(backHandler);
+      tg.BackButton.show();
+    } else {
+      tg.BackButton.hide();
+    }
+  }
+
+  var mb = tg.MainButton;
+  if (!mb) return;
+  if (mainHandler) { mb.offClick(mainHandler); mainHandler = null; }
+  var m = mainFor();
+  if (m) {
+    mainHandler = function () { doAction(m.a); };
+    mb.setText(m.text);
+    mb.onClick(mainHandler);
+    mb.show();
+    document.body.classList.add('has-main');
+  } else {
+    mb.hide();
+    document.body.classList.remove('has-main');
+  }
+}
 
 function applyTheme() {
   var dark = tg && tg.colorScheme === 'dark';

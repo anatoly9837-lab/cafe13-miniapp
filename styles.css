@@ -228,6 +228,9 @@ b.num, .big { white-space: nowrap; }
 .tabs button[aria-current="page"] { color: var(--ink); font-weight: 700; }
 .tabs svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 
+/* Когда снизу стоит главная кнопка Telegram, своя — лишняя */
+body.has-main .dup-main { display: none; }
+
 @media (prefers-reduced-motion: no-preference) {
   main { animation: fade 160ms ease-out; }
   @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
