@@ -79,7 +79,7 @@ var DEMAND = [
 ];
 
 /* Состояние форм. Сервера нет: созданное живёт до перезагрузки вкладки. */
-var FORM = { kind: 'paid', filmed: false };
+var FORM = { kind: 'paid', filmed: false, v: {} };
 var FLASH = null;
 
 var KIND = {
@@ -95,6 +95,20 @@ function esc(s) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
+/* Переключение типа участия перерисовывает форму. Без этого всё, что
+   человек уже ввёл, пропадало — поймано функциональной проверкой. */
+function grabForm(ids) {
+  ids.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) FORM.v[id] = el.value;
+  });
+}
+var EVENT_FIELDS = ['f-title', 'f-date', 'f-time', 'f-dur', 'f-seats', 'f-price', 'f-about'];
+function keep(id, dflt) {
+  var x = FORM.v[id];
+  return esc(x === undefined || x === '' ? (dflt || '') : x);
+}
+
 function val(id) {
   var el = document.getElementById(id);
   return el ? el.value.trim() : '';
@@ -372,13 +386,13 @@ var SCREENS = {
         '<span class="small">Появится в афише клуба сразу после публикации.</span></div>' +
 
       '<div class="field"><label for="f-title">Название</label>' +
-        '<input id="f-title" type="text" placeholder="Например: звуковая практика"></div>' +
+        '<input id="f-title" type="text" value="' + keep('f-title') + '" placeholder="Например: звуковая практика"></div>' +
 
       '<div class="row" style="gap:10px;align-items:stretch">' +
         '<div class="field" style="flex:1 1 0"><label for="f-date">День</label>' +
-          '<input id="f-date" type="date"></div>' +
+          '<input id="f-date" type="date" value="' + keep('f-date') + '"></div>' +
         '<div class="field" style="flex:1 1 0"><label for="f-time">Начало</label>' +
-          '<input id="f-time" type="time" value="19:00"></div>' +
+          '<input id="f-time" type="time" value="' + keep('f-time', '19:00') + '"></div>' +
       '</div>' +
 
       '<div class="card quiet"><div class="col">' +
@@ -395,9 +409,9 @@ var SCREENS = {
 
       '<div class="row" style="gap:10px;align-items:stretch">' +
         '<div class="field" style="flex:1 1 0"><label for="f-dur">Длительность</label>' +
-          '<input id="f-dur" type="text" value="90 мин"></div>' +
+          '<input id="f-dur" type="text" value="' + keep('f-dur', '90 мин') + '"></div>' +
         '<div class="field" style="flex:1 1 0"><label for="f-seats">Мест</label>' +
-          '<input id="f-seats" type="number" inputmode="numeric" value="12"></div>' +
+          '<input id="f-seats" type="number" inputmode="numeric" value="' + keep('f-seats', '12') + '"></div>' +
       '</div>' +
 
       '<div class="group"><span class="label">Участие</span>' +
@@ -408,7 +422,7 @@ var SCREENS = {
           }).join('') +
         '</div>' +
         (paid ? '<div class="field"><label for="f-price">Цена входа, ฿</label>' +
-                '<input id="f-price" type="number" inputmode="numeric" value="400"></div>'
+                '<input id="f-price" type="number" inputmode="numeric" value="' + keep('f-price', '400') + '"></div>'
               : '<div class="note">' + svg(ICON.info) + '<span>' + (FORM.kind === 'free'
                   ? 'Бесплатное: человек просто записывается, место держится за ним.'
                   : 'Донейшн: сумма необязательна, и её отсутствие не мешает записаться.') +
@@ -416,7 +430,7 @@ var SCREENS = {
       '</div>' +
 
       '<div class="field"><label for="f-about">Описание</label>' +
-        '<input id="f-about" type="text" placeholder="Что будет и что взять с собой"></div>' +
+        '<input id="f-about" type="text" value="' + keep('f-about') + '" placeholder="Что будет и что взять с собой"></div>' +
 
       '<button type="button" class="listitem" data-toggle="filmed" aria-pressed="' + FORM.filmed + '">' +
         svg(ICON.cam, 'chev') +
@@ -628,8 +642,12 @@ document.addEventListener('click', function (ev) {
   var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-toggle],[data-manage],[data-action]');
   if (!el) return;
 
-  if (el.hasAttribute('data-kind')) { FORM.kind = el.getAttribute('data-kind'); render(); return; }
-  if (el.hasAttribute('data-toggle')) { FORM.filmed = !FORM.filmed; render(); return; }
+  if (el.hasAttribute('data-kind')) {
+    grabForm(EVENT_FIELDS); FORM.kind = el.getAttribute('data-kind'); render(); return;
+  }
+  if (el.hasAttribute('data-toggle')) {
+    grabForm(EVENT_FIELDS); FORM.filmed = !FORM.filmed; render(); return;
+  }
   if (el.hasAttribute('data-manage')) { go('eventManage', el.getAttribute('data-manage')); return; }
 
   if (el.hasAttribute('data-action')) {
@@ -648,7 +666,7 @@ document.addEventListener('click', function (ev) {
         kind: FORM.kind, price: price, filmed: FORM.filmed,
         about: val('f-about') || 'Описание не заполнено.' });
       FLASH = 'Мероприятие «' + title + '» опубликовано в афише';
-      FORM = { kind: 'paid', filmed: false };
+      FORM = { kind: 'paid', filmed: false, v: {} };
       go('organizer');
       return;
     }
