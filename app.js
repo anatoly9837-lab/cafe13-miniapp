@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v6 · 16.10.2026';
+var VERSION = 'v7 · 16.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -74,6 +74,149 @@ var DATA = {
     { title: 'Аренда байка', about: 'По дням, с залогом и доставкой', price: '250 ฿/день', state: 'работает' }
   ]
 };
+
+/* ── бар: первый бизнес-юнит клуба ─────────────────────
+   Решение владельца 16.10.2026: первое направление — бар. У него куратор
+   (отвечает за направление и его отчётность) и исполнитель на баре
+   (принимает заказы, снимает напитки, вносит затраты). Состав меню и цены
+   ниже — черновик: их ведёт куратор, а не код. */
+DATA.bar = {
+  open: true,
+  curator: '[куратор бара]',
+  staff: '[исполнитель на баре]',
+  menu: [
+    { group: 'Кофе', items: [
+      { id: 'espresso', title: 'Эспрессо', price: 70, mins: '2', tone: 'dark', shot: 'ready',
+        about: 'Двойной, местная обжарка',
+        full: 'Двойной эспрессо из зерна тайской обжарки. Берут, когда нужно коротко и сразу.' },
+      { id: 'flat', title: 'Флэт-уайт', price: 110, mins: '3–4', tone: 'milk', shot: 'ready',
+        about: 'Молоко обычное или кокосовое',
+        full: 'Двойная база и молоко без пены. Кокосовое — без доплаты, спросите на баре.' },
+      { id: 'cold', title: 'Колд-брю', price: 120, mins: '1', tone: 'coffee', shot: 'ai',
+        about: '16 часов на холодной воде',
+        full: 'Настаивается сутки без нагрева, поэтому мягче горячего. Готов заранее — наливается сразу.' }
+    ] },
+    { group: 'Чай', items: [
+      { id: 'puer', title: 'Пуэр', price: 150, mins: '5', tone: 'tea', shot: 'ready',
+        about: 'Проливами, хватает на двоих',
+        full: 'Подаётся проливами в гайвани. Один заказ спокойно делится на двоих — скажите, и дадут вторую пиалу.' },
+      { id: 'gaba', title: 'Габа', price: 140, mins: '5', tone: 'green', shot: 'none',
+        about: 'Тайваньская, мягкая',
+        full: 'Мягкий чай без горечи, хорошо идёт вечером.' }
+    ] },
+    { group: 'Авторские', items: [
+      { id: 'coco', title: 'Кокос-лайм', price: 175, mins: '4', tone: 'citrus', shot: 'shot',
+        about: 'Кокос, лайм, лёд, щепотка соли',
+        full: 'Кокосовая вода с лаймом и солью — то, что на острове пьют после жары.' },
+      { id: 'chia', title: 'Чиа-ягода', price: 165, mins: '4', tone: 'berry', shot: 'none',
+        about: 'Чиа, ягоды, вода',
+        full: 'Семена чиа, замоченные с утра, и ягодное пюре. Сытно — заменяет перекус.' }
+    ] }
+  ],
+  orders: [
+    { id: 'A-16', who: '[имя члена]', at: '19:51', where: 'к столу 3', pay: 'со счёта',
+      items: [['Флэт-уайт', 2], ['Эспрессо', 1]], sum: 290, state: 'new' },
+    { id: 'A-15', who: '[имя члена]', at: '19:44', where: 'за стойку', pay: 'наличные',
+      items: [['Колд-брю', 1]], sum: 120, state: 'making' },
+    { id: 'A-14', who: '[имя члена]', at: '19:38', where: 'с собой', pay: 'со счёта',
+      items: [['Пуэр', 1], ['Кокос-лайм', 1]], sum: 325, state: 'ready' },
+    { id: 'A-13', who: '[имя члена]', at: '19:20', where: 'за стойку', pay: 'наличные',
+      items: [['Эспрессо', 2]], sum: 140, state: 'served' }
+  ],
+  mine: null,
+  /* День сходится по числам: 640 + 1200 = 1840; позиции ниже дают ту же
+     сумму и те же 16 позиций. Если правите одно — пересчитайте всё. */
+  day: {
+    date: 'Четверг, 16 октября', revenue: 1840, cash: 640, account: 1200,
+    checks: 14, items: 16, avg: 131, cashOut: 80, cashBox: 560,
+    top: [
+      ['Флэт-уайт', 5, 550], ['Колд-брю', 3, 360], ['Эспрессо', 4, 280],
+      ['Пуэр', 2, 300], ['Кокос-лайм', 2, 350]
+    ],
+    spend: [['Молоко и кокосовое', 'касса клуба', 240], ['Лёд', 'наличные бара', 80],
+            ['Салфетки, трубочки', 'касса клуба', 100]],
+    spendSum: 420,
+    loss: 'Один стакан — бой, записан списанием'
+  },
+  /* 12 480 − 5 310 = 7 170; 30 % от чистой = 2 151, направлению 5 019.
+     13 % с вала дали бы 1 622 — второй способ владельца. */
+  month: {
+    name: 'Октябрь', shifts: 11, revenue: 12480, spend: 5310, net: 7170,
+    club: 2151, own: 5019, perShift: 1135, gross13: 1622, mode: 'net',
+    days: [['16.10', 1840], ['15.10', 1220], ['14.10', 980], ['13.10', 1560], ['12.10', 2040]]
+  },
+  expenses: [
+    { what: 'Молоко и кокосовое', cat: 'закуп', pay: 'касса клуба', sum: 240, when: '16.10 · [кто внёс]' },
+    { what: 'Лёд', cat: 'закуп', pay: 'наличные бара', sum: 80, when: '16.10 · [кто внёс]' },
+    { what: 'Салфетки, трубочки', cat: 'расходники', pay: 'касса клуба', sum: 100, when: '16.10 · [кто внёс]' },
+    { what: 'Кофе, 1 кг', cat: 'закуп', pay: 'касса клуба', sum: 950, when: '14.10 · [кто внёс]' },
+    { what: 'Ремонт кофемолки', cat: 'ремонт', pay: 'наличные бара', sum: 600, when: '11.10 · [кто внёс]' }
+  ]
+};
+
+/* Цвет плитки напитка — пока вместо фотографии. Фотография появляется,
+   когда снимок прошёл путь из экрана «Съёмка»: снято → ИИ-команда →
+   куратор утвердил. Рисовать правдоподобную картинку из каталога нельзя:
+   гость закажет не то, что увидит. */
+var TONE = {
+  dark:   'linear-gradient(145deg,#4A332A,#171009)',
+  coffee: 'linear-gradient(145deg,#7A5334,#33200F)',
+  milk:   'linear-gradient(145deg,#D2B38A,#8E6B45)',
+  tea:    'linear-gradient(145deg,#A07A33,#4C3812)',
+  green:  'linear-gradient(145deg,#8FAE98,#3F5A49)',
+  citrus: 'linear-gradient(145deg,#E0AC42,#A3661B)',
+  berry:  'linear-gradient(145deg,#A9506E,#5A2037)'
+};
+var SHOT = {
+  ready: { label: 'в меню',               pill: ' on' },
+  ai:    { label: 'у ИИ-команды',          pill: ' gold' },
+  shot:  { label: 'снято, не отправлено',  pill: ' warm' },
+  none:  { label: 'нужна съёмка',          pill: '' }
+};
+var OSTATE = {
+  new:    { label: 'новый',     pill: ' gold', next: 'make',  action: 'Принять' },
+  making: { label: 'готовится', pill: ' warm', next: 'ready', action: 'Готово' },
+  ready:  { label: 'готов',     pill: ' on',   next: 'serve', action: 'Выдан' },
+  served: { label: 'выдан',     pill: '',      next: null,    action: '' }
+};
+
+/* Корзина и выбор в формах бара. Как и всё остальное без сервера — живёт
+   до перезагрузки вкладки. */
+var CART = {};
+var ORDER = { where: 'за стойку', pay: 'со счёта' };
+var EXP = { cat: 'закуп', pay: 'касса клуба' };
+var EXP_FIELDS = ['e-what', 'e-sum'];
+var ORDERSEQ = 0;
+
+function drinks() {
+  var out = [];
+  DATA.bar.menu.forEach(function (g) { out = out.concat(g.items); });
+  return out;
+}
+function findDrink(id) {
+  return drinks().filter(function (d) { return d.id === id; })[0];
+}
+function cartList() {
+  return drinks().filter(function (d) { return CART[d.id]; }).map(function (d) {
+    return { id: d.id, title: d.title, price: d.price, n: CART[d.id] };
+  });
+}
+function cartCount() { return cartList().reduce(function (a, x) { return a + x.n; }, 0); }
+function cartSum()   { return cartList().reduce(function (a, x) { return a + x.n * x.price; }, 0); }
+function plural(n, f) {
+  var a = n % 10, b = n % 100;
+  return f[a === 1 && b !== 11 ? 0 : (a >= 2 && a <= 4 && (b < 10 || b > 20) ? 1 : 2)];
+}
+function nowHM() {
+  var d = new Date();
+  return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+}
+function orderById(id) {
+  return DATA.bar.orders.filter(function (o) { return o.id === id; })[0];
+}
+function shotsNeeded() {
+  return drinks().filter(function (d) { return d.shot !== 'ready'; });
+}
 
 /* Доли спроса по времени суток — наш замер 04.09.2026: 522 позиции дайджеста
    острова за 19 дней. Организатору это нужнее любой подсказки про цену. */
@@ -197,6 +340,10 @@ var ICON = {
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   star: '<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
   case: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 12h18"/>',
+  cup:  '<path d="M5 8h11v5a5 5 0 01-5 5h-1a5 5 0 01-5-5z"/><path d="M16 9h2.4a2.4 2.4 0 010 4.8H16"/><path d="M4 21h13"/>',
+  bell: '<path d="M18.5 16.5h-13L7 14.1V10a5 5 0 0110 0v4.1z"/><path d="M10 19.5a2 2 0 004 0"/>',
+  chart:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
+  coin: '<ellipse cx="12" cy="7" rx="8" ry="3.2"/><path d="M4 7v10c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V7"/><path d="M4 12.2c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2"/>',
   chev: '<path d="M9 6l6 6-6 6"/>'
 };
 function svg(paths, cls) { return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + paths + '</svg>'; }
@@ -258,6 +405,16 @@ var SCREENS = {
 
   guest: function () {
     return '' +
+      '<div class="group"><span class="label">Бар клуба</span>' +
+        '<button type="button" class="listitem accent" data-go="bar">' +
+          '<span class="grow"><b>Бар Café XIII</b>' +
+          '<span class="small">' + (DATA.bar.open
+            ? 'Кофе, чай, авторские · заказ из приложения'
+            : 'Сейчас закрыт') + '</span></span>' +
+          '<span class="pill' + (DATA.bar.open ? ' on' : '') + '">' +
+            (DATA.bar.open ? 'открыт' : 'закрыт') + '</span>' +
+        '</button>' +
+      '</div>' +
       '<div class="group"><span class="label">Услуги острова</span>' +
         DATA.services.map(function (s) {
           return '<button type="button" class="listitem">' +
@@ -627,13 +784,331 @@ var SCREENS = {
       '<button type="button" class="btn dup-main" data-action="accept-consent">Принимаю</button>';
   },
 
+  /* ── бар ───────────────────────────────────────────────
+     Семь требований владельца от 16.10.2026 разложены так: меню и заказ —
+     bar, drink, barCart, barOrder; уведомление и работа на баре — barQueue;
+     визуализатор напитка — barShot; отчёт за день — barDay; затраты —
+     barExpense; кабинет куратора — curator. */
+
+  bar: function () {
+    var n = cartCount();
+    return (FLASH ? flash() : '') +
+      '<div class="card strong"><div class="row top">' +
+        '<div class="col"><h2>Бар Café XIII</h2>' +
+          '<span class="small">' + (DATA.bar.open
+            ? 'Открыт до 23:00. Заказ уходит на бар сразу, платите со счёта или наличными.'
+            : 'Сейчас закрыт — заказ не отправится.') + '</span></div>' +
+        '<span class="pill' + (DATA.bar.open ? ' on' : '') + '">' +
+          (DATA.bar.open ? 'открыт' : 'закрыт') + '</span>' +
+      '</div></div>' +
+      (n ? '<div class="card accent"><div class="row">' +
+        '<div class="col"><b>В заказе ' + n + ' ' + plural(n, ['позиция', 'позиции', 'позиций']) + '</b>' +
+          '<span class="small num">на ' + money(cartSum()) + ' ฿</span></div>' +
+        '<button type="button" class="btn quiet" data-go="barCart">Оформить</button>' +
+      '</div></div>' : '') +
+      DATA.bar.menu.map(function (g) {
+        return '<div class="group"><span class="label">' + esc(g.group) + '</span>' +
+          g.items.map(barRow).join('') + '</div>';
+      }).join('') +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Меню ведёт куратор бара: состав, цены и фотографии — его решение, а не правка кода. Позиции без фотографии ждут съёмки — её делают на баре.</span>' +
+      '</div>';
+  },
+
+  drink: function (id) {
+    var d = findDrink(id) || drinks()[0];
+    var n = CART[d.id] || 0;
+    return tile(d, true) +
+      '<div class="group"><h1>' + esc(d.title) + '</h1><p>' + esc(d.full || d.about) + '</p></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">Цена</span><b class="num">' + d.price + ' ฿</b></div>' +
+        '<div><span class="small">Готовится</span><b class="num">' + esc(d.mins) + ' мин</b></div>' +
+        '<div><span class="small">Фотография</span><span class="pill' + SHOT[d.shot].pill + '">' +
+          SHOT[d.shot].label + '</span></div>' +
+      '</div>' +
+      (n
+        ? '<div class="card"><div class="row"><div class="col"><b>В заказе</b>' +
+            '<span class="small num">' + n + ' × ' + d.price + ' = ' + money(n * d.price) + ' ฿</span></div>' +
+            stepper(d) + '</div></div>' +
+          '<button type="button" class="btn" data-go="barCart">Оформить заказ</button>'
+        : '<button type="button" class="btn dup-main" data-action="cart-add:' + esc(d.id) + '">Добавить в заказ</button>') +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Фотографию в меню делают из своего снимка: на баре снимают напиток, ИИ-команда собирает карточку, куратор утверждает. Чужих картинок из каталогов здесь не будет — гость должен получить то, что увидел.</span>' +
+      '</div>';
+  },
+
+  barCart: function () {
+    var list = cartList();
+    if (!list.length) {
+      return '<div class="card quiet"><span class="small">Заказ пуст.</span></div>' +
+        '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
+    }
+    var wheres = ['за стойку', 'к столу', 'с собой'];
+    var pays = ['со счёта', 'наличными'];
+    return '<div class="group"><span class="label">Состав</span>' +
+        list.map(function (x) {
+          var d = findDrink(x.id);
+          return '<div class="card"><div class="row top">' +
+            '<div class="col"><b>' + esc(x.title) + '</b>' +
+              '<span class="small num">' + x.n + ' × ' + x.price + ' = ' + money(x.n * x.price) + ' ฿</span></div>' +
+            stepper(d) + '</div></div>';
+        }).join('') +
+        '<div class="rows"><div><span>Итог</span><b class="num">' + money(cartSum()) + ' ฿</b></div></div>' +
+      '</div>' +
+      '<div class="group"><span class="label">Куда подать</span><div class="seg">' +
+        wheres.map(function (w) {
+          return '<button type="button" data-where="' + esc(w) + '"' +
+            (ORDER.where === w ? ' aria-pressed="true"' : '') + '>' + esc(w) + '</button>';
+        }).join('') + '</div></div>' +
+      '<div class="group"><span class="label">Чем платите</span><div class="seg">' +
+        pays.map(function (p) {
+          return '<button type="button" data-pay="' + esc(p) + '"' +
+            (ORDER.pay === p ? ' aria-pressed="true"' : '') + '>' + esc(p) + '</button>';
+        }).join('') + '</div>' +
+        '<span class="small">' + (ORDER.pay === 'со счёта'
+          ? 'Спишется с вашего счёта в клубе: остаток ' + money(DATA.member.balance) + ' ฿.'
+          : 'Отдадите на баре, работник внесёт в кассу при выдаче.') + '</span>' +
+      '</div>' +
+      '<button type="button" class="btn dup-main" data-action="send-order">Отправить на бар</button>' +
+      '<div class="note">' + svg(ICON.bell) +
+        '<span>Бар получит уведомление в ту же секунду. Отменить заказ можно, пока его не приняли, — дальше через работника на баре.</span>' +
+      '</div>';
+  },
+
+  barOrder: function () {
+    var o = DATA.bar.mine;
+    if (!o) {
+      return '<div class="card quiet"><span class="small">Открытого заказа нет.</span></div>' +
+        '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
+    }
+    var line = ['new', 'making', 'ready', 'served'];
+    var at = line.indexOf(o.state);
+    var steps = [
+      ['Отправлен на бар', o.at],
+      ['Бар принял', 'видно, когда работник нажмёт «Принять»'],
+      ['Готовится', 'обычно 3–5 минут'],
+      ['Готов', o.where === 'за стойку' ? 'забирайте у стойки' : 'подадут ' + o.where],
+      ['Выдан', 'заказ закрыт, строка ушла в книгу клуба']
+    ];
+    return (FLASH ? flash() : '') +
+      '<div class="card strong"><div class="row top">' +
+        '<div class="col"><h2>' + esc(o.id) + '</h2>' +
+          '<span class="small">' + esc(o.where) + ' · ' + esc(o.pay) + ' · ' + money(o.sum) + ' ฿</span></div>' +
+        '<span class="pill' + OSTATE[o.state].pill + '">' + OSTATE[o.state].label + '</span>' +
+      '</div>' +
+        '<div class="col">' + o.items.map(function (i) {
+          return '<span class="small">' + i[1] + ' × ' + esc(i[0]) + '</span>';
+        }).join('') + '</div>' +
+      '</div>' +
+      '<div class="steps">' + steps.map(function (s, i) {
+        var cls = i < at + 1 ? 'done' : (i === at + 1 ? 'now' : '');
+        return '<div class="' + cls + '"><i></i><span class="col"><b>' + esc(s[0]) + '</b>' +
+          '<span class="small">' + esc(s[1]) + '</span></span></div>';
+      }).join('') + '</div>' +
+      '<button type="button" class="btn ghost" data-go="bar">Заказать ещё</button>';
+  },
+
+  barQueue: function () {
+    var by = function (st) {
+      return DATA.bar.orders.filter(function (o) { return o.state === st; }).length;
+    };
+    var d = DATA.bar.day;
+    return (FLASH ? flash() : '') +
+      '<div class="card strong"><div class="row top">' +
+        '<div class="col"><h2>Смена открыта</h2>' +
+          '<span class="small">с 16:00 · ' + d.checks + ' ' + plural(d.checks, ['чек', 'чека', 'чеков']) +
+          ' · ' + money(d.revenue) + ' ฿</span></div>' +
+        '<button type="button" class="btn quiet" data-go="barDay">Отчёт</button>' +
+      '</div></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">Новых</span><b class="num">' + by('new') + '</b></div>' +
+        '<div><span class="small">Готовится</span><b class="num">' + by('making') + '</b></div>' +
+        '<div><span class="small">Ждут на выдаче</span><b class="num">' + by('ready') + '</b></div>' +
+      '</div>' +
+      '<div class="group"><span class="label">Заказы</span>' +
+        DATA.bar.orders.map(queueCard).join('') +
+      '</div>' +
+      '<div class="note">' + svg(ICON.bell) +
+        '<span>Каждый новый заказ бот присылает в чат бара — составом и кнопкой «Принял», чтобы не держать приложение открытым. Звук включается в настройках этого чата, а не в приложении. Пока сервера нет, заказы живут только в этой вкладке.</span>' +
+      '</div>';
+  },
+
+  barShot: function () {
+    var need = shotsNeeded();
+    var how = [
+      ['Днём у окна', 'без вспышки и без верхнего света'],
+      ['Фон однотонный', 'дерево стойки или тёмная ткань'],
+      ['Стекло протереть', 'на снимке видны все пальцы и капли'],
+      ['Три кадра', 'сверху, под углом, сбоку'],
+      ['Видео 5 секунд', 'как наливают или как тает лёд']
+    ];
+    return (FLASH ? flash() : '') +
+      '<div class="group"><h1>Как напиток попадает в меню</h1>' +
+        '<div class="steps">' +
+          '<div class="done"><i></i><span class="col"><b>Снимаете на баре</b>' +
+            '<span class="small">телефоном, по правилам ниже — три кадра и короткое видео</span></span></div>' +
+          '<div class="now"><i></i><span class="col"><b>Отправляете в клуб</b>' +
+            '<span class="small">снимок уходит ИИ-команде, она собирает карточку меню</span></span></div>' +
+          '<div><i></i><span class="col"><b>Куратор утверждает</b>' +
+            '<span class="small">после этого карточку видят гости в меню</span></span></div>' +
+        '</div>' +
+      '</div>' +
+      '<label class="btn" for="shot-file">' + svg(ICON.cam) + 'Снять напиток' +
+        '<input id="shot-file" type="file" accept="image/*,video/*" capture="environment" hidden></label>' +
+      '<div class="group"><span class="label">Как снимать</span><div class="rows">' +
+        how.map(function (h) {
+          return '<div><span>' + esc(h[0]) + '</span><span class="small">' + esc(h[1]) + '</span></div>';
+        }).join('') + '</div></div>' +
+      '<div class="group"><span class="label">Ждут фотографии · ' + need.length + '</span>' +
+        (need.length ? need.map(function (dr) {
+          return '<div class="card"><div class="row top">' + tile(dr) +
+            '<div class="col" style="flex:1 1 auto"><b>' + esc(dr.title) + '</b>' +
+              '<span class="small">' + esc(dr.about) + '</span></div>' +
+            '<span class="pill' + SHOT[dr.shot].pill + '">' + SHOT[dr.shot].label + '</span>' +
+          '</div></div>';
+        }).join('') : '<div class="card quiet"><span class="small">Все позиции с фотографиями.</span></div>') +
+      '</div>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Сервера пока нет: кнопка открывает камеру, но снимок никуда не уйдёт — экран показывает порядок работы. С сервером снимок попадает в клуб, а в меню выходит уже готовая карточка.</span>' +
+      '</div>';
+  },
+
+  barDay: function () {
+    var d = DATA.bar.day;
+    var max = d.top.reduce(function (a, t) { return Math.max(a, t[2]); }, 0);
+    return (FLASH ? flash() : '') +
+      '<div class="group"><span class="label">' + esc(d.date) + '</span><div class="rows">' +
+        '<div><span class="small">Выручка</span><b class="num">' + money(d.revenue) + ' ฿</b></div>' +
+        '<div><span class="small">Наличными</span><b class="num">' + money(d.cash) + ' ฿</b></div>' +
+        '<div><span class="small">Со счетов членов</span><b class="num">' + money(d.account) + ' ฿</b></div>' +
+        '<div><span class="small">Чеков</span><b class="num">' + d.checks + '</b></div>' +
+        '<div><span class="small">Позиций</span><b class="num">' + d.items + '</b></div>' +
+        '<div><span class="small">Средний чек</span><b class="num">' + d.avg + ' ฿</b></div>' +
+      '</div></div>' +
+      '<div class="group"><span class="label">Что заказывали</span>' +
+        d.top.map(function (t) {
+          return '<div class="card"><div class="row">' +
+            '<div class="col" style="flex:1 1 auto"><b>' + esc(t[0]) + '</b>' +
+              '<span class="small num">' + t[1] + ' ' + plural(t[1], ['штука', 'штуки', 'штук']) + '</span>' +
+              '<span class="meter"><span style="width:' + Math.round(t[2] / max * 100) + '%"></span></span></div>' +
+            '<b class="num">' + money(t[2]) + ' ฿</b>' +
+          '</div></div>';
+        }).join('') +
+      '</div>' +
+      '<div class="group"><span class="label">Расход за день</span><div class="rows">' +
+        d.spend.map(function (s) {
+          return '<div><span>' + esc(s[0]) + '<span class="small"> · ' + esc(s[1]) + '</span></span>' +
+            '<b class="num">' + money(s[2]) + ' ฿</b></div>';
+        }).join('') +
+        '<div><span>Итого расход</span><b class="num">' + money(d.spendSum) + ' ฿</b></div>' +
+      '</div>' +
+      '<span class="small">' + esc(d.loss) + '</span></div>' +
+      '<div class="rows">' +
+        '<div><span>Наличных в кассе бара</span><b class="num">' + money(d.cashBox) + ' ฿</b></div>' +
+        '<div><span class="small">получено ' + money(d.cash) + ' − выдано ' + money(d.cashOut) + '</span>' +
+          '<span class="small">сверяется при закрытии</span></div>' +
+      '</div>' +
+      '<button type="button" class="btn" data-action="close-shift">Закрыть смену</button>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Закрытая смена не правится. Ошибку исправляют отменой строки в кассе и новой записью — обе остаются видны. Отчёт уходит куратору и в книгу событий клуба.</span>' +
+      '</div>';
+  },
+
+  barExpense: function () {
+    var cats = ['закуп', 'расходники', 'зарплата', 'ремонт'];
+    var pays = ['касса клуба', 'наличные бара', 'свои'];
+    return (FLASH ? flash() : '') +
+      '<div class="group"><span class="label">Внести затрату</span>' +
+        '<div class="field"><label for="e-what">Что купили</label>' +
+          '<input id="e-what" type="text" value="' + keep('e-what') + '" placeholder="Например: молоко, 6 литров"></div>' +
+        '<div class="field"><label for="e-sum">Сколько, ฿</label>' +
+          '<input id="e-sum" type="number" inputmode="numeric" value="' + keep('e-sum') + '" placeholder="240"></div>' +
+        '<div class="group"><span class="label">Категория</span><div class="seg">' +
+          cats.map(function (c) {
+            return '<button type="button" data-exp="' + esc(c) + '"' +
+              (EXP.cat === c ? ' aria-pressed="true"' : '') + '>' + esc(c) + '</button>';
+          }).join('') + '</div></div>' +
+        '<div class="group"><span class="label">Чем платили</span><div class="seg">' +
+          pays.map(function (p) {
+            return '<button type="button" data-expay="' + esc(p) + '"' +
+              (EXP.pay === p ? ' aria-pressed="true"' : '') + '>' + esc(p) + '</button>';
+          }).join('') + '</div></div>' +
+        '<label class="btn ghost" for="bill-file">' + svg(ICON.cam) + 'Фото чека' +
+          '<input id="bill-file" type="file" accept="image/*" capture="environment" hidden></label>' +
+        '<button type="button" class="btn dup-main" data-action="add-expense">Записать затрату</button>' +
+      '</div>' +
+      '<div class="group"><span class="label">Последние затраты</span>' +
+        DATA.bar.expenses.map(function (x) {
+          return '<div class="card"><div class="row top">' +
+            '<div class="col"><b>' + esc(x.what) + '</b>' +
+              '<span class="small">' + esc(x.cat) + ' · ' + esc(x.pay) + ' · ' + esc(x.when) + '</span></div>' +
+            '<b class="num">' + money(x.sum) + ' ฿</b>' +
+          '</div></div>';
+        }).join('') +
+        '<div class="rows"><div><span>За ' + esc(DATA.bar.month.name.toLowerCase()) + '</span>' +
+          '<b class="num">' + money(DATA.bar.month.spend) + ' ฿</b></div></div>' +
+      '</div>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Затраты направления определяют чистую прибыль, а от неё клуб берёт свои 30 %. Если направление считается с вала, затраты всё равно нужны — но на долю клуба они не влияют. Способ выбран при заведении направления.</span>' +
+      '</div>';
+  },
+
+  curator: function () {
+    var m = DATA.bar.month;
+    var max = m.days.reduce(function (a, d) { return Math.max(a, d[1]); }, 0);
+    var all = drinks().length, withShot = drinks().filter(function (d) { return d.shot === 'ready'; }).length;
+    var atAi = drinks().filter(function (d) { return d.shot === 'ai'; }).length;
+    return (FLASH ? flash() : '') +
+      '<div class="card strong"><div class="row top">' +
+        '<div class="col"><h2>Бар</h2>' +
+          '<span class="small">Первое направление клуба · куратор ' + esc(DATA.bar.curator) +
+          ' · на баре ' + esc(DATA.bar.staff) + '</span></div>' +
+        '<span class="pill on">работает</span>' +
+      '</div></div>' +
+      '<div class="group"><span class="label">' + esc(m.name) + ' · ' + m.shifts + ' ' +
+        plural(m.shifts, ['смена', 'смены', 'смен']) + '</span><div class="rows">' +
+        '<div><span class="small">Выручка</span><b class="num">' + money(m.revenue) + ' ฿</b></div>' +
+        '<div><span class="small">Затраты направления</span><b class="num">' + money(m.spend) + ' ฿</b></div>' +
+        '<div><span class="small">Чистая прибыль</span><b class="num">' + money(m.net) + ' ฿</b></div>' +
+        '<div><span class="small">Клубу · 30 % от чистой</span><b class="num">' + money(m.club) + ' ฿</b></div>' +
+        '<div><span class="small">Направлению</span><b class="num">' + money(m.own) + ' ฿</b></div>' +
+        '<div><span class="small">В среднем за смену</span><b class="num">' + money(m.perShift) + ' ฿</b></div>' +
+      '</div>' +
+      '<span class="small">Способ расчёта — 30 % от чистой прибыли. По второму способу клуба, 13 % с вала, вышло бы ' +
+        money(m.gross13) + ' ฿: он разумен там, где чистую считать тяжело или незачем. Способ выбирается при заведении направления и определяет, что направление обязано показывать.</span></div>' +
+      '<div class="group"><span class="label">По дням</span>' +
+        m.days.map(function (d) {
+          return '<div class="card"><div class="row">' +
+            '<div class="col" style="flex:1 1 auto"><b class="num">' + esc(d[0]) + '</b>' +
+              '<span class="meter"><span style="width:' + Math.round(d[1] / max * 100) + '%"></span></span></div>' +
+            '<b class="num">' + money(d[1]) + ' ฿</b>' +
+          '</div></div>';
+        }).join('') +
+        '<button type="button" class="btn quiet" data-go="barDay">Отчёт за день</button>' +
+      '</div>' +
+      '<div class="group"><span class="label">Меню и фотографии</span><div class="rows">' +
+        '<div><span class="small">Позиций в меню</span><b class="num">' + all + '</b></div>' +
+        '<div><span class="small">С фотографией</span><b class="num">' + withShot + '</b></div>' +
+        '<div><span class="small">У ИИ-команды</span><b class="num">' + atAi + '</b></div>' +
+        '<div><span class="small">Нужна съёмка</span><b class="num">' + (all - withShot - atAi) + '</b></div>' +
+      '</div>' +
+        '<button type="button" class="btn quiet" data-go="barShot">Съёмка и фотографии</button>' +
+        '<button type="button" class="btn quiet" data-go="bar">Меню как у гостя</button>' +
+      '</div>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Числа собираются из кассы и книги событий клуба: каждую строку внёс человек, её можно отменить, но не исправить задним числом. Поэтому отчёт куратора и отчёт клуба сходятся по построению.</span>' +
+      '</div>';
+  },
+
   demo: function () {
     var roles = [
       ['guest', 'Гость', 'без членства: только услуги'],
       ['member', 'Член клуба', 'пропуск, афиша, записи'],
       ['organizer', 'Организатор', 'то же плюс свои мероприятия'],
       ['partner', 'Бизнес-партнёр', 'то же плюс своё направление и его отчётность'],
-      ['staff', 'Работник', 'касса: внести и отменить']
+      ['staff', 'Работник', 'касса: внести и отменить'],
+      ['bar', 'Бар · исполнитель', 'заказы, съёмка напитков, затраты, смена'],
+      ['curator', 'Куратор направления', 'отчётность бара и доля клуба']
     ];
     return '<div class="card quiet"><div class="col">' +
         '<b>Это демонстрация без сервера</b>' +
@@ -692,6 +1167,60 @@ function eventRow(e) {
   '</button>';
 }
 
+/* Плитка вместо фотографии напитка. Пока снимок не прошёл путь съёмки,
+   честнее показать цветное поле с буквой и словом «без фото», чем картинку
+   из каталога: гость закажет не то, что увидел. */
+function tile(d, big) {
+  var cls = 'tile' + (big ? ' big' : '');
+  if (d.shot === 'ready') {
+    return '<span class="' + cls + '" style="background:' + TONE[d.tone] + '" aria-hidden="true">' +
+      esc(d.title.slice(0, 1).toUpperCase()) + '</span>';
+  }
+  return '<span class="' + cls + ' empty">' +
+    (d.shot === 'none' ? 'без фото' : 'фото готовится') + '</span>';
+}
+
+function stepper(d) {
+  var n = CART[d.id] || 0;
+  return '<span class="stepper">' +
+    '<button type="button" data-action="cart-less:' + esc(d.id) + '" aria-label="Убрать одну">−</button>' +
+    '<b class="num">' + n + '</b>' +
+    '<button type="button" data-action="cart-add:' + esc(d.id) + '" aria-label="Добавить одну">+</button>' +
+  '</span>';
+}
+
+function barRow(d) {
+  var n = CART[d.id] || 0;
+  return '<div class="card"><div class="row top">' +
+    '<button type="button" class="plain drinkbtn" data-drink="' + esc(d.id) + '">' + tile(d) +
+      '<span class="col"><b>' + esc(d.title) + '</b>' +
+        '<span class="small">' + esc(d.about) + '</span>' +
+        '<b class="num">' + d.price + ' ฿</b></span>' +
+    '</button>' +
+    (n ? stepper(d)
+       : '<button type="button" class="btn quiet" data-action="cart-add:' + esc(d.id) + '">В заказ</button>') +
+  '</div></div>';
+}
+
+function queueCard(o) {
+  var st = OSTATE[o.state];
+  return '<div class="card' + (o.state === 'new' ? ' strong accent' : '') + '">' +
+    '<div class="row top">' +
+      '<div class="col"><b>' + esc(o.id) + ' · ' + esc(o.where) + '</b>' +
+        '<span class="small">' + esc(o.at) + ' · ' + esc(o.who) + ' · ' + esc(o.pay) + '</span></div>' +
+      '<span class="pill' + st.pill + '">' + st.label + '</span>' +
+    '</div>' +
+    '<div class="col">' + o.items.map(function (i) {
+      return '<span class="small"><b class="num">' + i[1] + ' ×</b> ' + esc(i[0]) + '</span>';
+    }).join('') + '</div>' +
+    '<div class="row"><b class="num">' + money(o.sum) + ' ฿</b>' +
+      (st.next
+        ? '<button type="button" class="btn quiet" data-action="order-' + st.next + ':' + esc(o.id) + '">' +
+            st.action + '</button>'
+        : '<span class="small">закрыт, строка ушла в книгу</span>') +
+    '</div></div>';
+}
+
 /* ── навигация ───────────────────────────────────────── */
 
 var TABS = {
@@ -701,12 +1230,19 @@ var TABS = {
               ['organizer', 'События', ICON.star], ['bookings', 'Записи', ICON.cal]],
   partner:   [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
               ['partner', 'Моё дело', ICON.case], ['bookings', 'Записи', ICON.cal]],
-  staff:     [['staff', 'Касса', ICON.till], ['home', 'Клуб', ICON.home]]
+  staff:     [['staff', 'Касса', ICON.till], ['home', 'Клуб', ICON.home]],
+  bar:       [['barQueue', 'Заказы', ICON.bell], ['barShot', 'Съёмка', ICON.cam],
+              ['barDay', 'День', ICON.chart], ['barExpense', 'Затраты', ICON.coin]],
+  curator:   [['curator', 'Бар', ICON.cup], ['barDay', 'День', ICON.chart],
+              ['barExpense', 'Затраты', ICON.coin], ['home', 'Клуб', ICON.home]]
 };
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно',
+  bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ',
+  barQueue: 'Заказы на баре', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
+  barExpense: 'Затраты направления', curator: 'Направление «Бар»',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга'
 };
@@ -714,12 +1250,24 @@ var TITLES = {
 /* Куда ведёт «назад» с каждого экрана. Без карты всё падало на первую
    вкладку, и из мероприятия человек улетал на главную вместо списка. */
 function homeOf() {
-  return DATA.role === 'guest' ? 'guest' : DATA.role === 'staff' ? 'staff' : 'home';
+  if (DATA.role === 'guest') return 'guest';
+  if (DATA.role === 'staff') return 'staff';
+  if (DATA.role === 'bar') return 'barQueue';
+  if (DATA.role === 'curator') return 'curator';
+  return 'home';
 }
 var BACK = {
   event: 'events', eventNew: 'organizer', eventManage: 'organizer',
-  serviceNew: 'partner', consentFull: 'consent'
+  serviceNew: 'partner', consentFull: 'consent',
+  bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
+  // съёмка открывается и с бара, и из кабинета куратора — «назад» зависит от роли
+  barShot: function () { return DATA.role === 'curator' ? 'curator' : 'barQueue'; }
 };
+function backTo() {
+  var b = BACK[current];
+  if (typeof b === 'function') b = b();
+  return b || homeOf();
+}
 
 /* Экраны без вкладок: уйти с них можно решением, а не переключением. */
 function bare() { return current === 'consent' || current === 'consentFull'; }
@@ -773,14 +1321,20 @@ function go(screen, p) {
 }
 
 document.addEventListener('click', function (ev) {
-  var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-toggle],[data-manage],[data-action]');
+  var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-toggle],[data-manage],[data-action],[data-drink],[data-where],[data-pay],[data-exp],[data-expay]');
   if (!el) return;
 
   if (el.hasAttribute('data-role')) {
     DATA.role = el.getAttribute('data-role');
-    go(DATA.role === 'staff' ? 'staff' : DATA.role === 'guest' ? 'guest' : 'home');
+    go(homeOf());
     return;
   }
+  if (el.hasAttribute('data-drink')) { go('drink', el.getAttribute('data-drink')); return; }
+  if (el.hasAttribute('data-where')) { ORDER.where = el.getAttribute('data-where'); haptic(); render(); return; }
+  if (el.hasAttribute('data-pay'))   { ORDER.pay   = el.getAttribute('data-pay');   haptic(); render(); return; }
+  // грабим введённое ДО перерисовки: иначе выбор категории стирал набранный текст
+  if (el.hasAttribute('data-exp'))   { grabForm(EXP_FIELDS); EXP.cat = el.getAttribute('data-exp');   haptic(); render(); return; }
+  if (el.hasAttribute('data-expay')) { grabForm(EXP_FIELDS); EXP.pay = el.getAttribute('data-expay'); haptic(); render(); return; }
   if (el.hasAttribute('data-kind')) {
     grabForm(EVENT_FIELDS); FORM.kind = el.getAttribute('data-kind'); haptic(); saveDraft(); render(); return;
   }
@@ -795,6 +1349,68 @@ document.addEventListener('click', function (ev) {
 });
 
 function doAction(a) {
+  /* Действия бара несут аргумент через двоеточие: cart-add:flat, order-make:A-16.
+     Разбор здесь, чтобы разметка оставалась одними атрибутами. */
+  var arg = null, c = a.indexOf(':');
+  if (c !== -1) { arg = a.slice(c + 1); a = a.slice(0, c); }
+
+    if (a === 'cart-add') {
+      CART[arg] = (CART[arg] || 0) + 1;
+      haptic(); render(); return;
+    }
+    if (a === 'cart-less') {
+      CART[arg] = (CART[arg] || 0) - 1;
+      if (CART[arg] <= 0) delete CART[arg];
+      haptic(); render(); return;
+    }
+    if (a === 'send-order') {
+      var olist = cartList();
+      if (!olist.length) {
+        FLASH = { text: 'Заказ пуст', note: 'Добавьте что-нибудь в меню.' };
+        haptic('warn'); render(); return;
+      }
+      ORDERSEQ += 1;
+      var o = { id: 'A-' + (16 + ORDERSEQ), who: DATA.member.name, at: nowHM(),
+                where: ORDER.where, pay: ORDER.pay, sum: cartSum(), state: 'new',
+                items: olist.map(function (x) { return [x.title, x.n]; }) };
+      DATA.bar.orders.unshift(o);
+      DATA.bar.mine = o;
+      CART = {};
+      haptic('ok');
+      FLASH = { text: 'Заказ ' + o.id + ' отправлен на бар',
+                note: 'Сервера нет: заказ виден только в этой вкладке. В рабочем приложении бар получает уведомление в ту же секунду.' };
+      go('barOrder');
+      return;
+    }
+    if (a === 'order-make' || a === 'order-ready' || a === 'order-serve') {
+      var ord = orderById(arg);
+      if (ord) {
+        ord.state = a === 'order-make' ? 'making' : a === 'order-ready' ? 'ready' : 'served';
+        if (DATA.bar.mine && DATA.bar.mine.id === ord.id) DATA.bar.mine.state = ord.state;
+        haptic('ok');
+        FLASH = { text: ord.id + ' · ' + OSTATE[ord.state].label,
+                  note: 'Гость видит это у себя в заказе. Пока сервера нет — только в этой вкладке.' };
+      }
+      render(); return;
+    }
+    if (a === 'close-shift') {
+      haptic('ok');
+      FLASH = { text: 'Смена закрыта',
+                note: 'Правок в закрытой смене не бывает: ошибка исправляется отменой строки и новой записью. Сервера нет — отчёт никуда не ушёл.' };
+      render(); return;
+    }
+    if (a === 'add-expense') {
+      var ew = val('e-what') || 'Без названия';
+      var es = parseInt(val('e-sum'), 10) || 0;
+      DATA.bar.expenses.unshift({ what: ew, cat: EXP.cat, pay: EXP.pay, sum: es,
+                                  when: 'сегодня · ' + DATA.member.name });
+      DATA.bar.month.spend += es;
+      EXP_FIELDS.forEach(function (f) { delete FORM.v[f]; });
+      haptic('ok');
+      FLASH = 'Затрата записана: ' + ew + ' · ' + money(es) + ' ฿';
+      render(); return;
+    }
+
   {
     if (a === 'create-event') {
       var title = (val('f-title') || 'Без названия');
@@ -850,8 +1466,21 @@ function doAction(a) {
   }
 }
 
+/* Съёмка напитка и фото чека. Отправить снимок пока некуда — сервера нет;
+   честный ответ лучше вида работающей отправки. */
+document.addEventListener('change', function (ev) {
+  var t = ev.target;
+  if (!t || (t.id !== 'shot-file' && t.id !== 'bill-file')) return;
+  var f = t.files && t.files[0];
+  if (!f) return;
+  haptic('ok');
+  FLASH = { text: (t.id === 'shot-file' ? 'Снято: ' : 'Чек: ') + f.name,
+            note: 'Сервера нет, отправить некуда — снимок остался в телефоне. С сервером он уйдёт в клуб: по съёмке ИИ-команда собирает карточку меню, по чеку — подтверждение затраты.' };
+  render();
+});
+
 document.getElementById('back').addEventListener('click', function () {
-  go(BACK[current] || homeOf());
+  go(backTo());
 });
 document.getElementById('demo-btn').addEventListener('click', function () { go('demo'); });
 
@@ -945,6 +1574,9 @@ function mainFor() {
   if (bare()) return { text: 'Принимаю', a: 'accept-consent' };
   if (current === 'eventNew') return { text: 'Опубликовать в афише', a: 'create-event' };
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
+  if (current === 'barCart') return { text: 'Отправить на бар', a: 'send-order' };
+  if (current === 'barExpense') return { text: 'Записать затрату', a: 'add-expense' };
+  if (current === 'drink' && !CART[param]) return { text: 'Добавить в заказ', a: 'cart-add:' + param };
   if (current === 'event') {
     var e = byId(param) || DATA.events[0];
     return { text: e && e.kind === 'paid' ? 'Оплатить ' + e.price + ' ฿ и записаться' : 'Записаться', a: 'book' };
@@ -963,7 +1595,7 @@ function tgChrome() {
     document.getElementById('back').hidden = true;
     if (backHandler) { tg.BackButton.offClick(backHandler); backHandler = null; }
     if (BACK[current] || !(TABS[DATA.role] || []).some(function (t) { return t[0] === current; })) {
-      backHandler = function () { go(BACK[current] || homeOf()); };
+      backHandler = function () { go(backTo()); };
       tg.BackButton.onClick(backHandler);
       tg.BackButton.show();
     } else {
