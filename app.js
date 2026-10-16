@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v5 · 15.10.2026';
+var VERSION = 'v6 · 16.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -86,6 +86,57 @@ var DEMAND = [
 /* Состояние форм. Сервера нет: созданное живёт до перезагрузки вкладки. */
 var FORM = { kind: 'paid', filmed: false, v: {} };
 var FLASH = null;
+
+/* ── согласие на обработку данных ─────────────────────
+   В рабочем приложении факт согласия хранит сервер (`consent_version`,
+   `consent_at`), и версия сверяется с серверной: текст изменился по сути —
+   спрашиваем заново, молча подменять согласие нельзя. Здесь, без сервера, —
+   метка в localStorage, только чтобы экран не возникал на каждой
+   перезагрузке. Хранилище может быть недоступно (приватное окно, закрытые
+   данные сайта) и бросает прямо на обращении, поэтому каждое в try/catch:
+   недоступное хранилище означает «согласия нет», а не поломку страницы. */
+var CONSENT_VERSION = '0.1';
+var CONSENT_KEY = 'cafe13.consent';
+
+function consentGiven() {
+  try { return localStorage.getItem(CONSENT_KEY) === CONSENT_VERSION; }
+  catch (e) { return false; }
+}
+function giveConsent() {
+  try { localStorage.setItem(CONSENT_KEY, CONSENT_VERSION); } catch (e) { /* не сохранилось — спросим снова */ }
+}
+function dropConsent() {
+  try { localStorage.removeItem(CONSENT_KEY); } catch (e) { /* нечего убирать */ }
+}
+
+/* Полный текст — `_docs/consent-text.md` в репозитории проекта. Здесь он
+   разделами, чтобы читался с телефона, а не стеной. */
+var CONSENT_FULL = [
+  ['Кто обрабатывает данные',
+   ['Клуб Café XIII, Тонгсала, Ко Пханган, Таиланд. Ответственный за данные и связь с ним будут названы здесь, когда клуб оформит юрлицо.']],
+  ['Что клуб сохраняет',
+   ['Из Telegram, сразу при первом входе: номер вашего аккаунта, имя и фамилию, имя пользователя, язык, фотографию профиля, если она открыта.',
+    'Вы сообщаете сами: номер телефона — только если нажали «Поделиться номером»; имя, под которым вас называть в клубе.',
+    'Клуб записывает по ходу: номер члена клуба, уровень членства и срок, ваши роли, записи на мероприятия и отмены, время, когда ваш пропуск отсканировали у входа, движение денег по счёту и остаток.']],
+  ['Зачем',
+   ['Опознать вас у двери. Вести членство и напомнить, когда оно заканчивается. Держать за вами место на мероприятии. Вести ваш счёт, чтобы вы и клуб видели одно и то же.',
+    'Клубные итоги считаются обезличенными числами, а не вашими записями поимённо. Данные не используются для рекламы, не продаются и не передаются наружу — кроме требования тайского закона.']],
+  ['Кто внутри клуба это видит',
+   ['Работник на входе и в кассе — имя, фотографию, номер, действует ли членство, остаток в момент операции.',
+    'Организатор — имена записавшихся на его мероприятие. Бизнес-партнёр — имена записавшихся на его услугу.',
+    'Администратор и глава клуба — все записи, по необходимости учёта. Другие члены клуба ваших данных не видят.']],
+  ['Сколько хранится',
+   ['Пока вы член клуба и год после окончания — чтобы вернуться, не заводя всё заново.',
+    'Записи о деньгах — дольше, по требованиям учёта; потом в книге остаётся сумма и дата без вашего имени.']],
+  ['Ваши права',
+   ['Посмотреть всё, что о вас записано. Исправить неверное. Забрать копию файлом.',
+    'Удалить себя: клуб удалит имя, фотографию, телефон и ваши записи. В книге денег останутся обезличенные суммы — без них не сходится бухгалтерия клуба.',
+    'Отозвать согласие. Тогда приложение перестанет вас узнавать, но членства вы не теряете: ваш учёт работник будет вести вручную.',
+    'Срок исполнения просьбы — до 30 дней.']],
+  ['Как согласие фиксируется',
+   ['Клуб сохранит дату, время и номер версии текста, который вы видели. Если текст изменится по сути, клуб покажет новый и спросит снова.',
+    'Версия этого текста: черновик 0.1 от 16 октября 2026 года.']]
+];
 
 var KIND = {
   paid:     { label: function (e) { return e.price + ' ฿'; }, pill: 'gold' },
@@ -541,6 +592,41 @@ var SCREENS = {
       '</div>';
   },
 
+  /* Первый экран, пока согласия нет. Вкладки и «назад» на нём скрыты: уйти
+     отсюда можно только решением, иначе согласие становится формальностью,
+     которую проскакивают. Отказ при этом не наказывается — об этом прямо
+     сказано внизу. */
+  consent: function () {
+    return '<div class="group">' +
+        '<h1>Клуб запомнит вас</h1>' +
+        '<p>Чтобы вести членство, записи на мероприятия и ваш счёт, клуб сохранит имя из Telegram, номер члена клуба и всё, что вы сделаете в приложении: записи, посещения, движение денег по счёту.</p>' +
+      '</div>' +
+      '<div class="rows">' +
+        '<div><span>Данные остаются внутри клуба</span><span class="pill on">не передаём</span></div>' +
+        '<div><span>Реклама и продажа данных</span><span class="pill">нет</span></div>' +
+        '<div><span>Посмотреть и удалить о себе</span><span class="pill gold">в любой момент</span></div>' +
+      '</div>' +
+      '<button type="button" class="btn dup-main" data-action="accept-consent">Принимаю</button>' +
+      '<button type="button" class="btn ghost" data-go="consentFull">Подробно</button>' +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Не согласны — просто не пользуйтесь приложением: членства вы не теряете, ваш учёт работник будет вести вручную.</span>' +
+      '</div>';
+  },
+
+  consentFull: function () {
+    return '<div class="group">' +
+        '<h1>Как клуб хранит данные</h1>' +
+        '<p>Черновик. Текст написан до проверки юристом — перед тем как открыть клуб для людей со стороны, он будет уточнён.</p>' +
+      '</div>' +
+      CONSENT_FULL.map(function (sec) {
+        return '<div class="card"><div class="col">' +
+          '<h2>' + esc(sec[0]) + '</h2>' +
+          sec[1].map(function (t) { return '<p class="small">' + esc(t) + '</p>'; }).join('') +
+        '</div></div>';
+      }).join('') +
+      '<button type="button" class="btn dup-main" data-action="accept-consent">Принимаю</button>';
+  },
+
   demo: function () {
     var roles = [
       ['guest', 'Гость', 'без членства: только услуги'],
@@ -565,6 +651,10 @@ var SCREENS = {
       '</div>' +
       '<div class="note">' + svg(ICON.info) +
         '<span>В рабочем приложении роль придёт с сервера: он проверит подпись Telegram и ответит, кто вы. Подменить её из браузера будет нельзя.</span>' +
+      '</div>' +
+      '<div class="group"><span class="label">Согласие на данные</span>' +
+        '<button type="button" class="btn quiet" data-action="reset-consent">Показать экран согласия заново</button>' +
+        '<span class="small">Согласие спрашивается один раз. Кнопка стирает отметку в этом браузере, чтобы экран можно было посмотреть ещё раз.</span>' +
       '</div>';
   }
 };
@@ -616,6 +706,7 @@ var TABS = {
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
+  consentFull: 'Подробно',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга'
 };
@@ -627,8 +718,11 @@ function homeOf() {
 }
 var BACK = {
   event: 'events', eventNew: 'organizer', eventManage: 'organizer',
-  serviceNew: 'partner'
+  serviceNew: 'partner', consentFull: 'consent'
 };
+
+/* Экраны без вкладок: уйти с них можно решением, а не переключением. */
+function bare() { return current === 'consent' || current === 'consentFull'; }
 
 var current = 'home';
 var param = null;
@@ -638,10 +732,10 @@ function render() {
   view.innerHTML = SCREENS[current](param);
 
   var root = (TABS[DATA.role] || []).some(function (t) { return t[0] === current; });
-  document.getElementById('back').hidden = root;
+  document.getElementById('back').hidden = root || current === 'consent';
 
   var title = document.getElementById('title');
-  if (current === 'home' || current === 'guest') {
+  if (current === 'home' || current === 'guest' || current === 'consent') {
     title.textContent = 'Café XIII';
     title.className = 'wordmark';
   } else {
@@ -650,7 +744,7 @@ function render() {
   }
 
   var tabs = document.getElementById('tabs');
-  var list = TABS[DATA.role] || [];
+  var list = bare() ? [] : (TABS[DATA.role] || []);
   tabs.hidden = !list.length;
   document.body.classList.toggle('no-tabs', !list.length);
   tabs.innerHTML = list.map(function (t) {
@@ -739,6 +833,16 @@ function doAction(a) {
       go('partner');
       return;
     }
+
+    if (a === 'accept-consent') {
+      giveConsent();
+      haptic('ok');
+      FLASH = { text: 'Согласие принято',
+                note: 'Сервера нет, поэтому отметка хранится только в этом браузере. В рабочем приложении её хранит клуб — вместе с датой и версией текста.' };
+      go(homeOf());
+      return;
+    }
+    if (a === 'reset-consent') { dropConsent(); go('consent'); return; }
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'phone') { askPhone(); return; }
@@ -838,6 +942,7 @@ function dropDraft() {
 
 /* Главная кнопка внизу — там, где у экрана есть одно главное действие. */
 function mainFor() {
+  if (bare()) return { text: 'Принимаю', a: 'accept-consent' };
   if (current === 'eventNew') return { text: 'Опубликовать в афише', a: 'create-event' };
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
   if (current === 'event') {
@@ -901,4 +1006,4 @@ if (tg) {
   applyTheme();
 }
 
-go(DATA.role === 'guest' ? 'guest' : 'home');
+go(!consentGiven() ? 'consent' : DATA.role === 'guest' ? 'guest' : 'home');
