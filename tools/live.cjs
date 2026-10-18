@@ -764,6 +764,13 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
   function diffShape(real, stub, path, out) {
     if (Array.isArray(real)) {
       if (!Array.isArray(stub)) { out.push(path + ': в ответе список'); return out; }
+      // Пустой список в снимке — форма элемента ни с чем не сверена. Молча
+      // пропустить значит потерять проверку при пересъёмке; исключение —
+      // только явное, с причиной (UNVERIFIED), и оно печатается.
+      if (!real.length && stub.length) {
+        if (UNVERIFIED[path]) notes.push(path + ': не сверено — ' + UNVERIFIED[path]);
+        else out.push(path + ': в снимке пустой список, форма элемента не сверена');
+      }
       if (real.length && stub.length) diffShape(real[0], stub[0], path + '[]', out);
       return out;
     }
@@ -778,8 +785,12 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     }
     return out;
   }
+  const notes = [];
+  const UNVERIFIED = {
+    'me-member.roles': 'у вымышленного члена в снимках cafe13-api ролей нет; попросить координатора дать ему роль'
+  };
   const STUBS = {
-    'me-owner': OWNER, 'pass-owner': PASS, 'directions-guest': JSON.parse(DIR(true).body),
+    'me-member': OWNER, 'pass-member': PASS, 'directions-guest': JSON.parse(DIR(true).body),
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
     'order-state-worker': { id: 3, number: '261018-03', state: 'making' }
   };
@@ -796,6 +807,7 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
   if ('share_club' in row0('directions-guest') || !('share_club' in row0('directions-curator'))) bad.push('shape: доли направления видны не тем');
 
   await b.close();
+  if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
   console.log('зелёное: ' + (CASES.length + 61) + ' случаев');
 })();

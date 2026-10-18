@@ -26,7 +26,7 @@
   ],
   "status": 200
  },
- "me-owner": {
+ "me-member": {
   "request": "GET /me",
   "shape": {
    "balance": null,
@@ -48,12 +48,7 @@
     "starts_at": null
    },
    "membership_active": null,
-   "roles": [
-    {
-     "direction_id": null,
-     "role": null
-    }
-   ]
+   "roles": []
   },
   "status": 200
  },
@@ -202,7 +197,7 @@
   ],
   "status": 200
  },
- "pass-owner": {
+ "pass-member": {
   "request": "GET /pass",
   "shape": {
    "first_name": null,
