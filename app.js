@@ -177,7 +177,8 @@ var OSTATE = {
   new:    { label: 'новый',     pill: ' gold', next: 'make',  action: 'Принять' },
   making: { label: 'готовится', pill: ' warm', next: 'ready', action: 'Готово' },
   ready:  { label: 'готов',     pill: ' on',   next: 'serve', action: 'Выдан' },
-  served: { label: 'выдан',     pill: '',      next: null,    action: '' }
+  served: { label: 'выдан',     pill: '',      next: null,    action: '' },
+  cancelled: { label: 'отменён', pill: '',      next: null,    action: '' }
 };
 
 /* Корзина и выбор в формах бара. Как и всё остальное без сервера — живёт
@@ -286,6 +287,7 @@ function untilText(m) {
    показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
+              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -402,6 +404,191 @@ function passCard(p) {
     '</div>';
 }
 
+/* ── бар на сервере ────────────────────────────────────
+   Главный путь гостя — «Купить»: одно нажатие создаёт заказ на одну позицию,
+   со счёта, за стойку. Корзина остаётся для нескольких позиций, но
+   второстепенна. Решение владельца: списание при СОЗДАНИИ заказа, поэтому
+   гостю, которому не хватает, кнопка ведёт к пополнению, а меню он видит
+   целиком. Сумму считает сервер, клиент шлёт только позиции. */
+
+/* Направление «Бар» берётся по названию из GET /directions, а не числом в
+   коде: id назначает база, и после переноса константа указала бы на чужое
+   направление — меню пришло бы пустым и выглядело бы честным «пусто».
+   Открыт бар или нет, сервер считает по открытой смене. */
+var BAR = null;            // { id, open } после /directions
+
+function fromDirections(d) {
+  if (!Array.isArray(d)) return undefined;
+  for (var i = 0; i < d.length; i++) {
+    var x = d[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' ||
+        typeof x.is_active !== 'boolean' || typeof x.is_open !== 'boolean') return undefined;
+  }
+  var b = d.filter(function (x) { return x.title === 'Бар' && x.is_active; });
+  return b.length === 1 ? { id: b[0].id, open: b[0].is_open } : null;   // ни одного или два — не угадываем
+}
+
+var MENU_STATE = '';       // '' — не грузили, 'loading', 'ok', иначе текст отказа
+var BUSY = false;          // заказ в пути: второе нажатие не создаёт второй заказ
+var POLL = null;
+
+function num(v) {
+  return typeof v === 'number' ? v
+       : typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN;
+}
+
+/* Ответ /bar/menu → группы в том виде, что рисует экран. Одна битая
+   позиция — отказ целиком: меню с пропавшей строкой выглядит полным. */
+function fromMenu(d) {
+  if (!Array.isArray(d)) return null;
+  var groups = [], by = {};
+  for (var i = 0; i < d.length; i++) {
+    var p = d[i];
+    if (!p || typeof p.id !== 'number' || typeof p.title !== 'string' || !p.title ||
+        typeof p.group !== 'string' || !(num(p.price) >= 0)) return null;
+    if (!by[p.group]) { by[p.group] = { group: p.group, items: [] }; groups.push(by[p.group]); }
+    by[p.group].items.push({
+      id: String(p.id), pid: p.id, title: p.title, about: p.about || '', full: p.full_text || '',
+      price: num(p.price), mins: p.mins ? String(p.mins) : '', photo: !!p.photo_file_id, shot: 'none'
+    });
+  }
+  return groups;
+}
+
+function failText(r) {
+  return r.status === 0 ? 'Сервер не ответил.'
+       : r.status === 200 ? 'Ответ сервера не разобран.'
+       : 'Сервер ответил кодом ' + r.status + '.';
+}
+
+function loadMenu() {
+  MENU_STATE = 'loading';
+  api('GET', '/directions').then(function (r) {
+    var b = r.status === 200 ? fromDirections(r.data) : undefined;
+    if (!b) {
+      BAR = null;
+      DATA.bar.menu = [];
+      MENU_STATE = b === null ? 'На сервере не нашлось направления «Бар».' : failText(r);
+      if (current === 'bar' || current === 'drink') render();
+      return;
+    }
+    BAR = b;
+    loadBarMenu();
+  });
+}
+
+function loadBarMenu() {
+  api('GET', '/bar/menu?direction_id=' + BAR.id).then(function (r) {
+    var m = r.status === 200 ? fromMenu(r.data) : null;
+    if (m) { DATA.bar.menu = m; MENU_STATE = 'ok'; }
+    else { DATA.bar.menu = []; MENU_STATE = failText(r); }
+    if (current === 'bar' || current === 'drink') render();
+  });
+}
+
+function hm(iso) {
+  var d = new Date(iso);
+  return isNaN(d.getTime()) ? '' :
+    d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
+}
+
+/* Заказ с сервера → то, что рисует экран заказа. Состав приходит либо из
+   ответа /bar/orders (items), либо из того, что гость сам нажал. */
+function fromOrder(d, items) {
+  if (!d || typeof d.id !== 'number' || typeof d.number !== 'string' || !OSTATE[d.state] ||
+      !(num(d.sum) >= 0)) return null;
+  var list = items || (Array.isArray(d.items) ? d.items.map(function (i) { return [i.title, i.qty]; }) : null);
+  if (!list) return null;
+  return { id: d.number, oid: d.id, at: hm(d.created_at), where: d.place,
+           pay: d.pay_method === 'cash' ? 'наличными' : 'со счёта',
+           sum: num(d.sum), state: d.state, items: list };
+}
+
+function placeOrder(items, place, pay) {
+  if (BUSY) return;
+  if (!BAR || !BAR.open) {
+    FLASH = { text: 'Бар закрыт', note: 'Смена не открыта — заказ не отправлен.' };
+    haptic('warn'); render(); return;
+  }
+  BUSY = true;
+  render();
+  api('POST', '/bar/orders', {
+    direction_id: BAR.id, place: place, pay_method: pay,
+    items: items.map(function (x) { return { product_id: x.pid, qty: x.n }; })
+  }).then(function (r) {
+    BUSY = false;
+    var o = r.status === 201 ? fromOrder(r.data, items.map(function (x) { return [x.title, x.n]; })) : null;
+    if (o) {
+      DATA.bar.mine = o;
+      CART = {};
+      haptic('ok');
+      FLASH = { text: 'Заказ ' + o.id + ' отправлен на бар', note: '' };
+      refreshMe();
+      go('barOrder');
+      return;
+    }
+    haptic('warn');
+    var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+    if (r.status === 409 && /^на счёте/.test(detail)) {
+      FLASH = { text: 'На счёте не хватает', note: detail.replace(/^на счёте/, 'На счёте') + ' ฿.' };
+      refreshMe();
+      go('topup');
+      return;
+    }
+    if (r.status === 0) {
+      // Ответ мог потеряться ПОСЛЕ того, как заказ создан: повтор вслепую — второй заказ.
+      FLASH = { text: 'Связь оборвалась', note: 'Неизвестно, дошёл ли заказ. Ниже — то, что знает сервер; прежде чем заказывать снова, проверьте.' };
+      DATA.bar.mine = null;
+      go('barOrder');
+      return;
+    }
+    FLASH = { text: 'Заказ не отправлен',
+              note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : 'Сервер ответил кодом ' + r.status + '.' };
+    if (r.status === 409) loadMenu();
+    render();
+  });
+}
+
+function buy(id) {
+  var d = findDrink(id);
+  if (!d) return;
+  placeOrder([{ pid: d.pid, title: d.title, n: 1 }], 'за стойку', 'account');
+}
+
+/* Состояние заказа гость видит у себя: пока заказ не выдан, раз в 8 секунд
+   спрашиваем сервер. Уходит с экрана — опрос прекращается. */
+var POLL_GEN = 0;
+function pollMine() {
+  if (POLL) { clearTimeout(POLL); POLL = null; }
+  if (!LIVE || current !== 'barOrder' || !BAR) return;
+  var gen = ++POLL_GEN;              // запрос старой цепочки, вернувшийся позже, молчит
+  api('GET', '/bar/orders?direction_id=' + BAR.id).then(function (r) {
+    if (current !== 'barOrder' || gen !== POLL_GEN) return;
+    if (r.status === 200 && Array.isArray(r.data)) {
+      var mine = DATA.bar.mine;
+      var row = mine ? r.data.filter(function (x) { return x && x.id === mine.oid; })[0]
+                     : r.data.filter(function (x) { return x && x.state !== 'served' && x.state !== 'cancelled'; })[0];
+      var o = row ? fromOrder(row) : null;
+      if (o) DATA.bar.mine = o;
+      MINE_FAIL = '';
+    } else {
+      MINE_FAIL = r.status === 0 ? 'Сервер не ответил — состояние может быть устаревшим.'
+                : 'Сервер ответил кодом ' + r.status + ' — состояние может быть устаревшим.';
+    }
+    render();
+    var st = DATA.bar.mine && DATA.bar.mine.state;
+    if (st !== 'served' && st !== 'cancelled') POLL = setTimeout(pollMine, 8000);
+  });
+}
+var MINE_FAIL = '';
+
+function refreshMe() {
+  api('GET', '/me').then(function (r) {
+    var me = r.status === 200 ? fromMe(r.data) : null;
+    if (me) { DATA.member.balance = me.member.balance; if (current === 'bar' || current === 'topup') render(); }
+  });
+}
+
 function boot() {
   if (!API_ON || !inTelegram() || !tg.initData) { go(startScreen()); return; }
   go('loading');
@@ -442,7 +629,7 @@ function findDrink(id) {
 }
 function cartList() {
   return drinks().filter(function (d) { return CART[d.id]; }).map(function (d) {
-    return { id: d.id, title: d.title, price: d.price, n: CART[d.id] };
+    return { id: d.id, pid: d.pid, title: d.title, price: d.price, n: CART[d.id] };
   });
 }
 function cartCount() { return cartList().reduce(function (a, x) { return a + x.n; }, 0); }
@@ -473,6 +660,10 @@ var DEMAND = [
 /* Состояние форм. Сервера нет: созданное живёт до перезагрузки вкладки. */
 var FORM = { kind: 'paid', filmed: false, v: {} };
 var FLASH = null;
+/* Сообщение живёт до следующего перехода, а не до первой отрисовки: в живом
+   режиме ответ сервера перерисовывает экран, и «Заказ отправлен» исчезал
+   через долю секунды после того, как появился. */
+var FLASH_SHOWN = false;
 
 /* ── согласие на обработку данных ─────────────────────
    В рабочем приложении факт согласия хранит сервер (`consent_version`,
@@ -650,6 +841,14 @@ var SCREENS = {
   },
 
   guest: function () {
+    if (LIVE) {
+      return '<div class="group"><span class="label">Бар клуба</span>' +
+          '<button type="button" class="listitem accent" data-go="bar">' +
+            '<span class="grow"><b>Бар Café XIII</b><span class="small">Кофе, чай, авторские · заказ из приложения</span></span>' +
+            svg(ICON.chev, 'chev') +
+          '</button>' +
+        '</div>' + notWired('Услуги острова');
+    }
     return '' +
       '<div class="group"><span class="label">Бар клуба</span>' +
         '<button type="button" class="listitem accent" data-go="bar">' +
@@ -1048,6 +1247,34 @@ var SCREENS = {
 
   bar: function () {
     var n = cartCount();
+    if (LIVE) {
+      var body = MENU_STATE === 'loading' || MENU_STATE === ''
+        ? '<div class="card quiet"><span class="small">Загружаем меню…</span></div>'
+        : MENU_STATE !== 'ok'
+        ? '<div class="card strong"><h2>Меню не загрузилось</h2><p>' + esc(MENU_STATE) + '</p>' +
+            '<button type="button" class="btn" data-action="retry-menu">Попробовать снова</button></div>'
+        : !DATA.bar.menu.length
+        ? '<div class="card quiet"><span class="small">В меню пока ни одной позиции — его заводит куратор бара.</span></div>'
+        : DATA.bar.menu.map(function (g) {
+            return '<div class="group"><span class="label">' + esc(g.group) + '</span>' +
+              g.items.map(barRow).join('') + '</div>';
+          }).join('');
+      return (FLASH ? flash() : '') +
+        '<div class="card strong"><div class="row top">' +
+          '<div class="col"><h2>Бар Café XIII</h2>' +
+            '<span class="small">' + (BAR && !BAR.open
+              ? 'Сейчас закрыт: смена не открыта, заказ не отправится. Меню видно и так.'
+              : '«Купить» — заказ на одну позицию со счёта, подадут за стойку. Несколько позиций или наличные — через «в заказ».') + '</span></div>' +
+          (BAR ? '<span class="pill' + (BAR.open ? ' on' : '') + '">' + (BAR.open ? 'открыт' : 'закрыт') + '</span>' : '') +
+        '</div>' +
+        '<div class="row"><span class="small">На счёте</span><b class="num">' + money(DATA.member.balance) + ' ฿</b></div></div>' +
+        (n ? '<div class="card accent"><div class="row">' +
+          '<div class="col"><b>В заказе ' + n + ' ' + plural(n, ['позиция', 'позиции', 'позиций']) + '</b>' +
+            '<span class="small num">на ' + money(cartSum()) + ' ฿</span></div>' +
+          '<button type="button" class="btn quiet" data-go="barCart">Оформить</button>' +
+        '</div></div>' : '') +
+        body;
+    }
     return (FLASH ? flash() : '') +
       '<div class="card strong"><div class="row top">' +
         '<div class="col"><h2>Бар Café XIII</h2>' +
@@ -1073,7 +1300,24 @@ var SCREENS = {
 
   drink: function (id) {
     var d = findDrink(id) || drinks()[0];
+    if (LIVE && !d) return '<div class="card quiet"><span class="small">Такой позиции в меню нет.</span></div>' +
+      '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
     var n = CART[d.id] || 0;
+    if (LIVE) {
+      return (FLASH ? flash() : '') + tile(d, true) +
+        '<div class="group"><h1>' + esc(d.title) + '</h1><p>' + esc(d.full || d.about) + '</p></div>' +
+        '<div class="rows">' +
+          '<div><span class="small">Цена</span><b class="num">' + money(d.price) + ' ฿</b></div>' +
+          (d.mins ? '<div><span class="small">Готовится</span><b class="num">' + esc(d.mins) + ' мин</b></div>' : '') +
+          '<div><span class="small">На счёте</span><b class="num">' + money(DATA.member.balance) + ' ฿</b></div>' +
+        '</div>' +
+        buyBtn(d, true) +
+        (n ? '<div class="card"><div class="row"><div class="col"><b>В заказе</b>' +
+              '<span class="small num">' + n + ' × ' + money(d.price) + ' = ' + money(n * d.price) + ' ฿</span></div>' +
+              stepper(d) + '</div></div>' +
+            '<button type="button" class="btn ghost" data-go="barCart">Оформить заказ</button>'
+          : '<button type="button" class="btn ghost" data-action="cart-add:' + esc(d.id) + '">В заказ</button>');
+    }
     return tile(d, true) +
       '<div class="group"><h1>' + esc(d.title) + '</h1><p>' + esc(d.full || d.about) + '</p></div>' +
       '<div class="rows">' +
@@ -1133,6 +1377,18 @@ var SCREENS = {
 
   barOrder: function () {
     var o = DATA.bar.mine;
+    if (LIVE && !o) {
+      return (FLASH ? flash() : '') +
+        (MINE_FAIL ? '<div class="card quiet"><span class="small">' + esc(MINE_FAIL) + '</span></div>'
+                   : '<div class="card quiet"><span class="small">Открытого заказа на сервере нет.</span></div>') +
+        '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
+    }
+    if (LIVE && o.state === 'cancelled') {
+      return (FLASH ? flash() : '') +
+        '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(o.id) + '</h2>' +
+          '<span class="small">Заказ отменён.</span></div><span class="pill">отменён</span></div></div>' +
+        '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
+    }
     if (!o) {
       return '<div class="card quiet"><span class="small">Открытого заказа нет.</span></div>' +
         '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
@@ -1161,7 +1417,18 @@ var SCREENS = {
         return '<div class="' + cls + '"><i></i><span class="col"><b>' + esc(s[0]) + '</b>' +
           '<span class="small">' + esc(s[1]) + '</span></span></div>';
       }).join('') + '</div>' +
+      (LIVE && MINE_FAIL ? '<div class="card quiet"><span class="small">' + esc(MINE_FAIL) + '</span></div>' : '') +
       '<button type="button" class="btn ghost" data-go="bar">Заказать ещё</button>';
+  },
+
+  /* Пополнения в приложении нет: деньги принимает касса клуба. Экран честно
+     говорит, где пополнить, а не показывает выключенную кнопку без причины. */
+  topup: function () {
+    return (FLASH ? flash() : '') +
+      '<div class="card strong"><span class="label">На счёте</span>' +
+        '<span class="big num">' + money(DATA.member.balance) + ' ฿</span>' +
+        '<p>Счёт пополняется в кассе клуба — наличными или картой. Деньги появятся здесь сразу, как работник их внесёт.</p></div>' +
+      '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>';
   },
 
   barQueue: function () {
@@ -1457,7 +1724,7 @@ function rolePanel() {
    что-то сохраняет, и писать «сохранено» под результатом сканирования —
    значит утверждать неверное. */
 function flash() {
-  var t = FLASH; FLASH = null;
+  var t = FLASH; FLASH_SHOWN = true;
   var text = typeof t === 'string' ? t : t.text;
   var note = typeof t === 'string'
     ? 'Сохранено только в этой вкладке: сервера пока нет, при перезагрузке исчезнет.'
@@ -1487,8 +1754,10 @@ function tile(d, big) {
     return '<span class="' + cls + '" style="background:' + TONE[d.tone] + '" aria-hidden="true">' +
       esc(d.title.slice(0, 1).toUpperCase()) + '</span>';
   }
+  // В живом меню photo — это файл в Telegram: показать его браузеру нечем, и
+  // писать «без фото», когда фото есть, было бы неправдой.
   return '<span class="' + cls + ' empty">' +
-    (d.shot === 'none' ? 'без фото' : 'фото готовится') + '</span>';
+    (d.photo ? 'фото не показано' : d.shot === 'none' ? 'без фото' : 'фото готовится') + '</span>';
 }
 
 function stepper(d) {
@@ -1500,8 +1769,34 @@ function stepper(d) {
   '</span>';
 }
 
+/* Главная кнопка позиции. Не хватает на счёте — ведёт к пополнению и говорит,
+   сколько не хватает; заказ в пути — ждёт, второго не создаёт. */
+function buyBtn(d, wide) {
+  var cls = 'btn' + (wide ? '' : ' mini');
+  if (BUSY) return '<button type="button" class="' + cls + '" disabled>Отправляем…</button>';
+  if (!BAR || !BAR.open) return '<button type="button" class="' + cls + '" disabled>Бар закрыт</button>';
+  if (DATA.member.balance < d.price) {
+    return '<button type="button" class="' + cls + ' quiet" data-go="topup">Не хватает ' +
+      money(d.price - DATA.member.balance) + ' ฿</button>';
+  }
+  return '<button type="button" class="' + cls + '" data-action="buy:' + esc(d.id) + '">Купить' +
+    (wide ? ' за ' + money(d.price) + ' ฿' : '') + '</button>';
+}
+
 function barRow(d) {
   var n = CART[d.id] || 0;
+  if (LIVE) {
+    return '<div class="card"><div class="row top">' +
+      '<button type="button" class="plain drinkbtn" data-drink="' + esc(d.id) + '">' + tile(d) +
+        '<span class="col"><b>' + esc(d.title) + '</b>' +
+          '<span class="small">' + esc(d.about) + '</span>' +
+          '<b class="num">' + money(d.price) + ' ฿</b></span>' +
+      '</button>' +
+      '<span class="col" style="gap:6px;align-items:flex-end">' + buyBtn(d) +
+        (n ? stepper(d) : '<button type="button" class="btn ghost mini" data-action="cart-add:' + esc(d.id) + '">в заказ</button>') +
+      '</span>' +
+    '</div></div>';
+  }
   return '<div class="card"><div class="row top">' +
     '<button type="button" class="plain drinkbtn" data-drink="' + esc(d.id) + '">' + tile(d) +
       '<span class="col"><b>' + esc(d.title) + '</b>' +
@@ -1552,7 +1847,7 @@ var TITLES = {
   event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно',
   bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ',
-  barQueue: 'Заказы на баре', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
+  barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
   barExpense: 'Затраты направления', curator: 'Направление «Бар»',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга'
@@ -1570,7 +1865,7 @@ function homeOf() {
 var BACK = {
   event: 'events', eventNew: 'organizer', eventManage: 'organizer',
   serviceNew: 'partner', consentFull: 'consent',
-  bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
+  bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar', topup: 'bar',
   // съёмка открывается и с бара, и из кабинета куратора — «назад» зависит от роли
   barShot: function () { return DATA.role === 'curator' ? 'curator' : 'barQueue'; }
 };
@@ -1619,10 +1914,13 @@ function render() {
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
+  if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
   current = screen;
   param = p || null;
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
+  if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   render();
+  if (screen === 'barOrder' && LIVE) pollMine();
   if (screen === 'eventNew') {
     loadDraft(function (restored) {
       if (restored && current === 'eventNew') {
@@ -1668,6 +1966,14 @@ function doAction(a) {
   var arg = null, c = a.indexOf(':');
   if (c !== -1) { arg = a.slice(c + 1); a = a.slice(0, c); }
 
+    if (a === 'buy') { buy(arg); return; }
+    if (a === 'retry-menu') { loadMenu(); render(); return; }
+    if (a === 'send-order' && LIVE) {
+      var live = cartList();
+      if (!live.length) { FLASH = { text: 'Заказ пуст', note: 'Добавьте что-нибудь в меню.' }; render(); return; }
+      placeOrder(live, ORDER.where, ORDER.pay === 'со счёта' ? 'account' : 'cash');
+      return;
+    }
     if (a === 'cart-add') {
       CART[arg] = (CART[arg] || 0) + 1;
       haptic(); render(); return;
@@ -1909,6 +2215,11 @@ function mainFor() {
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
   if (current === 'barCart') return { text: 'Отправить на бар', a: 'send-order' };
   if (current === 'barExpense') return { text: 'Записать затрату', a: 'add-expense' };
+  if (current === 'drink' && LIVE) {
+    var dl = findDrink(param);
+    if (!dl || BUSY || !BAR || !BAR.open || DATA.member.balance < dl.price) return null;   // кнопка на экране объяснит почему
+    return { text: 'Купить за ' + money(dl.price) + ' ฿', a: 'buy:' + param };
+  }
   if (current === 'drink' && !CART[param]) return { text: 'Добавить в заказ', a: 'cart-add:' + param };
   if (current === 'event') {
     var e = byId(param) || DATA.events[0];
