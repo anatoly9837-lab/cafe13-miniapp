@@ -260,6 +260,47 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.ctx.close();
   }
 
+  // Запас переписывается из каждого удачного /me — без захода на экран пропуска.
+  {
+    const withCode = clone(finite); withCode.member.pass_code = 'XIII-0042';
+    const s = await open(true, true, json(200, withCode), null, null,
+      Object.assign({}, SAVED, { lifelong: false, ends: '2020-01-01T00:00:00+07:00' }));
+    const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
+    if (!kept || kept.code !== 'XIII-0042' || kept.ends !== '2026-11-14T10:00:00+07:00' || kept.lifelong !== false || kept.uid !== 1)
+      bad.push('me-sync: запас не переписан из /me: ' + JSON.stringify(kept));
+    if (s.calls.some(c => c.url.endsWith('/pass'))) bad.push('me-sync: лишний запрос /pass');
+    await s.ctx.close();
+  }
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null);     // pass_code: null
+    if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('me-no-code: запас записан без кода');
+    await s.ctx.close();
+  }
+  {
+    const life = clone(OWNER); life.member.pass_code = 'XIII-0042';
+    const s = await open(true, true, json(200, life), null, null, null);
+    const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
+    if (!kept || kept.lifelong !== true || kept.ends !== null) bad.push('me-sync-lifelong: ' + JSON.stringify(kept));
+    await s.ctx.close();
+  }
+  {
+    const gone = clone(OWNER); gone.membership_active = false; gone.membership = null; gone.member.pass_code = 'XIII-0042';
+    const s = await open(true, true, json(200, gone), null, null, SAVED);
+    if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('me-inactive: запас не стёрт при неактивном членстве');
+    await s.ctx.close();
+  }
+  // /pass без даты и без lifelong — не пропуск (пустая дата законна только при lifelong: true).
+  {
+    const s = await open(true, true, json(200, OWNER), null,
+      json(200, Object.assign({}, PASS, { lifelong: false, valid_until: null })));
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    const t = await s.view();
+    if (!t.includes('Ответ сервера не разобран') || await s.p.evaluate(() => !!document.querySelector('.code-box')))
+      bad.push('pass-no-date: пропуск без срока показан');
+    await s.ctx.close();
+  }
+
   // Сети нет — сохранённый пропуск этого человека виден на экране сбоя.
   for (const [name, me, saved, show] of [
     ['offline-pass', 'abort', SAVED, true],
@@ -282,5 +323,5 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
 
   await b.close();
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 20) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 25) + ' случаев');
 })();
