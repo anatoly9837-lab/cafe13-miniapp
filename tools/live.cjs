@@ -312,6 +312,9 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
       mins: 3, is_alcohol: false, sort: 2, photo_file_id: 'AgACAgIAAxk' },
     { id: 21, group: 'Чай', title: 'Пуэр', about: 'Проливами', full_text: '', price: '5000.00',
       mins: 5, is_alcohol: false, sort: 1, photo_file_id: null }];
+  // Формы ответов — по cafe13-api app/routers/bar.py: POST отдаёт RETURNING
+  // (id, number, state, sum, created_at) плюс place и pay_method из тела;
+  // GET /bar/orders — строки очереди с member_id и items.
   const ORDER = { id: 5, number: '261018-01', state: 'new', sum: '70.00', created_at: '2026-10-18T12:00:00+00:00',
                   place: 'за стойку', pay_method: 'account' };
   const row = st => Object.assign({}, ORDER, { state: st, member_id: 1, first_name: 'Тест', last_name: '',
@@ -448,6 +451,59 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.ctx.close();
   }
 
+  // 201, но без place и pay_method: не «undefined» и не «не создан» (гость заказал бы
+  // второй), а то, что записал сервер, — из очереди.
+  {
+    const bare = Object.assign({}, ORDER); delete bare.place; delete bare.pay_method;
+    const srv = Object.assign(row('new'), { place: 'к столу', pay_method: 'cash' });
+    const s = await open_(bar({ order: json(201, bare), list: json(200, [srv]) }));
+    await toBar(s);
+    await s.p.click('[data-action="cart-add:11"]');
+    await s.p.click('[data-go="barCart"]');
+    await s.p.click('[data-where="к столу"]');
+    await s.p.click('[data-pay="наличными"]');
+    await s.p.evaluate(() => window.__main && window.__main());
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    if (t.includes('undefined')) bad.push('order-bare: на экране «undefined»');
+    if (!t.includes('ответ не разобран') || !t.includes('к столу · наличными')) bad.push('order-bare: не показано записанное сервером: ' + t.slice(0, 160));
+    if (posts(s).length !== 1) bad.push('order-bare: заказ повторён');
+    await s.ctx.close();
+  }
+  // Очередь целиком (админ, бар): чужой открытый заказ своим не становится;
+  // строка без суммы (так её видит работник бара) рисуется без суммы.
+  {
+    const other = Object.assign(row('making'), { id: 9, number: '261018-02', member_id: 2 });
+    const s = await open_(bar({ order: 'abort', list: json(200, [other]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    if (t.includes('261018-02')) bad.push('queue-other: чужой заказ показан своим');
+    await s.ctx.close();
+  }
+  {
+    const nosum = row('making'); delete nosum.sum; nosum.items = [{ title: 'Эспрессо', qty: 1 }];
+    const s = await open_(bar({ order: 'abort', list: json(200, [nosum]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    if (!t.includes('261018-01') || !t.includes('готовится')) bad.push('queue-nosum: свой заказ без суммы не показан');
+    if (/NaN|undefined|null ฿/.test(t)) bad.push('queue-nosum: мусор вместо суммы');
+    await s.ctx.close();
+  }
+  {
+    const noplace = row('making'); delete noplace.place;
+    const s = await open_(bar({ order: 'abort', list: json(200, [noplace]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    if (t.includes('undefined') || t.includes('готовится')) bad.push('queue-noplace: строка без места принята');
+    await s.ctx.close();
+  }
+
   // Бар закрыт (смена не открыта): меню видно, заказ не уходит, причина названа.
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(false) }));
@@ -546,5 +602,5 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
 
   await b.close();
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 45) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 49) + ' случаев');
 })();

@@ -268,6 +268,7 @@ function fromMe(d) {
     roles: d.roles.map(function (r) { return r && r.role; }).filter(Boolean),
     consent: !!p.consent_data_at,
     member: {
+      uid: p.tg_user_id,
       name: [p.first_name, p.last_name].filter(Boolean).join(' ') || (p.username ? '@' + p.username : 'Без имени'),
       level: d.membership_active ? LEVEL[ms.level] : '',
       until: until,
@@ -494,14 +495,19 @@ function hm(iso) {
 
 /* Заказ с сервера → то, что рисует экран заказа. Состав приходит либо из
    ответа /bar/orders (items), либо из того, что гость сам нажал. */
+/* Всё — из ответа сервера, а не из эха своего запроса: записанное сервером
+   и отправленное однажды разойдутся. Без места или оплаты — отказ: «подадут
+   undefined» хуже, чем «не разобрано». Суммы может не быть в строке: чужой
+   заказ работнику сервер отдаёт без неё (правило построчное). */
+var PLACES = { 'за стойку': 1, 'к столу': 1, 'с собой': 1 };
 function fromOrder(d, items) {
-  if (!d || typeof d.id !== 'number' || typeof d.number !== 'string' || !OSTATE[d.state] ||
-      !(num(d.sum) >= 0)) return null;
+  if (!d || typeof d.id !== 'number' || typeof d.number !== 'string' || !OSTATE[d.state]) return null;
+  if (d.sum !== undefined && !(num(d.sum) >= 0)) return null;
   var list = items || (Array.isArray(d.items) ? d.items.map(function (i) { return [i.title, i.qty]; }) : null);
-  if (!list) return null;
+  if (!list || !PLACES[d.place] || (d.pay_method !== 'account' && d.pay_method !== 'cash')) return null;
   return { id: d.number, oid: d.id, at: hm(d.created_at), where: d.place,
            pay: d.pay_method === 'cash' ? 'наличными' : 'со счёта',
-           sum: num(d.sum), state: d.state, items: list };
+           sum: d.sum === undefined ? null : num(d.sum), state: d.state, items: list };
 }
 
 function placeOrder(items, place, pay) {
@@ -535,9 +541,12 @@ function placeOrder(items, place, pay) {
       go('topup');
       return;
     }
-    if (r.status === 0) {
-      // Ответ мог потеряться ПОСЛЕ того, как заказ создан: повтор вслепую — второй заказ.
-      FLASH = { text: 'Связь оборвалась', note: 'Неизвестно, дошёл ли заказ. Ниже — то, что знает сервер; прежде чем заказывать снова, проверьте.' };
+    if (r.status === 0 || r.status === 201) {
+      // Ответ мог потеряться ПОСЛЕ того, как заказ создан, или прийти неразобранным:
+      // объявить заказ несозданным — значит подтолкнуть ко второму. Спрашиваем сервер.
+      FLASH = r.status === 0
+        ? { text: 'Связь оборвалась', note: 'Неизвестно, дошёл ли заказ. Ниже — то, что знает сервер; прежде чем заказывать снова, проверьте.' }
+        : { text: 'Заказ принят, но ответ не разобран', note: 'Ниже — то, что знает сервер.' };
       DATA.bar.mine = null;
       go('barOrder');
       return;
@@ -566,8 +575,11 @@ function pollMine() {
     if (current !== 'barOrder' || gen !== POLL_GEN) return;
     if (r.status === 200 && Array.isArray(r.data)) {
       var mine = DATA.bar.mine;
-      var row = mine ? r.data.filter(function (x) { return x && x.id === mine.oid; })[0]
-                     : r.data.filter(function (x) { return x && x.state !== 'served' && x.state !== 'cancelled'; })[0];
+      // Админу и бару сервер отдаёт всю очередь — свой заказ ищем по своему id,
+      // иначе после обрыва связи гость увидел бы чужой заказ как свой.
+      var own = r.data.filter(function (x) { return x && x.member_id === DATA.member.uid; });
+      var row = mine ? own.filter(function (x) { return x.id === mine.oid; })[0]
+                     : own.filter(function (x) { return x.state !== 'served' && x.state !== 'cancelled'; })[0];
       var o = row ? fromOrder(row) : null;
       if (o) DATA.bar.mine = o;
       MINE_FAIL = '';
@@ -1405,7 +1417,7 @@ var SCREENS = {
     return (FLASH ? flash() : '') +
       '<div class="card strong"><div class="row top">' +
         '<div class="col"><h2>' + esc(o.id) + '</h2>' +
-          '<span class="small">' + esc(o.where) + ' · ' + esc(o.pay) + ' · ' + money(o.sum) + ' ฿</span></div>' +
+          '<span class="small">' + esc(o.where) + ' · ' + esc(o.pay) + (o.sum === null ? '' : ' · ' + money(o.sum) + ' ฿') + '</span></div>' +
         '<span class="pill' + OSTATE[o.state].pill + '">' + OSTATE[o.state].label + '</span>' +
       '</div>' +
         '<div class="col">' + o.items.map(function (i) {
