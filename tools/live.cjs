@@ -400,7 +400,7 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.p.click('[data-action="buy:11"]');
     await s.p.waitForTimeout(250);
     const t = await s.view();
-    ['На счёте не хватает', 'не хватает 1830', 'пополняется в кассе'].forEach(x => { if (!t.includes(x)) bad.push(`topup-409: нет «${x}»`); });
+    ['На счёте не хватает', 'не хватает 1830', 'пополняется у хостес'].forEach(x => { if (!t.includes(x)) bad.push(`topup-409: нет «${x}»`); });
     await s.p.screenshot({ path: `${OUT}/live-topup.png` });
     await s.ctx.close();
   }
@@ -409,7 +409,7 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     const s = await open(true, true, json(200, OWNER), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-go="topup"]');
-    if (!(await s.view()).includes('пополняется в кассе')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
+    if (!(await s.view()).includes('пополняется у хостес')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
     if (posts(s).length) bad.push('topup: заказ ушёл при нехватке');
     await s.ctx.close();
   }
@@ -461,12 +461,11 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.p.click('[data-action="cart-add:11"]');
     await s.p.click('[data-go="barCart"]');
     await s.p.click('[data-where="к столу"]');
-    await s.p.click('[data-pay="наличными"]');
     await s.p.evaluate(() => window.__main && window.__main());
     await s.p.waitForTimeout(250);
     const t = await s.view();
     if (t.includes('undefined')) bad.push('order-bare: на экране «undefined»');
-    if (!t.includes('ответ не разобран') || !t.includes('к столу · наличными')) bad.push('order-bare: не показано записанное сервером: ' + t.slice(0, 160));
+    if (!t.includes('ответ не разобран') || !t.includes('к столу · наличными'))  // наличные — из ответа сервера, как он записал bad.push('order-bare: не показано записанное сервером: ' + t.slice(0, 160));
     if (posts(s).length !== 1) bad.push('order-bare: заказ повторён');
     await s.ctx.close();
   }
@@ -628,6 +627,20 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.ctx.close();
   }
 
+  // Отменённый бар заказ: деньги вернулись — экран говорит это и показывает свежий баланс.
+  {
+    let mes = 0;
+    const s = await open(true, true, () => { mes += 1; return json(200, OWNER); },
+      null, null, null, bar({ list: json(200, [row('cancelled')]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(400);
+    const t = await s.view();
+    if (!t.includes('Деньги вернулись на счёт')) bad.push('cancelled: не сказано, что деньги вернулись');
+    if (s.calls.filter(c => c.url.endsWith('/me')).length < 3) bad.push('cancelled: баланс не перезапрошен после отмены');
+    await s.ctx.close();
+  }
+
   // Бар закрыт (смена не открыта): меню видно, заказ не уходит, причина названа.
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(false) }));
@@ -672,7 +685,8 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.ctx.close();
   }
 
-  // Корзина: несколько позиций, место и оплата — как выбрал гость.
+  // Корзина: несколько позиций и место — как выбрал гость; оплата только со счёта
+  // (cafe13-api#13: наличные на баре сервер отклоняет), выбора «наличными» нет.
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar());
     await toBar(s);
@@ -680,11 +694,12 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.p.click('[data-action="cart-add:12"]');
     await s.p.click('[data-go="barCart"]');
     await s.p.click('[data-where="с собой"]');
-    await s.p.click('[data-pay="наличными"]');
+    if (await s.p.evaluate(() => !!document.querySelector('[data-pay]'))) bad.push('cart: есть выбор оплаты, которого нет');
+    if (!(await s.view()).includes('Пополнить можно у хостес')) bad.push('cart: не сказано, где пополнить');
     await s.p.evaluate(() => window.__main && window.__main());
     await s.p.waitForTimeout(250);
     const pp = posts(s);
-    const want = { direction_id: 7, place: 'с собой', pay_method: 'cash', items: [{ product_id: 11, qty: 1 }, { product_id: 12, qty: 1 }] };
+    const want = { direction_id: 7, place: 'с собой', pay_method: 'account', items: [{ product_id: 11, qty: 1 }, { product_id: 12, qty: 1 }] };
     if (pp.length !== 1 || JSON.stringify(JSON.parse(pp[0].body)) !== JSON.stringify(want))
       bad.push('cart: тело заказа ' + JSON.stringify(pp.map(c => c.body)));
     await s.ctx.close();
@@ -726,5 +741,5 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
 
   await b.close();
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 59) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 60) + ' случаев');
 })();

@@ -670,6 +670,7 @@ function pollMine() {
     render();
     var st = DATA.bar.mine && DATA.bar.mine.state;
     if (st !== 'served' && st !== 'cancelled') POLL = setTimeout(pollMine, 8000);
+    if (st === 'cancelled') refreshMe();        // возврат уже в книге — показать настоящий баланс
   });
 }
 var MINE_FAIL = '';
@@ -677,7 +678,7 @@ var MINE_FAIL = '';
 function refreshMe() {
   api('GET', '/me').then(function (r) {
     var me = r.status === 200 ? fromMe(r.data) : null;
-    if (me) { DATA.member.balance = me.member.balance; if (current === 'bar' || current === 'topup') render(); }
+    if (me) { DATA.member.balance = me.member.balance; if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1 }[current]) render(); }
   });
 }
 
@@ -1362,7 +1363,7 @@ var SCREENS = {
           '<div class="col"><h2>Бар Café XIII</h2>' +
             '<span class="small">' + (BAR && !BAR.open
               ? 'Сейчас закрыт: смена не открыта, заказ не отправится. Меню видно и так.'
-              : '«Купить» — заказ на одну позицию со счёта, подадут за стойку. Несколько позиций или наличные — через «в заказ».') + '</span></div>' +
+              : '«Купить» — заказ на одну позицию со счёта, подадут за стойку. Несколько позиций или другое место — через «в заказ».') + '</span></div>' +
           (BAR ? '<span class="pill' + (BAR.open ? ' on' : '') + '">' + (BAR.open ? 'открыт' : 'закрыт') + '</span>' : '') +
         '</div>' +
         '<div class="row"><span class="small">На счёте</span><b class="num">' + money(DATA.member.balance) + ' ฿</b></div></div>' +
@@ -1458,6 +1459,16 @@ var SCREENS = {
           return '<button type="button" data-where="' + esc(w) + '"' +
             (ORDER.where === w ? ' aria-pressed="true"' : '') + '>' + esc(w) + '</button>';
         }).join('') + '</div></div>' +
+      (LIVE
+        /* Решение владельца, первая версия: на баре платят только со счёта,
+           пополняют у хостес. Сервер наличные отклоняет (cafe13-api#13) —
+           выбор, которого нет, не показываем. */
+        ? '<div class="group"><span class="label">Оплата</span>' +
+            '<span class="small">Со счёта в клубе, сразу при отправке: на счёте ' + money(DATA.member.balance) + ' ฿. Пополнить можно у хостес.</span></div>' +
+          '<button type="button" class="btn dup-main" data-action="send-order">Отправить на бар</button>' +
+          '<div class="note">' + svg(ICON.bell) +
+            '<span>Отменить заказ может только бар — тогда деньги вернутся на счёт.</span></div>'
+        :
       '<div class="group"><span class="label">Чем платите</span><div class="seg">' +
         pays.map(function (p) {
           return '<button type="button" data-pay="' + esc(p) + '"' +
@@ -1470,7 +1481,7 @@ var SCREENS = {
       '<button type="button" class="btn dup-main" data-action="send-order">Отправить на бар</button>' +
       '<div class="note">' + svg(ICON.bell) +
         '<span>Бар получит уведомление в ту же секунду. Отменить заказ можно, пока его не приняли, — дальше через работника на баре.</span>' +
-      '</div>';
+      '</div>');
   },
 
   barOrder: function () {
@@ -1484,7 +1495,8 @@ var SCREENS = {
     if (LIVE && o.state === 'cancelled') {
       return (FLASH ? flash() : '') +
         '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(o.id) + '</h2>' +
-          '<span class="small">Заказ отменён.</span></div><span class="pill">отменён</span></div></div>' +
+          '<span class="small">Заказ отменён.' + (o.pay === 'со счёта' ? ' Деньги вернулись на счёт: на счёте ' + money(DATA.member.balance) + ' ฿.' : '') +
+          '</span></div><span class="pill">отменён</span></div></div>' +
         '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
     }
     if (!o) {
@@ -1525,7 +1537,7 @@ var SCREENS = {
     return (FLASH ? flash() : '') +
       '<div class="card strong"><span class="label">На счёте</span>' +
         '<span class="big num">' + money(DATA.member.balance) + ' ฿</span>' +
-        '<p>Счёт пополняется в кассе клуба — наличными или картой. Деньги появятся здесь сразу, как работник их внесёт.</p></div>' +
+        '<p>Счёт пополняется у хостес клуба. Деньги появятся здесь сразу, как их внесут.</p></div>' +
       '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>';
   },
 
@@ -2119,7 +2131,7 @@ function doAction(a) {
     if (a === 'send-order' && LIVE) {
       var live = cartList();
       if (!live.length) { FLASH = { text: 'Заказ пуст', note: 'Добавьте что-нибудь в меню.' }; render(); return; }
-      placeOrder(live, ORDER.where, ORDER.pay === 'со счёта' ? 'account' : 'cash');
+      placeOrder(live, ORDER.where, 'account');
       return;
     }
     if (a === 'cart-add') {
