@@ -81,7 +81,7 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
   const src = fs.readFileSync(ROOT + '/app.js', 'utf8');
   if (!src.includes('var API_ON = false;')) bad.push('app.js: выключатель API_ON не найден в выключенном виде');
 
-  async function open(inside, on, me, consentReply, passReply, saved) {
+  async function open(inside, on, me, consentReply, passReply, saved, extra) {
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
     // Локальная отметка согласия стоит ВСЕГДА: демо без неё открылось бы
     // согласием, а живой режим обязан её не слушать — решает сервер.
@@ -100,7 +100,10 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await p.route('https://api.cafe13.club/**', async r => {
       const q = r.request();
       calls.push({ method: q.method(), url: q.url(), init: q.headers()['x-telegram-init-data'], body: q.postData() });
-      const reply = q.url().endsWith('/me/consent') ? consentReply : q.url().endsWith('/pass') ? passReply : me;
+      const x = extra ? extra(q) : undefined;
+      if (x instanceof Promise) return r.fulfill(await x);
+      const reply = x !== undefined ? x
+                  : q.url().endsWith('/me/consent') ? consentReply : q.url().endsWith('/pass') ? passReply : me;
       if (reply === 'abort') return r.abort();
       return r.fulfill(typeof reply === 'function' ? reply() : reply);
     });
@@ -301,6 +304,282 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.ctx.close();
   }
 
+  // ── бар ──
+  const MENU = [
+    { id: 11, group: 'Кофе', title: 'Эспрессо', about: 'Двойной', full_text: 'Коротко и сразу.', price: '70.00',
+      mins: 2, is_alcohol: false, sort: 1, photo_file_id: null },
+    { id: 12, group: 'Кофе', title: 'Флэт-уайт', about: 'На молоке', full_text: '', price: '110.00',
+      mins: 3, is_alcohol: false, sort: 2, photo_file_id: 'AgACAgIAAxk' },
+    { id: 21, group: 'Чай', title: 'Пуэр', about: 'Проливами', full_text: '', price: '5000.00',
+      mins: 5, is_alcohol: false, sort: 1, photo_file_id: null }];
+  // Формы ответов — по cafe13-api app/routers/bar.py: POST отдаёт RETURNING
+  // (id, number, state, sum, created_at) плюс place и pay_method из тела;
+  // GET /bar/orders — строки очереди с member_id и items.
+  const ORDER = { id: 5, number: '261018-01', state: 'new', sum: '70.00', created_at: '2026-10-18T12:00:00+00:00',
+                  place: 'за стойку', pay_method: 'account' };
+  const row = st => Object.assign({}, ORDER, { state: st, member_id: 1, first_name: 'Тест', last_name: '',
+                                               items: [{ title: 'Эспрессо', price: '70.00', qty: 1 }] });
+  // id 7, а не 1: так видно, что он взят с сервера, а не угадан
+  const DIR = (open, extra) => json(200, [{ id: 7, title: 'Бар', share_mode: 'net', share_club: '30.00',
+    share_partner: '70.00', is_active: true, is_open: open }].concat(extra || []));
+  function bar(o) {
+    o = Object.assign({ dirs: DIR(true), menu: json(200, MENU), order: json(201, ORDER), list: json(200, [row('new')]) }, o);
+    return q => {
+      const u = q.url();
+      if (u.endsWith('/directions')) return typeof o.dirs === 'function' ? o.dirs() : o.dirs;
+      if (u.includes('/bar/menu')) return typeof o.menu === 'function' ? o.menu() : o.menu;
+      if (u.includes('/bar/orders') && q.method() === 'POST') return typeof o.order === 'function' ? o.order() : o.order;
+      if (u.includes('/bar/orders')) return typeof o.list === 'function' ? o.list() : o.list;
+      return undefined;
+    };
+  }
+  const open_ = extra => open(true, true, json(200, OWNER), null, null, null, extra);
+  const posts = s => s.calls.filter(c => c.method === 'POST' && c.url.includes('/bar/orders'));
+  async function toBar(s) {
+    await s.p.click('#tabs [data-go="guest"]');
+    await s.p.click('[data-go="bar"]');
+    await s.p.waitForTimeout(150);
+  }
+
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar());
+    await toBar(s);
+    const t = await s.view();
+    ['Эспрессо', 'Флэт-уайт', 'Пуэр', '70 ฿', '5 000 ฿', 'фото не показано', 'без фото', 'Купить', 'Не хватает 1 830 ฿', 'На счёте']
+      .forEach(x => { if (!t.includes(x)) bad.push(`bar-menu: нет «${x}»`); });
+    ['Колд-брю', 'Открыт до 23:00'].forEach(x => { if (t.includes(x)) bad.push(`bar-menu: демонстрационное «${x}»`); });
+    const m = s.calls.filter(c => c.url.includes('/bar/menu'));
+    if (m.length !== 1 || !m[0].url.endsWith('/bar/menu?direction_id=7')) bad.push('bar-menu: запрос меню ' + JSON.stringify(m.map(c => c.url)));
+    await s.p.screenshot({ path: `${OUT}/live-bar.png`, fullPage: true });
+
+    // одно нажатие — один заказ: одна позиция, со счёта, за стойку, без суммы в теле
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(250);
+    const pp = posts(s);
+    const want = { direction_id: 7, place: 'за стойку', pay_method: 'account', items: [{ product_id: 11, qty: 1 }] };
+    if (pp.length !== 1 || JSON.stringify(JSON.parse(pp[0].body)) !== JSON.stringify(want))
+      bad.push('buy: тело заказа ' + JSON.stringify(pp.map(c => c.body)));
+    const o = await s.view();
+    ['261018-01', 'Эспрессо', 'новый', 'отправлен на бар'].forEach(x => { if (!o.includes(x)) bad.push(`buy: на экране заказа нет «${x}»`); });
+    if (s.calls.filter(c => c.url.endsWith('/me')).length !== 2) bad.push('buy: баланс не перезапрошен после заказа');
+    if (!s.calls.some(c => c.method === 'GET' && c.url.includes('/bar/orders'))) bad.push('buy: состояние заказа не запрошено');
+    await s.p.screenshot({ path: `${OUT}/live-bar-order.png` });
+    if (s.errs.length) bad.push('bar: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
+  // Двойное нажатие, пока заказ в пути, — один заказ.
+  {
+    const slow = () => new Promise(res => setTimeout(() => res(json(201, ORDER)), 600));
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: slow }));
+    await toBar(s);
+    await s.p.evaluate(() => { doAction('buy:11'); doAction('buy:11'); doAction('buy:12'); });
+    if (!(await s.view()).includes('Отправляем…')) bad.push('busy: нет «Отправляем…», пока заказ в пути');
+    await s.p.waitForTimeout(900);
+    if (posts(s).length !== 1) bad.push(`busy: ${posts(s).length} заказов за три нажатия`);
+    await s.ctx.close();
+  }
+
+  // Состояние заказа подтягивается с сервера.
+  {
+    let st = 'new';
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ list: () => json(200, [row(st)]) }));
+    await toBar(s);
+    st = 'ready';
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    if (!(await s.view()).includes('готов')) bad.push('poll: состояние с сервера не показано');
+    await s.ctx.close();
+  }
+
+  // Не хватает на счёте (сервер решает) — экран пополнения, а не немой отказ.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830' }) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    ['На счёте не хватает', 'не хватает 1830', 'пополняется в кассе'].forEach(x => { if (!t.includes(x)) bad.push(`topup-409: нет «${x}»`); });
+    await s.p.screenshot({ path: `${OUT}/live-topup.png` });
+    await s.ctx.close();
+  }
+  // Кнопка «Не хватает» ведёт туда же без запроса.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar());
+    await toBar(s);
+    await s.p.click('[data-go="topup"]');
+    if (!(await s.view()).includes('пополняется в кассе')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
+    if (posts(s).length) bad.push('topup: заказ ушёл при нехватке');
+    await s.ctx.close();
+  }
+
+  // Связь оборвалась на заказе — не повторять вслепую, а спросить сервер.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: 'abort', list: json(200, [row('making')]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    ['Связь оборвалась', '261018-01', 'готовится'].forEach(x => { if (!t.includes(x)) bad.push(`order-down: нет «${x}»`); });
+    if (posts(s).length !== 1) bad.push('order-down: заказ повторён');
+    await s.ctx.close();
+  }
+
+  // Позиция снята с меню — причина на экране, меню перезапрошено.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      bar({ order: json(409, { detail: 'позиция снята с меню: Эспрессо' }) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(250);
+    if (!(await s.view()).includes('Позиция снята с меню: Эспрессо')) bad.push('order-409: причина не показана');
+    if (s.calls.filter(c => c.url.includes('/bar/menu')).length !== 2) bad.push('order-409: меню не перезапрошено');
+    await s.ctx.close();
+  }
+
+  // Меню: битое — отказ, пустое — честное «пусто».
+  for (const [name, menu, want, nope] of [
+    ['menu-bad', json(200, [{ id: 'x', title: 'Эспрессо' }]), 'не разобран', '[data-action^="buy:"]'],
+    ['menu-500', json(500, {}), 'кодом 500', '[data-action^="buy:"]'],
+    ['menu-empty', json(200, []), 'ни одной позиции', '[data-action^="buy:"]']]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ menu }));
+    await toBar(s);
+    const t = await s.view();
+    if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+    if (await s.p.evaluate(sel => !!document.querySelector(sel), nope)) bad.push(`${name}: есть кнопка ${nope}`);
+    await s.ctx.close();
+  }
+
+  // 201, но без place и pay_method: не «undefined» и не «не создан» (гость заказал бы
+  // второй), а то, что записал сервер, — из очереди.
+  {
+    const bare = Object.assign({}, ORDER); delete bare.place; delete bare.pay_method;
+    const srv = Object.assign(row('new'), { place: 'к столу', pay_method: 'cash' });
+    const s = await open_(bar({ order: json(201, bare), list: json(200, [srv]) }));
+    await toBar(s);
+    await s.p.click('[data-action="cart-add:11"]');
+    await s.p.click('[data-go="barCart"]');
+    await s.p.click('[data-where="к столу"]');
+    await s.p.click('[data-pay="наличными"]');
+    await s.p.evaluate(() => window.__main && window.__main());
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    if (t.includes('undefined')) bad.push('order-bare: на экране «undefined»');
+    if (!t.includes('ответ не разобран') || !t.includes('к столу · наличными')) bad.push('order-bare: не показано записанное сервером: ' + t.slice(0, 160));
+    if (posts(s).length !== 1) bad.push('order-bare: заказ повторён');
+    await s.ctx.close();
+  }
+  // Очередь целиком (админ, бар): чужой открытый заказ своим не становится;
+  // строка без суммы (так её видит работник бара) рисуется без суммы.
+  {
+    const other = Object.assign(row('making'), { id: 9, number: '261018-02', member_id: 2 });
+    const s = await open_(bar({ order: 'abort', list: json(200, [other]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    if (t.includes('261018-02')) bad.push('queue-other: чужой заказ показан своим');
+    await s.ctx.close();
+  }
+  {
+    const nosum = row('making'); delete nosum.sum; nosum.items = [{ title: 'Эспрессо', qty: 1 }];
+    const s = await open_(bar({ order: 'abort', list: json(200, [nosum]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    if (!t.includes('261018-01') || !t.includes('готовится')) bad.push('queue-nosum: свой заказ без суммы не показан');
+    if (/NaN|undefined|null ฿/.test(t)) bad.push('queue-nosum: мусор вместо суммы');
+    await s.ctx.close();
+  }
+  {
+    const noplace = row('making'); delete noplace.place;
+    const s = await open_(bar({ order: 'abort', list: json(200, [noplace]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    if (t.includes('undefined') || t.includes('готовится')) bad.push('queue-noplace: строка без места принята');
+    await s.ctx.close();
+  }
+
+  // Бар закрыт (смена не открыта): меню видно, заказ не уходит, причина названа.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(false) }));
+    await toBar(s);
+    const t = await s.view();
+    ['Эспрессо', 'закрыт', 'Бар закрыт'].forEach(x => { if (!t.includes(x)) bad.push(`bar-closed: нет «${x}»`); });
+    if (await s.p.evaluate(() => !!document.querySelector('[data-action^="buy:"]'))) bad.push('bar-closed: есть кнопка «Купить»');
+    await s.p.evaluate(() => doAction('buy:11'));
+    await s.p.waitForTimeout(150);
+    if (posts(s).length) bad.push('bar-closed: заказ ушёл в закрытый бар');
+    if (!(await s.view()).includes('Смена не открыта')) bad.push('bar-closed: отказ без причины');
+    await s.ctx.close();
+  }
+  // Экран думал «открыт», а смену успели закрыть: сервер отказал — причина как есть,
+  // направления перезапрошены, и экран становится «закрыт».
+  {
+    let open = true;
+    const s = await open_(bar({ dirs: () => DIR(open),
+      order: () => { open = false; return json(409, { detail: 'бар закрыт: смена не открыта, заказ принять некому' }); } }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    if (!t.includes('Бар закрыт: смена не открыта, заказ принять некому')) bad.push('order-409-closed: причина сервера не показана');
+    if (await s.p.evaluate(() => !!document.querySelector('[data-action^="buy:"]'))) bad.push('order-409-closed: «Купить» осталась');
+    await s.ctx.close();
+  }
+
+  // Направление не найдено / найдено дважды / ответ битый — отказ, а не пустое меню.
+  for (const [name, dirs, want] of [
+    ['dirs-none', json(200, [{ id: 3, title: 'Кухня', is_active: true, is_open: true }]), 'не нашлось направления'],
+    ['dirs-two', DIR(true, [{ id: 8, title: 'Бар', is_active: true, is_open: true }]), 'не нашлось направления'],
+    ['dirs-inactive', json(200, [{ id: 7, title: 'Бар', is_active: false, is_open: true }]), 'не нашлось направления'],
+    ['dirs-bad', json(200, [{ id: 7, title: 'Бар' }]), 'не разобран'],
+    ['dirs-500', json(500, {}), 'кодом 500']]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs }));
+    await toBar(s);
+    const t = await s.view();
+    if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+    if (s.calls.some(c => c.url.includes('/bar/menu'))) bad.push(`${name}: меню запрошено по угаданному направлению`);
+    if (t.includes('ни одной позиции')) bad.push(`${name}: показано «меню пустое»`);
+    await s.ctx.close();
+  }
+
+  // Корзина: несколько позиций, место и оплата — как выбрал гость.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar());
+    await toBar(s);
+    await s.p.click('[data-action="cart-add:11"]');
+    await s.p.click('[data-action="cart-add:12"]');
+    await s.p.click('[data-go="barCart"]');
+    await s.p.click('[data-where="с собой"]');
+    await s.p.click('[data-pay="наличными"]');
+    await s.p.evaluate(() => window.__main && window.__main());
+    await s.p.waitForTimeout(250);
+    const pp = posts(s);
+    const want = { direction_id: 7, place: 'с собой', pay_method: 'cash', items: [{ product_id: 11, qty: 1 }, { product_id: 12, qty: 1 }] };
+    if (pp.length !== 1 || JSON.stringify(JSON.parse(pp[0].body)) !== JSON.stringify(want))
+      bad.push('cart: тело заказа ' + JSON.stringify(pp.map(c => c.body)));
+    await s.ctx.close();
+  }
+
+  // Карточка напитка: главная кнопка — «Купить», при нехватке её нет.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar());
+    await toBar(s);
+    await s.p.click('[data-drink="11"]');
+    if (!(await s.view()).includes('Купить за 70 ฿')) bad.push('drink: нет «Купить за 70 ฿»');
+    if (!(await s.p.evaluate(() => !!window.__main))) bad.push('drink: главная кнопка не «Купить»');
+    await s.p.click('[data-go="bar"]').catch(() => {});
+    await s.p.evaluate(() => go('drink', '21'));
+    if (await s.p.evaluate(() => !!window.__main)) bad.push('drink-21: главная кнопка «Купить» при нехватке');
+    if (!(await s.view()).includes('Не хватает')) bad.push('drink-21: нехватка не названа');
+    await s.ctx.close();
+  }
+
   // Сети нет — сохранённый пропуск этого человека виден на экране сбоя.
   for (const [name, me, saved, show] of [
     ['offline-pass', 'abort', SAVED, true],
@@ -323,5 +602,5 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
 
   await b.close();
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 25) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 49) + ' случаев');
 })();
