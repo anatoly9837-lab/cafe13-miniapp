@@ -300,15 +300,13 @@ function fromPass(d) {
   if (!d || typeof d !== 'object') return null;
   if (typeof d.pass_code !== 'string' || !/^XIII-\d{4}$/.test(d.pass_code)) return null;
   if (!LEVEL[d.level] || typeof d.lifelong !== 'boolean') return null;
-  var until = null;
-  if (!d.lifelong) {
-    until = d.valid_until ? ruDate(d.valid_until) : null;
-    if (!until) return null;
-  }
+  // Срок хранится как пришёл, в ISO: по «14 ноября 2026» истёкший запас от
+  // живого не отличить. В слова он переводится только при отрисовке.
+  if (!d.lifelong && !(d.valid_until && ruDate(d.valid_until))) return null;
   return {
     code: d.pass_code,
     name: [d.first_name, d.last_name].filter(Boolean).join(' ') || 'Без имени',
-    level: LEVEL[d.level], until: until, lifelong: d.lifelong
+    level: LEVEL[d.level], ends: d.lifelong ? null : d.valid_until, lifelong: d.lifelong
   };
 }
 
@@ -323,10 +321,17 @@ function savedPass() {
   try { return fromSaved(JSON.parse(localStorage.getItem(PASS_KEY))); } catch (e) { return null; }
 }
 function fromSaved(p) {
-  // то же правило, что и для ответа сервера: битая запись — не пропуск
+  // то же правило, что и для ответа сервера: битая запись — не пропуск;
+  // истёкший — тоже: без сети его некому отклонить, кроме нас
   return p && p.uid !== null && p.uid === tgUid() &&
     typeof p.code === 'string' && /^XIII-\d{4}$/.test(p.code) && p.level &&
-    (p.lifelong === true || typeof p.until === 'string') ? p : null;
+    (p.lifelong === true || typeof p.ends === 'string' && new Date(p.ends).getTime() > Date.now()) ? p : null;
+}
+/* Сервер сказал «нет» — запас стирается: офлайн-пропуск того, кого больше не
+   пускают, показывал бы доступ, которого нет. */
+function dropPass() {
+  PASS = null;
+  try { localStorage.removeItem(PASS_KEY); } catch (e) { /* нечего стирать */ }
 }
 
 function loadPass() {
@@ -338,7 +343,13 @@ function loadPass() {
       p.uid = tgUid();
       try { localStorage.setItem(PASS_KEY, JSON.stringify(p)); } catch (e) { /* без запаса — только онлайн */ }
     } else {
-      PASS_FAIL = r.status === 403 ? 'Членство не активно — пропуск выдаётся только при живом членстве.'
+      // 403 бывает двух видов: «доступа нет» (не в списке, cafe13-api#7) —
+      // это отказ во входе целиком; «членство не активно» — только пропуску.
+      if (r.status === 403) dropPass();
+      if (r.status === 403 && r.data && r.data.detail === 'доступа нет') { go('noAccess'); return; }
+      PASS_FAIL = r.status === 403 && r.data && r.data.detail === 'членство не активно'
+                ? 'Членство не активно — пропуск выдаётся только при живом членстве.'
+                : r.status === 403 ? 'Сервер отказал в пропуске.'
                 : r.status === 0 ? 'Сервер не ответил.'
                 : r.status === 200 ? 'Ответ сервера не разобран.'
                 : 'Сервер ответил кодом ' + r.status + '.';
@@ -368,7 +379,7 @@ function passCard(p) {
       '<div class="who">' +
         '<span class="avatar">' + esc(p.name.slice(0, 1).toUpperCase()) + '</span>' +
         '<span class="col"><b style="font-size:19px;font-family:\'Zilla Slab\',Georgia,serif">' + esc(p.name) + '</b>' +
-        '<span style="font-size:12px;color:#F0DFF2">' + esc(p.level) + ' · ' + esc(p.lifelong ? 'пожизненно' : 'до ' + p.until) + '</span></span>' +
+        '<span style="font-size:12px;color:#F0DFF2">' + esc(p.level) + ' · ' + esc(p.lifelong ? 'пожизненно' : 'до ' + ruDate(p.ends)) + '</span></span>' +
       '</div>' +
       '<div class="code-box">' + qrSvg(p.code) + '</div>' +
       '<span class="num-big">' + esc(p.code.replace('-', ' · ')) + '</span>' +
@@ -380,8 +391,8 @@ function boot() {
   go('loading');
   api('GET', '/me').then(function (r) {
     // 401 и 403 — разные люди: первому не дошла подпись, второго нет в списке.
-    if (r.status === 401) { go('noSign'); return; }
-    if (r.status === 403) { go('noAccess'); return; }
+    if (r.status === 401) { dropPass(); go('noSign'); return; }
+    if (r.status === 403) { dropPass(); go('noAccess'); return; }
     var me = r.status === 200 ? fromMe(r.data) : null;
     if (!me) {
       FAIL_NET = r.status === 0;
@@ -656,7 +667,7 @@ var SCREENS = {
     if (LIVE) {
       if (PASS) return passCard(PASS) +
         '<div class="note">' + svg(ICON.info) +
-          '<span>Код постоянный и <b>сохранён на этом телефоне</b>: если у двери нет сети, приложение покажет его без сервера. У сканирующего на экране ваше фото и имя — переслать код другому бесполезно.</span>' +
+          '<span>Код постоянный и <b>сохранён на этом телефоне</b>: если у двери нет сети, приложение покажет его без сервера. Код — это номер, а не секрет: переслать его кому-то — всё равно что отдать пропуск.</span>' +
         '</div>';
       if (PASS_FAIL) return '<div class="card strong"><h2>Пропуска нет</h2><p>' + esc(PASS_FAIL) + '</p>' +
         '<button type="button" class="btn" data-action="retry-pass">Попробовать снова</button></div>';
