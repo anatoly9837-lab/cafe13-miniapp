@@ -20,7 +20,7 @@ function tgStub(inside) {
   return `window.__main = null;
   window.Telegram = { WebApp: {
     platform: ${inside ? "'ios'" : "'unknown'"}, initData: ${inside ? JSON.stringify(INIT) : "''"},
-    initDataUnsafe: {}, colorScheme: 'light', version: '7.0',
+    initDataUnsafe: ${inside ? '{ user: { id: 1 } }' : '{}'}, colorScheme: 'light', version: '7.0',
     isVersionAtLeast: function () { return true; },
     ready: function () {}, expand: function () {}, onEvent: function () {},
     HapticFeedback: { notificationOccurred: function () {}, selectionChanged: function () {} },
@@ -72,6 +72,8 @@ const CASES = [
 // пропускала network-down.
 const REFUSAL = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200', 'html-200',
                          'finite-without-end', 'network-down']);
+// Опечатка в имени молча выключила бы проверку для случая — ловим здесь.
+REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSAL: нет случая ' + n); });
 
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
@@ -79,11 +81,16 @@ const REFUSAL = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200
   const src = fs.readFileSync(ROOT + '/app.js', 'utf8');
   if (!src.includes('var API_ON = false;')) bad.push('app.js: выключатель API_ON не найден в выключенном виде');
 
-  async function open(inside, on, me, consentReply) {
+  async function open(inside, on, me, consentReply, passReply, saved) {
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
     // Локальная отметка согласия стоит ВСЕГДА: демо без неё открылось бы
     // согласием, а живой режим обязан её не слушать — решает сервер.
-    await ctx.addInitScript(() => { try { localStorage.setItem('cafe13.consent', '0.1'); } catch (e) {} });
+    await ctx.addInitScript(saved => {
+      try {
+        localStorage.setItem('cafe13.consent', '0.1');
+        if (saved) localStorage.setItem('cafe13.pass', saved);
+      } catch (e) {}
+    }, saved ? JSON.stringify(saved) : null);
     const p = await ctx.newPage();
     const calls = [], errs = [];
     p.on('pageerror', e => errs.push(e.message));
@@ -93,7 +100,7 @@ const REFUSAL = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200
     await p.route('https://api.cafe13.club/**', async r => {
       const q = r.request();
       calls.push({ method: q.method(), url: q.url(), init: q.headers()['x-telegram-init-data'], body: q.postData() });
-      const reply = q.url().endsWith('/me/consent') ? consentReply : me;
+      const reply = q.url().endsWith('/me/consent') ? consentReply : q.url().endsWith('/pass') ? passReply : me;
       if (reply === 'abort') return r.abort();
       return r.fulfill(typeof reply === 'function' ? reply() : reply);
     });
@@ -174,7 +181,73 @@ const REFUSAL = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200
     await s.ctx.close();
   }
 
+  // Пропуск: настоящий код с сервера, а не демонстрационный узор.
+  const PASS = { pass_code: 'XIII-0042', first_name: 'Тест', last_name: '', photo_url: null,
+                 level: 'member', valid_until: null, lifelong: true };
+  {
+    const s = await open(true, true, json(200, OWNER), null, json(200, PASS));
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    const t = await s.view();
+    ['XIII · 0042', 'пожизненно', 'сохранён на этом телефоне'].forEach(x => { if (!t.includes(x)) bad.push(`pass: нет «${x}»`); });
+    if (/демонстрационн/i.test(t)) bad.push('pass: в живом режиме демонстрационный узор');
+    const label = await s.p.evaluate(() => { const g = document.querySelector('.code-box svg'); return g && g.getAttribute('aria-label'); });
+    if (label !== 'Код пропуска XIII-0042') bad.push('pass: QR не из кода сервера: ' + label);
+    // Подпись строится отдельно от узора — сверяем сами модули. Что библиотека
+    // кодирует верно, проверено независимым декодером (OpenCV) по снимку, см. PR.
+    const same = await s.p.evaluate(() => {
+      const q = qrcode(0, 'M'); q.addData('XIII-0042'); q.make();
+      const path = document.querySelector('.code-box svg path');
+      if (!path) return false;
+      const d = path.getAttribute('d');
+      const want = []; const n = q.getModuleCount();
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) want.push('M' + (x + 2) + ' ' + (y + 2) + 'h1v1h-1z');
+      return d === want.join('');
+    });
+    if (!same) bad.push('pass: модули QR не совпадают с кодом XIII-0042');
+    const kept = await s.p.evaluate(() => localStorage.getItem('cafe13.pass'));
+    if (!kept || JSON.parse(kept).code !== 'XIII-0042' || JSON.parse(kept).uid !== 1) bad.push('pass: не сохранён на телефоне: ' + kept);
+    if (s.calls.filter(c => c.url.endsWith('/pass')).length !== 1) bad.push('pass: /pass запрошен не один раз');
+    await s.p.screenshot({ path: `${OUT}/live-pass.png` });
+    // второй заход на экран — без нового запроса: код не меняется
+    await s.p.click('[data-go="home"]'); await s.p.click('[data-go="pass"]'); await s.p.waitForTimeout(100);
+    if (s.calls.filter(c => c.url.endsWith('/pass')).length !== 1) bad.push('pass: повторный запрос при втором заходе');
+    if (s.errs.length) bad.push('pass: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  for (const [name, reply, want] of [
+    ['pass-403', json(403, { detail: 'членство не активно' }), 'Членство не активно'],
+    ['pass-bad', json(200, { pass_code: '0042', level: 'member', lifelong: true }), 'Ответ сервера не разобран'],
+    ['pass-down', 'abort', 'Сервер не ответил']]) {
+    const s = await open(true, true, json(200, OWNER), null, reply);
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    const t = await s.view();
+    if (!t.includes('Пропуска нет') || !t.includes(want)) bad.push(`${name}: нет отказа «${want}»`);
+    if (await s.p.evaluate(() => !!document.querySelector('.code-box'))) bad.push(`${name}: код нарисован без пропуска`);
+    if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: на телефон записан пропуск`);
+    await s.ctx.close();
+  }
+
+  // Сети нет — сохранённый пропуск этого человека виден на экране сбоя.
+  const SAVED = { code: 'XIII-0042', name: 'Тест', level: 'Член клуба', until: null, lifelong: true, uid: 1 };
+  for (const [name, me, saved, show] of [
+    ['offline-pass', 'abort', SAVED, true],
+    ['offline-other-user', 'abort', Object.assign({}, SAVED, { uid: 2 }), false],
+    ['server-500-saved', json(500, {}), SAVED, false],
+    ['offline-broken-saved', 'abort', Object.assign({}, SAVED, { code: 'XIII-42' }), false]]) {
+    const s = await open(true, true, me, null, null, saved);
+    const t = await s.view();
+    // «показан» — по заголовку блока, а не по коду: битая запись показала бы не тот код
+    const has = t.includes('Пропуск, сохранённый на телефоне');
+    if (has !== show) bad.push(`${name}: сохранённый пропуск ${has ? 'показан' : 'не показан'}`);
+    if (show && !t.includes('XIII · 0042')) bad.push(`${name}: показан не тот код`);
+    if (!t.includes('Сервер клуба недоступен')) bad.push(`${name}: нет экрана сбоя`);
+    if (name === 'offline-pass') await s.p.screenshot({ path: `${OUT}/live-offline-pass.png`, fullPage: true });
+    await s.ctx.close();
+  }
+
   await b.close();
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 4) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 12) + ' случаев');
 })();

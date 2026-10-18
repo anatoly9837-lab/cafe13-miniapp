@@ -202,6 +202,7 @@ var API = 'https://api.cafe13.club';
 var API_ON = false;
 var LIVE = false;          // true — данные на экране пришли с сервера, а не из DATA
 var FAIL = '';             // чем кончилась неудачная попытка, для экрана apiDown
+var FAIL_NET = false;      // сервер не ответил вовсе — тогда можно показать сохранённый пропуск
 
 function api(method, path, body) {
   var ctl = typeof AbortController === 'function' ? new AbortController() : null;
@@ -283,8 +284,96 @@ function untilText(m) {
 /* Экраны, которые уже стоят на данных сервера. Остальные в живом режиме
    показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
    балансом выглядела бы так же настоящей. */
-var WIRED = { home: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
+var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
+
+/* ── пропуск ───────────────────────────────────────────
+   Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
+   можно держать на телефоне: у двери вечером сети может не быть, а экран
+   обещает, что код работает без интернета. Сохраняется только код и подпись
+   под ним — по самому коду никто не войдёт, у сканирующего на экране фото. */
+var PASS = null;           // пропуск с сервера в этом запуске
+var PASS_FAIL = '';        // почему пропуска нет: текст для экрана
+var PASS_KEY = 'cafe13.pass';
+
+function fromPass(d) {
+  if (!d || typeof d !== 'object') return null;
+  if (typeof d.pass_code !== 'string' || !/^XIII-\d{4}$/.test(d.pass_code)) return null;
+  if (!LEVEL[d.level] || typeof d.lifelong !== 'boolean') return null;
+  var until = null;
+  if (!d.lifelong) {
+    until = d.valid_until ? ruDate(d.valid_until) : null;
+    if (!until) return null;
+  }
+  return {
+    code: d.pass_code,
+    name: [d.first_name, d.last_name].filter(Boolean).join(' ') || 'Без имени',
+    level: LEVEL[d.level], until: until, lifelong: d.lifelong
+  };
+}
+
+/* Чей пропуск, сверяется по id из initDataUnsafe. Подписью он не проверен, но
+   здесь и не впускает: только не показывает чужой код, если телефоном
+   пользуются двое. */
+function tgUid() {
+  var u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+  return u && typeof u.id === 'number' ? u.id : null;
+}
+function savedPass() {
+  try { return fromSaved(JSON.parse(localStorage.getItem(PASS_KEY))); } catch (e) { return null; }
+}
+function fromSaved(p) {
+  // то же правило, что и для ответа сервера: битая запись — не пропуск
+  return p && p.uid !== null && p.uid === tgUid() &&
+    typeof p.code === 'string' && /^XIII-\d{4}$/.test(p.code) && p.level &&
+    (p.lifelong === true || typeof p.until === 'string') ? p : null;
+}
+
+function loadPass() {
+  PASS_FAIL = '';
+  api('GET', '/pass').then(function (r) {
+    var p = r.status === 200 ? fromPass(r.data) : null;
+    if (p) {
+      PASS = p;
+      p.uid = tgUid();
+      try { localStorage.setItem(PASS_KEY, JSON.stringify(p)); } catch (e) { /* без запаса — только онлайн */ }
+    } else {
+      PASS_FAIL = r.status === 403 ? 'Членство не активно — пропуск выдаётся только при живом членстве.'
+                : r.status === 0 ? 'Сервер не ответил.'
+                : r.status === 200 ? 'Ответ сервера не разобран.'
+                : 'Сервер ответил кодом ' + r.status + '.';
+    }
+    if (current === 'pass') render();
+  });
+}
+
+/* Настоящий QR из кода пропуска. Внутри — только сам код (XIII-0042):
+   кого он означает, знает сервер, а не картинка. */
+function qrSvg(text) {
+  var q = qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  var n = q.getModuleCount(), m = 2, out = '';
+  for (var y = 0; y < n; y++) {
+    for (var x = 0; x < n; x++) {
+      if (q.isDark(y, x)) out += 'M' + (x + m) + ' ' + (y + m) + 'h1v1h-1z';
+    }
+  }
+  return '<svg viewBox="0 0 ' + (n + 2 * m) + ' ' + (n + 2 * m) + '" role="img" aria-label="Код пропуска ' + esc(text) +
+    '" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path fill="#190F26" d="' + out + '"/></svg>';
+}
+
+function passCard(p) {
+  return '<div class="pass">' +
+      '<div class="who">' +
+        '<span class="avatar">' + esc(p.name.slice(0, 1).toUpperCase()) + '</span>' +
+        '<span class="col"><b style="font-size:19px;font-family:\'Zilla Slab\',Georgia,serif">' + esc(p.name) + '</b>' +
+        '<span style="font-size:12px;color:#F0DFF2">' + esc(p.level) + ' · ' + esc(p.lifelong ? 'пожизненно' : 'до ' + p.until) + '</span></span>' +
+      '</div>' +
+      '<div class="code-box">' + qrSvg(p.code) + '</div>' +
+      '<span class="num-big">' + esc(p.code.replace('-', ' · ')) + '</span>' +
+    '</div>';
+}
 
 function boot() {
   if (!API_ON || !inTelegram() || !tg.initData) { go(startScreen()); return; }
@@ -295,6 +384,7 @@ function boot() {
     if (r.status === 403) { go('noAccess'); return; }
     var me = r.status === 200 ? fromMe(r.data) : null;
     if (!me) {
+      FAIL_NET = r.status === 0;
       FAIL = r.status === 0 ? 'Сервер не ответил.'
            : r.status === 200 ? 'Ответ сервера не разобран.'
            : 'Сервер ответил кодом ' + r.status + '.';
@@ -563,6 +653,16 @@ var SCREENS = {
   },
 
   pass: function () {
+    if (LIVE) {
+      if (PASS) return passCard(PASS) +
+        '<div class="note">' + svg(ICON.info) +
+          '<span>Код постоянный и <b>сохранён на этом телефоне</b>: если у двери нет сети, приложение покажет его без сервера. У сканирующего на экране ваше фото и имя — переслать код другому бесполезно.</span>' +
+        '</div>';
+      if (PASS_FAIL) return '<div class="card strong"><h2>Пропуска нет</h2><p>' + esc(PASS_FAIL) + '</p>' +
+        '<button type="button" class="btn" data-action="retry-pass">Попробовать снова</button></div>';
+      return '<div class="card quiet"><div class="col"><b>Получаем пропуск…</b>' +
+        '<span class="small">Сервер клуба выдаёт код один раз — дальше он не меняется.</span></div></div>';
+    }
     var m = DATA.member;
     return '' +
       '<div class="pass">' +
@@ -1248,9 +1348,12 @@ var SCREENS = {
   },
 
   apiDown: function () {
+    // Без сети пропуск, сохранённый раньше, всё равно нужен у двери.
+    var p = FAIL_NET ? savedPass() : null;
     return '<div class="card strong"><h2>Сервер клуба недоступен</h2>' +
       '<p>' + esc(FAIL) + ' Показывать вместо ваших данных примерные мы не будем.</p>' +
-      '<button type="button" class="btn" data-action="retry">Попробовать снова</button></div>';
+      '<button type="button" class="btn" data-action="retry">Попробовать снова</button></div>' +
+      (p ? '<div class="group"><span class="label">Пропуск, сохранённый на телефоне</span>' + passCard(p) + '</div>' : '');
   },
 
   soon: function () {
@@ -1490,6 +1593,7 @@ function go(screen, p) {
   if (!SCREENS[screen]) return;
   current = screen;
   param = p || null;
+  if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   render();
   if (screen === 'eventNew') {
     loadDraft(function (restored) {
@@ -1658,6 +1762,7 @@ function doAction(a) {
     }
     if (a === 'reset-consent') { if (LIVE) return; dropConsent(); go('consent'); return; }
     if (a === 'retry') { boot(); return; }
+    if (a === 'retry-pass') { loadPass(); render(); return; }
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'phone') { askPhone(); return; }
