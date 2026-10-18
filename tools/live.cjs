@@ -316,12 +316,13 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
   // (id, number, state, sum, created_at) плюс place и pay_method из тела;
   // GET /bar/orders — строки очереди с member_id и items.
   const ORDER = { id: 5, number: '261018-01', state: 'new', sum: '70.00', created_at: '2026-10-18T12:00:00+00:00',
-                  place: 'за стойку', pay_method: 'account' };
-  const row = st => Object.assign({}, ORDER, { state: st, member_id: 1, first_name: 'Тест', last_name: '',
-                                               items: [{ title: 'Эспрессо', price: '70.00', qty: 1 }] });
+                  place: 'за стойку', pay_method: 'account', ledger_id: 41 };
+  const row = st => { const r = Object.assign({}, ORDER, { state: st, member_id: 1, first_name: 'Тест', last_name: '',
+    photo_url: null, accepted_at: null, ready_at: null, served_at: null,
+    items: [{ title: 'Эспрессо', price: '70.00', qty: 1 }] }); delete r.ledger_id; return r; };
   // id 7, а не 1: так видно, что он взят с сервера, а не угадан
-  const DIR = (open, extra) => json(200, [{ id: 7, title: 'Бар', share_mode: 'net', share_club: '30.00',
-    share_partner: '70.00', is_active: true, is_open: open }].concat(extra || []));
+  // гостю — без долей направления (их видит только куратор): так отдаёт сервер
+  const DIR = (open, extra) => json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: open }].concat(extra || []));
   function bar(o) {
     o = Object.assign({ dirs: DIR(true), menu: json(200, MENU), order: json(201, ORDER), list: json(200, [row('new')]) }, o);
     return q => {
@@ -739,7 +740,62 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.ctx.close();
   }
 
+  // ── заглушки против настоящих ответов ──
+  // tools/api-keys.json — форма ответов из снимков cafe13-api (DUMP_DIR,
+  // tools/keys.py): только ключи, без значений. Заглушка, придумавшая поле
+  // или потерявшая обязательное, краснеет здесь, а не на проде.
+  const REAL = JSON.parse(fs.readFileSync(ROOT + '/tools/api-keys.json', 'utf8'));
+  function shapeOf(v) {
+    if (Array.isArray(v)) { let o; v.forEach(x => { o = o === undefined ? shapeOf(x) : mergeShape(o, shapeOf(x)); }); return o === undefined ? [] : [o]; }
+    if (v && typeof v === 'object') { const o = {}; Object.keys(v).sort().forEach(k => { if (v[k] !== undefined) o[k] = shapeOf(v[k]); }); return o; }
+    return null;
+  }
+  function mergeShape(a, b) {
+    if (Array.isArray(a) && Array.isArray(b)) return !a.length || !b.length ? (a.length ? a : b) : [mergeShape(a[0], b[0])];
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+      const ka = Object.keys(a).filter(k => k !== '?'), kb = Object.keys(b).filter(k => k !== '?'), o = {};
+      new Set([...ka, ...kb]).forEach(k => { o[k] = k in a && k in b ? mergeShape(a[k], b[k]) : (k in a ? a[k] : b[k]); });
+      const opt = new Set([...(a['?'] || []), ...(b['?'] || []), ...ka.filter(k => !kb.includes(k)), ...kb.filter(k => !ka.includes(k))]);
+      if (opt.size) o['?'] = [...opt].sort();
+      return o;
+    }
+    return a !== null && a !== undefined ? a : b;
+  }
+  function diffShape(real, stub, path, out) {
+    if (Array.isArray(real)) {
+      if (!Array.isArray(stub)) { out.push(path + ': в ответе список'); return out; }
+      if (real.length && stub.length) diffShape(real[0], stub[0], path + '[]', out);
+      return out;
+    }
+    if (real && typeof real === 'object') {
+      if (!stub || typeof stub !== 'object' || Array.isArray(stub)) { out.push(path + ': в ответе объект'); return out; }
+      const opt = real['?'] || [];
+      Object.keys(real).filter(k => k !== '?').forEach(k => {
+        if (!(k in stub)) { if (!opt.includes(k)) out.push(path + '.' + k + ': нет в заглушке'); }
+        else diffShape(real[k], stub[k], path + '.' + k, out);
+      });
+      Object.keys(stub).filter(k => k !== '?' && !(k in real)).forEach(k => out.push(path + '.' + k + ': в ответе сервера такого нет'));
+    }
+    return out;
+  }
+  const STUBS = {
+    'me-owner': OWNER, 'pass-owner': PASS, 'directions-guest': JSON.parse(DIR(true).body),
+    'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
+    'order-state-worker': { id: 3, number: '261018-03', state: 'making' }
+  };
+  Object.keys(STUBS).forEach(name => {
+    if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
+    if (REAL[name].status !== 200 && REAL[name].status !== 201) bad.push(`shape ${name}: снимок — отказ ${REAL[name].status}`);
+    diffShape(REAL[name].shape, shapeOf(STUBS[name]), name, []).forEach(x => bad.push('shape ' + x));
+  });
+  // Решения владельца, видимые в самих снимках: работнику денег нет, куратору есть.
+  const row0 = n => (REAL[n] && REAL[n].shape[0]) || {};
+  if ('sum' in REAL['order-state-worker'].shape || 'ledger_id' in REAL['order-state-worker'].shape) bad.push('shape: работнику в ответе на смену состояния пришли деньги');
+  if (!(row0('orders-worker')['?'] || []).includes('sum')) bad.push('shape: у работника sum не помечен необязательным — либо утечка, либо снимок без своего заказа');
+  if ((row0('orders-curator')['?'] || []).includes('sum') || !('sum' in row0('orders-curator'))) bad.push('shape: у куратора суммы не в каждой строке');
+  if ('share_club' in row0('directions-guest') || !('share_club' in row0('directions-curator'))) bad.push('shape: доли направления видны не тем');
+
   await b.close();
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 60) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 61) + ' случаев');
 })();

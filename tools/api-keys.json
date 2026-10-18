@@ -1,0 +1,218 @@
+{
+ "directions-curator": {
+  "request": "GET /directions",
+  "shape": [
+   {
+    "id": null,
+    "is_active": null,
+    "is_open": null,
+    "share_club": null,
+    "share_mode": null,
+    "share_partner": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "directions-guest": {
+  "request": "GET /directions",
+  "shape": [
+   {
+    "id": null,
+    "is_active": null,
+    "is_open": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "me-owner": {
+  "request": "GET /me",
+  "shape": {
+   "balance": null,
+   "member": {
+    "consent_data_at": null,
+    "consent_filming_at": null,
+    "created_at": null,
+    "first_name": null,
+    "last_name": null,
+    "pass_code": null,
+    "photo_url": null,
+    "tg_user_id": null,
+    "username": null
+   },
+   "membership": {
+    "ends_at": null,
+    "level": null,
+    "lifelong": null,
+    "starts_at": null
+   },
+   "membership_active": null,
+   "roles": [
+    {
+     "direction_id": null,
+     "role": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "menu-guest": {
+  "request": "GET /bar/menu?direction_id=N",
+  "shape": [
+   {
+    "about": null,
+    "full_text": null,
+    "group": null,
+    "id": null,
+    "is_alcohol": null,
+    "mins": null,
+    "photo_file_id": null,
+    "price": null,
+    "sort": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "order-create": {
+  "request": "POST /bar/orders",
+  "shape": {
+   "created_at": null,
+   "id": null,
+   "ledger_id": null,
+   "number": null,
+   "pay_method": null,
+   "place": null,
+   "state": null,
+   "sum": null
+  },
+  "status": 201
+ },
+ "order-state-curator": {
+  "request": "POST /bar/orders/N/state",
+  "shape": {
+   "id": null,
+   "ledger_id": null,
+   "number": null,
+   "state": null,
+   "sum": null
+  },
+  "status": 200
+ },
+ "order-state-worker": {
+  "request": "POST /bar/orders/N/state",
+  "shape": {
+   "id": null,
+   "number": null,
+   "state": null
+  },
+  "status": 200
+ },
+ "orders-curator": {
+  "request": "GET /bar/orders?direction_id=N",
+  "shape": [
+   {
+    "accepted_at": null,
+    "created_at": null,
+    "first_name": null,
+    "id": null,
+    "items": [
+     {
+      "price": null,
+      "qty": null,
+      "title": null
+     }
+    ],
+    "last_name": null,
+    "member_id": null,
+    "number": null,
+    "pay_method": null,
+    "photo_url": null,
+    "place": null,
+    "ready_at": null,
+    "served_at": null,
+    "state": null,
+    "sum": null
+   }
+  ],
+  "status": 200
+ },
+ "orders-guest": {
+  "request": "GET /bar/orders?direction_id=N",
+  "shape": [
+   {
+    "accepted_at": null,
+    "created_at": null,
+    "first_name": null,
+    "id": null,
+    "items": [
+     {
+      "price": null,
+      "qty": null,
+      "title": null
+     }
+    ],
+    "last_name": null,
+    "member_id": null,
+    "number": null,
+    "pay_method": null,
+    "photo_url": null,
+    "place": null,
+    "ready_at": null,
+    "served_at": null,
+    "state": null,
+    "sum": null
+   }
+  ],
+  "status": 200
+ },
+ "orders-worker": {
+  "request": "GET /bar/orders?direction_id=N",
+  "shape": [
+   {
+    "?": [
+     "sum"
+    ],
+    "accepted_at": null,
+    "created_at": null,
+    "first_name": null,
+    "id": null,
+    "items": [
+     {
+      "?": [
+       "price"
+      ],
+      "price": null,
+      "qty": null,
+      "title": null
+     }
+    ],
+    "last_name": null,
+    "member_id": null,
+    "number": null,
+    "pay_method": null,
+    "photo_url": null,
+    "place": null,
+    "ready_at": null,
+    "served_at": null,
+    "state": null,
+    "sum": null
+   }
+  ],
+  "status": 200
+ },
+ "pass-owner": {
+  "request": "GET /pass",
+  "shape": {
+   "first_name": null,
+   "last_name": null,
+   "level": null,
+   "lifelong": null,
+   "pass_code": null,
+   "photo_url": null,
+   "valid_until": null
+  },
+  "status": 200
+ }
+}
