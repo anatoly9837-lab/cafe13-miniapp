@@ -31,7 +31,7 @@ function tgStub(inside) {
 }
 
 const OWNER = {
-  member: { tg_user_id: 1, first_name: 'Анатолий', last_name: '', username: null, photo_url: null,
+  member: { tg_user_id: 1, first_name: 'Тест', last_name: '', username: null, photo_url: null,
             pass_code: null, created_at: '2026-10-01T00:00:00+00:00',
             consent_data_at: '2026-10-18T10:00:00+00:00', consent_filming_at: null },
   membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true },
@@ -67,6 +67,11 @@ const CASES = [
   ['outside-telegram', false, true, json(200, OWNER), ['Действует до 14 ноября', '1 250'], ['Пожизненно'], 0],
   ['api-off', true, false, json(200, OWNER), ['Действует до 14 ноября', '1 250'], ['Пожизненно'], 0]
 ];
+
+// Экраны отказа — списком, а не регуляркой по имени: регулярка молча
+// пропускала network-down.
+const REFUSAL = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200', 'html-200',
+                         'finite-without-end', 'network-down']);
 
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
@@ -106,7 +111,7 @@ const CASES = [
     hasnt.forEach(x => { if (t.includes(x)) bad.push(`${name}: есть лишнее «${x}»`); });
     if (s.calls.length !== n) bad.push(`${name}: запросов к API ${s.calls.length}, ждали ${n}`);
     s.calls.forEach(c => { if (c.init !== INIT) bad.push(`${name}: заголовок подписи «${c.init}»`); });
-    if (/40[13]|500|200|abort/.test(name) && name !== 'owner-lifelong' && await s.tabsShown())
+    if (REFUSAL.has(name) && await s.tabsShown())
       bad.push(`${name}: на экране отказа видны вкладки`);
     if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
     await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
