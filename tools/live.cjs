@@ -768,7 +768,7 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
       // пропустить значит потерять проверку при пересъёмке; исключение —
       // только явное, с причиной (UNVERIFIED), и оно печатается.
       if (!real.length && stub.length) {
-        if (UNVERIFIED[path]) notes.push(path + ': не сверено — ' + UNVERIFIED[path]);
+        if (UNVERIFIED[path]) { USED.add(path); notes.push(path + ': не сверено — ' + UNVERIFIED[path]); }
         else out.push(path + ': в снимке пустой список, форма элемента не сверена');
       }
       if (real.length && stub.length) diffShape(real[0], stub[0], path + '[]', out);
@@ -789,6 +789,7 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
   const UNVERIFIED = {
     'me-member.roles': 'у вымышленного члена в снимках cafe13-api ролей нет; попросить координатора дать ему роль'
   };
+  const USED = new Set();
   const STUBS = {
     'me-member': OWNER, 'pass-member': PASS, 'directions-guest': JSON.parse(DIR(true).body),
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
@@ -799,6 +800,9 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     if (REAL[name].status !== 200 && REAL[name].status !== 201) bad.push(`shape ${name}: снимок — отказ ${REAL[name].status}`);
     diffShape(REAL[name].shape, shapeOf(STUBS[name]), name, []).forEach(x => bad.push('shape ' + x));
   });
+  // Исключение не переживает свою причину: список в снимке стал непустым —
+  // исключение лишнее, и молча лежать ему нельзя.
+  Object.keys(UNVERIFIED).filter(k => !USED.has(k)).forEach(k => bad.push(`shape ${k}: исключение больше не нужно — убрать из UNVERIFIED`));
   // Решения владельца, видимые в самих снимках: работнику денег нет, куратору есть.
   const row0 = n => (REAL[n] && REAL[n].shape[0]) || {};
   if ('sum' in REAL['order-state-worker'].shape || 'ledger_id' in REAL['order-state-worker'].shape) bad.push('shape: работнику в ответе на смену состояния пришли деньги');
