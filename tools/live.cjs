@@ -79,7 +79,9 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
   const b = await chromium.launch({ args: ['--no-sandbox'] });
   const bad = [];
   const src = fs.readFileSync(ROOT + '/app.js', 'utf8');
-  if (!src.includes('var API_ON = false;')) bad.push('app.js: выключатель API_ON не найден в выключенном виде');
+  // выключатель ищется в любом положении: тест сам ставит нужное
+  const SW = /var API_ON = (true|false);/;
+  if ((src.match(new RegExp(SW.source, 'g')) || []).length !== 1) bad.push('app.js: выключатель API_ON не найден ровно один раз');
 
   async function open(inside, on, me, consentReply, passReply, saved, extra) {
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
@@ -96,7 +98,7 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     p.on('pageerror', e => errs.push(e.message));
     await p.route('https://telegram.org/**', r => r.fulfill({ contentType: 'text/javascript', body: tgStub(inside) }));
     await p.route('**/app.js*', r => r.fulfill({ contentType: 'text/javascript',
-      body: on ? src.replace('var API_ON = false;', 'var API_ON = true;') : src }));
+      body: src.replace(SW, 'var API_ON = ' + (on ? 'true' : 'false') + ';') }));
     await p.route('https://api.cafe13.club/**', async r => {
       const q = r.request();
       calls.push({ method: q.method(), url: q.url(), init: q.headers()['x-telegram-init-data'], body: q.postData() });

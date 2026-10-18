@@ -40,7 +40,7 @@ const SHOTS = [
   ['27-service-new', 'serviceNew',null,   0,    'Появится в разделе',           'Бизнес-партнёр', 'Новая услуга — на проверку директору.'],
 
   ['28-staff',       'staff',    null,    0,    'Сканировать пропуск',          'Касса', 'Касса: сканировать пропуск, принять деньги, отменить внесённое.'],
-  ['29-demo',        'demo',     null,    0,    'Это демонстрация без сервера', 'Служебное', 'Демо-режим: переключение роли и версия приложения.']
+  ['29-demo',        'demo',     null,    0,    'Это демонстрация', 'Служебное', 'Демо-режим: переключение роли и версия приложения.']
 ];
 const ROLE = { guest: 'guest', staff: 'staff', barQueue: 'bar', barShot: 'bar', barDay: 'bar',
                barExpense: 'bar', curator: 'curator', organizer: 'organizer', eventNew: 'organizer',
@@ -69,12 +69,17 @@ const DARK = [['30-home-dark', 'home', 'Баланс', 'Ночная тема', 
   const n1 = await p.evaluate(() => cartCount());
   if (n1 !== 1) bad.push('клик «В заказ» не положил позицию в заказ: cartCount = ' + n1);
   await p.evaluate(() => go('barCart'));
+  // на экране корзины, а не после отправки: там выбора оплаты нет в любом случае
+  if ((await text()).indexOf('Куда подать') === -1) bad.push('проверка оплаты смотрит не на корзину');
+  if (await p.evaluate(() => !!document.querySelector('[data-pay]'))) bad.push('в заказе есть выбор оплаты — на баре платят только со счёта');
   await p.click('text=к столу');
-  await p.click('text=наличными');
   await p.click('text=Отправить на бар');
   const sent = await p.evaluate(() => DATA.bar.mine && DATA.bar.mine.id + '|' + DATA.bar.mine.where + '|' + DATA.bar.mine.pay + '|' + DATA.bar.mine.state);
-  if (sent !== 'A-17|к столу|наличными|new') bad.push('заказ ушёл не тем, чем выбрали: ' + sent);
+  if (sent !== 'A-17|к столу|со счёта|new') bad.push('заказ ушёл не тем, чем выбрали: ' + sent);
   if (await p.evaluate(() => cartCount()) !== 0) bad.push('после отправки заказ не опустел');
+  // решения владельца: у бара цены нет, на баре платят только со счёта
+  await p.evaluate(() => { DATA.role = 'bar'; go('barQueue'); });
+  if ((await text()).indexOf('฿') !== -1) bad.push('в очереди бара видна цена: работнику её не показываем');
   // бар принимает: состояние должно смениться у ОБОИХ
   await p.evaluate(() => { DATA.role = 'bar'; go('barQueue'); });
   await p.click('text=Принять');
