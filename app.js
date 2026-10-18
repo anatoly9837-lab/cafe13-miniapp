@@ -188,6 +188,132 @@ var EXP = { cat: 'закуп', pay: 'касса клуба' };
 var EXP_FIELDS = ['e-what', 'e-sum'];
 var ORDERSEQ = 0;
 
+/* ── сервер клуба ──────────────────────────────────────
+   Адрес зашит, а не берётся из ссылки: подпись Telegram — пропуск человека,
+   и страница, которая шлёт её туда, куда скажет параметр в адресе, отдала бы
+   его кому угодно.
+
+   API_ON — выключатель. Включается, только когда на сервере встал список
+   допущенных и CORS приехал той же выкладкой: CORS и есть дверь, список —
+   замок. До этого клиент к серверу не ходит вовсе, и выкладка страницы с
+   выключенным API ничего не открывает. Вне Telegram (initData пуста) запросов
+   нет и с включённым: гостевой вход отложен (Cafe13KPG#52). */
+var API = 'https://api.cafe13.club';
+var API_ON = false;
+var LIVE = false;          // true — данные на экране пришли с сервера, а не из DATA
+var FAIL = '';             // чем кончилась неудачная попытка, для экрана apiDown
+
+function api(method, path, body) {
+  var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  var timer = ctl ? setTimeout(function () { ctl.abort(); }, 10000) : null;
+  var opt = { method: method, headers: { 'X-Telegram-Init-Data': tg.initData } };
+  if (ctl) opt.signal = ctl.signal;
+  if (body !== undefined) {
+    opt.headers['Content-Type'] = 'application/json';
+    opt.body = JSON.stringify(body);
+  }
+  // Сеть упала, CORS не пустил, вышел срок — всё это status 0, а не «пусто».
+  // Неразобранное тело — data undefined: 200 с HTML вместо JSON не данные.
+  return fetch(API + path, opt).then(function (r) {
+    return r.text().then(function (t) {
+      var data;
+      try { data = JSON.parse(t); } catch (e) { data = undefined; }
+      return { status: r.status, data: data };
+    });
+  }, function () {
+    return { status: 0, data: undefined };
+  }).then(function (res) {
+    if (timer) clearTimeout(timer);
+    return res;
+  });
+}
+
+var LEVEL = { member: 'Член клуба', organizer: 'Организатор', partner: 'Бизнес-партнёр' };
+// Имена ролей — только тех, смысл которых записан; остальные показываются кодом.
+var ROLE_NAME = { head: 'Глава клуба', admin: 'Администратор', director: 'Директор',
+                  staff: 'Касса', curator: 'Куратор направления', bar: 'Бар · исполнитель' };
+
+function ruDate(iso) {
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' });
+}
+
+/* Ответ /me → то, что рисуют экраны. Всё, чего не хватает, — отказ целиком
+   (null), а не подстановка: баланс 0 вместо неразобранного и «до —» вместо
+   срока выглядели бы данными. Единственное законное пустое место — ends_at
+   при lifelong: true, это пожизненное членство владельца. */
+function fromMe(d) {
+  if (!d || typeof d !== 'object' || !d.member || typeof d.member !== 'object') return null;
+  if (typeof d.member.tg_user_id !== 'number' || !Array.isArray(d.roles)) return null;
+  if (typeof d.membership_active !== 'boolean') return null;
+  var bal = typeof d.balance === 'number' ? d.balance
+          : typeof d.balance === 'string' && /^-?\d+(\.\d+)?$/.test(d.balance) ? Number(d.balance) : NaN;
+  if (!isFinite(bal)) return null;
+
+  var ms = d.membership, until = null, lifelong = false;
+  if (d.membership_active) {
+    if (!ms || typeof ms !== 'object' || !LEVEL[ms.level] || typeof ms.lifelong !== 'boolean') return null;
+    lifelong = ms.lifelong;
+    if (!lifelong) {
+      until = ms.ends_at ? ruDate(ms.ends_at) : null;
+      if (!until) return null;          // конечное членство без конца — не разобрано
+    }
+  }
+  var p = d.member;
+  return {
+    role: d.membership_active ? ms.level : 'guest',
+    roles: d.roles.map(function (r) { return r && r.role; }).filter(Boolean),
+    consent: !!p.consent_data_at,
+    member: {
+      name: [p.first_name, p.last_name].filter(Boolean).join(' ') || (p.username ? '@' + p.username : 'Без имени'),
+      level: d.membership_active ? LEVEL[ms.level] : '',
+      until: until,
+      lifelong: lifelong,
+      balance: bal,
+      number: p.pass_code || null
+    }
+  };
+}
+
+function untilText(m) {
+  return m.lifelong ? 'Пожизненно' : 'Действует до ' + m.until;
+}
+
+/* Экраны, которые уже стоят на данных сервера. Остальные в живом режиме
+   показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
+   балансом выглядела бы так же настоящей. */
+var WIRED = { home: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
+              loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
+
+function boot() {
+  if (!API_ON || !inTelegram() || !tg.initData) { go(startScreen()); return; }
+  go('loading');
+  api('GET', '/me').then(function (r) {
+    // 401 и 403 — разные люди: первому не дошла подпись, второго нет в списке.
+    if (r.status === 401) { go('noSign'); return; }
+    if (r.status === 403) { go('noAccess'); return; }
+    var me = r.status === 200 ? fromMe(r.data) : null;
+    if (!me) {
+      FAIL = r.status === 0 ? 'Сервер не ответил.'
+           : r.status === 200 ? 'Ответ сервера не разобран.'
+           : 'Сервер ответил кодом ' + r.status + '.';
+      go('apiDown');
+      return;
+    }
+    LIVE = true;
+    DATA.role = me.role;
+    DATA.roles = me.roles;
+    DATA.consent = me.consent;
+    DATA.member = me.member;
+    go(startScreen());
+  });
+}
+
+function startScreen() {
+  return !consentGiven() ? 'consent' : homeOf();
+}
+
 function drinks() {
   var out = [];
   DATA.bar.menu.forEach(function (g) { out = out.concat(g.items); });
@@ -242,6 +368,7 @@ var CONSENT_VERSION = '0.1';
 var CONSENT_KEY = 'cafe13.consent';
 
 function consentGiven() {
+  if (LIVE) return DATA.consent;
   try { return localStorage.getItem(CONSENT_KEY) === CONSENT_VERSION; }
   catch (e) { return false; }
 }
@@ -373,11 +500,11 @@ var SCREENS = {
 
   home: function () {
     var m = DATA.member;
-    var next = DATA.upcoming[0];
-    return '' +
+    var next = LIVE ? null : DATA.upcoming[0];
+    return (FLASH ? flash() : '') +
       '<div class="card strong">' +
         '<div class="row top">' +
-          '<div class="col"><h2>' + esc(m.level) + '</h2><span class="small">Действует до ' + esc(m.until) + '</span></div>' +
+          '<div class="col"><h2>' + esc(m.level) + '</h2><span class="small">' + esc(untilText(m)) + '</span></div>' +
           '<span class="pill on">Активно</span>' +
         '</div>' +
         '<button type="button" class="btn" data-go="pass">' + svg('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3z"/>') + 'Показать пропуск</button>' +
@@ -396,11 +523,12 @@ var SCREENS = {
 
       rolePanel() +
 
+      (LIVE ? myRoles() + notWired('Афиша и записи') :
       '<div class="group">' +
         '<div class="row"><span class="label">На этой неделе</span>' +
         '<button type="button" class="btn quiet" data-go="events">Вся афиша</button></div>' +
         DATA.events.slice(0, 2).map(eventRow).join('') +
-      '</div>';
+      '</div>');
   },
 
   guest: function () {
@@ -754,7 +882,7 @@ var SCREENS = {
      которую проскакивают. Отказ при этом не наказывается — об этом прямо
      сказано внизу. */
   consent: function () {
-    return '<div class="group">' +
+    return (FLASH ? flash() : '') + '<div class="group">' +
         '<h1>Клуб запомнит вас</h1>' +
         '<p>Чтобы вести членство, записи на мероприятия и ваш счёт, клуб сохранит имя из Telegram, номер члена клуба и всё, что вы сделаете в приложении: записи, посещения, движение денег по счёту.</p>' +
       '</div>' +
@@ -1100,7 +1228,43 @@ var SCREENS = {
       '</div>';
   },
 
+  /* Состояния входа. Каждое — свой экран со своей причиной: пустой кабинет
+     у незнакомого выглядел бы как «вы в клубе, просто денег нет». */
+  loading: function () {
+    return '<div class="card quiet"><div class="col"><b>Узнаём вас…</b>' +
+      '<span class="small">Сервер клуба проверяет подпись Telegram.</span></div></div>';
+  },
+
+  noSign: function () {
+    return '<div class="card strong"><h2>Подпись не принята</h2>' +
+      '<p>Сервер клуба не смог убедиться, что вход идёт из Telegram. Так бывает, если приложение открыто давно или не через бота.</p>' +
+      '<p class="small">Закройте приложение и откройте его снова кнопкой меню в чате с ботом.</p></div>';
+  },
+
+  noAccess: function () {
+    return '<div class="card strong"><h2>Вас нет в списке</h2>' +
+      '<p>Приложение клуба пока открыто только для тех, кого внёс владелец. Подпись Telegram в порядке — дело не в ней.</p>' +
+      '<p class="small">Если вам нужен доступ, напишите владельцу клуба.</p></div>';
+  },
+
+  apiDown: function () {
+    return '<div class="card strong"><h2>Сервер клуба недоступен</h2>' +
+      '<p>' + esc(FAIL) + ' Показывать вместо ваших данных примерные мы не будем.</p>' +
+      '<button type="button" class="btn" data-action="retry">Попробовать снова</button></div>';
+  },
+
+  soon: function () {
+    return notWired(TITLES[current] || 'Этот раздел');
+  },
+
   demo: function () {
+    if (LIVE) {
+      return '<div class="card quiet"><div class="col">' +
+          '<b>Данные — с сервера клуба</b>' +
+          '<span class="small">Версия приложения: <b>' + esc(VERSION) + '</b></span>' +
+          '<span class="small">Роль пришла с сервера по подписи Telegram, переключить её отсюда нельзя.</span>' +
+        '</div></div>';
+    }
     var roles = [
       ['guest', 'Гость', 'без членства: только услуги'],
       ['member', 'Член клуба', 'пропуск, афиша, записи'],
@@ -1133,6 +1297,22 @@ var SCREENS = {
       '</div>';
   }
 };
+
+function notWired(what) {
+  return '<div class="card quiet"><div class="col">' +
+    '<b style="font-size:13px">' + esc(what) + ' — ещё не подключено</b>' +
+    '<span class="small">Этот раздел пока работает только в демонстрации. Здесь будут настоящие данные клуба, как только раздел подключат к серверу.</span>' +
+  '</div></div>';
+}
+
+function myRoles() {
+  if (!DATA.roles || !DATA.roles.length) return '';
+  return '<div class="group"><span class="label">Ваши роли</span><div class="card quiet"><div class="row" style="flex-wrap:wrap;gap:6px;justify-content:flex-start">' +
+    DATA.roles.map(function (r) {
+      return '<span class="pill">' + esc(ROLE_NAME[r] || r) + '</span>';
+    }).join('') +
+  '</div></div></div>';
+}
 
 /* У каждой роли свои действия. Пересечений нет: организатор не заводит
    услуги, партнёр не создаёт мероприятия. */
@@ -1270,20 +1450,21 @@ function backTo() {
 }
 
 /* Экраны без вкладок: уйти с них можно решением, а не переключением. */
-function bare() { return current === 'consent' || current === 'consentFull'; }
+var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
+function bare() { return !!BARE[current]; }
 
 var current = 'home';
 var param = null;
 
 function render() {
   var view = document.getElementById('view');
-  view.innerHTML = SCREENS[current](param);
+  view.innerHTML = SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
 
   var root = (TABS[DATA.role] || []).some(function (t) { return t[0] === current; });
-  document.getElementById('back').hidden = root || current === 'consent';
+  document.getElementById('back').hidden = root || bare() && current !== 'consentFull';
 
   var title = document.getElementById('title');
-  if (current === 'home' || current === 'guest' || current === 'consent') {
+  if (current === 'home' || current === 'guest' || bare() && current !== 'consentFull') {
     title.textContent = 'Café XIII';
     title.className = 'wordmark';
   } else {
@@ -1325,6 +1506,7 @@ document.addEventListener('click', function (ev) {
   if (!el) return;
 
   if (el.hasAttribute('data-role')) {
+    if (LIVE) return;                  // роль ставит сервер
     DATA.role = el.getAttribute('data-role');
     go(homeOf());
     return;
@@ -1450,6 +1632,22 @@ function doAction(a) {
       return;
     }
 
+    if (a === 'accept-consent' && LIVE) {
+      api('POST', '/me/consent', { data: true }).then(function (r) {
+        if (r.status === 200 && r.data && r.data.consent_data_at) {
+          DATA.consent = true;
+          haptic('ok');
+          FLASH = { text: 'Согласие принято', note: 'Клуб записал его с датой.' };
+          go(homeOf());
+        } else {
+          haptic('warn');
+          FLASH = { text: 'Согласие не записано',
+                    note: r.status ? 'Сервер ответил кодом ' + r.status + '. Попробуйте ещё раз.' : 'Сервер не ответил. Попробуйте ещё раз.' };
+          render();
+        }
+      });
+      return;
+    }
     if (a === 'accept-consent') {
       giveConsent();
       haptic('ok');
@@ -1458,7 +1656,8 @@ function doAction(a) {
       go(homeOf());
       return;
     }
-    if (a === 'reset-consent') { dropConsent(); go('consent'); return; }
+    if (a === 'reset-consent') { if (LIVE) return; dropConsent(); go('consent'); return; }
+    if (a === 'retry') { boot(); return; }
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'phone') { askPhone(); return; }
@@ -1571,7 +1770,8 @@ function dropDraft() {
 
 /* Главная кнопка внизу — там, где у экрана есть одно главное действие. */
 function mainFor() {
-  if (bare()) return { text: 'Принимаю', a: 'accept-consent' };
+  if (current === 'consent' || current === 'consentFull') return { text: 'Принимаю', a: 'accept-consent' };
+  if (bare() || LIVE && !WIRED[current]) return null;
   if (current === 'eventNew') return { text: 'Опубликовать в афише', a: 'create-event' };
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
   if (current === 'barCart') return { text: 'Отправить на бар', a: 'send-order' };
@@ -1638,4 +1838,4 @@ if (tg) {
   applyTheme();
 }
 
-go(!consentGiven() ? 'consent' : DATA.role === 'guest' ? 'guest' : 'home');
+boot();
