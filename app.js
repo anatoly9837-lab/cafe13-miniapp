@@ -270,6 +270,7 @@ function fromMe(d) {
       name: [p.first_name, p.last_name].filter(Boolean).join(' ') || (p.username ? '@' + p.username : 'Без имени'),
       level: d.membership_active ? LEVEL[ms.level] : '',
       until: until,
+      ends: d.membership_active && !lifelong ? ms.ends_at : null,   // ISO — для запаса пропуска
       lifelong: lifelong,
       balance: bal,
       number: p.pass_code || null
@@ -332,6 +333,21 @@ function fromSaved(p) {
 function dropPass() {
   PASS = null;
   try { localStorage.removeItem(PASS_KEY); } catch (e) { /* нечего стирать */ }
+}
+
+/* Запас переписывается при КАЖДОМ удачном входе, а не только на экране
+   пропуска: продливший членство и не открывавший пропуск увидел бы у двери
+   без сети старый срок — или ничего, когда тот истечёт. Решение владельца:
+   в пропуске зашита дата окончания (membership-and-roles.md §9). */
+function syncPass(me) {
+  if (me.role === 'guest') { dropPass(); return; }        // членство не активно
+  if (!me.member.number) return;                         // код ещё не выдавали — писать нечего
+  try {
+    localStorage.setItem(PASS_KEY, JSON.stringify({
+      code: me.member.number, name: me.member.name, level: me.member.level,
+      ends: me.member.ends, lifelong: me.member.lifelong, uid: tgUid()
+    }));
+  } catch (e) { /* без запаса — только онлайн */ }
 }
 
 function loadPass() {
@@ -407,6 +423,7 @@ function boot() {
     DATA.roles = me.roles;
     DATA.consent = me.consent;
     DATA.member = me.member;
+    syncPass(me);
     go(startScreen());
   });
 }
