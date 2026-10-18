@@ -504,6 +504,130 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     await s.ctx.close();
   }
 
+  // ── очередь на баре (шаг 5) ──
+  // Работнику чужие строки приходят без sum и без items[].price (cafe13-api#11).
+  const worker = (id, number, st, extra) => Object.assign({ id, number, state: st, place: 'к столу', pay_method: 'account',
+    created_at: '2026-10-18T12:0' + id + ':00+00:00', accepted_at: null, ready_at: null, served_at: null,
+    member_id: 50 + id, first_name: 'Гость' + id, last_name: '', photo_url: null,
+    items: [{ title: 'Эспрессо', qty: 2 }] }, extra);
+  const QUEUE = [worker(3, '261018-03', 'new', { photo_url: 'https://t.me/i/userpic/320/x.jpg' }),
+                 worker(2, '261018-02', 'making'), worker(1, '261018-01', 'served')];
+  const BARMAN = clone(OWNER); BARMAN.roles = [{ role: 'bar', direction_id: 7 }];
+  function queue(o) {
+    o = Object.assign({ list: json(200, QUEUE), state: q => json(200, { id: 3, number: '261018-03', state: JSON.parse(q.postData()).state }) }, o);
+    const b = bar({ list: o.list });
+    return q => (q.method() === 'POST' && /\/bar\/orders\/\d+\/state$/.test(q.url())) ? (typeof o.state === 'function' ? o.state(q) : o.state) : b(q);
+  }
+  const statePosts = s => s.calls.filter(c => /\/state$/.test(c.url));
+  async function toQueue(s) {
+    await s.p.click('[data-go="barQueue"]');
+    await s.p.waitForTimeout(250);
+  }
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  {
+    const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
+    await s.p.route('https://t.me/**', r => r.fulfill({ contentType: 'image/png', body: PNG }));
+    if (!(await s.view()).includes('Заказы на баре')) bad.push('queue: нет входа на главной у роли bar');
+    await toQueue(s);
+    const t = await s.view();
+    ['261018-03', '261018-02', 'Гость3', 'Гость2', 'фото нет', 'Принять', 'Готово', 'Смена открыта', '2 ×']
+      .forEach(x => { if (!t.includes(x)) bad.push(`queue: нет «${x}»`); });
+    if (/฿/.test(t)) bad.push('queue: у работника на экране есть цена: ' + (t.match(/.{0,20}฿/) || [''])[0]);
+    if (/NaN|undefined/.test(t)) bad.push('queue: мусор на экране');
+    if (await s.p.evaluate(() => (document.querySelector('img.avatar') || {}).src) !== 'https://t.me/i/userpic/320/x.jpg') bad.push('queue: фото гостя не показано');
+    // в работе — по порядку прихода: 02 раньше 03
+    if (t.indexOf('261018-02') > t.indexOf('261018-03')) bad.push('queue: порядок не по приходу');
+    await s.p.screenshot({ path: `${OUT}/live-queue.png`, fullPage: true });
+
+    await s.p.click('[data-action="q-making:3"]');
+    await s.p.waitForTimeout(250);
+    const sp = statePosts(s);
+    if (sp.length !== 1 || !sp[0].url.endsWith('/bar/orders/3/state') || sp[0].body !== '{"state":"making"}')
+      bad.push('queue: «Принять» ушло не так: ' + JSON.stringify(sp.map(c => [c.url, c.body])));
+    if (s.calls.filter(c => c.method === 'GET' && c.url.includes('/bar/orders')).length < 2) bad.push('queue: после нажатия очередь не перезапрошена');
+    if (s.errs.length) bad.push('queue: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Фото не загрузилось — сказано явно, а не пустой кружок.
+  {
+    const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
+    await s.p.route('https://t.me/**', r => r.fulfill({ status: 404, body: '' }));
+    await toQueue(s);
+    await s.p.waitForTimeout(200);
+    if (!(await s.view()).includes('фото не загрузилось')) bad.push('queue-photo-404: не сказано, что фото не загрузилось');
+    await s.ctx.close();
+  }
+  // Строка без member_id — отказ целиком.
+  {
+    const nomid = worker(3, '261018-03', 'new'); delete nomid.member_id;
+    const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ list: json(200, [nomid]) }));
+    await toQueue(s);
+    if (!(await s.view()).includes('не разобран')) bad.push('queue-nomid: строка без member_id принята');
+    await s.ctx.close();
+  }
+
+  // Отмена — в два нажатия; первое ничего не отправляет.
+  {
+    const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
+    await toQueue(s);
+    await s.p.click('[data-action="q-ask:3"]');
+    if (statePosts(s).length) bad.push('cancel: отменено с первого нажатия');
+    if (!(await s.view()).includes('Точно отменить')) bad.push('cancel: нет подтверждения');
+    await s.p.click('[data-action="q-keep"]');
+    if (statePosts(s).length || (await s.view()).includes('Точно отменить')) bad.push('cancel: «Не отменять» не сработало');
+    await s.p.click('[data-action="q-ask:3"]');
+    await s.p.click('[data-action="q-cancel:3"]');
+    await s.p.waitForTimeout(200);
+    const sp = statePosts(s);
+    if (sp.length !== 1 || sp[0].body !== '{"state":"cancelled"}') bad.push('cancel: ' + JSON.stringify(sp.map(c => c.body)));
+    await s.ctx.close();
+  }
+  // Двойное нажатие — одна смена состояния.
+  {
+    const slow = () => new Promise(res => setTimeout(() => res(json(200, { id: 3, state: 'making' })), 500));
+    const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ state: slow }));
+    await toQueue(s);
+    await s.p.evaluate(() => { doAction('q-making:3'); doAction('q-making:3'); });
+    await s.p.waitForTimeout(800);
+    if (statePosts(s).length !== 1) bad.push(`queue-busy: ${statePosts(s).length} нажатий ушло`);
+    await s.ctx.close();
+  }
+  // Сервер отказал — причина как есть, не «готово».
+  {
+    const s = await open(true, true, json(200, BARMAN), null, null, null,
+      queue({ state: json(409, { detail: 'на счёте гостя не хватает — он пополняет у хостес' }) }));
+    await toQueue(s);
+    await s.p.click('[data-action="q-ready:2"]');
+    await s.p.waitForTimeout(250);
+    if (!(await s.view()).includes('На счёте гостя не хватает — он пополняет у хостес')) bad.push('queue-409: причина не показана');
+    await s.ctx.close();
+  }
+  // Куратор/админ: суммы, если пришли, видны построчно.
+  {
+    const withSum = QUEUE.map(r => Object.assign({}, r, { sum: '140.00' }));
+    const s = await open(true, true, json(200, OWNER), null, null, null, queue({ list: json(200, withSum) }));
+    await toQueue(s);
+    if (!(await s.view()).includes('140 ฿')) bad.push('queue-boss: сумма, присланная сервером, не показана');
+    await s.ctx.close();
+  }
+  // Без роли бара — входа нет; сервер 403 — сказано почему; битая строка — отказ целиком.
+  {
+    const plain = clone(OWNER); plain.roles = [];
+    const s = await open(true, true, json(200, plain), null, null, null, queue());
+    if ((await s.view()).includes('Заказы на баре')) bad.push('queue-norole: вход есть у человека без роли');
+    await s.ctx.close();
+  }
+  for (const [name, list, want] of [
+    ['queue-403', json(403, { detail: 'нет' }), 'Очередь видна бару и куратору'],
+    ['queue-bad', json(200, [Object.assign(worker(3, '261018-03', 'new'), { place: undefined })]), 'не разобран']]) {
+    const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ list }));
+    await toQueue(s);
+    const t = await s.view();
+    if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+    if (await s.p.evaluate(() => !!document.querySelector('[data-action^="q-"]'))) bad.push(`${name}: кнопки без очереди`);
+    await s.ctx.close();
+  }
+
   // Бар закрыт (смена не открыта): меню видно, заказ не уходит, причина названа.
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(false) }));
@@ -602,5 +726,5 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
 
   await b.close();
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 49) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 59) + ' случаев');
 })();
