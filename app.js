@@ -266,6 +266,7 @@ function fromMe(d) {
   return {
     role: d.membership_active ? ms.level : 'guest',
     roles: d.roles.map(function (r) { return r && r.role; }).filter(Boolean),
+    barSide: d.roles.some(function (r) { return r && (r.role === 'admin' || r.role === 'bar' || r.role === 'curator'); }),
     consent: !!p.consent_data_at,
     member: {
       uid: p.tg_user_id,
@@ -288,7 +289,7 @@ function untilText(m) {
    показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
-              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1,
+              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -462,19 +463,98 @@ function failText(r) {
        : 'Сервер ответил кодом ' + r.status + '.';
 }
 
-function loadMenu() {
-  MENU_STATE = 'loading';
+/* Направление «Бар» — общее для меню и очереди. done(текст отказа | '') */
+function loadBar(done) {
   api('GET', '/directions').then(function (r) {
     var b = r.status === 200 ? fromDirections(r.data) : undefined;
-    if (!b) {
-      BAR = null;
+    BAR = b || null;
+    done(b ? '' : b === null ? 'На сервере не нашлось направления «Бар».' : failText(r));
+  });
+}
+
+function loadMenu() {
+  MENU_STATE = 'loading';
+  loadBar(function (err) {
+    if (err) {
       DATA.bar.menu = [];
-      MENU_STATE = b === null ? 'На сервере не нашлось направления «Бар».' : failText(r);
+      MENU_STATE = err;
       if (current === 'bar' || current === 'drink') render();
       return;
     }
-    BAR = b;
     loadBarMenu();
+  });
+}
+
+/* ── очередь на баре ───────────────────────────────────
+   Цены здесь нет и взять её неоткуда: работнику сервер не отдаёт sum и
+   price ни одним полем (решение владельца). Куратору и админу отдаёт —
+   поэтому сумма рисуется построчно, только если поле пришло. Решает
+   сервер, а не экран: по роли на клиенте не гадаем. */
+var QUEUE = null;          // строки очереди или null, пока не пришли
+var QUEUE_FAIL = '';
+var QUEUE_GEN = 0, QUEUE_POLL = null;
+var STATE_BUSY = {};       // id заказа → нажатие в пути
+var CANCEL_ASK = null;     // id заказа, у которого спросили «точно отменить?»
+
+function fromQueue(d) {
+  if (!Array.isArray(d)) return null;
+  var out = [];
+  for (var i = 0; i < d.length; i++) {
+    var o = fromOrder(d[i]);
+    if (!o || typeof d[i].member_id !== 'number') return null;    // битая строка — отказ целиком
+    o.who = [d[i].first_name, d[i].last_name].filter(Boolean).join(' ') || 'Без имени';
+    o.photo = typeof d[i].photo_url === 'string' && /^https:\/\//.test(d[i].photo_url) ? d[i].photo_url : null;
+    out.push(o);
+  }
+  // в работе — сверху и по порядку прихода; закрытые — ниже
+  var open = { new: 1, making: 1, ready: 1 };
+  return out.filter(function (o) { return open[o.state]; }).reverse()
+    .concat(out.filter(function (o) { return !open[o.state]; }));
+}
+
+function loadQueue() {
+  if (QUEUE_POLL) { clearTimeout(QUEUE_POLL); QUEUE_POLL = null; }
+  if (!LIVE || current !== 'barQueue') return;
+  var gen = ++QUEUE_GEN;
+  var go_ = function () {
+    api('GET', '/bar/orders?direction_id=' + BAR.id).then(function (r) {
+      if (current !== 'barQueue' || gen !== QUEUE_GEN) return;
+      var q = r.status === 200 ? fromQueue(r.data) : null;
+      if (q) { QUEUE = q; QUEUE_FAIL = ''; }
+      else {
+        QUEUE_FAIL = r.status === 403 ? 'Очередь видна бару и куратору направления.'
+                   : (QUEUE ? 'Не обновилось: ' : '') + failText(r);
+      }
+      render();
+      if (r.status !== 403) QUEUE_POLL = setTimeout(loadQueue, 8000);
+    });
+  };
+  if (BAR) { go_(); return; }
+  loadBar(function (err) {
+    if (current !== 'barQueue' || gen !== QUEUE_GEN) return;
+    if (err) { QUEUE_FAIL = err; render(); return; }
+    go_();
+  });
+}
+
+function setState(oid, state) {
+  if (STATE_BUSY[oid]) return;
+  STATE_BUSY[oid] = true;
+  CANCEL_ASK = null;
+  render();
+  api('POST', '/bar/orders/' + oid + '/state', { state: state }).then(function (r) {
+    delete STATE_BUSY[oid];
+    // Из ответа берём только состояние: всё остальное — не дело работника.
+    if (r.status === 200 && r.data && r.data.state === state) {
+      (QUEUE || []).forEach(function (o) { if (o.oid === oid) o.state = state; });
+      haptic('ok');
+    } else {
+      haptic('warn');
+      var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+      FLASH = { text: 'Не изменилось',
+                note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r) };
+    }
+    loadQueue();
   });
 }
 
@@ -620,6 +700,7 @@ function boot() {
     LIVE = true;
     DATA.role = me.role;
     DATA.roles = me.roles;
+    DATA.barSide = me.barSide;
     DATA.consent = me.consent;
     DATA.member = me.member;
     syncPass(me);
@@ -844,7 +925,12 @@ var SCREENS = {
 
       rolePanel() +
 
-      (LIVE ? myRoles() + notWired('Афиша и записи') :
+      (LIVE ? myRoles() +
+        (DATA.barSide ? '<div class="group"><span class="label">Работа</span>' +
+          '<button type="button" class="listitem accent" data-go="barQueue">' +
+            '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
+            svg(ICON.chev, 'chev') + '</button></div>' : '') +
+        notWired('Афиша и записи') :
       '<div class="group">' +
         '<div class="row"><span class="label">На этой неделе</span>' +
         '<button type="button" class="btn quiet" data-go="events">Вся афиша</button></div>' +
@@ -1444,6 +1530,25 @@ var SCREENS = {
   },
 
   barQueue: function () {
+    if (LIVE) {
+      var q = QUEUE || [];
+      var cnt = function (st) { return q.filter(function (o) { return o.state === st; }).length; };
+      return (FLASH ? flash() : '') +
+        '<div class="card strong"><div class="row top">' +
+          '<div class="col"><h2>Заказы на баре</h2>' +
+            '<span class="small">' + (BAR ? (BAR.open ? 'Смена открыта' : 'Смена не открыта — новые заказы не приходят') : '') + '</span></div>' +
+          (BAR ? '<span class="pill' + (BAR.open ? ' on' : '') + '">' + (BAR.open ? 'открыт' : 'закрыт') + '</span>' : '') +
+        '</div></div>' +
+        (QUEUE_FAIL ? '<div class="card quiet"><span class="small">' + esc(QUEUE_FAIL) + '</span></div>' : '') +
+        (QUEUE === null ? (QUEUE_FAIL ? '' : '<div class="card quiet"><span class="small">Загружаем очередь…</span></div>') :
+          '<div class="rows">' +
+            '<div><span class="small">Новых</span><b class="num">' + cnt('new') + '</b></div>' +
+            '<div><span class="small">Готовится</span><b class="num">' + cnt('making') + '</b></div>' +
+            '<div><span class="small">Ждут на выдаче</span><b class="num">' + cnt('ready') + '</b></div>' +
+          '</div>' +
+          (q.length ? '<div class="group"><span class="label">Заказы</span>' + q.map(liveCard).join('') + '</div>'
+                    : '<div class="card quiet"><span class="small">Заказов за сегодня и вчера нет.</span></div>'));
+    }
     var by = function (st) {
       return DATA.bar.orders.filter(function (o) { return o.state === st; }).length;
     };
@@ -1820,6 +1925,36 @@ function barRow(d) {
   '</div></div>';
 }
 
+/* Карточка очереди в живом режиме. Фото гостя — чтобы знать, кому несёшь;
+   без фото так и сказано. Суммы нет, если сервер её не прислал. */
+var NEXT = { new: ['making', 'Принять'], making: ['ready', 'Готово'], ready: ['served', 'Выдан'] };
+function liveCard(o) {
+  var st = OSTATE[o.state], nx = NEXT[o.state], busy = STATE_BUSY[o.oid];
+  var face = o.photo
+    ? '<img class="avatar" src="' + esc(o.photo) + '" alt="" referrerpolicy="no-referrer">'
+    : '<span class="avatar" title="фото нет">' + esc(o.who.slice(0, 1).toUpperCase()) + '</span>';
+  var canCancel = o.state === 'new' || o.state === 'making';
+  return '<div class="card' + (o.state === 'new' ? ' strong accent' : '') + '">' +
+    '<div class="row top">' + face +
+      '<div class="col grow"><b>' + esc(o.id) + ' · ' + esc(o.where) + '</b>' +
+        '<span class="small">' + esc(o.at) + ' · ' + esc(o.who) + (o.photo ? '' : ' · фото нет') + ' · ' + esc(o.pay) + '</span></div>' +
+      '<span class="pill' + st.pill + '">' + st.label + '</span>' +
+    '</div>' +
+    '<div class="col">' + o.items.map(function (i) {
+      return '<span class="small"><b class="num">' + i[1] + ' ×</b> ' + esc(i[0]) + '</span>';
+    }).join('') + '</div>' +
+    '<div class="row">' + (o.sum === null ? '<span></span>' : '<b class="num">' + money(o.sum) + ' ฿</b>') +
+      (busy ? '<button type="button" class="btn quiet" disabled>…</button>'
+       : CANCEL_ASK === o.oid
+         ? '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="q-keep">Не отменять</button>' +
+           '<button type="button" class="btn quiet" data-action="q-cancel:' + o.oid + '">Точно отменить</button></span>'
+       : nx ? '<span class="row" style="gap:6px">' +
+           (canCancel ? '<button type="button" class="btn quiet" data-action="q-ask:' + o.oid + '">Отменить</button>' : '') +
+           '<button type="button" class="btn mini" data-action="q-' + nx[0] + ':' + o.oid + '">' + nx[1] + '</button></span>'
+       : '<span class="small">' + (o.state === 'cancelled' ? 'отменён' : 'выдан') + '</span>') +
+    '</div></div>';
+}
+
 function queueCard(o) {
   var st = OSTATE[o.state];
   return '<div class="card' + (o.state === 'new' ? ' strong accent' : '') + '">' +
@@ -1933,6 +2068,7 @@ function go(screen, p) {
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   render();
   if (screen === 'barOrder' && LIVE) pollMine();
+  if (screen === 'barQueue' && LIVE) loadQueue();
   if (screen === 'eventNew') {
     loadDraft(function (restored) {
       if (restored && current === 'eventNew') {
@@ -2014,6 +2150,10 @@ function doAction(a) {
       go('barOrder');
       return;
     }
+    if (a === 'q-making' || a === 'q-ready' || a === 'q-served') { setState(Number(arg), a.slice(2)); return; }
+    if (a === 'q-ask') { CANCEL_ASK = Number(arg); render(); return; }
+    if (a === 'q-keep') { CANCEL_ASK = null; render(); return; }
+    if (a === 'q-cancel') { setState(Number(arg), 'cancelled'); return; }
     if (a === 'order-make' || a === 'order-ready' || a === 'order-serve') {
       var ord = orderById(arg);
       if (ord) {
@@ -2128,6 +2268,23 @@ document.addEventListener('change', function (ev) {
             note: 'Сервера нет, отправить некуда — снимок остался в телефоне. С сервером он уйдёт в клуб: по съёмке ИИ-команда собирает карточку меню, по чеку — подтверждение затраты.' };
   render();
 });
+
+/* Фото гостя не загрузилось — пустой кружок выглядел бы как «так и есть».
+   Бармену нужно знать, что сверять не по чему. error не всплывает, поэтому
+   ловим на погружении. */
+document.addEventListener('error', function (ev) {
+  var img = ev.target;
+  if (!img || img.tagName !== 'IMG' || !img.classList.contains('avatar')) return;
+  var span = document.createElement('span');
+  span.className = 'avatar';
+  span.textContent = '?';
+  span.title = 'фото не загрузилось';
+  var note = document.createElement('span');
+  note.className = 'small';
+  note.textContent = 'фото не загрузилось';
+  img.parentNode.insertBefore(note, img.nextSibling);
+  img.replaceWith(span);
+}, true);
 
 document.getElementById('back').addEventListener('click', function () {
   go(backTo());

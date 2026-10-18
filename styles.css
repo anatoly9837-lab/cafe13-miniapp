@@ -203,6 +203,11 @@ b.num, .big { white-space: nowrap; }
   color: #FFFFFF;
 }
 .pass .who { display: flex; align-items: center; gap: 12px; align-self: stretch; }
+.card .grow { flex: 1 1 auto; min-width: 0; }
+/* фото гостя в очереди бара: по нему бармен знает, кому несёт */
+.card .avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--line); color: var(--ink); font-weight: 700; }
 .pass .avatar {
   flex: 0 0 auto; width: 54px; height: 54px; border-radius: 50%;
   background: rgba(255,255,255,0.18); border: 1px dashed rgba(255,255,255,0.5);
