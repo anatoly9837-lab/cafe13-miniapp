@@ -215,27 +215,60 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     if (s.errs.length) bad.push('pass: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
   }
-  for (const [name, reply, want] of [
-    ['pass-403', json(403, { detail: 'членство не активно' }), 'Членство не активно'],
-    ['pass-bad', json(200, { pass_code: '0042', level: 'member', lifelong: true }), 'Ответ сервера не разобран'],
-    ['pass-down', 'abort', 'Сервер не ответил']]) {
-    const s = await open(true, true, json(200, OWNER), null, reply);
+  const SAVED = { code: 'XIII-0042', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 };
+  for (const [name, reply, want, wiped] of [
+    ['pass-403', json(403, { detail: 'членство не активно' }), 'Членство не активно', true],
+    ['pass-403-other', json(403, { detail: 'нужна роль' }), 'Сервер отказал в пропуске', true],
+    ['pass-bad', json(200, { pass_code: '0042', level: 'member', lifelong: true }), 'Ответ сервера не разобран', false],
+    ['pass-down', 'abort', 'Сервер не ответил', false]]) {
+    const s = await open(true, true, json(200, OWNER), null, reply, SAVED);
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
     const t = await s.view();
     if (!t.includes('Пропуска нет') || !t.includes(want)) bad.push(`${name}: нет отказа «${want}»`);
     if (await s.p.evaluate(() => !!document.querySelector('.code-box'))) bad.push(`${name}: код нарисован без пропуска`);
-    if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: на телефон записан пропуск`);
+    const kept = await s.p.evaluate(() => localStorage.getItem('cafe13.pass'));
+    if (wiped && kept) bad.push(`${name}: запас не стёрт после отказа`);
+    if (!wiped && (!kept || JSON.parse(kept).code !== 'XIII-0042')) bad.push(`${name}: запас испорчен без отказа сервера: ${kept}`);
+    await s.ctx.close();
+  }
+
+  // «доступа нет» на /pass — отказ во входе целиком, а не «пропуска нет».
+  {
+    const s = await open(true, true, json(200, OWNER), null, json(403, { detail: 'доступа нет' }), SAVED);
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    if (!(await s.view()).includes('Вас нет в списке')) bad.push('pass-403-list: не экран «нет в списке»');
+    if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('pass-403-list: запас не стёрт');
+    await s.ctx.close();
+  }
+  // Отказ /me стирает запас.
+  for (const [name, me] of [['me-401-wipes', json(401, {})], ['me-403-wipes', json(403, { detail: 'доступа нет' })]]) {
+    const s = await open(true, true, me, null, null, SAVED);
+    if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: запас не стёрт`);
+    await s.ctx.close();
+  }
+  // Конечный срок сохраняется в ISO и рисуется словами.
+  {
+    const s = await open(true, true, json(200, finite), null,
+      json(200, Object.assign({}, PASS, { lifelong: false, valid_until: '2026-11-14T10:00:00+07:00' })));
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    if (!(await s.view()).includes('до 14 ноября 2026')) bad.push('pass-finite: срок не показан словами');
+    const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
+    if (!kept || kept.ends !== '2026-11-14T10:00:00+07:00') bad.push('pass-finite: срок сохранён не в ISO: ' + JSON.stringify(kept));
     await s.ctx.close();
   }
 
   // Сети нет — сохранённый пропуск этого человека виден на экране сбоя.
-  const SAVED = { code: 'XIII-0042', name: 'Тест', level: 'Член клуба', until: null, lifelong: true, uid: 1 };
   for (const [name, me, saved, show] of [
     ['offline-pass', 'abort', SAVED, true],
     ['offline-other-user', 'abort', Object.assign({}, SAVED, { uid: 2 }), false],
     ['server-500-saved', json(500, {}), SAVED, false],
-    ['offline-broken-saved', 'abort', Object.assign({}, SAVED, { code: 'XIII-42' }), false]]) {
+    ['offline-broken-saved', 'abort', Object.assign({}, SAVED, { code: 'XIII-42' }), false],
+    ['offline-expired', 'abort', Object.assign({}, SAVED, { lifelong: false, ends: '2020-01-01T00:00:00+07:00' }), false],
+    ['offline-finite-live', 'abort', Object.assign({}, SAVED, { lifelong: false, ends: '2099-01-01T00:00:00+07:00' }), true],
+    ['offline-old-format', 'abort', Object.assign({}, SAVED, { lifelong: false, until: '14 ноября 2026' }), false]]) {
     const s = await open(true, true, me, null, null, saved);
     const t = await s.view();
     // «показан» — по заголовку блока, а не по коду: битая запись показала бы не тот код
@@ -249,5 +282,5 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
 
   await b.close();
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 12) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 20) + ' случаев');
 })();
