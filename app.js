@@ -635,6 +635,11 @@ function topupSend() {
         TOPUP.amount = '';
         FLASH = { text: 'Внесено ' + money(amt) + ' ฿', note: now };
         haptic('ok');
+      } else if (ok && !me) {
+        FLASH = { text: 'Записано, но баланс не перечитался',
+                  note: 'Сервер принял внесение, а баланс прочитать не удалось. Было ' + money(before) +
+                        ' ฿. Откройте экран заново. Сверьте, прежде чем вносить снова.' };
+        haptic('warn');
       } else if (ok && me) {
         FLASH = { text: 'Записано, но на счёт не попало',
                   note: 'Сервер принял внесение, а баланс не вырос: было ' + money(before) + ' ฿. ' + now +
