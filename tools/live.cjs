@@ -156,9 +156,13 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const x = document.createElement('button'); x.setAttribute('data-role', 'bar'); x.id = 'fake-role';
       document.getElementById('view').appendChild(x);
     });
+    // признак — набор вкладок до и после, а не «Заказы»: у админа эта вкладка своя
+    const tabsText = () => s.p.evaluate(() => document.getElementById('tabs').textContent);
+    const before = await tabsText();
     await s.p.click('#fake-role');
-    if ((await s.p.evaluate(() => document.getElementById('tabs').textContent)).includes('Заказы'))
-      bad.push('role: в живом режиме роль переключилась из браузера');
+    await s.p.waitForTimeout(100);
+    if (await tabsText() !== before)
+      bad.push('role: в живом режиме роль переключилась из браузера: «' + before + '» → «' + (await tabsText()) + '»');
     await s.ctx.close();
   }
 
@@ -750,6 +754,148 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (show && !t.includes('XIII · 0042')) bad.push(`${name}: показан не тот код`);
     if (!t.includes('Сервер клуба недоступен')) bad.push(`${name}: нет экрана сбоя`);
     if (name === 'offline-pass') await s.p.screenshot({ path: `${OUT}/live-offline-pass.png`, fullPage: true });
+    await s.ctx.close();
+  }
+
+  // ── смена ──
+  // Без открытой смены сервер не принимает заказов (409 «бар закрыт»).
+  // Состояние бара — только из /directions: заглушка переключает is_open,
+  // когда «сервер» принял нажатие, и не переключает, когда «соврал».
+  function shift(o) {
+    o = Object.assign({ open: false, openReply: 201, closeReply: 200, flips: true, detail: null }, o);
+    const st = { open: o.open, dirsCalls: 0 };
+    const q = queue({ list: json(200, QUEUE) });
+    const fn = r => {
+      const u = r.url();
+      if (u.endsWith('/directions')) {
+        st.dirsCalls++;
+        if (o.dirs) { const x = o.dirs(st.dirsCalls, st); if (x !== undefined) return x; }
+        return DIR(st.open);
+      }
+      if (r.method() === 'POST' && u.includes('/shifts/open')) {
+        if (o.openReply < 300 && o.flips) st.open = true;
+        return json(o.openReply, o.openReply < 300 ? { id: 1 } : { detail: o.detail });
+      }
+      if (r.method() === 'POST' && u.includes('/shifts/close')) {
+        if (o.closeReply < 300 && o.flips) st.open = false;
+        return json(o.closeReply, o.closeReply < 300 ? { id: 1 } : { detail: o.detail });
+      }
+      return q(r);
+    };
+    fn.st = st;
+    return fn;
+  }
+  const shiftPosts = s => s.calls.filter(c => c.method === 'POST' && c.url.includes('/shifts/'));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // Админ открывает смену на себя; двойное нажатие — один запрос.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      (() => { const f = shift(); return r => r.method() === 'POST' && r.url().includes('/shifts/open')
+        ? sleep(400).then(() => f(r)) : f(r); })());
+    await toQueue(s);
+    let t = await s.view();
+    if (!t.includes('Смена не открыта') || !t.includes('Открыть смену на себя')) bad.push('shift-open: нет кнопки открытия у админа при закрытом баре');
+    await s.p.click('[data-action="shift-open"]');
+    await s.p.click('[data-action="shift-open"]').catch(() => {});
+    await s.p.waitForTimeout(900);
+    const sp = shiftPosts(s);
+    if (sp.length !== 1 || !sp[0].url.endsWith('/shifts/open') ||
+        sp[0].body !== JSON.stringify({ direction_id: 7, member_id: OWNER.member.tg_user_id }))
+      bad.push('shift-open: ушло не так: ' + JSON.stringify(sp.map(c => [c.url, c.body])));
+    t = await s.view();
+    if (!t.includes('Гости могут заказывать') || !t.includes('Закрыть смену')) bad.push('shift-open: после открытия не видно открытой смены');
+    if (s.errs.length) bad.push('shift-open: ошибки страницы ' + s.errs.join('; '));
+    await s.p.screenshot({ path: `${OUT}/live-shift-open.png`, fullPage: true });
+    await s.ctx.close();
+  }
+  // Бармен: открыть не может (это куратор), закрыть — в два нажатия.
+  {
+    const s = await open(true, true, json(200, BARMAN), null, null, null, shift({ open: true }));
+    await toQueue(s);
+    const has = sel => s.p.$(sel).then(Boolean);
+    if (!(await has('[data-action="shift-ask"]'))) { bad.push('shift-close: у бармена нет кнопки закрытия'); await s.ctx.close(); }
+    else {
+    await s.p.click('[data-action="shift-ask"]');
+    await s.p.waitForTimeout(200);
+    if (shiftPosts(s).length || !(await has('[data-action="shift-keep"]'))) bad.push('shift-close: закрыто с первого нажатия');
+    else {
+    if (!(await s.view()).includes('Новые заказы перестанут приниматься')) bad.push('shift-close: нет предупреждения');
+    await s.p.click('[data-action="shift-keep"]');
+    if (shiftPosts(s).length || (await s.view()).includes('Точно закрыть')) bad.push('shift-close: «Не закрывать» не сработало');
+    await s.p.click('[data-action="shift-ask"]');
+    await s.p.click('[data-action="shift-close"]');
+    await s.p.waitForTimeout(400);
+    const sp = shiftPosts(s);
+    if (sp.length !== 1 || !sp[0].url.endsWith('/shifts/close?direction_id=7') || sp[0].body !== '{}')
+      bad.push('shift-close: ушло не так: ' + JSON.stringify(sp.map(c => [c.url, c.body])));
+    const t = await s.view();
+    if (!t.includes('Смена закрыта') || !t.includes('Смена не открыта')) bad.push('shift-close: после закрытия бар не закрыт на экране');
+    if (t.includes('Открыть смену на себя')) bad.push('shift-barman: бармену предложено открыть смену');
+    if (!t.includes('Смену открывает куратор направления')) bad.push('shift-barman: не сказано, кто открывает');
+    }
+    await s.ctx.close();
+    }
+  }
+  // Куратор ДРУГОГО направления — не куратор бара: ни открыть, ни закрыть.
+  {
+    const other = clone(OWNER); other.roles = [{ role: 'curator', direction_id: 8 }, { role: 'bar', direction_id: 8 }];
+    const s = await open(true, true, json(200, other), null, null, null, shift());
+    await toQueue(s);
+    const t = await s.view();
+    if (!t.includes('Смена не открыта')) bad.push('shift-other: экран смены не показан');
+    if (t.includes('Открыть смену на себя')) bad.push('shift-other: куратору чужого направления предложено открыть смену');
+    await s.ctx.close();
+  }
+  // Сервер отказал — его причина на экране, бар остаётся закрытым.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      shift({ openReply: 403, detail: 'нужна роль curator в направлении 7' }));
+    await toQueue(s);
+    await s.p.click('[data-action="shift-open"]');
+    await s.p.waitForTimeout(400);
+    const t = await s.view();
+    if (!t.includes('Смена не открылась') || !t.includes('Нужна роль curator в направлении 7')) bad.push('shift-403: отказ без причины');
+    if (t.includes('Гости могут заказывать')) bad.push('shift-403: успех при отказе');
+    await s.ctx.close();
+  }
+  // «Принято», а бар по-прежнему закрыт — верим перечитанному, а не ответу.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, shift({ flips: false }));
+    await toQueue(s);
+    await s.p.click('[data-action="shift-open"]');
+    await s.p.waitForTimeout(400);
+    const t = await s.view();
+    if (!t.includes('Смена не открылась') || !t.includes('по-прежнему закрыт')) bad.push('shift-lie: «принято» без открытия выдано за успех');
+    await s.ctx.close();
+  }
+  // Смену открыли с другого телефона — экран узнаёт при опросе; сбой
+  // опроса не стирает известное состояние, а помечает его.
+  {
+    const f = shift({ dirs: (n, st) => { if (n === 2) st.open = true; if (n >= 3) return 'abort'; } });
+    const s = await open(true, true, json(200, BARMAN), null, null, null, f);
+    await toQueue(s);
+    if (!(await s.view()).includes('Смена не открыта')) bad.push('shift-poll: начальное состояние не то');
+    await s.p.waitForTimeout(8400);
+    if (!(await s.view()).includes('Смена открыта')) bad.push('shift-poll: открытие с другого телефона не замечено');
+    await s.p.waitForTimeout(8400);
+    const t = await s.view();
+    if (!t.includes('Смена открыта') || !t.includes('не обновилось')) bad.push('shift-poll: сбой опроса стёр или скрыл состояние смены');
+    await s.ctx.close();
+  }
+
+  // ── вход в очередь по роли, а не по уровню членства ──
+  // Бармен без членства и бармен с членством — обе ветки уровня; оба
+  // обязаны дойти до очереди за нажатия, без знания адресов.
+  for (const [name, member] of [['barman-guest', false], ['barman-member', true]]) {
+    const who = clone(OWNER); who.roles = [{ role: 'bar', direction_id: 7 }];
+    if (!member) { who.membership_active = false; who.membership = null; }
+    const s = await open(true, true, json(200, who), null, null, null, queue());
+    let reached = false;
+    for (const sel of ['#tabs [data-go="barQueue"]', '#view [data-go="barQueue"]']) {
+      if (await s.p.$(sel)) { await s.p.click(sel); await s.p.waitForTimeout(250); reached = true; break; }
+    }
+    const t = await s.view();
+    if (!reached || !t.includes('261018-03')) bad.push(`${name}: бармен не дошёл до очереди`);
     await s.ctx.close();
   }
 
