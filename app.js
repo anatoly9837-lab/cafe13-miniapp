@@ -268,6 +268,9 @@ function fromMe(d) {
     role: d.membership_active ? ms.level : 'guest',
     roles: d.roles.map(function (r) { return r && r.role; }).filter(Boolean),
     barSide: d.roles.some(function (r) { return r && (r.role === 'admin' || r.role === 'bar' || r.role === 'curator'); }),
+    // роль с направлением: куратор бара — не куратор вообще
+    grants: d.roles.filter(function (r) { return r && r.role; })
+      .map(function (r) { return { role: r.role, dir: r.direction_id }; }),
     consent: !!p.consent_data_at,
     member: {
       uid: p.tg_user_id,
@@ -530,12 +533,88 @@ function loadQueue() {
       if (r.status !== 403) QUEUE_POLL = setTimeout(loadQueue, 8000);
     });
   };
-  if (BAR) { go_(); return; }
+  // Смену может открыть другой человек с другого телефона — состояние бара
+  // перечитывается с каждым опросом. Сбой при уже известном баре не стирает
+  // его, а помечает: «не обновилось» честнее, чем пропавшая строка смены.
+  var known = BAR;
   loadBar(function (err) {
     if (current !== 'barQueue' || gen !== QUEUE_GEN) return;
-    if (err) { QUEUE_FAIL = err; render(); return; }
+    if (err && !known) { QUEUE_FAIL = err; render(); return; }
+    if (err) BAR = known;
+    BAR_FAIL = err;
     go_();
   });
+}
+var BAR_FAIL = '';
+
+/* ── смена ─────────────────────────────────────────────
+   Без открытой смены сервер не принимает заказов, поэтому смена открывается
+   отсюда, а не правкой базы. Открывает куратор направления или админ — на
+   себя: выбирать работника не из чего, списка людей у клиента нет.
+   Закрывает бар или куратор. Полей наличных и часов нет: владелец про них не
+   решил, а сервер их не требует. Что смена открылась, говорит не ответ на
+   нажатие, а перечитанное направление. */
+var SHIFT_BUSY = false, SHIFT_ASK = false;
+
+function grant(role, dir) {
+  return (DATA.grants || []).some(function (g) {
+    return g.role === role && (dir === undefined || g.dir === dir);
+  });
+}
+function canOpenShift() { return !!BAR && (grant('admin') || grant('curator', BAR.id)); }
+function canCloseShift() { return canOpenShift() || (!!BAR && grant('bar', BAR.id)); }
+
+function shiftAct(open) {
+  if (SHIFT_BUSY || !BAR) return;
+  SHIFT_BUSY = true; SHIFT_ASK = false;
+  render();
+  var dir = BAR.id;
+  var req = open ? api('POST', '/shifts/open', { direction_id: dir, member_id: DATA.member.uid })
+                 : api('POST', '/shifts/close?direction_id=' + dir, {});
+  req.then(function (r) {
+    var ok = r.status === (open ? 201 : 200);
+    var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+    loadBar(function (err) {
+      SHIFT_BUSY = false;
+      if (err) {
+        // ответа о смене нет — не говорим ни «открыта», ни «нет»
+        FLASH = { text: ok ? 'Сервер принял, но состояние бара не перечиталось' : (open ? 'Смена не открылась' : 'Смена не закрылась'),
+                  note: err + ' Обновите экран.' };
+      } else if (BAR.open === open) {
+        FLASH = open ? { text: 'Смена открыта', note: 'Гости могут заказывать.' }
+                     : { text: 'Смена закрыта', note: 'Новые заказы не принимаются. Заказы в работе остались в очереди.' };
+      } else {
+        FLASH = { text: open ? 'Смена не открылась' : 'Смена не закрылась',
+                  note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.'
+                      : ok ? 'Сервер ответил «принято», но бар по-прежнему ' + (BAR.open ? 'открыт.' : 'закрыт.')
+                      : failText(r) };
+      }
+      haptic(!err && BAR.open === open ? 'ok' : 'warn');
+      loadQueue();
+    });
+  });
+}
+
+function shiftBlock() {
+  if (!BAR) return '';
+  var btn = SHIFT_BUSY ? '<button type="button" class="btn quiet" disabled>…</button>'
+    : BAR.open
+      ? (!canCloseShift() ? ''
+         : SHIFT_ASK
+           ? '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="shift-keep">Не закрывать</button>' +
+             '<button type="button" class="btn quiet" data-action="shift-close">Точно закрыть</button></span>'
+           : '<button type="button" class="btn quiet" data-action="shift-ask">Закрыть смену</button>')
+      : (canOpenShift() ? '<button type="button" class="btn mini" data-action="shift-open">Открыть смену на себя</button>' : '');
+  return '<div class="card strong"><div class="row top">' +
+      '<div class="col"><h2>Заказы на баре</h2>' +
+        '<span class="small">' + (BAR.open ? 'Смена открыта' : 'Смена не открыта — гости не могут заказать') +
+          (BAR_FAIL ? ' · не обновилось: ' + esc(BAR_FAIL) : '') + '</span></div>' +
+      '<span class="pill' + (BAR.open ? ' on' : '') + '">' + (BAR.open ? 'открыт' : 'закрыт') + '</span>' +
+    '</div>' +
+    (SHIFT_ASK && BAR.open ? '<span class="small">Новые заказы перестанут приниматься. Заказы в работе останутся в очереди.</span>' : '') +
+    (btn ? '<div class="row">' + (!BAR.open && !canOpenShift() ? '' : '<span></span>') + btn + '</div>'
+         : !BAR.open ? '<span class="small">Смену открывает куратор направления.</span>' : '') +
+  '</div>';
 }
 
 function setState(oid, state) {
@@ -703,6 +782,7 @@ function boot() {
     DATA.role = me.role;
     DATA.roles = me.roles;
     DATA.barSide = me.barSide;
+    DATA.grants = me.grants;
     DATA.consent = me.consent;
     DATA.member = me.member;
     syncPass(me);
@@ -1531,11 +1611,7 @@ var SCREENS = {
       var q = QUEUE || [];
       var cnt = function (st) { return q.filter(function (o) { return o.state === st; }).length; };
       return (FLASH ? flash() : '') +
-        '<div class="card strong"><div class="row top">' +
-          '<div class="col"><h2>Заказы на баре</h2>' +
-            '<span class="small">' + (BAR ? (BAR.open ? 'Смена открыта' : 'Смена не открыта — новые заказы не приходят') : '') + '</span></div>' +
-          (BAR ? '<span class="pill' + (BAR.open ? ' on' : '') + '">' + (BAR.open ? 'открыт' : 'закрыт') + '</span>' : '') +
-        '</div></div>' +
+        (BAR ? shiftBlock() : '<div class="card strong"><h2>Заказы на баре</h2></div>') +
         (QUEUE_FAIL ? '<div class="card quiet"><span class="small">' + esc(QUEUE_FAIL) + '</span></div>' : '') +
         (QUEUE === null ? (QUEUE_FAIL ? '' : '<div class="card quiet"><span class="small">Загружаем очередь…</span></div>') :
           '<div class="rows">' +
@@ -1999,6 +2075,16 @@ var TITLES = {
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга'
 };
 
+/* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
+   без членства — гость по уровню, и без этого до очереди он не доходил
+   (вход был только кнопкой на главной, а главной у гостя нет). */
+function tabList() {
+  var t = (TABS[DATA.role] || []).slice();
+  if (LIVE && DATA.barSide && !t.some(function (x) { return x[0] === 'barQueue'; }))
+    t.unshift(['barQueue', 'Заказы', ICON.bell]);
+  return t;
+}
+
 /* Куда ведёт «назад» с каждого экрана. Без карты всё падало на первую
    вкладку, и из мероприятия человек улетал на главную вместо списка. */
 function homeOf() {
@@ -2032,7 +2118,7 @@ function render() {
   var view = document.getElementById('view');
   view.innerHTML = SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
 
-  var root = (TABS[DATA.role] || []).some(function (t) { return t[0] === current; });
+  var root = tabList().some(function (t) { return t[0] === current; });
   document.getElementById('back').hidden = root || bare() && current !== 'consentFull';
 
   var title = document.getElementById('title');
@@ -2045,7 +2131,7 @@ function render() {
   }
 
   var tabs = document.getElementById('tabs');
-  var list = bare() ? [] : (TABS[DATA.role] || []);
+  var list = bare() ? [] : tabList();
   tabs.hidden = !list.length;
   document.body.classList.toggle('no-tabs', !list.length);
   tabs.innerHTML = list.map(function (t) {
@@ -2150,6 +2236,10 @@ function doAction(a) {
       return;
     }
     if (a === 'q-making' || a === 'q-ready' || a === 'q-served') { setState(Number(arg), a.slice(2)); return; }
+    if (a === 'shift-open') { shiftAct(true); return; }
+    if (a === 'shift-ask') { SHIFT_ASK = true; render(); return; }
+    if (a === 'shift-keep') { SHIFT_ASK = false; render(); return; }
+    if (a === 'shift-close') { shiftAct(false); return; }
     if (a === 'q-ask') { CANCEL_ASK = Number(arg); render(); return; }
     if (a === 'q-keep') { CANCEL_ASK = null; render(); return; }
     if (a === 'q-cancel') { setState(Number(arg), 'cancelled'); return; }
@@ -2406,7 +2496,7 @@ function tgChrome() {
   if (tg.BackButton && tgHas('6.1')) {
     document.getElementById('back').hidden = true;
     if (backHandler) { tg.BackButton.offClick(backHandler); backHandler = null; }
-    if (BACK[current] || !(TABS[DATA.role] || []).some(function (t) { return t[0] === current; })) {
+    if (BACK[current] || !tabList().some(function (t) { return t[0] === current; })) {
       backHandler = function () { go(backTo()); };
       tg.BackButton.onClick(backHandler);
       tg.BackButton.show();
