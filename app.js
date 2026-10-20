@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v9 · 20.10.2026';
+var VERSION = 'v10 · 20.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1937,12 +1937,15 @@ var SCREENS = {
   },
 
   demo: function () {
+    // В Telegram это не демонстрация: данные настоящие. Панель — будущий
+    // просмотр глазами другого человека; список людей даст сервер, своей
+    // таблицы людей в публичном клиенте нет.
     if (LIVE) {
       return '<div class="card quiet"><div class="col">' +
-          '<b>Данные — с сервера клуба</b>' +
-          '<span class="small">Версия приложения: <b>' + esc(VERSION) + '</b></span>' +
-          '<span class="small">Роль пришла с сервера по подписи Telegram, переключить её отсюда нельзя.</span>' +
-        '</div></div>';
+          '<b>Смотреть глазами другого человека</b>' +
+          '<span class="small">Появится, когда сервер начнёт отдавать список людей: выберете человека — и увидите его экраны на настоящих данных, без права записать что-то от его имени.</span>' +
+        '</div></div>' +
+        '<span class="small">Версия приложения: <b>' + esc(VERSION) + '</b></span>';
     }
     var roles = [
       ['guest', 'Гость', 'без членства: только услуги'],
@@ -2218,7 +2221,7 @@ function render() {
     title.textContent = 'Café XIII';
     title.className = 'wordmark';
   } else {
-    title.textContent = TITLES[current] || 'Café XIII';
+    title.textContent = LIVE && current === 'demo' ? 'Просмотр' : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
 
@@ -2232,12 +2235,14 @@ function render() {
       svg(t[2]) + '<span>' + t[1] + '</span></button>';
   }).join('');
 
+  sunButton();
   tgChrome();
   window.scrollTo(0, 0);
 }
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
+  if (screen === 'demo' && LIVE && !isGod()) return;
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
   if (screen === 'topup' && current !== 'topup') {
     TOPUP.from = current === 'home' ? 'home' : 'bar';
@@ -2483,7 +2488,29 @@ document.addEventListener('error', function (ev) {
 document.getElementById('back').addEventListener('click', function () {
   go(backTo());
 });
-document.getElementById('demo-btn').addEventListener('click', function () { go('demo'); });
+/* Солнышко — только у богов (god, god_mentor), решение владельца 20.10:
+   у остальных переключение работало некорректно. Кнопки нет в разметке
+   вовсе: её создаёт render(), когда /me принёс божественную роль, и убирает,
+   когда нет. Скрытая стилем осталась бы нажимаемой из консоли. Вне Telegram
+   (демонстрация) — тоже нет: там некому быть богом. */
+var GODS = ['god', 'god_mentor'];
+function isGod() {
+  return LIVE && (DATA.roles || []).some(function (r) { return GODS.indexOf(r) !== -1; });
+}
+var SUN = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>';
+function sunButton() {
+  var el = document.getElementById('demo-btn');
+  if (isGod() && !el) {
+    el = document.createElement('button');
+    el.type = 'button'; el.className = 'icon-btn'; el.id = 'demo-btn';
+    el.setAttribute('aria-label', 'Просмотр');
+    el.innerHTML = SUN;
+    el.addEventListener('click', function () { go('demo'); });
+    document.getElementById('bar').appendChild(el);
+  } else if (!isGod() && el) {
+    el.parentNode.removeChild(el);
+  }
+}
 
 /* ── запуск ──────────────────────────────────────────── */
 

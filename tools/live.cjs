@@ -141,6 +141,34 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // ── солнышко только у богов ──
+  // Признак — наличие #demo-btn в DOM, а не видимость: скрытая стилем кнопка
+  // нажимается. Обе стороны: без бога кнопки нет, с богом — есть.
+  for (const [name, roles, inside, want] of [
+    ['sun-admin-head', [{ role: 'admin', direction_id: null }, { role: 'head', direction_id: null }], true, false],
+    ['sun-curator', [{ role: 'curator', direction_id: 7 }], true, false],
+    ['sun-none', [], true, false],
+    ['sun-god', [{ role: 'god', direction_id: null }], true, true],
+    ['sun-god-mentor', [{ role: 'god_mentor', direction_id: null }], true, true],
+    ['sun-outside', OWNER.roles, false, false]]) {
+    const who = clone(OWNER); who.roles = roles;
+    const s = await open(inside, true, json(200, who));
+    const has = !!(await s.p.$('#demo-btn'));
+    if (has !== want) bad.push(`${name}: кнопка солнышка ${has ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
+    // и мимо кнопки — вызовом из консоли — экран переключения не открывается
+    if (!want && inside) {
+      await s.p.evaluate(() => go('demo'));
+      if ((await s.view()).includes('Смотреть глазами другого человека')) bad.push(`${name}: экран солнышка открылся вызовом go('demo')`);
+    }
+    if (want && !(await s.p.isVisible('#demo-btn'))) bad.push(`${name}: кнопка солнышка в DOM, но не видна`);
+    else if (want) {
+      await s.p.click('#demo-btn');
+      if (!(await s.view()).includes('Версия приложения')) bad.push(`${name}: солнышко не открывает экран`);
+    }
+    if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
   // Вкладка, ещё не стоящая на сервере, — «не подключено», а не демонстрационные записи.
   {
     const s = await open(true, true, json(200, OWNER));
@@ -148,9 +176,12 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     const t = await s.view();
     if (!t.includes('ещё не подключено') || t.includes('Звуковая практика')) bad.push('bookings: показаны демонстрационные записи');
     if (await s.p.evaluate(() => window.__main !== null)) bad.push('bookings: главная кнопка на неподключённом экране');
-    await s.p.click('#demo-btn');
+    if (await s.p.isVisible('#demo-btn')) await s.p.click('#demo-btn');
+    else bad.push('demo: у владельца (god_mentor) нет видимого солнышка');
     const d = await s.view();
-    if (!d.includes('Данные — с сервера клуба') || d.includes('Смотреть как')) bad.push('demo: в живом режиме доступно переключение роли');
+    if (!d.includes('Смотреть глазами другого человека') || d.includes('Смотреть как')) bad.push('demo: в живом режиме доступно переключение роли');
+    if (/демонстрац|Демо/.test(d + await s.p.evaluate(() => document.getElementById('title').textContent)))
+      bad.push('demo: в живом режиме панель называет себя демонстрацией');
     // Кнопок роли в живом режиме нет, но и подсунутая в разметку не должна сработать.
     await s.p.evaluate(() => {
       const x = document.createElement('button'); x.setAttribute('data-role', 'bar'); x.id = 'fake-role';
@@ -1092,5 +1123,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 61) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 67) + ' случаев');
 })();
