@@ -411,20 +411,24 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   }
 
   // Не хватает на счёте (сервер решает) — экран пополнения, а не немой отказ.
-  {
-    const s = await open(true, true, json(200, OWNER), null, null, null,
+  // Член без права кассы видит, куда идти; админ — форму внести себе.
+  const NOTILL = clone(OWNER); NOTILL.roles = [];
+  for (const [who, name, want] of [[NOTILL, 'topup-409', 'пополняется у хостес'], [OWNER, 'topup-409-admin', null]]) {
+    const s = await open(true, true, json(200, who), null, null, null,
       bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830' }) }));
     await toBar(s);
     await s.p.click('[data-action="buy:11"]');
     await s.p.waitForTimeout(250);
     const t = await s.view();
-    ['На счёте не хватает', 'не хватает 1830', 'пополняется у хостес'].forEach(x => { if (!t.includes(x)) bad.push(`topup-409: нет «${x}»`); });
-    await s.p.screenshot({ path: `${OUT}/live-topup.png` });
+    ['На счёте не хватает', 'не хватает 1830'].concat(want ? [want] : []).forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
+    if (!want && !(await s.p.$('#t-amount'))) bad.push(`${name}: админу нет формы внесения`);
+    if (want && (await s.p.$('#t-amount'))) bad.push(`${name}: форма внесения без права кассы`);
+    await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
     await s.ctx.close();
   }
   // Кнопка «Не хватает» ведёт туда же без запроса.
   {
-    const s = await open(true, true, json(200, OWNER), null, null, null, bar());
+    const s = await open(true, true, json(200, NOTILL), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-go="topup"]');
     if (!(await s.view()).includes('пополняется у хостес')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
@@ -880,6 +884,110 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.p.waitForTimeout(8400);
     const t = await s.view();
     if (!t.includes('Смена открыта') || !t.includes('не обновилось')) bad.push('shift-poll: сбой опроса стёр или скрыл состояние смены');
+    await s.ctx.close();
+  }
+
+  // ── внести себе на счёт ──
+  // POST /till отвечает строкой книги (RETURNING id, at, kind, amount,
+  // method, member_id, note — cafe13-api app/routers/till.py, по коду, не
+  // по снимку). Баланс после — только из перечитанного /me.
+  function till(o) {
+    o = Object.assign({ reply: q => json(201, Object.assign({ id: 90, at: '2026-10-20T10:00:00+00:00', kind: 'topup', note: '' },
+                                                           (({ amount, method, member_id }) => ({ amount: String(amount) + '.00', method, member_id }))(JSON.parse(q.postData())))),
+                        after: 3670 }, o);
+    const st = { posted: false };
+    return r => {
+      const u = r.url();
+      if (r.method() === 'POST' && u.endsWith('/till')) {
+        if (o.reply === 'abort') { st.posted = true; return 'abort'; }
+        const x = o.reply(r); st.posted = r.postData && x.status < 300; return x;
+      }
+      if (u.endsWith('/me') && st.posted) { const m = clone(o.who || OWNER); m.balance = o.after; return json(200, m); }
+      return undefined;
+    };
+  }
+  const tillPosts = s => s.calls.filter(c => c.method === 'POST' && c.url.endsWith('/till'));
+  async function toTopup(s, amount) {
+    if (!(await s.p.$('#view [data-go="topup"]'))) { bad.push('topup: на главной нет «Внести себе на счёт»'); return false; }
+    await s.p.click('#view [data-go="topup"]');
+    await s.p.waitForTimeout(150);
+    if (!(await s.p.$('#t-amount'))) { bad.push('topup: нет поля суммы'); return false; }
+    await s.p.fill('#t-amount', amount);
+    return true;
+  }
+  // Админ вносит себе картой: два нажатия, одно тело, баланс — из /me.
+  for (const _ of [0]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, till());
+    if (await toTopup(s, '500')) {
+      await s.p.click('[data-action="t-method:card"]');
+      await s.p.click('[data-action="t-ask"]');
+      await s.p.waitForTimeout(150);
+      if (tillPosts(s).length || !(await s.p.$('[data-action="t-keep"]'))) { bad.push('topup: внесено с первого нажатия'); await s.ctx.close(); continue; }
+      let t = await s.view();
+      if (!t.includes('Внести 500 ฿ картой на свой счёт?')) bad.push('topup: подтверждение не называет сумму и способ: ' + t.slice(0, 200));
+      await s.p.click('[data-action="t-keep"]');
+      if (tillPosts(s).length || (await s.p.$('[data-action="t-send"]'))) bad.push('topup: «Не вносить» не сработало');
+      await s.p.click('[data-action="t-ask"]');
+      await s.p.click('[data-action="t-send"]');
+      await s.p.waitForTimeout(400);
+      const tp = tillPosts(s);
+      if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'topup', amount: 500, method: 'card', member_id: OWNER.member.tg_user_id }))
+        bad.push('topup: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
+      t = await s.view();
+      if (!t.includes('Внесено 500 ฿') || !t.includes('На счёте сейчас 3 670 ฿')) bad.push('topup: нет итога с перечитанным балансом');
+      await s.p.screenshot({ path: `${OUT}/live-topup-form.png`, fullPage: true });
+    }
+    if (s.errs.length) bad.push('topup: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Не сумма — не отправляется.
+  for (const bad_ of ['abc', '0', '-5', '1.234']) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, till());
+    if (await toTopup(s, bad_)) {
+      await s.p.click('[data-action="t-ask"]');
+      if (!(await s.view()).includes('Сумма — число больше нуля') || (await s.p.$('[data-action="t-send"]')))
+        bad.push(`topup-amount: «${bad_}» принято как сумма`);
+    }
+    await s.ctx.close();
+  }
+  // Ответ потерян — «неизвестно», не «внесено» и не «повторите».
+  for (const [name, reply, want] of [
+    ['topup-lost', 'abort', 'Сервер не ответил'],
+    ['topup-alien', q => json(201, { id: 90, at: 'x', kind: 'topup', amount: '500.00', method: 'cash', member_id: 2, note: '' }), 'Ответ сервера не разобран'],
+    ['topup-403', q => json(403, { detail: 'нужна роль staff' }), 'Нужна роль staff'],
+    // 201 с верными полями, а баланс не вырос (так сервер обходится с
+    // method=cash/card, замер архитектора к #15): не «Внесено».
+    ['topup-nogrow', undefined, 'на счёт не попало']]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      till(Object.assign({ after: name === 'topup-403' || name === 'topup-nogrow' ? 3170 : 3670 }, reply ? { reply } : {})));
+    if (await toTopup(s, '500')) {
+      await s.p.click('[data-action="t-ask"]');
+      await s.p.waitForTimeout(150);
+      if (!(await s.p.$('[data-action="t-send"]'))) { bad.push(`${name}: нет подтверждения перед внесением`); await s.ctx.close(); continue; }
+      await s.p.click('[data-action="t-send"]');
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+      if (t.includes('Внесено 500')) bad.push(`${name}: выдано за успех`);
+      if (name === 'topup-lost' || name === 'topup-alien') { if (!t.includes('Сверьте, прежде чем вносить снова')) bad.push(`${name}: не предупреждено о двойном внесении`); }
+      if (name === 'topup-nogrow' && !t.includes('Не вносите снова')) bad.push(`${name}: не предупреждено о двойном внесении`);
+      if (name === 'topup-403' && !t.includes('Не внесено')) bad.push(`${name}: отказ не назван`);
+    }
+    await s.ctx.close();
+  }
+  // Без права кассы — прежний текст и никакой формы.
+  {
+    const poor = clone(BARMAN); poor.balance = 0;
+    const s = await open(true, true, json(200, poor), null, null, null, bar());
+    if (await s.p.$('#view [data-go="topup"]')) bad.push('topup-norole: бармену предложено вносить');
+    await toBar(s);
+    if (!(await s.p.$('#view [data-go="topup"]'))) bad.push('topup-norole: при нуле нет пути к пополнению');
+    else {
+      await s.p.click('#view [data-go="topup"]');
+      await s.p.waitForTimeout(100);
+      if (await s.p.$('#t-amount')) bad.push('topup-norole: форма внесения у бармена');
+      if (!(await s.view()).includes('у хостес')) bad.push('topup-norole: нет прежнего текста');
+    }
     await s.ctx.close();
   }
 

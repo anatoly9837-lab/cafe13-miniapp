@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v8 · 20.10.2026';
+var VERSION = 'v9 · 20.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -595,6 +595,65 @@ function shiftAct(open) {
   });
 }
 
+/* ── внести себе на счёт ──────────────────────────────
+   Самый короткий путь к первому заказу: человек с правом кассы вносит
+   СЕБЕ, без поиска по коду пропуска. Сервер пускает в POST /till кассу,
+   директора, главу клуба и админа — клиент показывает экран им же.
+   Ответ мог потеряться после записи: «повторите» тогда — двойное
+   внесение, поэтому вместо него — перечитанный баланс и просьба сверить.
+   «Внесено» — только когда перечитанный баланс вырос ровно на сумму: сервер
+   отвечает 201 и на строку, которая в баланс не попала (способ оплаты,
+   который баланс не считает), и такой 201 — правдоподобный успех. */
+var TOPUP = { amount: '', method: 'cash', ask: false, busy: false, err: '', from: 'bar' };
+var TILL = ['admin', 'head', 'director', 'staff'];
+
+function canTopup() {
+  return LIVE && TILL.some(function (r) { return grant(r); });
+}
+function topupAmount(v) {
+  var t = String(v || '').trim().replace(',', '.');
+  return /^\d+(\.\d{1,2})?$/.test(t) && Number(t) > 0 ? Number(t) : null;
+}
+function topupSend() {
+  if (TOPUP.busy) return;
+  var amt = topupAmount(TOPUP.amount);
+  if (amt === null) return;
+  TOPUP.busy = true; TOPUP.ask = false;
+  render();
+  var before = DATA.member.balance, uid = DATA.member.uid;
+  api('POST', '/till', { kind: 'topup', amount: amt, method: TOPUP.method, member_id: uid }).then(function (r) {
+    var d = r.data;
+    var ok = r.status === 201 && !!d && d.kind === 'topup' && num(d.amount) === amt && d.member_id === uid;
+    var detail = d && typeof d.detail === 'string' ? d.detail : '';
+    api('GET', '/me').then(function (m) {
+      var me = m.status === 200 ? fromMe(m.data) : null;
+      if (me) DATA.member.balance = me.member.balance;
+      var now = me ? 'На счёте сейчас ' + money(me.member.balance) + ' ฿.' : 'Баланс не перечитался — откройте экран заново.';
+      var grew = !!me && Math.abs(me.member.balance - before - amt) < 0.005;
+      TOPUP.busy = false;
+      if (ok && grew) {
+        TOPUP.amount = '';
+        FLASH = { text: 'Внесено ' + money(amt) + ' ฿', note: now };
+        haptic('ok');
+      } else if (ok && me) {
+        FLASH = { text: 'Записано, но на счёт не попало',
+                  note: 'Сервер принял внесение, а баланс не вырос: было ' + money(before) + ' ฿. ' + now +
+                        ' Не вносите снова — сообщите администратору клуба.' };
+        haptic('warn');
+      } else if (r.status === 0 || r.status === 201) {
+        FLASH = { text: 'Неизвестно, внесено ли',
+                  note: (r.status === 0 ? 'Сервер не ответил. ' : 'Ответ сервера не разобран. ') + now +
+                        ' Было ' + money(before) + ' ฿. Сверьте, прежде чем вносить снова.' };
+        haptic('warn');
+      } else {
+        FLASH = { text: 'Не внесено', note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r) };
+        haptic('warn');
+      }
+      if (current === 'topup') render();
+    });
+  });
+}
+
 function shiftBlock() {
   if (!BAR) return '';
   var btn = SHIFT_BUSY ? '<button type="button" class="btn quiet" disabled>…</button>'
@@ -1008,6 +1067,7 @@ var SCREENS = {
       rolePanel() +
 
       (LIVE ? myRoles() +
+        (canTopup() ? '<button type="button" class="btn ghost" data-go="topup">Внести себе на счёт</button>' : '') +
         (DATA.barSide ? '<div class="group"><span class="label">Работа</span>' +
           '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
@@ -1599,6 +1659,32 @@ var SCREENS = {
   /* Пополнения в приложении нет: деньги принимает касса клуба. Экран честно
      говорит, где пополнить, а не показывает выключенную кнопку без причины. */
   topup: function () {
+    if (canTopup()) {
+      var amt = topupAmount(TOPUP.amount);
+      var how = TOPUP.method === 'card' ? 'картой' : 'наличными';
+      return (FLASH ? flash() : '') +
+        '<div class="card strong"><span class="label">На счёте</span>' +
+          '<span class="big num">' + money(DATA.member.balance) + ' ฿</span></div>' +
+        '<div class="field"><label for="t-amount">Сколько внести себе, ฿</label>' +
+          '<input id="t-amount" type="text" inputmode="decimal" value="' + esc(TOPUP.amount) + '" placeholder="500"' +
+          (TOPUP.ask || TOPUP.busy ? ' disabled' : '') + '></div>' +
+        (TOPUP.err ? '<span class="small" style="color:var(--clay)">' + esc(TOPUP.err) + '</span>' : '') +
+        '<div class="group"><span class="label">Чем</span><div class="seg">' +
+          [['cash', 'Наличные'], ['card', 'Карта']].map(function (x) {
+            return '<button type="button" data-action="t-method:' + x[0] + '"' +
+              (TOPUP.method === x[0] ? ' aria-pressed="true"' : '') + (TOPUP.ask || TOPUP.busy ? ' disabled' : '') + '>' + x[1] + '</button>';
+          }).join('') + '</div></div>' +
+        (TOPUP.busy ? '<button type="button" class="btn" disabled>Вносим…</button>'
+         : TOPUP.ask && amt !== null
+           ? '<div class="card"><b>Внести ' + money(amt) + ' ฿ ' + how + ' на свой счёт?</b>' +
+               '<span class="small">Это настоящая запись в книге клуба: внесли вы, себе.</span>' +
+               '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="t-keep">Не вносить</button>' +
+               '<button type="button" class="btn" data-action="t-send">Внести</button></span></div>'
+           : '<button type="button" class="btn" data-action="t-ask">Внести себе на счёт</button>') +
+        '<div class="note">' + svg(ICON.info) +
+          '<span>Ошибочную запись отменяет касса отменой строки — в приложении этого пока нет.</span></div>' +
+        (TOPUP.from === 'home' ? '' : '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>');
+    }
     return (FLASH ? flash() : '') +
       '<div class="card strong"><span class="label">На счёте</span>' +
         '<span class="big num">' + money(DATA.member.balance) + ' ฿</span>' +
@@ -2097,7 +2183,8 @@ function homeOf() {
 var BACK = {
   event: 'events', eventNew: 'organizer', eventManage: 'organizer',
   serviceNew: 'partner', consentFull: 'consent',
-  bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar', topup: 'bar',
+  bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
+  topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
   // съёмка открывается и с бара, и из кабинета куратора — «назад» зависит от роли
   barShot: function () { return DATA.role === 'curator' ? 'curator' : 'barQueue'; }
 };
@@ -2147,6 +2234,10 @@ function render() {
 function go(screen, p) {
   if (!SCREENS[screen]) return;
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
+  if (screen === 'topup' && current !== 'topup') {
+    TOPUP.from = current === 'home' ? 'home' : 'bar';
+    TOPUP.ask = false; TOPUP.err = '';
+  }
   current = screen;
   param = p || null;
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
@@ -2236,6 +2327,15 @@ function doAction(a) {
       return;
     }
     if (a === 'q-making' || a === 'q-ready' || a === 'q-served') { setState(Number(arg), a.slice(2)); return; }
+    if ((a === 't-method' || a === 't-ask') && document.getElementById('t-amount'))
+      TOPUP.amount = document.getElementById('t-amount').value;
+    if (a === 't-method') { TOPUP.method = arg === 'card' ? 'card' : 'cash'; render(); return; }
+    if (a === 't-ask') {
+      TOPUP.err = topupAmount(TOPUP.amount) === null ? 'Сумма — число больше нуля, например 500.' : '';
+      TOPUP.ask = !TOPUP.err; render(); return;
+    }
+    if (a === 't-keep') { TOPUP.ask = false; render(); return; }
+    if (a === 't-send') { topupSend(); return; }
     if (a === 'shift-open') { shiftAct(true); return; }
     if (a === 'shift-ask') { SHIFT_ASK = true; render(); return; }
     if (a === 'shift-keep') { SHIFT_ASK = false; render(); return; }
