@@ -297,3 +297,12 @@ body.has-main .dup-main { display: none; }
 
 .meter { display: block; height: 5px; border-radius: 3px; background: var(--surface); margin-top: 5px; overflow: hidden; }
 .meter > span { display: block; height: 100%; background: var(--gold); }
+
+/* Тестовый режим: полоса над каждым экраном, пока он включён. */
+.test-strip {
+  position: sticky; top: calc(58px + env(safe-area-inset-top, 0px)); z-index: 5;
+  margin: -16px -16px 0; padding: 10px 16px;
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  background: var(--gold); color: #1A1208;
+}
+.test-strip .small { color: #1A1208; }
