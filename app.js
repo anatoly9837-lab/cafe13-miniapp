@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v14 · 20.10.2026';
+var VERSION = 'v15 · 20.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -297,6 +297,7 @@ function untilText(m) {
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
+              events: 1, event: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -1268,6 +1269,148 @@ var KIND = {
   donation: { label: function () { return 'Донейшн'; },       pill: 'warm' }
 };
 
+/* ── афиша ────────────────────────────────────
+   Живая афиша и демонстрационная не смешиваются: EVENTS — то, что прислал
+   сервер, DATA.events — зашитые примеры. Подменять вторую первой нельзя:
+   демонстрацию открывают поверх живого режима.
+
+   Что видно в снимке ответа и чего не видно по письму: цена приходит
+   строкой («400.00»); booked_by_me у события, на которое не записался
+   никто, приходит null, а не false, — поэтому поле проверяется на
+   правдивость, а не на равенство; my_booking_id появился позже остальных и
+   его отсутствие ответ не портит — просто отменять нечем. Афиша отдаёт и
+   то, что началось до трёх часов назад: «идёт» — состояние события, а не
+   мусор в ответе. */
+var EVENTS = null;          // афиша с сервера или null, пока не пришла
+var EVENTS_STATE = '';      // '' — не грузили, 'loading', 'ok', иначе текст отказа
+var EVENTS_GEN = 0;         // ответ старого запроса, пришедший позже, молчит
+var SEG = 'все';            // выбранная часть дня на экране афиши
+var TZ = 'Asia/Bangkok';    // афиша клуба живёт по острову, а не по поясу телефона
+
+var SEGS = [['все', 'Все'], ['утро', 'Утро'], ['день', 'День'], ['вечер', 'Вечер']];
+var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+              'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+/* Время события — в поясе клуба. 'en-CA' взят не ради языка, а ради формы
+   YYYY-MM-DD: в ней даты сравниваются строками, без сдвигов руками. */
+function bkk(d) {
+  return {
+    ymd: d.toLocaleDateString('en-CA', { timeZone: TZ }),
+    hm: d.toLocaleTimeString('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }),
+    dow: d.toLocaleDateString('ru-RU', { timeZone: TZ, weekday: 'long' })
+  };
+}
+
+function dayLabel(p, now) {
+  if (p.ymd === bkk(now).ymd) return 'Сегодня, ' + p.dow;
+  if (p.ymd === bkk(new Date(now.getTime() + 86400000)).ymd) return 'Завтра, ' + p.dow;
+  var x = p.ymd.split('-');
+  return Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '') + ', ' + p.dow;
+}
+
+/* Ответ /events → строки, которые рисует экран: имена полей те же, что у
+   демонстрационных событий, чтобы разметка осталась одна. Битое событие —
+   отказ целиком: афиша с пропавшей строкой выглядит полной. */
+function fromEvents(d) {
+  if (!Array.isArray(d)) return null;
+  var now = new Date(), out = [];
+  for (var i = 0; i < d.length; i++) {
+    var e = d[i];
+    if (!e || typeof e.id !== 'number' || typeof e.title !== 'string' || !e.title) return null;
+    if (!KIND[e.kind] || typeof e.duration_min !== 'number' || !(e.duration_min > 0)) return null;
+    if (typeof e.seats !== 'number' || typeof e.seats_left !== 'number' || typeof e.taken !== 'number') return null;
+    var price = num(e.price);
+    if (!(price >= 0)) return null;
+    var start = new Date(e.starts_at);
+    if (isNaN(start.getTime())) return null;
+    var ends = start.getTime() + e.duration_min * 60000;
+    var p = bkk(start), fin = bkk(new Date(ends));
+    out.push({
+      id: String(e.id), at: start.getTime(),
+      title: e.title, day: dayLabel(p, now), time: p.hm, until: fin.hm,
+      seg: partOf(p.hm),
+      // Сервер отдаёт и то, что началось до трёх часов назад. «Идёт» верно
+      // только до конца события: часовая практика, начавшаяся два часа
+      // назад, идущей не является — это было бы правдоподобной ложью.
+      part: now.getTime() >= start.getTime() && now.getTime() < ends ? 'идёт' : partOf(p.hm),
+      done: now.getTime() >= ends,
+      master: [e.organizer_first_name, e.organizer_last_name].filter(Boolean).join(' ') || 'Без имени',
+      seats: e.seats_left, of: e.seats,
+      kind: e.kind, price: price,
+      about: typeof e.about === 'string' ? e.about : '',
+      filmed: !!e.filmed,
+      booked: !!e.booked_by_me,
+      // номер своей записи — им отменяют; читать его будет следующий шаг
+      bookingId: typeof e.my_booking_id === 'number' ? e.my_booking_id : null
+    });
+  }
+  return out.sort(function (a, b) { return a.at - b.at; });
+}
+
+function loadEvents() {
+  EVENTS_STATE = 'loading';
+  var gen = ++EVENTS_GEN;
+  api('GET', '/events').then(function (r) {
+    if (gen !== EVENTS_GEN) return;
+    var list = r.status === 200 ? fromEvents(r.data) : null;
+    if (list) { EVENTS = list; EVENTS_STATE = 'ok'; }
+    else EVENTS_STATE = failText(r);
+    if (current === 'home' || current === 'events' || current === 'event') render();
+  });
+}
+
+function eventList() { return LIVE ? EVENTS : DATA.events; }
+function eventById(id) {
+  var list = eventList() || [];
+  for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) return list[i];
+  return null;
+}
+function segOf(e) { return e.seg || partOf(e.time); }
+
+/* «Афиша не открылась» — это состояние, а не пустая афиша: отказ сервера и
+   ноль событий одинаково выглядят только у вруна. */
+function eventsWait() {
+  return EVENTS_STATE === 'loading' || EVENTS_STATE === ''
+    ? '<div class="card quiet"><span class="small">Загружаем афишу…</span></div>'
+    : '<div class="card strong"><h2>Афиша не открылась</h2><p>' + esc(EVENTS_STATE) + '</p>' +
+      '<button type="button" class="btn" data-action="retry-events">Попробовать снова</button></div>';
+}
+
+/* Вход в афишу с главной. Занимает место, где до сих пор стояло «ещё не
+   подключено». */
+function afishaHome() {
+  if (!EVENTS) return eventsWait();
+  if (!EVENTS.length) return '<div class="group"><span class="label">Афиша</span>' +
+    '<div class="card quiet"><span class="small">В афише пока ничего нет.</span></div></div>';
+  return '<div class="group"><div class="row"><span class="label">Афиша</span>' +
+    '<button type="button" class="btn quiet" data-go="events">Вся афиша</button></div>' +
+    EVENTS.slice(0, 2).map(eventRow).join('') + '</div>';
+}
+
+/* Карточка события на живых данных. Кнопки записи здесь пока нет: запись —
+   следующим шагом, а кнопка, которая ничего не делает, хуже её отсутствия. */
+function eventLive(e) {
+  return '<div class="col"><h1>' + esc(e.title) + '</h1>' +
+      '<span class="small">' + esc(e.day) + ' · ' + esc(e.time) + '–' + esc(e.until) +
+        (e.done ? ' · завершилось' : e.part === 'идёт' ? ' · уже идёт' : '') + '</span></div>' +
+    (e.booked ? '<div class="card accent"><div class="row">' +
+        '<div class="col"><b>Вы записаны</b><span class="small">Место держится за вами.</span></div>' +
+        '<span class="pill on">записаны</span>' +
+      '</div></div>' : '') +
+    '<div class="rows">' +
+      '<div><span class="small">Ведёт</span><b>' + esc(e.master) + '</b></div>' +
+      '<div><span class="small">Мест осталось</span><b class="num">' +
+        (e.seats === 0 ? 'мест нет' : e.seats + ' из ' + e.of) + '</b></div>' +
+      '<div><span class="small">Участие</span><b class="num">' + KIND[e.kind].label(e) + '</b></div>' +
+    '</div>' +
+    (e.about ? '<p style="font-size:14px">' + esc(e.about) + '</p>' : '') +
+    '<div class="note">' + svg(ICON.cam) + '<span>' + (e.filmed
+      ? 'На этом событии ведётся съёмка. Согласие даётся отдельно и его можно не давать — запись останется в силе.'
+      : 'Съёмки на этом событии нет.') + '</span></div>' +
+    (e.booked || e.done ? ''
+      : '<div class="card quiet"><span class="small">Запись из приложения пока не включена.</span></div>');
+}
+
 /* ── утилиты ─────────────────────────────────────────── */
 
 function esc(s) {
@@ -1387,7 +1530,7 @@ var SCREENS = {
             '<span class="grow"><b>Доход и расход бара</b><span class="small">Выручка и затраты руками, с комментарием</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' : '') +
           '</div>' : '') +
-        notWired('Афиша и записи') :
+        afishaHome() :
       '<div class="group">' +
         '<div class="row"><span class="label">На этой неделе</span>' +
         '<button type="button" class="btn quiet" data-go="events">Вся афиша</button></div>' +
@@ -1489,22 +1632,32 @@ var SCREENS = {
   },
 
   events: function () {
-    var parts = ['Все', 'Утро', 'День', 'Вечер'];
+    var list = eventList();
+    if (!list) return eventsWait();
+    var shown = list.filter(function (e) { return SEG === 'все' || segOf(e) === SEG; });
     var days = [];
-    DATA.events.forEach(function (e) {
-      if (days.indexOf(e.day) === -1) days.push(e.day);
-    });
-    return '<div class="seg">' + parts.map(function (p, i) {
-        return '<button type="button" aria-pressed="' + (i === 0) + '">' + p + '</button>';
+    shown.forEach(function (e) { if (days.indexOf(e.day) === -1) days.push(e.day); });
+    return '<div class="seg">' + SEGS.map(function (s) {
+        return '<button type="button" data-action="seg:' + s[0] + '" aria-pressed="' +
+          (SEG === s[0]) + '">' + s[1] + '</button>';
       }).join('') + '</div>' +
-      days.map(function (d) {
+      (shown.length ? days.map(function (d) {
         return '<div class="group"><span class="label">' + esc(d) + '</span>' +
-          DATA.events.filter(function (e) { return e.day === d; }).map(eventRow).join('') +
+          shown.filter(function (e) { return e.day === d; }).map(eventRow).join('') +
         '</div>';
-      }).join('');
+      }).join('')
+      : '<div class="card quiet"><span class="small">' +
+        (list.length ? 'На эту часть дня ничего не назначено.' : 'В афише пока ничего нет.') +
+        '</span></div>');
   },
 
   event: function (id) {
+    if (LIVE) {
+      if (!EVENTS) return eventsWait();
+      var le = eventById(id);
+      return le ? eventLive(le)
+        : '<div class="card quiet"><span class="small">Этого мероприятия в афише больше нет.</span></div>';
+    }
     var e = byId(id) || DATA.events[0];
     var k = KIND[e.kind];
     var foot;
@@ -2421,10 +2574,12 @@ function flash() {
 
 function eventRow(e) {
   var k = KIND[e.kind];
-  return '<button type="button" class="listitem' + (e.kind === 'paid' ? ' accent' : '') + '" data-event="' + e.id + '">' +
+  return '<button type="button" class="listitem' + (e.kind === 'paid' ? ' accent' : '') + '" data-event="' + esc(e.id) + '">' +
     '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.part) + '</span></span>' +
     '<span class="grow"><b>' + esc(e.title) + '</b>' +
-    '<span class="small">ведёт ' + esc(e.master) + ' · ' + (e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats) + '</span></span>' +
+    '<span class="small">ведёт ' + esc(e.master) + ' · ' + (e.done ? 'завершилось'
+      : e.booked ? 'вы записаны'
+      : e.seats === 0 ? 'мест нет' : e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats) + '</span></span>' +
     '<span class="pill ' + k.pill + '">' + k.label(e) + '</span>' +
   '</button>';
 }
@@ -2662,6 +2817,7 @@ function go(screen, p) {
   if (screen === 'barDay' && LIVE) loadDay();
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
+  if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
   render();
   if (screen === 'barOrder' && LIVE) pollMine();
   if (screen === 'barQueue' && LIVE) loadQueue();
@@ -2818,6 +2974,11 @@ function doAction(a) {
     }
 
   {
+    if (a === 'seg' && SEGS.some(function (s) { return s[0] === arg; })) {
+      SEG = arg; haptic(); render(); return;
+    }
+    if (a === 'retry-events') { loadEvents(); render(); return; }
+
     if (a === 'create-event') {
       var title = (val('f-title') || 'Без названия');
       var time = val('f-time') || '19:00';
@@ -3047,6 +3208,9 @@ function mainFor() {
   }
   if (current === 'drink' && !CART[param]) return { text: 'Добавить в заказ', a: 'cart-add:' + param };
   if (current === 'event') {
+    // В живом режиме записи ещё нет: главная кнопка «Оплатить и записаться»
+    // здесь считалась бы по демонстрационному событию и ничего бы не делала.
+    if (LIVE) return null;
     var e = byId(param) || DATA.events[0];
     return { text: e && e.kind === 'paid' ? 'Оплатить ' + e.price + ' ฿ и записаться' : 'Записаться', a: 'book' };
   }
