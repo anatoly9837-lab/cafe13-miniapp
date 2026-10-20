@@ -293,7 +293,7 @@ function untilText(m) {
    показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
-              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1,
+              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -679,6 +679,95 @@ function shiftBlock() {
     (btn ? '<div class="row">' + (!BAR.open && !canOpenShift() ? '' : '<span></span>') + btn + '</div>'
          : !BAR.open ? '<span class="small">Смену открывает куратор направления.</span>' : '') +
   '</div>';
+}
+
+/* ── доход и расход бара ──────────────────────────────
+   Пока заказы не идут через приложение, куратор вносит выручку и затраты
+   руками. Сервер пускает куратора Бара и админа. Категорию, вид затраты и
+   чем платили не подставляем: вид решает, сколько клуб возьмёт с чистой,
+   и выбор по умолчанию был бы решением, которого человек не принимал.
+   Списка записей с сервера нет — под формой только то, на что сервер
+   ответил здесь и сейчас. Успех — 201 и строка, совпавшая с отправленной:
+   201 с чужими полями — «неизвестно», иначе вторая запись тех же денег. */
+var BOOK = { kind: '', amount: '', method: '', cat: '', ekind: '', paid: '', note: '',
+             ask: false, busy: false, err: '', from: 'home', done: [] };
+var BOOK_FAIL = '';
+// «со счёта» сервер не принимает: остатка у направления нет, деньги посчитались бы дважды
+var INCOME_HOW = [['cash', 'Наличные'], ['card', 'Карта']];
+var EXP_CATS = ['закуп', 'расходники', 'зарплата', 'ремонт'];
+var EXP_KINDS = [['opex', 'Текущая', 'вычитается из выручки до доли клуба'],
+                 ['invest', 'Вложение', 'из доли направления, долю клуба не уменьшает']];
+var PAID_BY = [['club_till', 'Касса клуба'], ['bar_cash', 'Наличные бара'], ['partner', 'Свои']];
+
+function pick(list, code) {
+  for (var i = 0; i < list.length; i++) if (list[i][0] === code) return list[i];
+  return null;
+}
+function mayBook() { return LIVE && (grant('admin') || grant('curator')); }
+function canBook() { return mayBook() && !!BAR && (grant('admin') || grant('curator', BAR.id)); }
+
+function bookLoad() {
+  BOOK_FAIL = '';
+  loadBar(function (err) {
+    BOOK_FAIL = err;
+    if (current === 'barMoney') render();
+  });
+}
+function bookGrab() {
+  var a = document.getElementById('b-amount'), n = document.getElementById('b-note');
+  if (a) BOOK.amount = a.value;
+  if (n) BOOK.note = n.value;
+}
+function bookMissing() {
+  if (topupAmount(BOOK.amount) === null) return 'Сумма — число больше нуля, например 240.';
+  if (BOOK.kind === 'income') return BOOK.method ? '' : 'Выберите, чем заплатили.';
+  var miss = [];
+  if (!BOOK.cat) miss.push('категорию');
+  if (!BOOK.ekind) miss.push('вид затраты');
+  if (!BOOK.paid) miss.push('чем платили');
+  return miss.length ? 'Выберите ' + miss.join(', ') + '.' : '';
+}
+function bookSend() {
+  if (BOOK.busy || !canBook()) return;
+  var amt = topupAmount(BOOK.amount);
+  if (amt === null || bookMissing()) return;
+  var inc = BOOK.kind === 'income', note = BOOK.note.trim();
+  var body = inc ? { direction_id: BAR.id, amount: amt, method: BOOK.method, note: note }
+                 : { direction_id: BAR.id, amount: amt, expense_cat: BOOK.cat, expense_kind: BOOK.ekind,
+                     paid_by: BOOK.paid, note: note };
+  BOOK.busy = true; BOOK.ask = false;
+  render();
+  api('POST', inc ? '/bar/income' : '/bar/expenses', body).then(function (r) {
+    var d = r.data;
+    var ok = r.status === 201 && !!d && typeof d.id === 'number' && num(d.amount) === amt && d.note === note &&
+      (inc ? d.method === body.method
+           : d.expense_cat === body.expense_cat && d.expense_kind === body.expense_kind && d.paid_by === body.paid_by);
+    var detail = d && typeof d.detail === 'string' ? d.detail : '';
+    var what = inc ? 'Доход' : 'Расход';
+    BOOK.busy = false;
+    if (ok) {
+      BOOK.done.unshift({ inc: inc, amount: amt, at: hm(d.at), note: note,
+                          how: inc ? pick(INCOME_HOW, body.method)[1].toLowerCase()
+                                   : body.expense_cat + ' · ' + pick(EXP_KINDS, body.expense_kind)[1].toLowerCase() +
+                                     ' · ' + pick(PAID_BY, body.paid_by)[1].toLowerCase() });
+      BOOK.amount = ''; BOOK.note = ''; BOOK.method = ''; BOOK.cat = ''; BOOK.ekind = ''; BOOK.paid = '';
+      FLASH = { text: what + ' записан: ' + money(amt) + ' ฿', note: '' };
+      haptic('ok');
+    } else if (r.status === 0 || r.status === 201) {
+      FLASH = { text: 'Неизвестно, записано ли',
+                note: (r.status === 0 ? 'Сервер не ответил. ' : 'Ответ сервера не разобран. ') +
+                      'Не записывайте снова, пока не сверите: списка записей в приложении ещё нет — спросите администратора клуба.' };
+      haptic('warn');
+    } else if (inc && (r.status === 404 || r.status === 405)) {
+      FLASH = { text: 'Сервер ещё не принимает доходы',
+                note: 'Ничего не записано. Приём появится со следующей выкладкой сервера — пока запишите на бумаге.' };
+      haptic('warn');
+    } else {
+      FLASH = { text: 'Не записано', note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r) };
+      haptic('warn');
+    }
+    if (current === 'barMoney') render();
+  });
 }
 
 function setState(oid, state) {
@@ -1076,7 +1165,11 @@ var SCREENS = {
         (DATA.barSide ? '<div class="group"><span class="label">Работа</span>' +
           '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
-            svg(ICON.chev, 'chev') + '</button></div>' : '') +
+            svg(ICON.chev, 'chev') + '</button>' +
+          (mayBook() ? '<button type="button" class="listitem" data-go="barMoney">' +
+            '<span class="grow"><b>Доход и расход бара</b><span class="small">Выручка и затраты руками, с комментарием</span></span>' +
+            svg(ICON.chev, 'chev') + '</button>' : '') +
+          '</div>' : '') +
         notWired('Афиша и записи') :
       '<div class="group">' +
         '<div class="row"><span class="label">На этой неделе</span>' +
@@ -1697,12 +1790,72 @@ var SCREENS = {
       '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>';
   },
 
+  barMoney: function () {
+    if (!BAR) return (FLASH ? flash() : '') +
+      (BOOK_FAIL ? '<div class="card quiet"><span class="small">' + esc(BOOK_FAIL) + '</span></div>' +
+                   '<button type="button" class="btn ghost" data-action="book-retry">Повторить</button>'
+                 : '<div class="card quiet"><span class="small">Загружаем направление…</span></div>');
+    if (!canBook()) return '<div class="card quiet"><span class="small">Доход и расход Бара вносит куратор направления.</span></div>';
+    var inc = BOOK.kind === 'income', lock = BOOK.ask || BOOK.busy ? ' disabled' : '';
+    var seg = function (label, list, cur, act) {
+      return '<div class="group"><span class="label">' + label + '</span><div class="seg wrap">' +
+        list.map(function (x) {
+          return '<button type="button" data-action="' + act + ':' + esc(x[0]) + '"' +
+            (cur === x[0] ? ' aria-pressed="true"' : '') + lock + '>' + esc(x[1]) + '</button>';
+        }).join('') + '</div></div>';
+    };
+    var form = '';
+    if (BOOK.kind) {
+      var amt = topupAmount(BOOK.amount), k = pick(EXP_KINDS, BOOK.ekind);
+      form =
+        '<div class="field"><label for="b-amount">Сколько, ฿</label>' +
+          '<input id="b-amount" type="text" inputmode="decimal" value="' + esc(BOOK.amount) + '" placeholder="240"' + lock + '></div>' +
+        (inc ? seg('Чем заплатили', INCOME_HOW, BOOK.method, 'b-method')
+             : seg('Категория', EXP_CATS.map(function (c) { return [c, c]; }), BOOK.cat, 'b-cat') +
+               seg('Вид затраты', EXP_KINDS, BOOK.ekind, 'b-kind') +
+               '<span class="small">' + (k ? esc(k[1]) + ' — ' + esc(k[2]) + '.'
+                 : 'Текущая — ' + esc(EXP_KINDS[0][2]) + '; вложение — ' + esc(EXP_KINDS[1][2]) + '.') + '</span>' +
+               seg('Чем платили', PAID_BY, BOOK.paid, 'b-paid')) +
+        '<div class="field"><label for="b-note">Комментарий</label>' +
+          '<input id="b-note" type="text" maxlength="500" value="' + esc(BOOK.note) + '" placeholder="' +
+            (inc ? 'Например: выручка за вечер, 14 чеков' : 'Например: молоко, 6 литров') + '"' + lock + '></div>' +
+        (BOOK.err ? '<span class="small" style="color:var(--clay)">' + esc(BOOK.err) + '</span>' : '') +
+        (BOOK.busy ? '<button type="button" class="btn" disabled>Записываем…</button>'
+         : BOOK.ask && amt !== null
+           ? '<div class="card"><b>Записать ' + (inc ? 'доход' : 'расход') + ' ' + money(amt) + ' ฿?</b>' +
+               '<span class="small">' + esc(inc ? pick(INCOME_HOW, BOOK.method)[1]
+                 : BOOK.cat + ' · ' + k[1].toLowerCase() + ' · ' + pick(PAID_BY, BOOK.paid)[1].toLowerCase()) +
+                 (BOOK.note.trim() ? ' · ' + esc(BOOK.note.trim()) : '') + '</span>' +
+               '<span class="small">Это настоящая запись в книге клуба.</span>' +
+               '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="b-keep">Не записывать</button>' +
+               '<button type="button" class="btn" data-action="b-send">Записать</button></span></div>'
+           : '<button type="button" class="btn" data-action="b-ask">Записать ' + (inc ? 'доход' : 'расход') + '</button>');
+    }
+    return (FLASH ? flash() : '') +
+      '<div class="seg">' +
+        '<button type="button" data-action="b-new:income"' + (inc ? ' aria-pressed="true"' : '') + lock + '>Доход</button>' +
+        '<button type="button" data-action="b-new:expense"' + (BOOK.kind === 'expense' ? ' aria-pressed="true"' : '') + lock + '>Расход</button>' +
+      '</div>' + form +
+      (BOOK.done.length ? '<div class="group"><span class="label">Записано сейчас</span>' +
+        BOOK.done.map(function (x) {
+          return '<div class="card"><div class="row top">' +
+            '<div class="col"><b>' + (x.inc ? 'Доход' : 'Расход') + '</b>' +
+              '<span class="small">' + esc(x.how) + (x.at ? ' · ' + esc(x.at) : '') + '</span>' +
+              (x.note ? '<span class="small">' + esc(x.note) + '</span>' : '') + '</div>' +
+            '<b class="num">' + (x.inc ? '' : '−') + money(x.amount) + ' ฿</b>' +
+          '</div></div>';
+        }).join('') + '</div>' : '') +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Здесь видно только записанное с этого телефона сейчас: списка за день в приложении ещё нет. Ошибочную запись отменяет администратор клуба.</span></div>';
+  },
+
   barQueue: function () {
     if (LIVE) {
       var q = QUEUE || [];
       var cnt = function (st) { return q.filter(function (o) { return o.state === st; }).length; };
       return (FLASH ? flash() : '') +
         (BAR ? shiftBlock() : '<div class="card strong"><h2>Заказы на баре</h2></div>') +
+        (canBook() ? '<button type="button" class="btn ghost" data-go="barMoney">Доход и расход</button>' : '') +
         (QUEUE_FAIL ? '<div class="card quiet"><span class="small">' + esc(QUEUE_FAIL) + '</span></div>' : '') +
         (QUEUE === null ? (QUEUE_FAIL ? '' : '<div class="card quiet"><span class="small">Загружаем очередь…</span></div>') :
           '<div class="rows">' +
@@ -2164,7 +2317,7 @@ var TITLES = {
   consentFull: 'Подробно',
   bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
-  barExpense: 'Затраты направления', curator: 'Направление «Бар»',
+  barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга'
 };
@@ -2193,6 +2346,7 @@ var BACK = {
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
+  barMoney: function () { return BOOK.from; },
   // съёмка открывается и с бара, и из кабинета куратора — «назад» зависит от роли
   barShot: function () { return DATA.role === 'curator' ? 'curator' : 'barQueue'; }
 };
@@ -2248,8 +2402,13 @@ function go(screen, p) {
     TOPUP.from = current === 'home' ? 'home' : 'bar';
     TOPUP.ask = false; TOPUP.err = '';
   }
+  if (screen === 'barMoney' && current !== 'barMoney') {
+    BOOK.from = current === 'barQueue' ? 'barQueue' : homeOf();
+    BOOK.ask = false; BOOK.err = '';
+  }
   current = screen;
   param = p || null;
+  if (screen === 'barMoney' && LIVE && !BAR) bookLoad();
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   render();
@@ -2345,6 +2504,21 @@ function doAction(a) {
       TOPUP.ask = !TOPUP.err; render(); return;
     }
     if (a === 't-keep') { TOPUP.ask = false; render(); return; }
+    if (a === 'book-retry') { bookLoad(); render(); return; }
+    if (a.slice(0, 2) === 'b-') {
+      if (BOOK.busy) return;
+      bookGrab();
+      if (a === 'b-new') { BOOK.kind = arg === 'income' ? 'income' : 'expense'; BOOK.ask = false; BOOK.err = ''; }
+      if (a === 'b-method' && pick(INCOME_HOW, arg)) BOOK.method = arg;
+      if (a === 'b-cat' && EXP_CATS.indexOf(arg) !== -1) BOOK.cat = arg;
+      if (a === 'b-kind' && pick(EXP_KINDS, arg)) BOOK.ekind = arg;
+      if (a === 'b-paid' && pick(PAID_BY, arg)) BOOK.paid = arg;
+      if (a === 'b-ask') { BOOK.err = bookMissing(); BOOK.ask = !BOOK.err; }
+      if (a === 'b-keep') BOOK.ask = false;
+      if (a === 'b-send') { bookSend(); return; }
+      if (BOOK.err && a !== 'b-ask') BOOK.err = bookMissing() && BOOK.err;
+      haptic(); render(); return;
+    }
     if (a === 't-send') { topupSend(); return; }
     if (a === 'shift-open') { shiftAct(true); return; }
     if (a === 'shift-ask') { SHIFT_ASK = true; render(); return; }

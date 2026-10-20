@@ -1,4 +1,30 @@
 {
+ "bar-expense": {
+  "request": "POST /bar/expenses",
+  "shape": {
+   "amount": null,
+   "at": null,
+   "expense_cat": null,
+   "expense_kind": null,
+   "id": null,
+   "note": null,
+   "paid_by": null
+  },
+  "status": 201
+ },
+ "bar-income": {
+  "request": "POST /bar/income",
+  "shape": {
+   "amount": null,
+   "at": null,
+   "direction_id": null,
+   "id": null,
+   "member_id": null,
+   "method": null,
+   "note": null
+  },
+  "status": 201
+ },
  "directions-curator": {
   "request": "GET /directions",
   "shape": [
