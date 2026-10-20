@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v10 · 20.10.2026';
+var VERSION = 'v11 · 20.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
