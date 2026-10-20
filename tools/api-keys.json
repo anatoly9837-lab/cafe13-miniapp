@@ -209,5 +209,18 @@
    "valid_until": null
   },
   "status": 200
+ },
+ "till-topup": {
+  "request": "POST /till",
+  "shape": {
+   "amount": null,
+   "at": null,
+   "id": null,
+   "kind": null,
+   "member_id": null,
+   "method": null,
+   "note": null
+  },
+  "status": 201
  }
 }

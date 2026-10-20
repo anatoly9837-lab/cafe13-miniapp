@@ -891,8 +891,9 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   // POST /till отвечает строкой книги (RETURNING id, at, kind, amount,
   // method, member_id, note — cafe13-api app/routers/till.py, по коду, не
   // по снимку). Баланс после — только из перечитанного /me.
+  const TILL_ROW = { id: 90, at: '2026-10-20T10:00:00+00:00', kind: 'topup', amount: '500.00', method: 'card', member_id: 1, note: '' };
   function till(o) {
-    o = Object.assign({ reply: q => json(201, Object.assign({ id: 90, at: '2026-10-20T10:00:00+00:00', kind: 'topup', note: '' },
+    o = Object.assign({ reply: q => json(201, Object.assign({}, TILL_ROW,
                                                            (({ amount, method, member_id }) => ({ amount: String(amount) + '.00', method, member_id }))(JSON.parse(q.postData())))),
                         after: 3670 }, o);
     const st = { posted: false };
@@ -902,7 +903,10 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
         if (o.reply === 'abort') { st.posted = true; return 'abort'; }
         const x = o.reply(r); st.posted = r.postData && x.status < 300; return x;
       }
-      if (u.endsWith('/me') && st.posted) { const m = clone(o.who || OWNER); m.balance = o.after; return json(200, m); }
+      if (u.endsWith('/me') && st.posted) {
+        if (o.meFail) return json(500, { detail: 'x' });
+        const m = clone(o.who || OWNER); m.balance = o.after; return json(200, m);
+      }
       return undefined;
     };
   }
@@ -953,13 +957,20 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   // Ответ потерян — «неизвестно», не «внесено» и не «повторите».
   for (const [name, reply, want] of [
     ['topup-lost', 'abort', 'Сервер не ответил'],
-    ['topup-alien', q => json(201, { id: 90, at: 'x', kind: 'topup', amount: '500.00', method: 'cash', member_id: 2, note: '' }), 'Ответ сервера не разобран'],
+    // 201, баланс вырос, но строка не та — каждое поле своим случаем:
+    // иначе проверка поля перекрыта соседней и мутация её не видит.
+    ['topup-alien', q => json(201, Object.assign({}, TILL_ROW, { member_id: 2 })), 'Ответ сервера не разобран'],
+    ['topup-kind', q => json(201, Object.assign({}, TILL_ROW, { kind: 'membership' })), 'Ответ сервера не разобран'],
+    ['topup-sum', q => json(201, Object.assign({}, TILL_ROW, { amount: '5000.00' })), 'Ответ сервера не разобран'],
+    // записано, а /me не ответил — не «ответ не разобран»: разобран был /till
+    ['topup-nome', 'nome', 'баланс прочитать не удалось'],
     ['topup-403', q => json(403, { detail: 'нужна роль staff' }), 'Нужна роль staff'],
     // 201 с верными полями, а баланс не вырос (так сервер обходится с
     // method=cash/card, замер архитектора к #15): не «Внесено».
     ['topup-nogrow', undefined, 'на счёт не попало']]) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
-      till(Object.assign({ after: name === 'topup-403' || name === 'topup-nogrow' ? 3170 : 3670 }, reply ? { reply } : {})));
+      till(Object.assign({ after: name === 'topup-403' || name === 'topup-nogrow' ? 3170 : 3670, meFail: reply === 'nome' },
+                         reply && reply !== 'nome' ? { reply } : {})));
     if (await toTopup(s, '500')) {
       await s.p.click('[data-action="t-ask"]');
       await s.p.waitForTimeout(150);
@@ -969,7 +980,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (t.includes('Внесено 500')) bad.push(`${name}: выдано за успех`);
-      if (name === 'topup-lost' || name === 'topup-alien') { if (!t.includes('Сверьте, прежде чем вносить снова')) bad.push(`${name}: не предупреждено о двойном внесении`); }
+      if (['topup-lost', 'topup-alien', 'topup-kind', 'topup-sum', 'topup-nome'].includes(name)) { if (!t.includes('Сверьте, прежде чем вносить снова')) bad.push(`${name}: не предупреждено о двойном внесении`); }
       if (name === 'topup-nogrow' && !t.includes('Не вносите снова')) bad.push(`${name}: не предупреждено о двойном внесении`);
       if (name === 'topup-403' && !t.includes('Не внесено')) bad.push(`${name}: отказ не назван`);
     }
@@ -1060,7 +1071,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   const STUBS = {
     'me-member': OWNER, 'pass-member': PASS, 'directions-guest': JSON.parse(DIR(true).body),
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
-    'order-state-worker': { id: 3, number: '261018-03', state: 'making' }
+    'order-state-worker': { id: 3, number: '261018-03', state: 'making' },
+    'till-topup': TILL_ROW
   };
   Object.keys(STUBS).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
