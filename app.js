@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v15 · 20.10.2026';
+var VERSION = 'v16 · 20.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1326,7 +1326,7 @@ function fromEvents(d) {
     var ends = start.getTime() + e.duration_min * 60000;
     var p = bkk(start), fin = bkk(new Date(ends));
     out.push({
-      id: String(e.id), at: start.getTime(),
+      id: String(e.id), eid: e.id, at: start.getTime(),
       title: e.title, day: dayLabel(p, now), time: p.hm, until: fin.hm,
       seg: partOf(p.hm),
       // Сервер отдаёт и то, что началось до трёх часов назад. «Идёт» верно
@@ -1356,6 +1356,59 @@ function loadEvents() {
     if (list) { EVENTS = list; EVENTS_STATE = 'ok'; }
     else EVENTS_STATE = failText(r);
     if (current === 'home' || current === 'events' || current === 'event') render();
+  });
+}
+
+/* ── запись на событие ─────────────────────────────────
+   Деньги при записи не берутся вовсе: платное оплачивается в кассе, взнос
+   донейшна — дело добровольное. Поэтому «записаться» — это только место.
+
+   Успех признаётся ПЕРЕЧИТАННОЙ афишей, а не кодом 201: код говорит, что
+   сервер принял, а человеку нужно то, что сервер теперь отдаёт.
+
+   Отмены записи здесь нет намеренно: она идёт по номеру записи, которого
+   боевой сервер пока не отдаёт, а кнопка, отказывающая по нажатию, хуже
+   своего отсутствия. Отмена — отдельной веткой, после выкладки сервера. */
+var BOOK_BUSY = false;     // запись в пути: второе нажатие молчит
+var BOOK_ERR = '';         // чем кончилась неудачная попытка — текст на карточке
+
+function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
+
+function canBookEvent(e) { return !!e && !e.booked && !e.done && e.seats > 0 && !BOOK_BUSY; }
+
+function bookEvent(id) {
+  var e = eventById(id);
+  if (!LIVE || !canBookEvent(e)) return;
+  BOOK_BUSY = true; BOOK_ERR = ''; render();
+  api('POST', '/bookings', { event_id: e.eid }).then(function (r) {
+    afterBooking(r, id);
+  });
+}
+
+/* Чем бы ни ответил сервер, афиша перечитывается: и отказ «мест нет», и
+   обрыв связи могли случиться потому, что экран устарел. Состоялось ли
+   задуманное, решает перечитанное, а не код ответа. */
+function afterBooking(r, id) {
+  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  api('GET', '/events').then(function (g) {
+    var list = g.status === 200 ? fromEvents(g.data) : null;
+    if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
+    BOOK_BUSY = false;
+    var e = eventById(id);
+    if (!e) BOOK_ERR = 'Этого события в афише больше нет.';
+    else if (e.booked) {
+      haptic('ok');            // успех виден самой карточкой: она нарисована по перечитанной афише
+    } else if (r.status === 200 || r.status === 201) {
+      BOOK_ERR = 'Сервер принял, а в афише этого нет. Откройте экран заново и проверьте, прежде чем нажимать снова.';
+      haptic('warn');
+    } else if (r.status === 0) {
+      BOOK_ERR = 'Сервер не ответил, и в афише ничего не изменилось. Можно попробовать ещё раз.';
+      haptic('warn');
+    } else {
+      BOOK_ERR = detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r);
+      haptic('warn');
+    }
+    if (current === 'event' || current === 'events' || current === 'home') render();
   });
 }
 
@@ -1394,7 +1447,8 @@ function eventLive(e) {
       '<span class="small">' + esc(e.day) + ' · ' + esc(e.time) + '–' + esc(e.until) +
         (e.done ? ' · завершилось' : e.part === 'идёт' ? ' · уже идёт' : '') + '</span></div>' +
     (e.booked ? '<div class="card accent"><div class="row">' +
-        '<div class="col"><b>Вы записаны</b><span class="small">Место держится за вами.</span></div>' +
+        '<div class="col"><b>Вы записаны</b>' +
+          '<span class="small">Место держится за вами. Отмена записи появится в приложении позже.</span></div>' +
         '<span class="pill on">записаны</span>' +
       '</div></div>' : '') +
     '<div class="rows">' +
@@ -1407,8 +1461,33 @@ function eventLive(e) {
     '<div class="note">' + svg(ICON.cam) + '<span>' + (e.filmed
       ? 'На этом событии ведётся съёмка. Согласие даётся отдельно и его можно не давать — запись останется в силе.'
       : 'Съёмки на этом событии нет.') + '</span></div>' +
-    (e.booked || e.done ? ''
-      : '<div class="card quiet"><span class="small">Запись из приложения пока не включена.</span></div>');
+    bookBlock(e);
+}
+
+/* Что можно сделать с событием. Кончившееся и заполненное не предлагают
+   записи вовсе: отказ сервера, полученный после нажатия, человек читает как
+   поломку приложения. */
+function bookBlock(e) {
+  if (BOOK_BUSY) return '<div class="card quiet"><span class="small">Отправляем…</span></div>';
+  var err = BOOK_ERR ? '<div class="card strong"><div class="col">' +
+      '<b style="font-size:13px">Не получилось</b><span class="small">' + esc(BOOK_ERR) + '</span>' +
+    '</div></div>' : '';
+  if (!canBookEvent(e)) {
+    // Объяснение — там, где человек мог ждать кнопку: мест нет. Записанному и
+    // кончившемуся событию объяснять нечего, у них всё сказано карточкой.
+    return err + (!e.booked && !e.done && e.seats === 0
+      ? '<div class="card quiet"><span class="small">Мест нет. Если кто-то снимет запись, место вернётся в афишу.</span></div>'
+      : '');
+  }
+  return err +
+    '<div class="group">' +
+      '<button type="button" class="btn dup-main" data-action="book:' + esc(e.id) + '">Записаться</button>' +
+      '<span class="small" style="text-align:center">' + (e.kind === 'paid'
+        ? 'К оплате ' + money(e.price) + ' ฿ на месте: при записи со счёта не списывается.'
+        : e.kind === 'donation'
+        ? 'Взнос — по желанию и на запись не влияет: передать можно мастеру на месте.'
+        : 'Если передумаете — отмените запись, чтобы место досталось другому.') + '</span>' +
+    '</div>';
 }
 
 /* ── утилиты ─────────────────────────────────────────── */
@@ -2818,6 +2897,7 @@ function go(screen, p) {
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
+  if (screen !== 'event') BOOK_ERR = '';
   render();
   if (screen === 'barOrder' && LIVE) pollMine();
   if (screen === 'barQueue' && LIVE) loadQueue();
@@ -3047,6 +3127,7 @@ function doAction(a) {
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'phone') { askPhone(); return; }
+    if (a === 'book' && LIVE) { bookEvent(arg); return; }
     if (a === 'book')  { haptic('ok'); FLASH = 'Вы записаны'; go('bookings'); return; }
   }
 }
@@ -3208,9 +3289,12 @@ function mainFor() {
   }
   if (current === 'drink' && !CART[param]) return { text: 'Добавить в заказ', a: 'cart-add:' + param };
   if (current === 'event') {
-    // В живом режиме записи ещё нет: главная кнопка «Оплатить и записаться»
-    // здесь считалась бы по демонстрационному событию и ничего бы не делала.
-    if (LIVE) return null;
+    if (LIVE) {
+      var le = eventById(param);
+      if (!canBookEvent(le)) return null;              // кончилось, занято, уже записан — кнопки нет
+      return { text: le.kind === 'paid' ? 'Записаться · ' + money(le.price) + ' ฿ на месте' : 'Записаться',
+               a: 'book:' + le.id };
+    }
     var e = byId(param) || DATA.events[0];
     return { text: e && e.kind === 'paid' ? 'Оплатить ' + e.price + ' ฿ и записаться' : 'Записаться', a: 'book' };
   }

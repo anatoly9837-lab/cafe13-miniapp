@@ -1580,11 +1580,13 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.p.click('[data-event="1"]');
     await s.p.waitForTimeout(100);
     const f = await s.view();
-    ['мест нет', 'Запись из приложения пока не включена', 'Бесплатно'].forEach(x => {
+    // Запись подключена, но на событие без мест её не предлагают: отказ,
+    // полученный после нажатия, человек читает как поломку приложения.
+    ['мест нет', 'Мест нет. Если кто-то снимет запись', 'Бесплатно'].forEach(x => {
       if (!f.includes(x)) bad.push(`event-card-free: нет «${x}»`); });
     ['Вы записаны', 'Записаться'].forEach(x => {
       if (f.includes(x)) bad.push(`event-card-free: есть лишнее «${x}»`); });
-    if (await s.p.evaluate(() => window.__main !== null)) bad.push('event-card-free: главная кнопка на карточке без записи');
+    if (await s.p.evaluate(() => window.__main !== null)) bad.push('event-card-free: главная кнопка предлагает запись туда, где мест нет');
     // Афиша берётся один раз за запуск, а не на каждом переходе.
     const got = s.calls.filter(x => x.url.endsWith('/events')).length;
     if (got !== 1) bad.push(`events: /events запрошен ${got} раз, ждали 1`);
@@ -1636,6 +1638,138 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (back.includes('Афиша не открылась')) bad.push('events-retry: отказ остался после удачного повтора');
     const got = s.calls.filter(x => x.url.endsWith('/events')).length;
     if (got !== 2) bad.push(`events-retry: запросов к /events ${got}, ждали 2`);
+    await s.ctx.close();
+  }
+
+  // ── запись на событие и отмена своей записи ──
+  // Успех признаётся перечитанной афишей, а не кодом 201. Кончившееся и
+  // заполненное событие записи не предлагают вовсе: отказ, полученный после
+  // нажатия, человек читает как поломку приложения.
+  const freeRow = () => EV({ id: 4, taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null });
+  const mineRow = () => EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 });
+  const openCard = async (handler) => {
+    const s = await open(true, true, json(200, OWNER), null, null, null, handler);
+    await s.p.evaluate(() => go('events'));
+    await s.p.waitForTimeout(120);
+    await s.p.click('[data-event="4"]');
+    await s.p.waitForTimeout(120);
+    return s;
+  };
+
+  {
+    let booked = false;
+    const posts = [];
+    const s = await openCard(q => {
+      const u = q.url();
+      if (u.endsWith('/bookings')) { posts.push(q.postData()); booked = true;
+        return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' }); }
+      if (u.endsWith('/events')) return json(200, [booked ? mineRow() : freeRow()]);
+      return undefined;
+    });
+    const card = await s.view();
+    if (!card.includes('Записаться')) bad.push('book: на свободном событии не предлагают записаться');
+    if (!card.includes('К оплате 400 ฿ на месте')) bad.push('book: у платного не сказано, что деньги берут на месте');
+    if (await s.p.evaluate(() => window.__main === null)) bad.push('book: на свободном событии нет главной кнопки');
+
+    // Внутри Telegram экранная кнопка скрыта (body.has-main .dup-main), работает главная.
+    await s.p.evaluate(() => window.__main());
+    await s.p.waitForTimeout(400);
+    const t = await s.view();
+    if (posts.length !== 1) bad.push(`book: POST /bookings ушёл ${posts.length} раз, ждали 1`);
+    if (posts[0] !== '{"event_id":4}') bad.push(`book: тело запроса «${posts[0]}», ждали {"event_id":4} числом`);
+    if (!t.includes('Вы записаны')) bad.push('book: после записи нет «Вы записаны»');
+    if (t.includes('Записаться')) bad.push('book: после записи всё ещё предлагают записаться');
+    const reread = s.calls.filter(c => c.url.endsWith('/events')).length;
+    if (reread !== 2) bad.push(`book: запросов к /events ${reread}, ждали 2 (загрузка и перечитывание)`);
+    if (await s.p.evaluate(() => window.__main !== null)) bad.push('book: главная кнопка осталась на уже записанном событии');
+    await s.p.screenshot({ path: `${OUT}/live-book-done.png` });
+
+    // Отмены в этой ветке нет вовсе: боевой сервер не отдаёт номер записи, а
+    // кнопка, отказывающая по нажатию, хуже своего отсутствия. Проверяем, что
+    // её нет ни разметкой, ни словом, — даже когда номер в ответе есть.
+    if (await s.p.$('[data-action^="book-cancel"]')) bad.push('book: на карточке есть кнопка отмены — она уезжает отдельной веткой');
+    if (t.includes('Отменить запись')) bad.push('book: на карточке предложена отмена, которой на бою нечем сделать');
+    if (s.errs.length) bad.push('book: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
+  // Отказ сервера — его текстом, а не «успешно». Афиша перечитывается и
+  // после отказа: «мест нет» могло прийти потому, что экран устарел.
+  {
+    const s = await openCard(q => {
+      if (q.url().endsWith('/bookings')) return json(409, { detail: 'мест нет' });
+      if (q.url().endsWith('/events')) return json(200, [freeRow()]);
+      return undefined;
+    });
+    await s.p.evaluate(() => window.__main());
+    await s.p.waitForTimeout(400);
+    const t = await s.view();
+    if (!t.includes('Мест нет')) bad.push('book-409: текста отказа сервера на экране нет');
+    if (t.includes('Вы записаны')) bad.push('book-409: отказ показан записью');
+    if (s.calls.filter(c => c.url.endsWith('/events')).length !== 2) bad.push('book-409: афиша после отказа не перечитана');
+    await s.p.screenshot({ path: `${OUT}/live-book-409.png` });
+    await s.ctx.close();
+  }
+
+  // 201 есть, а в афише записи нет — это не успех.
+  {
+    const s = await openCard(q => {
+      if (q.url().endsWith('/bookings')) return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' });
+      if (q.url().endsWith('/events')) return json(200, [freeRow()]);
+      return undefined;
+    });
+    await s.p.evaluate(() => window.__main());
+    await s.p.waitForTimeout(400);
+    const t = await s.view();
+    if (!t.includes('Сервер принял, а в афише этого нет')) bad.push('book-201-pusto: 201 без подтверждения афишей показан успехом');
+    if (t.includes('Вы записаны')) bad.push('book-201-pusto: показана запись, которой в афише нет');
+    await s.ctx.close();
+  }
+
+  // Боевая форма ответа: поля my_booking_id в ней нет вовсе. Карточка обязана
+  // работать так же — запись видна, отмена не предлагается, ошибок страницы нет.
+  {
+    const noId = () => { const r = mineRow(); delete r.my_booking_id; return r; };
+    const s = await openCard(q => q.url().endsWith('/events') ? json(200, [noId()]) : undefined);
+    const t = await s.view();
+    if (!t.includes('Вы записаны')) bad.push('book-boevaya-forma: запись не показана на боевой форме ответа');
+    if (t.includes('Отменить')) bad.push('book-boevaya-forma: обещана отмена, которой на бою нечем сделать');
+    if (await s.p.evaluate(() => window.__main !== null)) bad.push('book-boevaya-forma: главная кнопка на уже записанном событии');
+    if (s.errs.length) bad.push('book-boevaya-forma: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
+  // Кончившемуся и заполненному событию записи не предлагают вовсе.
+  for (const [name, row, has, hasnt] of [
+    ['book-konchilos', EV({ id: 4, title: 'Уже закончился', starts_at: new Date(Date.now() - 9000e3).toISOString(),
+                            duration_min: 60, seats_left: 9, taken: 1 }),
+      ['завершилось'], ['Записаться', 'К оплате']],
+    ['book-mest-net', EV({ id: 4, taken: 12, seats_left: 0 }),
+      ['Мест нет'], ['Записаться', 'К оплате']]]) {
+    const s = await openCard(q => q.url().endsWith('/events') ? json(200, [row]) : undefined);
+    const t = await s.view();
+    has.forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
+    hasnt.forEach(x => { if (t.includes(x)) bad.push(`${name}: есть лишнее «${x}»`); });
+    if (await s.p.evaluate(() => window.__main !== null)) bad.push(`${name}: главная кнопка предлагает запись`);
+    await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
+    await s.ctx.close();
+  }
+
+  // Второе нажатие, пока первое в пути, второй записи не делает.
+  {
+    const posts = [];
+    const s = await openCard(q => {
+      const u = q.url();
+      if (u.endsWith('/bookings')) { posts.push(q.postData());
+        return new Promise(r => setTimeout(() => r(json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' })), 800)); }
+      if (u.endsWith('/events')) return json(200, [freeRow()]);
+      return undefined;
+    });
+    // главной кнопкой и кнопкой на экране — оба пути ведут в одно действие
+    await s.p.evaluate(() => window.__main && window.__main());
+    await s.p.evaluate(() => window.__main && window.__main());
+    await s.p.waitForTimeout(1200);
+    if (posts.length !== 1) bad.push(`book-dvazhdy: POST /bookings ушёл ${posts.length} раз, ждали 1`);
     await s.ctx.close();
   }
 
@@ -1774,5 +1908,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 120) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 145) + ' случаев');
 })();
