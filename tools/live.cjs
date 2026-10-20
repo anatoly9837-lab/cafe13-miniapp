@@ -51,9 +51,9 @@ const noConsent = clone(OWNER); noConsent.member.consent_data_at = null;
 /* [имя, внутри Telegram, API_ON, ответ /me, есть, нет, сколько запросов к API, после] */
 const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
-    ['Пожизненно', '3 170 ฿', 'Глава клуба', 'Администратор', 'ещё не подключено'],
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor'], 1],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 1],
+    ['Пожизненно', '3 170 ฿', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
+    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 2],
+  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 2],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Баланс', 'Вас нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -64,7 +64,8 @@ const CASES = [
     ['Ответ сервера не разобран'], ['Баланс'], 1],
   ['finite-without-end', true, true, json(200, noEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
   ['network-down', true, true, 'abort', ['Сервер не ответил'], ['Баланс'], 1],
-  ['outside-telegram', false, true, json(200, OWNER), ['Действует до 14 ноября', '1 250'], ['Пожизненно'], 0],
+  ['outside-telegram', false, true, json(200, OWNER),
+    ['Действует до 14 ноября', '1 250', 'Звуковая практика'], ['Пожизненно'], 0],
   ['api-off', true, false, json(200, OWNER), ['Действует до 14 ноября', '1 250'], ['Пожизненно'], 0]
 ];
 
@@ -112,7 +113,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const x = extra ? extra(q) : undefined;
       if (x instanceof Promise) return r.fulfill(await x);
       const reply = x !== undefined ? x
-                  : q.url().endsWith('/me/consent') ? consentReply : q.url().endsWith('/pass') ? passReply : me;
+                  : q.url().endsWith('/me/consent') ? consentReply : q.url().endsWith('/pass') ? passReply
+                  : q.url().endsWith('/events') ? json(200, []) : me;
       if (reply === 'abort') return r.abort();
       return r.fulfill(typeof reply === 'function' ? reply() : reply);
     });
@@ -228,7 +230,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.p.click('[data-action="retry"]');
     await s.p.waitForTimeout(150);
     if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
-    if (s.calls.length !== 2) bad.push(`retry: запросов ${s.calls.length}, ждали 2`);
+    if (s.calls.length !== 3) bad.push(`retry: запросов ${s.calls.length}, ждали 3 (/me, /me, /events)`);
     await s.ctx.close();
   }
 
@@ -1243,6 +1245,140 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // ── афиша на живых данных ──
+  // В живом режиме афиша — только с сервера: при любом отказе на экране
+  // отказ, а не зашитые «Звуковая практика» и «Чайная церемония». Цена
+  // приходит строкой («400.00»), booked_by_me у события, на которое не
+  // записался никто, — null, а не false, и своей записью он не становится.
+  const pad2 = n => String(n).padStart(2, '0');
+  const BKKNOW = new Date(Date.now() + 7 * 3600e3);          // стенные часы острова в полях UTC
+  const bkkDay = off => new Date(BKKNOW.getTime() + off * 864e5).toISOString().slice(0, 10);
+  const atBkk = (off, h, m) => new Date(Date.parse(bkkDay(off) + 'T' + pad2(h) + ':' + pad2(m || 0) + ':00Z') - 7 * 3600e3).toISOString();
+  const EV = over => Object.assign({
+    id: 4, title: 'Вечер ханга', starts_at: atBkk(1, 19), duration_min: 90, seats: 12,
+    kind: 'paid', price: '400.00', about: 'Живой звук, место у сцены', filmed: false,
+    organizer_id: 500, organizer_first_name: 'Образец', organizer_last_name: '',
+    taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null
+  }, over);
+  const AFISHA = [
+    EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
+         price: '0.00', about: '', seats: 6, taken: 6, seats_left: 0, booked_by_me: false }),
+    EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
+    EV({ id: 7, title: 'Уже начался', starts_at: new Date(Date.now() - 3600e3).toISOString(),
+         duration_min: 180, kind: 'donation', price: '0.00', seats: 20, taken: 2, seats_left: 18 })
+  ];
+  const evReply = reply => q => q.url().endsWith('/events') ? reply : undefined;
+
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, AFISHA)));
+    const home = await s.view();
+    ['Афиша', 'Вся афиша', 'Утро у воды'].forEach(x => {
+      if (!home.includes(x)) bad.push(`events-home: нет «${x}»`); });
+    ['ещё не подключено', 'Звуковая практика', 'Чайная церемония'].forEach(x => {
+      if (home.includes(x)) bad.push(`events-home: есть лишнее «${x}»`); });
+
+    await s.p.click('[data-go="events"]');
+    await s.p.waitForTimeout(100);
+    const t = await s.view();
+    ['Сегодня,', 'Завтра,', 'Утро у воды', 'Вечер ханга', 'Уже начался', '400 ฿', 'Бесплатно',
+     'Донейшн', 'вы записаны', 'мест нет', 'идёт', 'Образец'].forEach(x => {
+      if (!t.includes(x)) bad.push(`events: нет «${x}»`); });
+    ['400.00', 'Звуковая практика', 'Утренняя практика', '[мастер]', 'ещё не подключено'].forEach(x => {
+      if (t.includes(x)) bad.push(`events: есть лишнее «${x}»`); });
+    // Чужая запись и «ничья» (booked_by_me null) своей не становятся.
+    const mine = await s.p.evaluate(() => [...document.querySelectorAll('#view .listitem')]
+      .filter(e => e.textContent.includes('вы записаны')).length);
+    if (mine !== 1) bad.push(`events: строк «вы записаны» ${mine}, ждали 1`);
+    await s.p.screenshot({ path: `${OUT}/live-events.png` });
+
+    // Сегмент дня фильтрует, а не подсвечивается: вечернее из «Утра» уходит.
+    await s.p.click('[data-action="seg:утро"]');
+    await s.p.waitForTimeout(100);
+    const m = await s.view();
+    if (!m.includes('Утро у воды') || m.includes('Вечер ханга')) bad.push('events: сегмент «Утро» не отфильтровал');
+    await s.p.click('[data-action="seg:все"]');
+    await s.p.waitForTimeout(100);
+
+    // Карточка — из той же выдачи, без обещаний демонстрации.
+    await s.p.click('[data-event="4"]');
+    await s.p.waitForTimeout(100);
+    const c = await s.view();
+    ['Вечер ханга', 'Вы записаны', '400 ฿', 'Живой звук', 'Съёмки на этом событии нет', 'Образец', '11 из 12']
+      .forEach(x => { if (!c.includes(x)) bad.push(`event-card: нет «${x}»`); });
+    ['Оплатить', 'Место держится 15 минут', '400.00', 'Запись из приложения пока не включена']
+      .forEach(x => { if (c.includes(x)) bad.push(`event-card: есть лишнее «${x}»`); });
+    // Главной кнопки Telegram на живой карточке нет: записи ещё нет, а
+    // «Оплатить 400 ฿ и записаться» считалось бы по демонстрационному событию.
+    if (await s.p.evaluate(() => window.__main !== null)) bad.push('event-card: главная кнопка на карточке без записи');
+    await s.p.screenshot({ path: `${OUT}/live-event-card.png` });
+
+    // «Назад» внутри Telegram — системная кнопка, в заглушке её нет: идём вкладками.
+    await s.p.click('#tabs [data-go="home"]');
+    await s.p.waitForTimeout(100);
+    await s.p.click('#view [data-go="events"]');
+    await s.p.waitForTimeout(100);
+    await s.p.click('[data-event="1"]');
+    await s.p.waitForTimeout(100);
+    const f = await s.view();
+    ['мест нет', 'Запись из приложения пока не включена', 'Бесплатно'].forEach(x => {
+      if (!f.includes(x)) bad.push(`event-card-free: нет «${x}»`); });
+    ['Вы записаны', 'Записаться'].forEach(x => {
+      if (f.includes(x)) bad.push(`event-card-free: есть лишнее «${x}»`); });
+    if (await s.p.evaluate(() => window.__main !== null)) bad.push('event-card-free: главная кнопка на карточке без записи');
+    // Афиша берётся один раз за запуск, а не на каждом переходе.
+    const got = s.calls.filter(x => x.url.endsWith('/events')).length;
+    if (got !== 1) bad.push(`events: /events запрошен ${got} раз, ждали 1`);
+    if (s.errs.length) bad.push('events: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
+  // Пустая афиша, отказы и битый ответ — каждый своим экраном, и ни в одном
+  // не всплывают демонстрационные события.
+  for (const [name, reply, has, hasnt] of [
+    ['events-empty', json(200, []), ['В афише пока ничего нет'], ['Звуковая практика', 'Загружаем афишу']],
+    ['events-500', json(500, { detail: 'x' }),
+      ['Афиша не открылась', 'Сервер ответил кодом 500', 'Попробовать снова'], ['Звуковая практика']],
+    ['events-down', 'abort', ['Афиша не открылась', 'Сервер не ответил'], ['Звуковая практика']],
+    ['events-html', { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
+      ['Афиша не открылась', 'Ответ сервера не разобран'], ['Звуковая практика']],
+    ['events-broken', json(200, [EV({}), EV({ id: 9, title: 'Битое', seats_left: 'много' })]),
+      ['Афиша не открылась', 'Ответ сервера не разобран'], ['Вечер ханга', 'Битое']]]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(reply));
+    // Отказ виден на главной: входа в афишу при нём нет вовсе — поэтому сам
+    // экран афиши открываем вызовом, иначе его подмена демонстрацией
+    // осталась бы непроверенной.
+    const h = await s.view();
+    has.forEach(x => { if (!h.includes(x)) bad.push(`${name}: на главной нет «${x}»`); });
+    hasnt.forEach(x => { if (h.includes(x)) bad.push(`${name}: на главной есть лишнее «${x}»`); });
+    await s.p.evaluate(() => go('events'));
+    await s.p.waitForTimeout(100);
+    const t = await s.view();
+    has.forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
+    hasnt.forEach(x => { if (t.includes(x)) bad.push(`${name}: есть лишнее «${x}»`); });
+    if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
+    await s.ctx.close();
+  }
+
+  // «Попробовать снова»: сервер ожил — афиша появилась, а не осталась отказом.
+  {
+    let up = false;
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      q => q.url().endsWith('/events') ? (up ? json(200, AFISHA) : json(502, {})) : undefined);
+    if (!(await s.view()).includes('Афиша не открылась')) bad.push('events-retry: отказ не показан на главной');
+    up = true;
+    await s.p.click('[data-action="retry-events"]');
+    await s.p.waitForTimeout(200);
+    // На главной видны два ближайших события, а не все: «Вечер ханга» завтра.
+    const back = await s.view();
+    ['Утро у воды', 'Уже начался', 'Вся афиша'].forEach(x => {
+      if (!back.includes(x)) bad.push(`events-retry: после повтора нет «${x}»`); });
+    if (back.includes('Афиша не открылась')) bad.push('events-retry: отказ остался после удачного повтора');
+    const got = s.calls.filter(x => x.url.endsWith('/events')).length;
+    if (got !== 2) bad.push(`events-retry: запросов к /events ${got}, ждали 2`);
+    await s.ctx.close();
+  }
+
   // ── заглушки против настоящих ответов ──
   // tools/api-keys.json — форма ответов из снимков cafe13-api (DUMP_DIR,
   // tools/keys.py): только ключи, без значений. Заглушка, придумавшая поле
@@ -1297,7 +1433,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     'me-member': OWNER, 'pass-member': PASS, 'directions-guest': JSON.parse(DIR(true).body),
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
     'order-state-worker': { id: 3, number: '261018-03', state: 'making' },
-    'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW
+    'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW,
+    'events-afisha': AFISHA
   };
   Object.keys(STUBS).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
@@ -1317,5 +1454,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 85) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 92) + ' случаев');
 })();
