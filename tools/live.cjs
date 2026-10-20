@@ -186,14 +186,17 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (/демонстрац|Демо/.test(d + await s.p.evaluate(() => document.getElementById('title').textContent)))
       bad.push('demo: в живом режиме панель называет себя демонстрацией');
     // Кнопок роли в живом режиме нет, но и подсунутая в разметку не должна сработать.
-    await s.p.evaluate(() => {
-      const x = document.createElement('button'); x.setAttribute('data-role', 'bar'); x.id = 'fake-role';
-      document.getElementById('view').appendChild(x);
-    });
     // признак — набор вкладок до и после, а не «Заказы»: у админа эта вкладка своя
     const tabsText = () => s.p.evaluate(() => document.getElementById('tabs').textContent);
     const before = await tabsText();
-    await s.p.click('#fake-role');
+    // Клик изнутри страницы: проверяется обработчик, а не попадание мышью.
+    // p.click ждал «стабильности» пустой кнопки и раз в 5 прогонов висел 30 с,
+    // роняя весь прогон чужим таймаутом.
+    await s.p.evaluate(() => {
+      const x = document.createElement('button'); x.setAttribute('data-role', 'bar'); x.id = 'fake-role';
+      document.getElementById('view').appendChild(x);
+      x.click();
+    });
     await s.p.waitForTimeout(100);
     if (await tabsText() !== before)
       bad.push('role: в живом режиме роль переключилась из браузера: «' + before + '» → «' + (await tabsText()) + '»');
