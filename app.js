@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v13 · 20.10.2026';
+var VERSION = 'v14 · 20.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -704,8 +704,12 @@ var BOOK_FAIL = '';
 // «со счёта» сервер не принимает: остатка у направления нет, деньги посчитались бы дважды
 var INCOME_HOW = [['cash', 'Наличные'], ['card', 'Карта']];
 var EXP_CATS = ['закуп', 'расходники', 'зарплата', 'ремонт'];
-var EXP_KINDS = [['opex', 'Текущая', 'вычитается из выручки до доли клуба'],
-                 ['invest', 'Вложение', 'из доли направления, долю клуба не уменьшает']];
+// Словами человека, а не учёта: первую настоящую затрату (продукты) записали
+// вложением — подпись «из доли направления» ничего не объясняла, а ошибка
+// стоила партнёру денег.
+var EXP_KINDS = [['opex', 'Текущая трата', 'продукты, расходники, зарплата, мелкий ремонт: уменьшает прибыль месяца'],
+                 ['invest', 'Вложение', 'оборудование, ремонт помещения: не уменьшает прибыль, возвращается партнёру по плану возврата']];
+var USUALLY_OPEX = ['закуп', 'расходники'];
 var PAID_BY = [['club_till', 'Касса клуба'], ['bar_cash', 'Наличные бара'], ['partner', 'Свои']];
 
 function pick(list, code) {
@@ -2026,8 +2030,10 @@ var SCREENS = {
         (inc ? seg('Чем заплатили', INCOME_HOW, BOOK.method, 'b-method')
              : seg('Категория', EXP_CATS.map(function (c) { return [c, c]; }), BOOK.cat, 'b-cat') +
                seg('Вид затраты', EXP_KINDS, BOOK.ekind, 'b-kind') +
+               (USUALLY_OPEX.indexOf(BOOK.cat) !== -1
+                 ? '<span class="small"><b>' + esc(BOOK.cat[0].toUpperCase() + BOOK.cat.slice(1)) + ' — обычно текущая трата.</b></span>' : '') +
                '<span class="small">' + (k ? esc(k[1]) + ' — ' + esc(k[2]) + '.'
-                 : 'Текущая — ' + esc(EXP_KINDS[0][2]) + '; вложение — ' + esc(EXP_KINDS[1][2]) + '.') + '</span>' +
+                 : esc(EXP_KINDS[0][1]) + ' — ' + esc(EXP_KINDS[0][2]) + '. ' + esc(EXP_KINDS[1][1]) + ' — ' + esc(EXP_KINDS[1][2]) + '.') + '</span>' +
                seg('Чем платили', PAID_BY, BOOK.paid, 'b-paid')) +
         '<div class="field"><label for="b-note">Комментарий</label>' +
           '<input id="b-note" type="text" maxlength="500" value="' + esc(BOOK.note) + '" placeholder="' +
