@@ -1115,9 +1115,11 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await tap(s, '[data-action="b-ask"]');
       await s.p.waitForTimeout(100);
       t = await s.view();
-      if (!t.includes('Записать расход 240 ฿?') || !t.includes('закуп · текущая · касса клуба · молоко'))
+      if (!t.includes('Записать расход 240 ฿?') || !t.includes('закуп · текущая трата · касса клуба · молоко'))
         bad.push('book-expense: подтверждение не называет сумму и выбор: ' + t.slice(0, 300));
       if (bookPosts(s).length) bad.push('book-expense: записано с первого нажатия');
+      // вид затраты — словами человека, с подсказкой при закупе
+      if (!t.includes('Закуп — обычно текущая трата') || !t.includes('продукты, расходники')) bad.push('book-expense: нет подсказки «обычно текущая трата» или подписи словами');
       await s.p.screenshot({ path: `${OUT}/live-book-confirm.png`, fullPage: true });
       if (await s.p.$('[data-action="b-keep"]')) await tap(s, '[data-action="b-keep"]');
       if (bookPosts(s).length || (await s.p.$('[data-action="b-send"]'))) bad.push('book-expense: «Не записывать» не сработало');
@@ -1161,6 +1163,16 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       }
     }
     if (s.errs.length) bad.push('book-income: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Подсказка — только при закупе и расходниках, не при ремонте: иначе она шум.
+  {
+    const s = await open(true, true, json(200, SASHA), null, null, null, book()); s.name = 'book-hint';
+    if (await toBook(s, 'book-hint') && await fillExpense(s, 'book-hint', '240', ['b-cat:ремонт'])) {
+      if ((await s.view()).includes('обычно текущая трата')) bad.push('book-hint: подсказка «обычно текущая» при ремонте');
+      await tap(s, '[data-action="b-cat:расходники"]');
+      if (!(await s.view()).includes('Расходники — обычно текущая трата')) bad.push('book-hint: нет подсказки при расходниках');
+    }
     await s.ctx.close();
   }
   // Не сумма — не уходит.
@@ -1258,7 +1270,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (await toDay(s)) {
       const t = await s.view();
       ['Сегодня, 20 октября', 'Смена открыта с 16:30', '1 780 ฿', '1 570 ฿', '210 ฿', 'выручка вечера', 'наличные · 19:00',
-       '25 240 ฿', '−240 ฿', '−25 000 ฿', 'закуп · текущая · наличные бара', 'ремонт · вложение · свои', 'Эспрессо']
+       '25 240 ฿', '−240 ฿', '−25 000 ฿', 'закуп · текущая трата · наличные бара', 'ремонт · вложение · свои', 'Эспрессо']
         .forEach(x => { if (!t.includes(x)) bad.push(`day: нет «${x}»`); });
       ['Средний чек', 'Чеков', '1 840', 'NaN', 'undefined'].forEach(x => { if (t.includes(x)) bad.push(`day: есть лишнее «${x}»`); });
       const g = dayGets(s);
@@ -1544,5 +1556,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 102) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 103) + ' случаев');
 })();
