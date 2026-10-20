@@ -108,7 +108,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       body: src.replace(SW, 'var API_ON = ' + (on ? 'true' : 'false') + ';') }));
     await p.route('https://api.cafe13.club/**', async r => {
       const q = r.request();
-      calls.push({ method: q.method(), url: q.url(), init: q.headers()['x-telegram-init-data'], body: q.postData() });
+      calls.push({ method: q.method(), url: q.url(), init: q.headers()['x-telegram-init-data'], body: q.postData(),
+                   test: q.headers()['x-test-mode'], as: q.headers()['x-act-as'] });
       const x = extra ? extra(q) : undefined;
       if (x instanceof Promise) return r.fulfill(await x);
       const reply = x !== undefined ? x
@@ -158,7 +159,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     // и мимо кнопки — вызовом из консоли — экран переключения не открывается
     if (!want && inside) {
       await s.p.evaluate(() => go('demo'));
-      if ((await s.view()).includes('Смотреть глазами другого человека')) bad.push(`${name}: экран солнышка открылся вызовом go('demo')`);
+      if ((await s.view()).includes('Тестовый режим')) bad.push(`${name}: экран солнышка открылся вызовом go('demo')`);
     }
     if (want && !(await s.p.isVisible('#demo-btn'))) bad.push(`${name}: кнопка солнышка в DOM, но не видна`);
     else if (want) {
@@ -179,7 +180,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (await s.p.isVisible('#demo-btn')) await s.p.click('#demo-btn');
     else bad.push('demo: у владельца (god_mentor) нет видимого солнышка');
     const d = await s.view();
-    if (!d.includes('Смотреть глазами другого человека') || d.includes('Смотреть как')) bad.push('demo: в живом режиме доступно переключение роли');
+    if (!d.includes('Тестовый режим') || d.includes('Смотреть как')) bad.push('demo: в живом режиме доступно переключение роли');
     if (/демонстрац|Демо/.test(d + await s.p.evaluate(() => document.getElementById('title').textContent)))
       bad.push('demo: в живом режиме панель называет себя демонстрацией');
     // Кнопок роли в живом режиме нет, но и подсунутая в разметку не должна сработать.
@@ -1182,8 +1183,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     ['book-note', { exp: alt(EXP_ROW, 'note', '') }, 'Ответ сервера не разобран'],
     ['book-noid', { exp: alt(EXP_ROW, 'id', null) }, 'Ответ сервера не разобран'],
     ['book-inc-method', { inc: alt(INC_ROW, 'method', 'cash') }, 'Ответ сервера не разобран', true],
-    ['book-403', { exp: () => json(403, { detail: 'нужна роль curator' }) }, 'Нужна роль curator'],
-    ['book-inc-404', { inc: () => json(404, { detail: 'Not Found' }) }, 'Сервер ещё не принимает доходы', true]]) {
+    ['book-403', { exp: () => json(403, { detail: 'нужна роль curator' }) }, 'Нужна роль curator']]) {
     const s = await open(true, true, json(200, SASHA), null, null, null, book(o)); s.name = name;
     let ready = false;
     if (inc) {
@@ -1198,10 +1198,9 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (/записан:/.test(t) || t.includes('Записано сейчас')) bad.push(`${name}: выдано за успех`);
-      if (want !== 'Нужна роль curator' && want !== 'Сервер ещё не принимает доходы' && !t.includes('Не записывайте снова'))
+      if (want !== 'Нужна роль curator' && !t.includes('Не записывайте снова'))
         bad.push(`${name}: не предупреждено о двойной записи`);
       if (want === 'Нужна роль curator' && !t.includes('Не записано')) bad.push(`${name}: отказ не назван`);
-      if (name === 'book-inc-404' && !t.includes('Ничего не записано')) bad.push(`${name}: не сказано, что ничего не записано`);
     }
     await s.ctx.close();
   }
@@ -1224,6 +1223,125 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     const t = await s.view();
     if (await s.p.$('[data-action="b-new:expense"]') || !t.includes('вносит куратор')) bad.push('book-other-dir: куратору другого направления дана форма Бара');
     if (bookPosts(s).length) bad.push('book-other-dir: ушла запись');
+    await s.ctx.close();
+  }
+
+  // ── тестовый режим и просмотр чужими глазами ──
+  // Сервер (cafe13-api deps.caller): X-Test-Mode: 1 — тестовая база, X-Act-As —
+  // чужие глаза, только вместе с тестовым режимом. Заглушка ведёт себя так же:
+  // без X-Test-Mode список людей — 403, чужой /me — только с обоими.
+  const TEST_SASHA = clone(SASHA); TEST_SASHA.member.tg_user_id = 501; TEST_SASHA.member.first_name = 'Александра';
+  const PEOPLE = { base: 'test', people: [
+    { tg_user_id: 501, first_name: 'Александра', last_name: '', roles: [{ role: 'curator', direction_id: 7, direction: 'Бар' }] },
+    { tg_user_id: 502, first_name: 'Юра', last_name: '', roles: [{ role: 'curator', direction_id: 2, direction: 'Чай' }] }] };
+  function testApi(o) {
+    o = Object.assign({ health: 'configured', people: () => json(200, PEOPLE), as: { '501': TEST_SASHA } }, o);
+    const b = book();
+    return q => {
+      const u = q.url(), h = q.headers(), t = h['x-test-mode'] === '1', as = h['x-act-as'];
+      if (u.endsWith('/health')) return json(200, { status: 'ok', version: '0.1.0', build_sha: 'x', db: 'configured', test_db: o.health });
+      if (as && !t) return json(403, { detail: 'смотреть чужими глазами можно только в тестовом режиме' });
+      if (u.endsWith('/act-as/people')) return !t ? json(403, { detail: 'список для просмотра чужими глазами есть только в тестовом режиме' })
+                                               : as ? json(403, { detail: 'выйдите из просмотра, чтобы выбрать другого' }) : o.people();
+      if (u.endsWith('/me') && as) return o.as[as] ? json(200, o.as[as]) : json(404, { detail: 'такого человека в тестовой базе нет' });
+      return b(q);
+    };
+  }
+  async function toPanel(s) {
+    if (!(await s.p.isVisible('#demo-btn'))) { bad.push(`${s.name}: нет солнышка`); return false; }
+    await s.p.click('#demo-btn');
+    await s.p.waitForTimeout(250);
+    return true;
+  }
+  const strip = s => s.p.evaluate(() => { const e = document.querySelector('#view .test-strip'); return e ? e.textContent : null; });
+  // Тестовая база не выложена — честная надпись, входа нет.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, testApi({ health: 'unset' })); s.name = 'test-unset';
+    if (await toPanel(s)) {
+      if (!(await s.view()).includes('Тестовая база ещё не выложена') || await s.p.$('[data-action="test-on"]')) bad.push('test-unset: нет надписи «не выложена» или есть вход');
+    }
+    if (s.calls.some(c => c.test || c.as)) bad.push('test-unset: тестовые заголовки ушли без входа в режим');
+    await s.ctx.close();
+  }
+  // Полный путь: войти → список → глазами Александры → запись → выйти из просмотра → выйти из теста.
+  {
+    const saved = { code: 'XIII-0001', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 };
+    const s = await open(true, true, json(200, OWNER), null, null, saved, testApi()); s.name = 'test-path';
+    let ok = await toPanel(s);
+    if (ok && !(await tap(s, '[data-action="test-on"]'))) ok = false;
+    if (ok) {
+      await s.p.waitForTimeout(300);
+      const pc = s.calls.filter(c => c.url.endsWith('/act-as/people'));
+      if (pc.length !== 1 || pc[0].test !== '1' || pc[0].as) bad.push('test-path: список запрошен не тем: ' + JSON.stringify(pc.map(c => [c.test, c.as])));
+      // после входа сам за себя — на главной, полоса «Вы сами»
+      if (!((await strip(s)) || '').includes('Вы сами')) bad.push('test-path: после входа нет полосы «Тестовая база · Вы сами»');
+      await s.p.click('#demo-btn'); await s.p.waitForTimeout(200);
+      const t = await s.view();
+      if (!t.includes('Александра') || !t.includes('Куратор направления · Бар') || !t.includes('Юра') || !t.includes('Куратор направления · Чай'))
+        bad.push('test-path: в списке нет людей словами: ' + t.slice(0, 300));
+      await s.p.screenshot({ path: `${OUT}/live-test-people.png`, fullPage: true });
+      if (await tap(s, '[data-action="test-as:501"]')) {
+        await s.p.waitForTimeout(400);
+        const me = s.calls.filter(c => c.url.endsWith('/me')).pop();
+        if (!me || me.test !== '1' || me.as !== '501') bad.push('test-path: /me Александры запрошен без обоих заголовков');
+        const st = (await strip(s)) || '';
+        if (!st.includes('Тестовая база') || !st.includes('Смотрите как Александра') || !st.includes('ненастоящие')) bad.push('test-path: полоса не говорит, чьими глазами и что база тестовая: ' + st);
+        if (!(await s.p.isVisible('#demo-btn'))) bad.push('test-path: в просмотре пропало солнышко — к панели не вернуться');
+        // Саша без членства: путь к записи через «Заказы»; запись идёт с обоими заголовками
+        const before = s.calls.length;
+        if (await toBook(s, 'test-path') && await fillExpense(s, 'test-path', '240', ALL_PICKS) && await askSend(s, 'test-path')) {
+          const w = s.calls.slice(before).filter(c => c.method === 'POST');
+          if (w.length !== 1 || w[0].test !== '1' || w[0].as !== '501') bad.push('test-path: запись ушла не в тестовую базу глазами Александры: ' + JSON.stringify(w.map(c => [c.url, c.test, c.as])));
+          if (!((await strip(s)) || '').includes('Смотрите как Александра')) bad.push('test-path: на экране записи нет полосы');
+          await s.p.screenshot({ path: `${OUT}/live-test-as.png` });
+        }
+        const after = s.calls.slice(before);
+        if (after.some(c => c.test !== '1' || c.as !== '501')) bad.push('test-path: в просмотре ушёл запрос без заголовков: ' + JSON.stringify(after.filter(c => c.test !== '1' || c.as !== '501').map(c => c.url)));
+        const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
+        if (!kept || kept.code !== 'XIII-0001') bad.push('test-path: запас пропуска владельца переписан в тестовом режиме: ' + JSON.stringify(kept));
+        if (await tap(s, '#view .test-strip [data-action="test-self"]')) {
+          await s.p.waitForTimeout(400);
+          const me2 = s.calls.filter(c => c.url.endsWith('/me')).pop();
+          if (me2.test !== '1' || me2.as) bad.push('test-path: выход из просмотра не вернул «сам в тестовой базе»');
+          if (!((await strip(s)) || '').includes('Вы сами')) bad.push('test-path: после выхода из просмотра полоса не «Вы сами»');
+          if (await tap(s, '#view .test-strip [data-action="test-off"]')) {
+            await s.p.waitForTimeout(400);
+            const n0 = s.calls.length;
+            if ((await strip(s)) !== null) bad.push('test-path: после выхода из теста полоса осталась');
+            const me3 = s.calls.filter(c => c.url.endsWith('/me')).pop();
+            if (me3.test || me3.as) bad.push('test-path: выход из теста перечитал /me с тестовыми заголовками');
+            await s.p.click('#tabs [data-go="barQueue"]').catch(() => {}); await s.p.waitForTimeout(300);
+            if (s.calls.slice(n0).some(c => c.test || c.as)) bad.push('test-path: после выхода запросы с тестовыми заголовками');
+          }
+        }
+      }
+    }
+    if (s.errs.length) bad.push('test-path: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Отказы: не бог на сервере (403), база не та, человек не найден.
+  for (const [name, o, act, want] of [
+    ['test-403', { people: () => json(403, { detail: 'тестовый режим — у главы клуба и наследника' }) }, null, 'Вам просмотр не положен: тестовый режим — у главы клуба и наследника'],
+    ['test-base', { people: () => json(200, Object.assign({}, PEOPLE, { base: 'live' })) }, null, 'Ответ сервера не разобран'],
+    ['test-404', { as: {} }, '[data-action="test-as:501"]', 'Такого человека в тестовой базе нет']]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, testApi(o)); s.name = name;
+    if (await toPanel(s) && await tap(s, '[data-action="test-on"]')) {
+      await s.p.waitForTimeout(300);
+      await s.p.click('#demo-btn'); await s.p.waitForTimeout(200);
+      if (act) { if (await tap(s, act)) await s.p.waitForTimeout(300); }
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет «${want}»: ` + t.slice(0, 200));
+      if (name === 'test-base' && await s.p.$('[data-action^="test-as:"]')) bad.push('test-base: список не из тестовой базы показан');
+      if (name === 'test-404' && ((await strip(s)) || '').includes('Смотрите как')) bad.push('test-404: полоса «смотрите как» при отказе');
+    }
+    await s.ctx.close();
+  }
+  // Не бог: никаких тестовых заголовков, даже вызовом действия из консоли.
+  {
+    const s = await open(true, true, json(200, SASHA), null, null, null, testApi()); s.name = 'test-nogod';
+    await s.p.evaluate(() => { doAction('test-on'); doAction('test-as:501'); });
+    await s.p.waitForTimeout(300);
+    if (s.calls.some(c => c.test || c.as)) bad.push('test-nogod: не бог включил тестовый режим');
     await s.ctx.close();
   }
 
@@ -1317,5 +1435,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 85) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 90) + ' случаев');
 })();
