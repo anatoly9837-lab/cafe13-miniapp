@@ -1226,6 +1226,91 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // ── отчёт за день ──
+  // Форма — снимок bar-day (сверка в shape). Числа подобраны так, чтобы итоги
+  // сходились со строками; ломается каждый итог своим случаем.
+  const DAY_ROW = {
+    day_start: '2026-10-19T17:00:00Z', day_end: '2026-10-20T17:00:00Z',
+    by_state: [{ state: 'served', pay_method: 'account', orders: 2, total: '140.00' }, { state: 'served', pay_method: 'cash', orders: 1, total: '70.00' }],
+    served_total: '210.00', cash_total: '70.00',
+    positions: [{ title: 'Эспрессо', qty: 3, total: '210.00' }],
+    income: [{ id: 1, at: '2026-10-20T12:00:00Z', amount: '1500.00', method: 'cash', note: 'выручка вечера' },
+             { id: 2, at: '2026-10-20T12:05:00Z', amount: '70.00', method: 'card', note: 'картой' }],
+    income_total: '1570.00',
+    expenses: [{ id: 3, at: '2026-10-20T09:00:00Z', amount: '240.00', expense_cat: 'закуп', expense_kind: 'opex', paid_by: 'bar_cash', note: 'молоко' },
+               { id: 4, at: '2026-10-20T10:00:00Z', amount: '25000.00', expense_cat: 'ремонт', expense_kind: 'invest', paid_by: 'partner', note: 'кофемашина' }],
+    expense_total: '25240.00', expense_opex: '240.00', expense_invest: '25000.00',
+    open_shift: { id: 7, member_id: 2, opened_at: '2026-10-20T09:30:00Z', cash_start: '0.00' }
+  };
+  function dayApi(reply) {
+    const b = book();
+    return q => q.url().includes('/bar/day') ? (typeof reply === 'function' ? reply(q) : reply || json(200, DAY_ROW)) : b(q);
+  }
+  const dayGets = s => s.calls.filter(c => c.url.includes('/bar/day'));
+  async function toDay(s) {
+    if (await s.p.$('#tabs [data-go="barQueue"]')) { await s.p.click('#tabs [data-go="barQueue"]'); await s.p.waitForTimeout(250); }
+    if (!(await tap(s, '#view [data-go="barDay"]'))) return false;
+    await s.p.waitForTimeout(300);
+    return true;
+  }
+  {
+    const s = await open(true, true, json(200, SASHA), null, null, null, dayApi()); s.name = 'day';
+    if (await toDay(s)) {
+      const t = await s.view();
+      ['Сегодня, 20 октября', 'Смена открыта с 16:30', '1 780 ฿', '1 570 ฿', '210 ฿', 'выручка вечера', 'наличные · 19:00',
+       '25 240 ฿', '−240 ฿', '−25 000 ฿', 'закуп · текущая · наличные бара', 'ремонт · вложение · свои', 'Эспрессо']
+        .forEach(x => { if (!t.includes(x)) bad.push(`day: нет «${x}»`); });
+      ['Средний чек', 'Чеков', '1 840', 'NaN', 'undefined'].forEach(x => { if (t.includes(x)) bad.push(`day: есть лишнее «${x}»`); });
+      const g = dayGets(s);
+      if (g.length !== 1 || !g[0].url.endsWith('/bar/day?direction_id=7')) bad.push('day: запрос не тот: ' + JSON.stringify(g.map(c => c.url)));
+      await s.p.screenshot({ path: `${OUT}/live-day.png`, fullPage: true });
+      // повторное открытие — свежий запрос: запись с другого телефона видна
+      await tap(s, '#view [data-go="barMoney"]'); await s.p.waitForTimeout(200);
+      await tap(s, '#view [data-go="barDay"]'); await s.p.waitForTimeout(300);
+      if (dayGets(s).length !== 2) bad.push('day: повторное открытие не перечитало отчёт');
+    }
+    if (s.errs.length) bad.push('day: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  const dayWith = o => json(200, Object.assign({}, DAY_ROW, o));
+  for (const [name, reply, want, hasnt] of [
+    ['day-income-sum', dayWith({ income_total: '1600.00' }), 'Суммы отчёта не сходятся', '1 600'],
+    ['day-expense-sum', dayWith({ expense_total: '240.00' }), 'Суммы отчёта не сходятся', 'кофемашина'],
+    // каждый итог ломается в одиночку: две поломки сразу прикрыли бы проверки друг другом
+    ['day-opex', dayWith({ expense_opex: '300.00' }), 'Суммы отчёта не сходятся', 'кофемашина'],
+    ['day-invest', dayWith({ expense_invest: '24940.00' }), 'Суммы отчёта не сходятся', 'кофемашина'],
+    ['day-cash', dayWith({ cash_total: '500.00' }), 'Суммы отчёта не сходятся', 'Эспрессо'],
+    ['day-row', dayWith({ income: [Object.assign({}, DAY_ROW.income[0], { method: 'account' }), DAY_ROW.income[1]] }), 'Ответ сервера не разобран', 'выручка вечера'],
+    ['day-noshift', dayWith({ open_shift: null }), 'Смена не открыта', 'Смена открыта с'],
+    ['day-403', json(403, { detail: 'деньги направления смотрит куратор' }), 'Отчёт за день видит куратор направления', 'Доход']]) {
+    const s = await open(true, true, json(200, SASHA), null, null, null, dayApi(reply)); s.name = name;
+    if (await toDay(s)) {
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет «${want}»: ` + t.slice(0, 160));
+      if (t.includes(hasnt)) bad.push(`${name}: показано «${hasnt}»`);
+    }
+    await s.ctx.close();
+  }
+  // Сбой обновления не стирает отчёт, а помечает.
+  {
+    let n = 0;
+    const s = await open(true, true, json(200, SASHA), null, null, null, dayApi(() => ++n === 1 ? json(200, DAY_ROW) : json(500, { detail: 'x' }))); s.name = 'day-stale';
+    if (await toDay(s) && await tap(s, '[data-action="day-reload"]')) {
+      await s.p.waitForTimeout(300);
+      const t = await s.view();
+      if (!t.includes('Не обновилось') || !t.includes('1 780 ฿')) bad.push('day-stale: сбой обновления стёр отчёт или не назван');
+    }
+    await s.ctx.close();
+  }
+  // Бармену — ни входа, ни запроса.
+  {
+    const s = await open(true, true, json(200, BARMAN), null, null, null, dayApi()); s.name = 'day-barman';
+    await toQueue(s);
+    if (await s.p.$('#view [data-go="barDay"]')) bad.push('day-barman: бармену предложен отчёт с деньгами');
+    if (dayGets(s).length) bad.push('day-barman: отчёт запрошен');
+    await s.ctx.close();
+  }
+
   // ── тестовый режим и просмотр чужими глазами ──
   // Сервер (cafe13-api deps.caller): X-Test-Mode: 1 — тестовая база, X-Act-As —
   // чужие глаза, только вместе с тестовым режимом. Заглушка ведёт себя так же:
@@ -1336,6 +1421,30 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     }
     await s.ctx.close();
   }
+  // Гонка: меню, запрошенное под прежним человеком, вернулось после смены —
+  // оно не должно лечь на экран нового.
+  {
+    const SASHA_MENU = [Object.assign({}, MENU[0], { id: 31, title: 'Матча' })];
+    const t0 = testApi();
+    const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      if (q.url().includes('/bar/menu'))
+        return q.headers()['x-act-as'] === '501' ? json(200, SASHA_MENU)
+             : new Promise(res => setTimeout(() => res(json(200, MENU)), 1500));
+      return t0(q);
+    }); s.name = 'test-race';
+    if (await toPanel(s) && await tap(s, '[data-action="test-on"]')) {
+      await s.p.waitForTimeout(400);
+      await s.p.evaluate(() => go('bar'));                 // меню владельца — в полёте
+      await s.p.waitForTimeout(150);
+      await s.p.evaluate(() => doAction('test-as:501'));
+      await s.p.waitForTimeout(400);
+      await s.p.evaluate(() => go('bar'));
+      await s.p.waitForTimeout(2000);                      // ответ владельца вернулся
+      const m = await s.p.evaluate(() => JSON.stringify(DATA.bar.menu));
+      if (!m.includes('Матча') || m.includes('Эспрессо')) bad.push('test-race: меню прежнего человека легло на экран нового: ' + m.slice(0, 120));
+    }
+    await s.ctx.close();
+  }
   // Не бог: никаких тестовых заголовков, даже вызовом действия из консоли.
   {
     const s = await open(true, true, json(200, SASHA), null, null, null, testApi()); s.name = 'test-nogod';
@@ -1415,7 +1524,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     'me-member': OWNER, 'pass-member': PASS, 'directions-guest': JSON.parse(DIR(true).body),
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
     'order-state-worker': { id: 3, number: '261018-03', state: 'making' },
-    'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW
+    'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW
   };
   Object.keys(STUBS).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
@@ -1435,5 +1544,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 90) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 102) + ' случаев');
 })();
