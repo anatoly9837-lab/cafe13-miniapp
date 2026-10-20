@@ -1323,12 +1323,17 @@ function fromEvents(d) {
     if (!(price >= 0)) return null;
     var start = new Date(e.starts_at);
     if (isNaN(start.getTime())) return null;
-    var p = bkk(start), fin = bkk(new Date(start.getTime() + e.duration_min * 60000));
+    var ends = start.getTime() + e.duration_min * 60000;
+    var p = bkk(start), fin = bkk(new Date(ends));
     out.push({
       id: String(e.id), at: start.getTime(),
       title: e.title, day: dayLabel(p, now), time: p.hm, until: fin.hm,
       seg: partOf(p.hm),
-      part: start.getTime() <= now.getTime() ? 'идёт' : partOf(p.hm),
+      // Сервер отдаёт и то, что началось до трёх часов назад. «Идёт» верно
+      // только до конца события: часовая практика, начавшаяся два часа
+      // назад, идущей не является — это было бы правдоподобной ложью.
+      part: now.getTime() >= start.getTime() && now.getTime() < ends ? 'идёт' : partOf(p.hm),
+      done: now.getTime() >= ends,
       master: [e.organizer_first_name, e.organizer_last_name].filter(Boolean).join(' ') || 'Без имени',
       seats: e.seats_left, of: e.seats,
       kind: e.kind, price: price,
@@ -1387,7 +1392,7 @@ function afishaHome() {
 function eventLive(e) {
   return '<div class="col"><h1>' + esc(e.title) + '</h1>' +
       '<span class="small">' + esc(e.day) + ' · ' + esc(e.time) + '–' + esc(e.until) +
-        (e.part === 'идёт' ? ' · уже идёт' : '') + '</span></div>' +
+        (e.done ? ' · завершилось' : e.part === 'идёт' ? ' · уже идёт' : '') + '</span></div>' +
     (e.booked ? '<div class="card accent"><div class="row">' +
         '<div class="col"><b>Вы записаны</b><span class="small">Место держится за вами.</span></div>' +
         '<span class="pill on">записаны</span>' +
@@ -1402,7 +1407,8 @@ function eventLive(e) {
     '<div class="note">' + svg(ICON.cam) + '<span>' + (e.filmed
       ? 'На этом событии ведётся съёмка. Согласие даётся отдельно и его можно не давать — запись останется в силе.'
       : 'Съёмки на этом событии нет.') + '</span></div>' +
-    (e.booked ? '' : '<div class="card quiet"><span class="small">Запись из приложения пока не включена.</span></div>');
+    (e.booked || e.done ? ''
+      : '<div class="card quiet"><span class="small">Запись из приложения пока не включена.</span></div>');
 }
 
 /* ── утилиты ─────────────────────────────────────────── */
@@ -2571,7 +2577,8 @@ function eventRow(e) {
   return '<button type="button" class="listitem' + (e.kind === 'paid' ? ' accent' : '') + '" data-event="' + esc(e.id) + '">' +
     '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.part) + '</span></span>' +
     '<span class="grow"><b>' + esc(e.title) + '</b>' +
-    '<span class="small">ведёт ' + esc(e.master) + ' · ' + (e.booked ? 'вы записаны'
+    '<span class="small">ведёт ' + esc(e.master) + ' · ' + (e.done ? 'завершилось'
+      : e.booked ? 'вы записаны'
       : e.seats === 0 ? 'мест нет' : e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats) + '</span></span>' +
     '<span class="pill ' + k.pill + '">' + k.label(e) + '</span>' +
   '</button>';

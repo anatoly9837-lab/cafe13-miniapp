@@ -91,8 +91,9 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
   const bad = [];
 
-  async function open(inside, on, me, consentReply, passReply, saved, extra) {
-    const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
+  async function open(inside, on, me, consentReply, passReply, saved, extra, tz) {
+    const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU',
+                                     ...(tz ? { timezoneId: tz } : {}) });
     // Локальная отметка согласия стоит ВСЕГДА: демо без неё открылось бы
     // согласием, а живой режим обязан её не слушать — решает сервер.
     await ctx.addInitScript(saved => {
@@ -1507,15 +1508,23 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
          price: '0.00', about: '', seats: 6, taken: 6, seats_left: 0, booked_by_me: false }),
     EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
     EV({ id: 7, title: 'Уже начался', starts_at: new Date(Date.now() - 3600e3).toISOString(),
-         duration_min: 180, kind: 'donation', price: '0.00', seats: 20, taken: 2, seats_left: 18 })
+         duration_min: 180, kind: 'donation', price: '0.00', seats: 20, taken: 2, seats_left: 18 }),
+    // Сервер отдаёт и то, что кончилось: началось 2,5 часа назад, длилось час.
+    EV({ id: 8, title: 'Уже закончился', starts_at: new Date(Date.now() - 9000e3).toISOString(),
+         duration_min: 60, kind: 'free', price: '0.00', seats: 10, taken: 3, seats_left: 7 })
   ];
   const evReply = reply => q => q.url().endsWith('/events') ? reply : undefined;
+  // Порядок афиши — по времени начала; на главной видны два первых. Считаем
+  // из самой фикстуры: имена руками зависели бы от часа запуска.
+  const SOON = [...AFISHA].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)).map(e => e.title);
 
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, AFISHA)));
     const home = await s.view();
-    ['Афиша', 'Вся афиша', 'Утро у воды'].forEach(x => {
+    ['Афиша', 'Вся афиша', SOON[0], SOON[1]].forEach(x => {
       if (!home.includes(x)) bad.push(`events-home: нет «${x}»`); });
+    if (home.includes(SOON[SOON.length - 1]))
+      bad.push(`events-home: на главной больше двух ближайших — есть «${SOON[SOON.length - 1]}»`);
     ['ещё не подключено', 'Звуковая практика', 'Чайная церемония'].forEach(x => {
       if (home.includes(x)) bad.push(`events-home: есть лишнее «${x}»`); });
 
@@ -1531,6 +1540,15 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     const mine = await s.p.evaluate(() => [...document.querySelectorAll('#view .listitem')]
       .filter(e => e.textContent.includes('вы записаны')).length);
     if (mine !== 1) bad.push(`events: строк «вы записаны» ${mine}, ждали 1`);
+    // Кончившееся событие идущим не называется: «идёт» верно только до конца.
+    const rowOf = t => s.p.evaluate(x => {
+      const e = [...document.querySelectorAll('#view .listitem')].find(n => n.textContent.includes(x));
+      return e ? e.textContent : '';
+    }, t);
+    const done = await rowOf('Уже закончился'), live = await rowOf('Уже начался');
+    if (!/завершилось/.test(done)) bad.push('events: кончившееся событие не помечено завершённым: «' + done.slice(0, 70) + '»');
+    if (/идёт/.test(done)) bad.push('events: кончившееся событие показано идущим: «' + done.slice(0, 70) + '»');
+    if (!/идёт/.test(live)) bad.push('events: идущее событие не помечено идущим: «' + live.slice(0, 70) + '»');
     await s.p.screenshot({ path: `${OUT}/live-events.png` });
 
     // Сегмент дня фильтрует, а не подсвечивается: вечернее из «Утра» уходит.
@@ -1613,11 +1631,62 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.p.waitForTimeout(200);
     // На главной видны два ближайших события, а не все: «Вечер ханга» завтра.
     const back = await s.view();
-    ['Утро у воды', 'Уже начался', 'Вся афиша'].forEach(x => {
+    [SOON[0], SOON[1], 'Вся афиша'].forEach(x => {
       if (!back.includes(x)) bad.push(`events-retry: после повтора нет «${x}»`); });
     if (back.includes('Афиша не открылась')) bad.push('events-retry: отказ остался после удачного повтора');
     const got = s.calls.filter(x => x.url.endsWith('/events')).length;
     if (got !== 2) bad.push(`events-retry: запросов к /events ${got}, ждали 2`);
+    await s.ctx.close();
+  }
+
+  // ── время события — в поясе клуба, а не телефона и не UTC ──
+  // Браузер нарочно живёт в третьем поясе (Нью-Йорк): тогда краснеют обе
+  // подмены — и «считаем по телефону», и «считаем в UTC». Ожидание считается
+  // НЕЗАВИСИМО: сдвигом ISO на +07:00 руками, а не тем же Intl, что в коде.
+  {
+    const iso = '2026-12-05T12:00:00Z';
+    const wall = new Date(Date.parse(iso) + 7 * 3600e3);
+    const hm = wall.toISOString().slice(11, 16);                       // 19:00 по Бангкоку
+    const dows = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+    const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+                    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    const label = `${wall.getUTCDate()} ${months[wall.getUTCMonth()]}, ${dows[wall.getUTCDay()]}`;
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      evReply(json(200, [EV({ id: 11, title: 'Далёкое событие', starts_at: iso, duration_min: 90 })])),
+      'America/New_York');
+    await s.p.evaluate(() => go('events'));
+    await s.p.waitForTimeout(150);
+    const t = await s.view();
+    if (!t.includes(hm)) bad.push(`events-tz: нет времени клуба «${hm}», а есть «${t.slice(0, 80)}»`);
+    if (!t.includes(label)) bad.push(`events-tz: нет дня клуба «${label}»`);
+    if (t.includes('12:00')) bad.push('events-tz: на экране 12:00 — это UTC, а не пояс клуба');
+    if (t.includes('07:00')) bad.push('events-tz: на экране 07:00 — это пояс телефона, а не клуба');
+    if (s.errs.length) bad.push('events-tz: ошибки страницы ' + s.errs.join('; '));
+    await s.p.screenshot({ path: `${OUT}/live-events-tz.png` });
+    await s.ctx.close();
+  }
+
+  // ── поздний ответ прежнего запроса не затирает свежий ──
+  // Второй запрос нарочно медленный, третий уходит, пока он в пути: без
+  // охраны по номеру поколения афиша откатилась бы на старые данные.
+  {
+    let n = 0;
+    const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      if (!q.url().endsWith('/events')) return undefined;
+      n += 1;
+      if (n === 2) return new Promise(r => setTimeout(() =>
+        r(json(200, [EV({ id: 21, title: 'Поздний ответ' })])), 1500));
+      return json(200, [EV({ id: 20 + n, title: n === 1 ? 'Первый ответ' : 'Свежий ответ' })]);
+    });
+    await s.p.evaluate(() => loadEvents());
+    await s.p.waitForTimeout(100);
+    await s.p.evaluate(() => loadEvents());
+    await s.p.waitForTimeout(2500);
+    const t = await s.view();
+    if (!t.includes('Свежий ответ')) bad.push('events-gen: свежего ответа на экране нет: «' + t.slice(0, 80) + '»');
+    if (t.includes('Поздний ответ')) bad.push('events-gen: поздний ответ прежнего запроса затёр свежий');
+    if (n !== 3) bad.push(`events-gen: запросов к /events ${n}, ждали 3`);
+    if (s.errs.length) bad.push('events-gen: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
   }
 
@@ -1696,5 +1765,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 110) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 120) + ' случаев');
 })();
