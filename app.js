@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v11 · 20.10.2026';
+var VERSION = 'v12 · 20.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -209,6 +209,9 @@ function api(method, path, body) {
   var ctl = typeof AbortController === 'function' ? new AbortController() : null;
   var timer = ctl ? setTimeout(function () { ctl.abort(); }, 10000) : null;
   var opt = { method: method, headers: { 'X-Telegram-Init-Data': tg.initData } };
+  // Тестовый режим — на КАЖДОМ запросе, иначе часть экрана придёт из боевой базы.
+  if (TEST.on) opt.headers['X-Test-Mode'] = '1';
+  if (TEST.on && TEST.as) opt.headers['X-Act-As'] = String(TEST.as.id);
   if (ctl) opt.signal = ctl.signal;
   if (body !== undefined) {
     opt.headers['Content-Type'] = 'application/json';
@@ -365,12 +368,12 @@ function loadPass() {
     if (p) {
       PASS = p;
       p.uid = tgUid();
-      try { localStorage.setItem(PASS_KEY, JSON.stringify(p)); } catch (e) { /* без запаса — только онлайн */ }
+      if (!TEST.on) try { localStorage.setItem(PASS_KEY, JSON.stringify(p)); } catch (e) { /* без запаса — только онлайн */ }
     } else {
       // 403 бывает двух видов: «доступа нет» (не в списке, cafe13-api#7) —
       // это отказ во входе целиком; «членство не активно» — только пропуску.
-      if (r.status === 403) dropPass();
-      if (r.status === 403 && r.data && r.data.detail === 'доступа нет') { go('noAccess'); return; }
+      if (r.status === 403 && !TEST.on) dropPass();
+      if (r.status === 403 && r.data && r.data.detail === 'доступа нет' && !TEST.on) { go('noAccess'); return; }
       PASS_FAIL = r.status === 403 && r.data && r.data.detail === 'членство не активно'
                 ? 'Членство не активно — пропуск выдаётся только при живом членстве.'
                 : r.status === 403 ? 'Сервер отказал в пропуске.'
@@ -758,10 +761,6 @@ function bookSend() {
                 note: (r.status === 0 ? 'Сервер не ответил. ' : 'Ответ сервера не разобран. ') +
                       'Не записывайте снова, пока не сверите: списка записей в приложении ещё нет — спросите администратора клуба.' };
       haptic('warn');
-    } else if (inc && (r.status === 404 || r.status === 405)) {
-      FLASH = { text: 'Сервер ещё не принимает доходы',
-                note: 'Ничего не записано. Приём появится со следующей выкладкой сервера — пока запишите на бумаге.' };
-      haptic('warn');
     } else {
       FLASH = { text: 'Не записано', note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r) };
       haptic('warn');
@@ -915,6 +914,108 @@ function refreshMe() {
   });
 }
 
+/* ── тестовый режим и просмотр чужими глазами ─────────
+   Только у богов (солнышко). X-Test-Mode: 1 — запрос обслуживает тестовая
+   база: нажимать можно всё, настоящих денег там нет. X-Act-As: id — ответ
+   собирается так, как его увидел бы этот человек; без тестового режима
+   сервер его отвергает. Кто сейчас на экране и что база тестовая, видно
+   полосой над каждым экраном — иначе запись глазами Александры легко
+   принять за настоящую.
+   Право на солнышко — по СВОИМ ролям (SELF), а не по ролям того, чьими
+   глазами смотрим: иначе из просмотра куратора не вернуться. */
+var TEST = { on: false, as: null, people: null, fail: '', health: '', busy: false };
+var SELF = [];
+
+function personWords(p) {
+  var roles = (p.roles || []).map(function (r) {
+    // cafe13-api#24: {role, direction_id, direction}; до него — строка
+    if (typeof r === 'string') return ROLE_NAME[r] || r;
+    return (ROLE_NAME[r.role] || r.role) + (r.direction ? ' · ' + r.direction : '');
+  }).filter(function (n, i, all) { return all.indexOf(n) === i; });
+  return roles.length ? roles.join(', ') : 'без ролей';
+}
+function fromPeople(d) {
+  if (!d || d.base !== 'test' || !Array.isArray(d.people)) return null;   // список не из тестовой базы — не список
+  for (var i = 0; i < d.people.length; i++) {
+    var p = d.people[i];
+    if (!p || typeof p.tg_user_id !== 'number' || typeof p.first_name !== 'string' || !Array.isArray(p.roles)) return null;
+  }
+  return d.people.map(function (p) {
+    return { id: p.tg_user_id, name: [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Без имени', what: personWords(p) };
+  });
+}
+function loadHealth() {
+  TEST.health = 'loading';
+  api('GET', '/health').then(function (r) {
+    var t = r.status === 200 && r.data ? r.data.test_db : undefined;
+    TEST.health = t === 'configured' || t === 'unset' ? t : failText(r);
+    if (current === 'demo') render();
+  });
+}
+function loadPeople() {
+  TEST.people = null; TEST.fail = '';
+  api('GET', '/act-as/people').then(function (r) {
+    var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+    var ppl = r.status === 200 ? fromPeople(r.data) : null;
+    if (ppl) TEST.people = ppl;
+    else TEST.fail = r.status === 403 ? 'Вам просмотр не положен' + (detail ? ': ' + detail + '.' : '.')
+                   : r.status === 503 ? 'Тестовая база не подключена.'
+                   : failText(r);
+    if (current === 'demo') render();
+  });
+}
+/* Смена того, кто на экране: перечитать /me с новыми заголовками и сбросить
+   всё, что было собрано для прежнего. Не вышло — остаёмся, кем были:
+   экран прежнего человека под плашкой нового — худшее, что тут может быть. */
+function switchTo(on, as) {
+  if (TEST.busy) return;
+  var was = { on: TEST.on, as: TEST.as };
+  TEST.busy = true; TEST.on = on; TEST.as = as;
+  render();
+  api('GET', '/me').then(function (r) {
+    TEST.busy = false;
+    var me = r.status === 200 ? fromMe(r.data) : null;
+    if (!me) {
+      var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+      TEST.on = was.on; TEST.as = was.as;
+      if (!was.on && on === false) { FAIL = failText(r); FAIL_NET = r.status === 0; go('apiDown'); return; }
+      FLASH = { text: 'Не переключилось', note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r) };
+      haptic('warn'); render(); return;
+    }
+    if (QUEUE_POLL) { clearTimeout(QUEUE_POLL); QUEUE_POLL = null; }
+    if (POLL) { clearTimeout(POLL); POLL = null; }
+    QUEUE_GEN++; POLL_GEN++;
+    BAR = null; BAR_FAIL = ''; MENU_STATE = ''; QUEUE = null; QUEUE_FAIL = ''; MINE_FAIL = '';
+    PASS = null; PASS_FAIL = ''; CART = {}; DATA.bar.mine = null;
+    BOOK.done = []; BOOK.kind = ''; BOOK.ask = false;
+    TOPUP.amount = ''; TOPUP.ask = false;
+    if (!on) TEST.people = null;
+    applyMe(me);
+    haptic('ok');
+    go(startScreen());
+  });
+}
+function testStrip() {
+  if (!LIVE || !TEST.on) return '';
+  return '<div class="test-strip"><span class="col"><b>Тестовая база</b><span class="small">' +
+    (TEST.as ? 'Смотрите как ' + esc(TEST.as.name) + ' · ' + esc(TEST.as.what) : 'Вы сами') +
+    ' · деньги ненастоящие</span></span>' +
+    (TEST.busy ? '' : TEST.as ? '<button type="button" class="btn mini" data-action="test-self">Выйти из просмотра</button>'
+                              : '<button type="button" class="btn mini" data-action="test-off">Выйти из теста</button>') +
+  '</div>';
+}
+
+function applyMe(me) {
+  DATA.role = me.role;
+  DATA.roles = me.roles;
+  DATA.barSide = me.barSide;
+  DATA.grants = me.grants;
+  DATA.consent = me.consent;
+  DATA.member = me.member;
+  // запас пропуска — только свой и только боевой: чужой код на своём телефоне — чужое платёжное средство
+  if (!TEST.on) syncPass(me);
+}
+
 function boot() {
   if (!API_ON || !inTelegram() || !tg.initData) { go(startScreen()); return; }
   go('loading');
@@ -932,13 +1033,8 @@ function boot() {
       return;
     }
     LIVE = true;
-    DATA.role = me.role;
-    DATA.roles = me.roles;
-    DATA.barSide = me.barSide;
-    DATA.grants = me.grants;
-    DATA.consent = me.consent;
-    DATA.member = me.member;
-    syncPass(me);
+    SELF = me.roles;
+    applyMe(me);
     go(startScreen());
   });
 }
@@ -2090,15 +2186,39 @@ var SCREENS = {
   },
 
   demo: function () {
-    // В Telegram это не демонстрация: данные настоящие. Панель — будущий
-    // просмотр глазами другого человека; список людей даст сервер, своей
+    // В Telegram это не демонстрация: данные настоящие. Панель — тестовый
+    // режим и просмотр чужими глазами; список людей даёт сервер, своей
     // таблицы людей в публичном клиенте нет.
     if (LIVE) {
-      return '<div class="card quiet"><div class="col">' +
-          '<b>Смотреть глазами другого человека</b>' +
-          '<span class="small">Появится, когда сервер начнёт отдавать список людей: выберете человека — и увидите его экраны на настоящих данных, без права записать что-то от его имени.</span>' +
-        '</div></div>' +
-        '<span class="small">Версия приложения: <b>' + esc(VERSION) + '</b></span>';
+      var ver = '<span class="small">Версия приложения: <b>' + esc(VERSION) + '</b></span>';
+      if (TEST.busy) return '<div class="card quiet"><span class="small">Переключаемся…</span></div>' + ver;
+      if (TEST.as) return (FLASH ? flash() : '') +
+        '<div class="card quiet"><div class="col"><b>Смотрите как ' + esc(TEST.as.name) + '</b>' +
+          '<span class="small">Чтобы выбрать другого, выйдите из просмотра.</span></div></div>' +
+        '<button type="button" class="btn" data-action="test-self">Выйти из просмотра</button>' + ver;
+      if (TEST.on) return (FLASH ? flash() : '') +
+        '<div class="group"><span class="label">Смотреть как</span>' +
+          (TEST.fail ? '<div class="card quiet"><span class="small">' + esc(TEST.fail) + '</span></div>'
+           : TEST.people === null ? '<div class="card quiet"><span class="small">Загружаем список…</span></div>'
+           : !TEST.people.length ? '<div class="card quiet"><span class="small">В тестовой базе некого выбрать.</span></div>'
+           : TEST.people.map(function (p) {
+               return '<button type="button" class="listitem" data-action="test-as:' + p.id + '">' +
+                 '<span class="grow"><b>' + esc(p.name) + '</b><span class="small">' + esc(p.what) + '</span></span>' +
+                 svg(ICON.chev, 'chev') + '</button>';
+             }).join('')) +
+        '</div>' +
+        '<span class="small">Нажатия в тестовом режиме записываются в тестовую базу: деньги и записи там ненастоящие, боевая база не меняется.</span>' +
+        '<button type="button" class="btn ghost" data-action="test-off">Выйти из тестового режима</button>' + ver;
+      return (FLASH ? flash() : '') +
+        '<div class="card quiet"><div class="col"><b>Тестовый режим</b>' +
+          (TEST.health === 'configured'
+            ? '<span class="small">Приложение переключится на тестовую базу: можно смотреть глазами любого человека из списка и нажимать всё — деньги там ненастоящие.</span>' +
+              '<button type="button" class="btn" data-action="test-on">Войти в тестовый режим</button>'
+            : TEST.health === 'unset' ? '<span class="small">Тестовая база ещё не выложена — режим недоступен.</span>'
+            : TEST.health === 'loading' || TEST.health === '' ? '<span class="small">Проверяем, выложена ли тестовая база…</span>'
+            : '<span class="small">Не удалось узнать, выложена ли тестовая база: ' + esc(TEST.health) + '</span>' +
+              '<button type="button" class="btn ghost" data-action="test-health">Проверить снова</button>') +
+        '</div></div>' + ver;
     }
     var roles = [
       ['guest', 'Гость', 'без членства: только услуги'],
@@ -2365,7 +2485,7 @@ var param = null;
 
 function render() {
   var view = document.getElementById('view');
-  view.innerHTML = SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
+  view.innerHTML = (bare() ? '' : testStrip()) + SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
 
   var root = tabList().some(function (t) { return t[0] === current; });
   document.getElementById('back').hidden = root || bare() && current !== 'consentFull';
@@ -2397,6 +2517,7 @@ function render() {
 function go(screen, p) {
   if (!SCREENS[screen]) return;
   if (screen === 'demo' && LIVE && !isGod()) return;
+  if (screen === 'demo' && LIVE && !TEST.on && TEST.health !== 'configured' && TEST.health !== 'loading') loadHealth();
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
   if (screen === 'topup' && current !== 'topup') {
     TOPUP.from = current === 'home' ? 'home' : 'bar';
@@ -2505,6 +2626,15 @@ function doAction(a) {
     }
     if (a === 't-keep') { TOPUP.ask = false; render(); return; }
     if (a === 'book-retry') { bookLoad(); render(); return; }
+    if (a === 'test-health') { loadHealth(); render(); return; }
+    if (a === 'test-on' && isGod()) { switchTo(true, null); loadPeople(); return; }
+    if (a === 'test-as' && isGod() && TEST.on && TEST.people) {
+      var who = TEST.people.filter(function (x) { return String(x.id) === arg; })[0];
+      if (who) switchTo(true, who);
+      return;
+    }
+    if (a === 'test-self' && TEST.on) { switchTo(true, null); loadPeople(); return; }
+    if (a === 'test-off' && TEST.on) { switchTo(false, null); return; }
     if (a.slice(0, 2) === 'b-') {
       if (BOOK.busy) return;
       bookGrab();
@@ -2669,7 +2799,7 @@ document.getElementById('back').addEventListener('click', function () {
    (демонстрация) — тоже нет: там некому быть богом. */
 var GODS = ['god', 'god_mentor'];
 function isGod() {
-  return LIVE && (DATA.roles || []).some(function (r) { return GODS.indexOf(r) !== -1; });
+  return LIVE && SELF.some(function (r) { return GODS.indexOf(r) !== -1; });
 }
 var SUN = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>';
 function sunButton() {
