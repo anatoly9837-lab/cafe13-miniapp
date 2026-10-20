@@ -44,6 +44,10 @@ docker run --rm -v $PWD:/app:ro -v <каталог-снимков>:/work -w /wor
   --entrypoint node agenthost/playwright:1.59.1 /app/tools/live.cjs
 ```
 
+Что выкладываемый `app.js` действительно живой — `node tools/api-on.cjs`
+(без браузера, секунда): падает, если `var API_ON = true;` нет, если значение
+другое или если объявлений больше одного.
+
 ## Файлы
 
 | | |

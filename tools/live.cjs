@@ -51,8 +51,8 @@ const noConsent = clone(OWNER); noConsent.member.consent_data_at = null;
 /* [имя, внутри Telegram, API_ON, ответ /me, есть, нет, сколько запросов к API, после] */
 const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
-    ['Пожизненно', '3 170 ฿', 'Глава клуба', 'Администратор', 'god_mentor', 'ещё не подключено'],
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны'], 1],
+    ['Пожизненно', '3 170 ฿', 'Глава клуба', 'Администратор', 'ещё не подключено'],
+    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor'], 1],
   ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 1],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Баланс', 'Вас нет в списке'], 1],
@@ -75,13 +75,20 @@ const REFUSAL = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200
 // Опечатка в имени молча выключила бы проверку для случая — ловим здесь.
 REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSAL: нет случая ' + n); });
 
+// выключатель ищется в любом положении: тест сам ставит нужное. Не один —
+// падаем сразу и своим текстом, а не таймаутом на подменённой странице.
+// Что в выкладке он включён — tools/api-on.cjs.
+const src = fs.readFileSync(ROOT + '/app.js', 'utf8');
+const SW = /var API_ON = (true|false);/;
+const decl = src.match(/^\s*(var|let|const)\s+API_ON\s*=.*$/gm) || [];
+if (decl.length !== 1 || !SW.test(decl[0])) {
+  console.error('КРАСНОЕ: app.js: выключатель API_ON не найден ровно один раз (' + decl.length + ')');
+  process.exit(1);
+}
+
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
   const bad = [];
-  const src = fs.readFileSync(ROOT + '/app.js', 'utf8');
-  // выключатель ищется в любом положении: тест сам ставит нужное
-  const SW = /var API_ON = (true|false);/;
-  if ((src.match(new RegExp(SW.source, 'g')) || []).length !== 1) bad.push('app.js: выключатель API_ON не найден ровно один раз');
 
   async function open(inside, on, me, consentReply, passReply, saved, extra) {
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
@@ -121,6 +128,10 @@ REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSA
     const t = await s.view();
     has.forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
     hasnt.forEach(x => { if (t.includes(x)) bad.push(`${name}: есть лишнее «${x}»`); });
+    // head и god_mentor — одно звание: плашка одна, а не две
+    const pills = await s.p.evaluate(() => [...document.querySelectorAll('#view .pill')].map(e => e.textContent));
+    if (name === 'owner-lifelong' && pills.filter(x => x === 'Глава клуба').length !== 1)
+      bad.push(`${name}: плашек «Глава клуба» ${pills.filter(x => x === 'Глава клуба').length}, ждали 1`);
     if (s.calls.length !== n) bad.push(`${name}: запросов к API ${s.calls.length}, ждали ${n}`);
     s.calls.forEach(c => { if (c.init !== INIT) bad.push(`${name}: заголовок подписи «${c.init}»`); });
     if (REFUSAL.has(name) && await s.tabsShown())

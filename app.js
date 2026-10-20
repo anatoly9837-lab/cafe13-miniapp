@@ -232,7 +232,8 @@ function api(method, path, body) {
 
 var LEVEL = { member: 'Член клуба', organizer: 'Организатор', partner: 'Бизнес-партнёр' };
 // Имена ролей — только тех, смысл которых записан; остальные показываются кодом.
-var ROLE_NAME = { head: 'Глава клуба', admin: 'Администратор', director: 'Директор',
+var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клуба', god: 'Наследник',
+                  admin: 'Администратор', director: 'Директор',
                   staff: 'Касса', curator: 'Куратор направления', bar: 'Бар · исполнитель' };
 
 function ruDate(iso) {
@@ -1819,9 +1820,10 @@ function notWired(what) {
 function myRoles() {
   if (!DATA.roles || !DATA.roles.length) return '';
   return '<div class="group"><span class="label">Ваши роли</span><div class="card quiet"><div class="row" style="flex-wrap:wrap;gap:6px;justify-content:flex-start">' +
-    DATA.roles.map(function (r) {
-      return '<span class="pill">' + esc(ROLE_NAME[r] || r) + '</span>';
-    }).join('') +
+    // head и god_mentor у владельца — одно и то же звание: одна плашка
+    DATA.roles.map(function (r) { return ROLE_NAME[r] || r; })
+      .filter(function (n, i, all) { return all.indexOf(n) === i; })
+      .map(function (n) { return '<span class="pill">' + esc(n) + '</span>'; }).join('') +
   '</div></div></div>';
 }
 
