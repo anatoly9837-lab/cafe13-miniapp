@@ -1033,6 +1033,200 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // ── доход и расход бара ──
+  // Формы ответов — снимки bar-expense и bar-income (сверка ниже, в shape).
+  // Заглушка по умолчанию отвечает строкой, собранной из отправленного, —
+  // как сервер; каждое поле, которое клиент сверяет, ломается своим случаем.
+  const EXP_ROW = { id: 9029, at: '2026-10-20T11:41:43+00:00', amount: '240.00', expense_cat: 'закуп',
+                    expense_kind: 'opex', paid_by: 'club_till', note: 'молоко' };
+  const INC_ROW = { id: 9031, at: '2026-10-20T12:00:00+00:00', amount: '1500.00', method: 'card',
+                    direction_id: 7, member_id: null, note: 'вечер' };
+  const money2 = v => Number(v).toFixed(2);
+  function book(o) {
+    o = Object.assign({
+      exp: q => { const x = JSON.parse(q.postData()); return json(201, Object.assign({}, EXP_ROW, { amount: money2(x.amount),
+               expense_cat: x.expense_cat, expense_kind: x.expense_kind, paid_by: x.paid_by, note: x.note })); },
+      inc: q => { const x = JSON.parse(q.postData()); return json(201, Object.assign({}, INC_ROW, { amount: money2(x.amount),
+               method: x.method, direction_id: x.direction_id, note: x.note })); } }, o);
+    const b = queue();
+    return q => {
+      const u = q.url();
+      const f = q.method() === 'POST' && u.endsWith('/bar/expenses') ? o.exp : q.method() === 'POST' && u.endsWith('/bar/income') ? o.inc : null;
+      if (f) return f === 'abort' ? 'abort' : f(q);
+      return b(q);
+    };
+  }
+  // Щелчок с проверкой: нет кнопки или она выключена — своим текстом, а не таймаутом.
+  async function tap(s, sel) {
+    const e = await s.p.$(sel);
+    if (!e || !(await e.isVisible()) || !(await e.isEnabled())) { bad.push(`${s.name || 'book'}: нет доступной кнопки ${sel}`); return false; }
+    await e.click(); return true;
+  }
+  const bookPosts = s => s.calls.filter(c => c.method === 'POST' && /\/bar\/(expenses|income)$/.test(c.url));
+  // Саша — куратор Бара без членства: путь только через вкладку «Заказы»
+  const SASHA = clone(OWNER); SASHA.roles = [{ role: 'curator', direction_id: 7 }];
+  SASHA.membership_active = false; SASHA.membership = null;
+  async function toBook(s, name) {
+    for (const sel of ['#tabs [data-go="barQueue"]', '#view [data-go="barQueue"]']) {
+      if (await s.p.$(sel)) { await tap(s, sel); await s.p.waitForTimeout(250); break; }
+    }
+    if (!(await s.p.$('#view [data-go="barMoney"]'))) { bad.push(`${name}: в очереди нет «Доход и расход»`); return false; }
+    await tap(s, '#view [data-go="barMoney"]');
+    await s.p.waitForTimeout(250);
+    return true;
+  }
+  async function fillExpense(s, name, amount, picks) {
+    if (!(await s.p.$('[data-action="b-new:expense"]'))) { bad.push(`${name}: нет кнопки «Расход»`); return false; }
+    await tap(s, '[data-action="b-new:expense"]');
+    if (!(await s.p.$('#b-amount'))) { bad.push(`${name}: нет поля суммы`); return false; }
+    await s.p.fill('#b-amount', amount);
+    await s.p.fill('#b-note', 'молоко');
+    for (const a of picks) {
+      if (!(await s.p.$(`[data-action="${a}"]`))) { bad.push(`${name}: нет выбора ${a}`); return false; }
+      await tap(s, `[data-action="${a}"]`);
+    }
+    return true;
+  }
+  const ALL_PICKS = ['b-cat:закуп', 'b-kind:opex', 'b-paid:club_till'];
+  async function askSend(s, name) {
+    await tap(s, '[data-action="b-ask"]');
+    await s.p.waitForTimeout(100);
+    if (!(await s.p.$('[data-action="b-send"]'))) { bad.push(`${name}: нет подтверждения перед записью`); return false; }
+    await tap(s, '[data-action="b-send"]');
+    await s.p.waitForTimeout(400);
+    return true;
+  }
+  // Расход: без выбора не уходит; подтверждение; одно тело; итог из ответа.
+  {
+    const s = await open(true, true, json(200, SASHA), null, null, null, book()); s.name = 'book-sasha';
+    if (await toBook(s, 'book-expense') && await fillExpense(s, 'book-expense', '240', [])) {
+      // признак «не подставлено молча»: ни одна категория/вид/оплата не нажата
+      if (await s.p.$('[data-action^="b-cat"][aria-pressed="true"], [data-action^="b-kind"][aria-pressed="true"], [data-action^="b-paid"][aria-pressed="true"]'))
+        bad.push('book-expense: категория, вид или оплата выбраны за человека');
+      await tap(s, '[data-action="b-ask"]');
+      await s.p.waitForTimeout(100);
+      let t = await s.view();
+      if (!t.includes('Выберите категорию, вид затраты, чем платили') || (await s.p.$('[data-action="b-send"]')))
+        bad.push('book-expense: без категории, вида и оплаты дошло до записи');
+      if ((await s.p.inputValue('#b-amount')) !== '240' || (await s.p.inputValue('#b-note')) !== 'молоко')
+        bad.push('book-expense: выбор стёр введённое');
+      for (const a of ALL_PICKS) await tap(s, `[data-action="${a}"]`);
+      await tap(s, '[data-action="b-ask"]');
+      await s.p.waitForTimeout(100);
+      t = await s.view();
+      if (!t.includes('Записать расход 240 ฿?') || !t.includes('закуп · текущая · касса клуба · молоко'))
+        bad.push('book-expense: подтверждение не называет сумму и выбор: ' + t.slice(0, 300));
+      if (bookPosts(s).length) bad.push('book-expense: записано с первого нажатия');
+      await s.p.screenshot({ path: `${OUT}/live-book-confirm.png`, fullPage: true });
+      if (await s.p.$('[data-action="b-keep"]')) await tap(s, '[data-action="b-keep"]');
+      if (bookPosts(s).length || (await s.p.$('[data-action="b-send"]'))) bad.push('book-expense: «Не записывать» не сработало');
+      if (await askSend(s, 'book-expense')) {
+        const bp = bookPosts(s);
+        const want = JSON.stringify({ direction_id: 7, amount: 240, expense_cat: 'закуп', expense_kind: 'opex', paid_by: 'club_till', note: 'молоко' });
+        if (bp.length !== 1 || !bp[0].url.endsWith('/bar/expenses') || bp[0].body !== want) bad.push('book-expense: ушло не так: ' + JSON.stringify(bp.map(c => c.body)));
+        t = await s.view();
+        if (!t.includes('Расход записан: 240 ฿') || !t.includes('Записано сейчас') || !t.includes('−240 ฿')) bad.push('book-expense: нет итога записи');
+        if (await s.p.$('[data-action^="b-cat"][aria-pressed="true"]')) bad.push('book-expense: выбор прошлой записи перенесён в следующую');
+        await s.p.screenshot({ path: `${OUT}/live-book-expense.png`, fullPage: true });
+      }
+    }
+    if (s.errs.length) bad.push('book-expense: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Доход: админ с главной; «со счёта» нет; без способа не уходит.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, book()); s.name = 'book-owner';
+    if (!(await s.p.$('#view [data-go="barMoney"]'))) bad.push('book-income: на главной у админа нет «Доход и расход бара»');
+    else {
+      await tap(s, '#view [data-go="barMoney"]');
+      await s.p.waitForTimeout(250);
+      if (!(await s.p.$('[data-action="b-new:income"]'))) bad.push('book-income: нет кнопки «Доход»');
+      else {
+        await tap(s, '[data-action="b-new:income"]');
+        const how = await s.p.$$eval('[data-action^="b-method"]', e => e.map(x => x.getAttribute('data-action')));
+        if (JSON.stringify(how) !== JSON.stringify(['b-method:cash', 'b-method:card'])) bad.push('book-income: способы ' + JSON.stringify(how));
+        await s.p.fill('#b-amount', '1500');
+        await s.p.fill('#b-note', 'вечер');
+        await tap(s, '[data-action="b-ask"]');
+        if (!(await s.view()).includes('Выберите, чем заплатили') || (await s.p.$('[data-action="b-send"]'))) bad.push('book-income: без способа дошло до записи');
+        await tap(s, '[data-action="b-method:card"]');
+        if (await askSend(s, 'book-income')) {
+          const bp = bookPosts(s);
+          if (bp.length !== 1 || !bp[0].url.endsWith('/bar/income') || bp[0].body !== JSON.stringify({ direction_id: 7, amount: 1500, method: 'card', note: 'вечер' }))
+            bad.push('book-income: ушло не так: ' + JSON.stringify(bp.map(c => c.body)));
+          if (!(await s.view()).includes('Доход записан: 1 500 ฿')) bad.push('book-income: нет итога записи');
+          await s.p.screenshot({ path: `${OUT}/live-book-income.png`, fullPage: true });
+        }
+      }
+    }
+    if (s.errs.length) bad.push('book-income: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Не сумма — не уходит.
+  for (const v of ['0', 'abc', '1.234']) {
+    const s = await open(true, true, json(200, SASHA), null, null, null, book()); s.name = 'book-sasha';
+    if (await toBook(s, 'book-amount') && await fillExpense(s, 'book-amount', v, ALL_PICKS)) {
+      await tap(s, '[data-action="b-ask"]');
+      if (!(await s.view()).includes('Сумма — число больше нуля') || (await s.p.$('[data-action="b-send"]'))) bad.push(`book-amount: «${v}» принято как сумма`);
+    }
+    await s.ctx.close();
+  }
+  // Ответ не тот или потерян — «неизвестно» и «не записывайте снова», не «записан».
+  const alt = (row, k, v) => q => json(201, Object.assign({}, row, JSON.parse(q.postData()), { [k]: v }, k === 'amount' ? {} : { amount: money2(JSON.parse(q.postData()).amount) }));
+  for (const [name, o, want, inc] of [
+    ['book-lost', { exp: 'abort' }, 'Сервер не ответил'],
+    ['book-sum', { exp: alt(EXP_ROW, 'amount', '2400.00') }, 'Ответ сервера не разобран'],
+    ['book-cat', { exp: alt(EXP_ROW, 'expense_cat', 'ремонт') }, 'Ответ сервера не разобран'],
+    ['book-kind', { exp: alt(EXP_ROW, 'expense_kind', 'invest') }, 'Ответ сервера не разобран'],
+    ['book-paid', { exp: alt(EXP_ROW, 'paid_by', 'partner') }, 'Ответ сервера не разобран'],
+    ['book-note', { exp: alt(EXP_ROW, 'note', '') }, 'Ответ сервера не разобран'],
+    ['book-noid', { exp: alt(EXP_ROW, 'id', null) }, 'Ответ сервера не разобран'],
+    ['book-inc-method', { inc: alt(INC_ROW, 'method', 'cash') }, 'Ответ сервера не разобран', true],
+    ['book-403', { exp: () => json(403, { detail: 'нужна роль curator' }) }, 'Нужна роль curator'],
+    ['book-inc-404', { inc: () => json(404, { detail: 'Not Found' }) }, 'Сервер ещё не принимает доходы', true]]) {
+    const s = await open(true, true, json(200, SASHA), null, null, null, book(o)); s.name = name;
+    let ready = false;
+    if (inc) {
+      if (await toBook(s, name) && await s.p.$('[data-action="b-new:income"]')) {
+        await tap(s, '[data-action="b-new:income"]');
+        await s.p.fill('#b-amount', '1500'); await s.p.fill('#b-note', 'вечер');
+        await tap(s, '[data-action="b-method:card"]');
+        ready = true;
+      } else bad.push(`${name}: не дошли до формы дохода`);
+    } else ready = await toBook(s, name) && await fillExpense(s, name, '240', ALL_PICKS);
+    if (ready && await askSend(s, name)) {
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+      if (/записан:/.test(t) || t.includes('Записано сейчас')) bad.push(`${name}: выдано за успех`);
+      if (want !== 'Нужна роль curator' && want !== 'Сервер ещё не принимает доходы' && !t.includes('Не записывайте снова'))
+        bad.push(`${name}: не предупреждено о двойной записи`);
+      if (want === 'Нужна роль curator' && !t.includes('Не записано')) bad.push(`${name}: отказ не назван`);
+      if (name === 'book-inc-404' && !t.includes('Ничего не записано')) bad.push(`${name}: не сказано, что ничего не записано`);
+    }
+    await s.ctx.close();
+  }
+  // Без права: бармен не видит входа; куратор другого направления получает отказ, а не форму.
+  {
+    const s = await open(true, true, json(200, BARMAN), null, null, null, book()); s.name = 'book-barman';
+    if (await s.p.$('#view [data-go="barMoney"]')) bad.push('book-norole: бармену на главной предложено вносить');
+    await toQueue(s);
+    if (await s.p.$('#view [data-go="barMoney"]')) bad.push('book-norole: бармену в очереди предложено вносить');
+    await s.p.evaluate(() => go('barMoney'));
+    await s.p.waitForTimeout(250);
+    if (await s.p.$('#b-amount') || await s.p.$('[data-action="b-new:expense"]')) bad.push('book-norole: форма у бармена');
+    await s.ctx.close();
+  }
+  {
+    const tea = clone(SASHA); tea.roles = [{ role: 'curator', direction_id: 2 }];
+    const s = await open(true, true, json(200, tea), null, null, null, book()); s.name = 'book-tea';
+    await s.p.evaluate(() => go('barMoney'));
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    if (await s.p.$('[data-action="b-new:expense"]') || !t.includes('вносит куратор')) bad.push('book-other-dir: куратору другого направления дана форма Бара');
+    if (bookPosts(s).length) bad.push('book-other-dir: ушла запись');
+    await s.ctx.close();
+  }
+
   // ── вход в очередь по роли, а не по уровню членства ──
   // Бармен без членства и бармен с членством — обе ветки уровня; оба
   // обязаны дойти до очереди за нажатия, без знания адресов.
@@ -1103,7 +1297,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     'me-member': OWNER, 'pass-member': PASS, 'directions-guest': JSON.parse(DIR(true).body),
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
     'order-state-worker': { id: 3, number: '261018-03', state: 'making' },
-    'till-topup': TILL_ROW
+    'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW
   };
   Object.keys(STUBS).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
@@ -1123,5 +1317,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 67) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 85) + ' случаев');
 })();
