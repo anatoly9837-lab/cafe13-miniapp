@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v12 · 20.10.2026';
+var VERSION = 'v13 · 20.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -296,7 +296,7 @@ function untilText(m) {
    показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
-              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1,
+              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -471,8 +471,14 @@ function failText(r) {
 }
 
 /* Направление «Бар» — общее для меню и очереди. done(текст отказа | '') */
+/* WHO — поколение «под кого собрано»: растёт при смене человека в тестовом
+   режиме. Ответ, ушедший под прежнего и вернувшийся после смены, молчит —
+   иначе экран нового человека получил бы направление или меню прежнего. */
+var WHO = 0;
 function loadBar(done) {
+  var who = WHO;
   api('GET', '/directions').then(function (r) {
+    if (who !== WHO) return;
     var b = r.status === 200 ? fromDirections(r.data) : undefined;
     BAR = b || null;
     done(b ? '' : b === null ? 'На сервере не нашлось направления «Бар».' : failText(r));
@@ -769,6 +775,114 @@ function bookSend() {
   });
 }
 
+/* ── отчёт за день ─────────────────────────────────────
+   GET /bar/day: заказы, ручной доход и затраты строками, открытая смена.
+   Сутки — по Пхангану, границы приходят в ответе. Суммы сверяются со
+   строками: итог, не сошедшийся со своими строками, — не отчёт, а отказ
+   (показать его значило бы назвать человеку неверные деньги). */
+var DAY = { data: null, fail: '', from: 'barMoney', gen: 0 };
+function sumOf(rows) {
+  return Math.round(rows.reduce(function (a, r) { return a + r.amount; }, 0) * 100) / 100;
+}
+function fromDay(d) {
+  if (!d || typeof d !== 'object') return null;
+  var start = new Date(d.day_start), end = new Date(d.day_end);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+  var n = {};
+  var keys = ['served_total', 'cash_total', 'income_total', 'expense_total', 'expense_opex', 'expense_invest'];
+  for (var i = 0; i < keys.length; i++) { n[keys[i]] = num(d[keys[i]]); if (!(n[keys[i]] >= 0)) return null; }
+  if (!Array.isArray(d.income) || !Array.isArray(d.expenses) || !Array.isArray(d.positions)) return null;
+  var income = [], expenses = [], positions = [];
+  for (i = 0; i < d.income.length; i++) {
+    var x = d.income[i];
+    if (!x || typeof x.id !== 'number' || !(num(x.amount) > 0) || !pick(INCOME_HOW, x.method) || typeof x.note !== 'string') return null;
+    income.push({ at: hm(x.at), amount: num(x.amount), how: pick(INCOME_HOW, x.method)[1].toLowerCase(), note: x.note });
+  }
+  for (i = 0; i < d.expenses.length; i++) {
+    var e = d.expenses[i];
+    if (!e || typeof e.id !== 'number' || !(num(e.amount) > 0) || EXP_CATS.indexOf(e.expense_cat) === -1 ||
+        !pick(EXP_KINDS, e.expense_kind) || !pick(PAID_BY, e.paid_by) || typeof e.note !== 'string') return null;
+    expenses.push({ at: hm(e.at), amount: num(e.amount), kind: e.expense_kind, note: e.note,
+                    how: e.expense_cat + ' · ' + pick(EXP_KINDS, e.expense_kind)[1].toLowerCase() + ' · ' + pick(PAID_BY, e.paid_by)[1].toLowerCase() });
+  }
+  for (i = 0; i < d.positions.length; i++) {
+    var q = d.positions[i];
+    if (!q || typeof q.title !== 'string' || typeof q.qty !== 'number' || !(num(q.total) >= 0)) return null;
+    positions.push([q.title, q.qty, num(q.total)]);
+  }
+  var opex = sumOf(expenses.filter(function (r) { return r.kind === 'opex'; }));
+  var invest = sumOf(expenses.filter(function (r) { return r.kind === 'invest'; }));
+  if (sumOf(income) !== n.income_total || sumOf(expenses) !== n.expense_total ||
+      opex !== n.expense_opex || invest !== n.expense_invest || n.cash_total > n.served_total) return 'mismatch';
+  var sh = d.open_shift;
+  if (sh !== null && (!sh || isNaN(new Date(sh.opened_at).getTime()))) return null;
+  return { date: start.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Asia/Bangkok' }),
+           orders: n.served_total, cash: n.cash_total, manual: n.income_total,
+           spend: n.expense_total, opex: n.expense_opex, invest: n.expense_invest,
+           income: income, expenses: expenses, positions: positions,
+           shift: sh ? hm(sh.opened_at) : null };
+}
+function loadDay() {
+  var gen = ++DAY.gen;
+  DAY.fail = '';
+  var go_ = function () {
+    api('GET', '/bar/day?direction_id=' + BAR.id).then(function (r) {
+      if (gen !== DAY.gen) return;
+      var d = r.status === 200 ? fromDay(r.data) : null;
+      var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+      if (d && d !== 'mismatch') DAY.data = d;
+      else DAY.fail = d === 'mismatch' ? 'Суммы отчёта не сходятся со строками — показывать их нельзя. Сообщите администратору клуба.'
+                    : r.status === 403 ? 'Отчёт за день видит куратор направления.'
+                    : detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r);
+      if (current === 'barDay') render();
+    });
+  };
+  if (BAR) { go_(); return; }
+  loadBar(function (err) {
+    if (gen !== DAY.gen) return;
+    if (err) { DAY.fail = err; if (current === 'barDay') render(); return; }
+    go_();
+  });
+}
+function liveDay() {
+  if (!DAY.data) return (FLASH ? flash() : '') +
+    (DAY.fail ? '<div class="card quiet"><span class="small">' + esc(DAY.fail) + '</span></div>' +
+                '<button type="button" class="btn ghost" data-action="day-reload">Повторить</button>'
+              : '<div class="card quiet"><span class="small">Загружаем отчёт…</span></div>');
+  var d = DAY.data;
+  var line = function (x, sign) {
+    return '<div class="card"><div class="row top"><div class="col"><b>' + esc(x.note || 'без комментария') + '</b>' +
+      '<span class="small">' + esc(x.how) + (x.at ? ' · ' + esc(x.at) : '') + '</span></div>' +
+      '<b class="num">' + sign + money(x.amount) + ' ฿</b></div></div>';
+  };
+  return (FLASH ? flash() : '') +
+    '<div class="card strong"><div class="row top"><div class="col"><h2>Сегодня, ' + esc(d.date) + '</h2>' +
+      '<span class="small">' + (d.shift ? 'Смена открыта с ' + esc(d.shift) : 'Смена не открыта') + ' · сутки по Пхангану</span></div></div></div>' +
+    (DAY.fail ? '<div class="card quiet"><span class="small">Не обновилось: ' + esc(DAY.fail) + '</span></div>' : '') +
+    '<div class="group"><span class="label">Доход</span><div class="rows">' +
+      '<div><span>Всего</span><b class="num">' + money(d.orders + d.manual) + ' ฿</b></div>' +
+      '<div><span class="small">Внесено руками</span><b class="num">' + money(d.manual) + ' ฿</b></div>' +
+      '<div><span class="small">Заказы в приложении</span><b class="num">' + money(d.orders) + ' ฿</b></div>' +
+      '<div><span class="small">из них наличными</span><b class="num">' + money(d.cash) + ' ฿</b></div>' +
+    '</div></div>' +
+    (d.income.length ? '<div class="group"><span class="label">Внесено руками</span>' + d.income.map(function (x) { return line(x, ''); }).join('') + '</div>' : '') +
+    '<div class="group"><span class="label">Расход</span><div class="rows">' +
+      '<div><span>Всего</span><b class="num">' + money(d.spend) + ' ฿</b></div>' +
+      '<div><span class="small">Текущие — вычитаются до доли клуба</span><b class="num">' + money(d.opex) + ' ฿</b></div>' +
+      '<div><span class="small">Вложения — из доли направления</span><b class="num">' + money(d.invest) + ' ฿</b></div>' +
+    '</div></div>' +
+    (d.expenses.length ? '<div class="group"><span class="label">Затраты</span>' + d.expenses.map(function (x) { return line(x, '−'); }).join('') + '</div>' : '') +
+    (d.positions.length ? '<div class="group"><span class="label">Что заказывали в приложении</span><div class="rows">' +
+      d.positions.map(function (t) {
+        return '<div><span>' + esc(t[0]) + '<span class="small"> · ' + t[1] + ' ' + plural(t[1], ['штука', 'штуки', 'штук']) + '</span></span>' +
+          '<b class="num">' + money(t[2]) + ' ฿</b></div>';
+      }).join('') + '</div></div>' : '') +
+    (canBook() ? '<button type="button" class="btn ghost" data-go="barMoney">Внести доход или расход</button>' : '') +
+    '<button type="button" class="btn quiet" data-action="day-reload">Обновить</button>' +
+    '<div class="note">' + svg(ICON.info) +
+      '<span>Ошибочную запись отменяет администратор клуба — отменённое в отчёт не входит.</span></div>';
+}
+
 function setState(oid, state) {
   if (STATE_BUSY[oid]) return;
   STATE_BUSY[oid] = true;
@@ -791,7 +905,9 @@ function setState(oid, state) {
 }
 
 function loadBarMenu() {
+  var who = WHO;
   api('GET', '/bar/menu?direction_id=' + BAR.id).then(function (r) {
+    if (who !== WHO) return;
     var m = r.status === 200 ? fromMenu(r.data) : null;
     if (m) { DATA.bar.menu = m; MENU_STATE = 'ok'; }
     else { DATA.bar.menu = []; MENU_STATE = failText(r); }
@@ -984,10 +1100,11 @@ function switchTo(on, as) {
     }
     if (QUEUE_POLL) { clearTimeout(QUEUE_POLL); QUEUE_POLL = null; }
     if (POLL) { clearTimeout(POLL); POLL = null; }
-    QUEUE_GEN++; POLL_GEN++;
+    QUEUE_GEN++; POLL_GEN++; WHO++;
     BAR = null; BAR_FAIL = ''; MENU_STATE = ''; QUEUE = null; QUEUE_FAIL = ''; MINE_FAIL = '';
     PASS = null; PASS_FAIL = ''; CART = {}; DATA.bar.mine = null;
     BOOK.done = []; BOOK.kind = ''; BOOK.ask = false;
+    DAY.data = null; DAY.fail = ''; DAY.gen++;
     TOPUP.amount = ''; TOPUP.ask = false;
     if (!on) TEST.people = null;
     applyMe(me);
@@ -1942,7 +2059,8 @@ var SCREENS = {
           '</div></div>';
         }).join('') + '</div>' : '') +
       '<div class="note">' + svg(ICON.info) +
-        '<span>Здесь видно только записанное с этого телефона сейчас: списка за день в приложении ещё нет. Ошибочную запись отменяет администратор клуба.</span></div>';
+        '<span>Здесь — записанное с этого телефона сейчас. Все записи за день, с чьего угодно телефона, — в отчёте за день. Ошибочную запись отменяет администратор клуба.</span></div>' +
+      '<button type="button" class="btn quiet" data-go="barDay">Отчёт за день</button>';
   },
 
   barQueue: function () {
@@ -1951,7 +2069,8 @@ var SCREENS = {
       var cnt = function (st) { return q.filter(function (o) { return o.state === st; }).length; };
       return (FLASH ? flash() : '') +
         (BAR ? shiftBlock() : '<div class="card strong"><h2>Заказы на баре</h2></div>') +
-        (canBook() ? '<button type="button" class="btn ghost" data-go="barMoney">Доход и расход</button>' : '') +
+        (canBook() ? '<div class="row" style="gap:8px"><button type="button" class="btn ghost" data-go="barMoney">Доход и расход</button>' +
+                     '<button type="button" class="btn ghost" data-go="barDay">Отчёт за день</button></div>' : '') +
         (QUEUE_FAIL ? '<div class="card quiet"><span class="small">' + esc(QUEUE_FAIL) + '</span></div>' : '') +
         (QUEUE === null ? (QUEUE_FAIL ? '' : '<div class="card quiet"><span class="small">Загружаем очередь…</span></div>') :
           '<div class="rows">' +
@@ -2027,6 +2146,7 @@ var SCREENS = {
   },
 
   barDay: function () {
+    if (LIVE) return liveDay();
     var d = DATA.bar.day;
     var max = d.top.reduce(function (a, t) { return Math.max(a, t[2]); }, 0);
     return (FLASH ? flash() : '') +
@@ -2467,6 +2587,7 @@ var BACK = {
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
   barMoney: function () { return BOOK.from; },
+  barDay: function () { return LIVE ? DAY.from : homeOf(); },
   // съёмка открывается и с бара, и из кабинета куратора — «назад» зависит от роли
   barShot: function () { return DATA.role === 'curator' ? 'curator' : 'barQueue'; }
 };
@@ -2523,6 +2644,8 @@ function go(screen, p) {
     TOPUP.from = current === 'home' ? 'home' : 'bar';
     TOPUP.ask = false; TOPUP.err = '';
   }
+  if (screen === 'barDay' && current !== 'barDay')
+    DAY.from = current === 'barQueue' || current === 'barMoney' ? current : homeOf();
   if (screen === 'barMoney' && current !== 'barMoney') {
     BOOK.from = current === 'barQueue' ? 'barQueue' : homeOf();
     BOOK.ask = false; BOOK.err = '';
@@ -2530,6 +2653,7 @@ function go(screen, p) {
   current = screen;
   param = p || null;
   if (screen === 'barMoney' && LIVE && !BAR) bookLoad();
+  if (screen === 'barDay' && LIVE) loadDay();
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   render();
@@ -2627,6 +2751,7 @@ function doAction(a) {
     if (a === 't-keep') { TOPUP.ask = false; render(); return; }
     if (a === 'book-retry') { bookLoad(); render(); return; }
     if (a === 'test-health') { loadHealth(); render(); return; }
+    if (a === 'day-reload') { loadDay(); render(); return; }
     if (a === 'test-on' && isGod()) { switchTo(true, null); loadPeople(); return; }
     if (a === 'test-as' && isGod() && TEST.on && TEST.people) {
       var who = TEST.people.filter(function (x) { return String(x.id) === arg; })[0];

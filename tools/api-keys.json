@@ -1,4 +1,59 @@
 {
+ "bar-day": {
+  "request": "GET /bar/day?direction_id=N",
+  "shape": {
+   "by_state": [
+    {
+     "orders": null,
+     "pay_method": null,
+     "state": null,
+     "total": null
+    }
+   ],
+   "cash_total": null,
+   "day_end": null,
+   "day_start": null,
+   "expense_invest": null,
+   "expense_opex": null,
+   "expense_total": null,
+   "expenses": [
+    {
+     "amount": null,
+     "at": null,
+     "expense_cat": null,
+     "expense_kind": null,
+     "id": null,
+     "note": null,
+     "paid_by": null
+    }
+   ],
+   "income": [
+    {
+     "amount": null,
+     "at": null,
+     "id": null,
+     "method": null,
+     "note": null
+    }
+   ],
+   "income_total": null,
+   "open_shift": {
+    "cash_start": null,
+    "id": null,
+    "member_id": null,
+    "opened_at": null
+   },
+   "positions": [
+    {
+     "qty": null,
+     "title": null,
+     "total": null
+    }
+   ],
+   "served_total": null
+  },
+  "status": 200
+ },
  "bar-expense": {
   "request": "POST /bar/expenses",
   "shape": {
