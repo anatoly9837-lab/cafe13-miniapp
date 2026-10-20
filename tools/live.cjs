@@ -954,8 +954,12 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   for (const [name, reply, want] of [
     ['topup-lost', 'abort', 'Сервер не ответил'],
     ['topup-alien', q => json(201, { id: 90, at: 'x', kind: 'topup', amount: '500.00', method: 'cash', member_id: 2, note: '' }), 'Ответ сервера не разобран'],
-    ['topup-403', q => json(403, { detail: 'нужна роль staff' }), 'Нужна роль staff']]) {
-    const s = await open(true, true, json(200, OWNER), null, null, null, till({ reply, after: name === 'topup-403' ? 3170 : 3670 }));
+    ['topup-403', q => json(403, { detail: 'нужна роль staff' }), 'Нужна роль staff'],
+    // 201 с верными полями, а баланс не вырос (так сервер обходится с
+    // method=cash/card, замер архитектора к #15): не «Внесено».
+    ['topup-nogrow', undefined, 'на счёт не попало']]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      till(Object.assign({ after: name === 'topup-403' || name === 'topup-nogrow' ? 3170 : 3670 }, reply ? { reply } : {})));
     if (await toTopup(s, '500')) {
       await s.p.click('[data-action="t-ask"]');
       await s.p.waitForTimeout(150);
@@ -965,7 +969,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (t.includes('Внесено 500')) bad.push(`${name}: выдано за успех`);
-      if (name !== 'topup-403' && !t.includes('Сверьте, прежде чем вносить снова')) bad.push(`${name}: не предупреждено о двойном внесении`);
+      if (name === 'topup-lost' || name === 'topup-alien') { if (!t.includes('Сверьте, прежде чем вносить снова')) bad.push(`${name}: не предупреждено о двойном внесении`); }
+      if (name === 'topup-nogrow' && !t.includes('Не вносите снова')) bad.push(`${name}: не предупреждено о двойном внесении`);
       if (name === 'topup-403' && !t.includes('Не внесено')) bad.push(`${name}: отказ не назван`);
     }
     await s.ctx.close();

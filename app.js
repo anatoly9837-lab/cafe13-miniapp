@@ -600,7 +600,10 @@ function shiftAct(open) {
    СЕБЕ, без поиска по коду пропуска. Сервер пускает в POST /till кассу,
    директора, главу клуба и админа — клиент показывает экран им же.
    Ответ мог потеряться после записи: «повторите» тогда — двойное
-   внесение, поэтому вместо него — перечитанный баланс и просьба сверить. */
+   внесение, поэтому вместо него — перечитанный баланс и просьба сверить.
+   «Внесено» — только когда перечитанный баланс вырос ровно на сумму: сервер
+   отвечает 201 и на строку, которая в баланс не попала (способ оплаты,
+   который баланс не считает), и такой 201 — правдоподобный успех. */
 var TOPUP = { amount: '', method: 'cash', ask: false, busy: false, err: '', from: 'bar' };
 var TILL = ['admin', 'head', 'director', 'staff'];
 
@@ -626,11 +629,17 @@ function topupSend() {
       var me = m.status === 200 ? fromMe(m.data) : null;
       if (me) DATA.member.balance = me.member.balance;
       var now = me ? 'На счёте сейчас ' + money(me.member.balance) + ' ฿.' : 'Баланс не перечитался — откройте экран заново.';
+      var grew = !!me && Math.abs(me.member.balance - before - amt) < 0.005;
       TOPUP.busy = false;
-      if (ok) {
+      if (ok && grew) {
         TOPUP.amount = '';
         FLASH = { text: 'Внесено ' + money(amt) + ' ฿', note: now };
         haptic('ok');
+      } else if (ok && me) {
+        FLASH = { text: 'Записано, но на счёт не попало',
+                  note: 'Сервер принял внесение, а баланс не вырос: было ' + money(before) + ' ฿. ' + now +
+                        ' Не вносите снова — сообщите администратору клуба.' };
+        haptic('warn');
       } else if (r.status === 0 || r.status === 201) {
         FLASH = { text: 'Неизвестно, внесено ли',
                   note: (r.status === 0 ? 'Сервер не ответил. ' : 'Ответ сервера не разобран. ') + now +
