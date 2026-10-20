@@ -12,7 +12,7 @@
 """
 import io, json, os, sys
 
-VERSION = 'v8 · 18.10.2026'
+VERSION = 'v8 · 20.10.2026'
 LIVE = 'https://anatoly9837-lab.github.io/cafe13-miniapp/'
 
 GROUPS = {
