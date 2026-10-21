@@ -90,8 +90,14 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
   const bad = [];
+  // Счёт прогонов считается, а не вписывается: каждый случай открывает свой
+  // экран через open(), поэтому здесь он и растёт. Прежняя строка складывала
+  // длину таблицы с числом 180 — императивные случаи (их большинство) в неё
+  // не входили, и число не менялось, сколько бы их ни добавляли.
+  let ran = 0;
 
   async function open(inside, on, me, consentReply, passReply, saved, extra, tz, now) {
+    ran += 1;
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU',
                                      ...(tz ? { timezoneId: tz } : {}) });
     // Без довода ничего не меняется: часы идут настоящие, как и были.
@@ -2055,6 +2061,154 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // ── управление своим мероприятием (#98): видно ТОЛЬКО ведущему ──
+  // Чужое событие в фикстуре стоит ПОСЛЕ своего: иначе снятый фильтр «своё»
+  // остался бы зелёным — первая карточка и так своя.
+  {
+    const MINE = over => EV(Object.assign({ id: 4, title: 'Мой вечер', organizer_id: 1,
+      starts_at: atBkk(1, 19), seats: 12, taken: 3, seats_left: 9 }, over || {}));
+    const FOREIGN = EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) });
+    const pair = (over) => json(200, [MINE(over), FOREIGN]);
+    const openMine = (handler) => openCard(handler);
+
+    /* Сначала признак, потом сценарий: если кнопки отмены нет или спрос не
+       показан, случай говорит об этом своими словами, а не умирает кликом в
+       пустоту. Мутация, снявшая спрос, должна краснеть текстом, а не таймаутом. */
+    const askEventCancel = async (s, name) => {
+      if (!(await s.p.$('[data-action="event-cancel"]'))) {
+        bad.push(`${name}: кнопки «Отменить мероприятие» нет — нажимать нечего`);
+        return false;
+      }
+      await s.p.click('[data-action="event-cancel"]');
+      await s.p.waitForTimeout(150);
+      if (!(await s.p.$('[data-action="event-cancel-yes:4"]'))) {
+        bad.push(`${name}: отмена не спросила подтверждения — подтверждать нечего`);
+        return false;
+      }
+      return true;
+    };
+
+    // Своё: управление есть, счёт записавшихся есть, РАЗДАЧИ ПРАВ НЕТ.
+    {
+      const s = await openMine(q => q.url().endsWith('/events') ? pair() : undefined);
+      const t = await s.view();
+      ['Управление', 'Записалось', '3 из 12'].forEach(x => {
+        if (!t.includes(x)) bad.push(`manage: нет «${x}»`); });
+      if (!(await s.p.$('[data-action="event-cancel"]'))) bad.push('manage: нет кнопки отмены мероприятия');
+      // Ведущий — администратор своего события, а не куратор клуба.
+      ['Люди и роли', 'Роли', 'Выдать право', 'Пригласить'].forEach(x => {
+        if (t.includes(x)) bad.push(`manage: у ведущего появилась раздача прав — «${x}»`); });
+      // Списка записавшихся нет: ручки на бою нет, пустой список выглядел бы ответом.
+      ['Кто записался', 'Записавшиеся', 'Список записавшихся'].forEach(x => {
+        if (t.includes(x)) bad.push(`manage: показан список записавшихся, которого сервер не отдаёт — «${x}»`); });
+      await s.p.screenshot({ path: `${OUT}/live-manage.png` });
+      await s.ctx.close();
+    }
+
+    // Чужое: управления нет вовсе.
+    {
+      const s = await open(true, true, json(200, OWNER), null, null, null,
+        q => q.url().endsWith('/events') ? pair() : undefined, null, NOWFIX);
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(120);
+      await s.p.click('[data-event="7"]');
+      await s.p.waitForTimeout(120);
+      const t = await s.view();
+      if (t.includes('Управление')) bad.push('manage-chuzhoy: управление показано на ЧУЖОМ мероприятии');
+      if (await s.p.$('[data-action="event-cancel"]')) bad.push('manage-chuzhoy: на чужом мероприятии предложена отмена');
+      await s.ctx.close();
+    }
+
+    // Кончившееся своё: счёт виден, отмены нет — она стёрла бы записи бывших.
+    {
+      const s = await openMine(q => q.url().endsWith('/events')
+        ? json(200, [MINE({ starts_at: new Date(NOWFIX - 9000e3).toISOString(), duration_min: 60 }), FOREIGN])
+        : undefined);
+      const t = await s.view();
+      if (!t.includes('Управление')) bad.push('manage-konchilos: управления нет у своего кончившегося');
+      if (!t.includes('отменить его уже нельзя')) bad.push('manage-konchilos: не сказано, почему отмены нет');
+      if (await s.p.$('[data-action="event-cancel"]')) bad.push('manage-konchilos: у кончившегося предложена отмена');
+      await s.ctx.close();
+    }
+
+    // Удачная отмена: спрос, один запрос, успех — по перечитанной афише.
+    {
+      const posts = [];
+      let gone = false;
+      const s = await openMine(q => {
+        const u = q.url();
+        if (/\/events\/4\/cancel$/.test(u)) { posts.push(q.postData() || ''); gone = true;
+          return json(200, { id: 4, state: 'cancelled', bookings_cancelled: 3 }); }
+        if (u.endsWith('/events')) return gone ? json(200, [FOREIGN]) : pair();
+        return undefined;
+      });
+      const ok = await askEventCancel(s, 'manage-otmena');
+      const ask = await s.view();
+      if (ok && !ask.includes('Отменить мероприятие?')) bad.push('manage-otmena: спрос есть, а вопроса на экране нет');
+      if (ok && !ask.includes('Записи всех, кто записался, будут сняты')) bad.push('manage-otmena: не сказано, чем отмена кончится для людей');
+      if (posts.length) bad.push('manage-otmena: запрос ушёл на сервер ДО подтверждения');
+      if (ok) {
+        await s.p.click('[data-action="event-cancel-yes:4"]');
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        if (posts.length !== 1) bad.push(`manage-otmena: запросов отмены ${posts.length}, ждали 1`);
+        if (!t.includes('больше нет')) bad.push('manage-otmena: отменённое мероприятие всё ещё на карточке: «' + t.slice(0, 80) + '»');
+        if (t.includes('Не получилось')) bad.push('manage-otmena: удачная отмена показана отказом: «' +
+          t.slice(t.indexOf('Не получилось'), t.indexOf('Не получилось') + 90) + '»');
+        await s.p.screenshot({ path: `${OUT}/live-manage-otmena.png` });
+      }
+      await s.ctx.close();
+    }
+
+    // 200, а мероприятие в афише осталось — это не успех.
+    {
+      const s = await openMine(q => /\/events\/4\/cancel$/.test(q.url())
+        ? json(200, { id: 4, state: 'cancelled', bookings_cancelled: 0 })
+        : q.url().endsWith('/events') ? pair() : undefined);
+      if (await askEventCancel(s, 'manage-otmena-200-pusto')) {
+        await s.p.click('[data-action="event-cancel-yes:4"]');
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        if (!t.includes('в афише мероприятие осталось')) bad.push('manage-otmena-200-pusto: 200 без подтверждения афишей показан отменой');
+      }
+      await s.ctx.close();
+    }
+
+    // Отказ сервера читается словами сервера, а не нашей догадкой.
+    {
+      const s = await openMine(q => /\/events\/4\/cancel$/.test(q.url())
+        ? json(403, { detail: 'мероприятие отменяет организатор или администратор' })
+        : q.url().endsWith('/events') ? pair() : undefined);
+      if (await askEventCancel(s, 'manage-otmena-403')) {
+        await s.p.click('[data-action="event-cancel-yes:4"]');
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        if (!t.includes('Мероприятие отменяет организатор')) bad.push('manage-otmena-403: текста отказа сервера на экране нет: «' + t.slice(0, 90) + '»');
+      }
+      await s.ctx.close();
+    }
+
+    // Второе нажатие, пока первое в пути, второй отмены не делает.
+    {
+      const posts = [];
+      const s = await openMine(q => {
+        const u = q.url();
+        if (/\/events\/4\/cancel$/.test(u)) { posts.push(1);
+          return new Promise(r => setTimeout(() => r(json(200, { id: 4, state: 'cancelled', bookings_cancelled: 0 })), 800)); }
+        if (u.endsWith('/events')) return pair();
+        return undefined;
+      });
+      if (await askEventCancel(s, 'manage-otmena-dvazhdy')) {
+        await s.p.click('[data-action="event-cancel-yes:4"]');
+        await s.p.waitForTimeout(60);
+        await s.p.evaluate(() => cancelEvent('4'));
+        await s.p.waitForTimeout(900);
+        if (posts.length !== 1) bad.push(`manage-otmena-dvazhdy: запросов отмены ${posts.length}, ждали 1`);
+      }
+      await s.ctx.close();
+    }
+  }
+
   // Второе нажатие, пока первое в пути, второй записи не делает.
   {
     const posts = [];
@@ -2208,5 +2362,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 188) + ' случаев');
+  console.log('зелёное: ' + ran + ' прогонов экрана (из них ' + CASES.length + ' табличных)');
 })();

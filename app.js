@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v20 · 21.10.2026';
+var VERSION = 'v21 · 21.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1340,6 +1340,7 @@ function fromEvents(d) {
     if (!e || typeof e.id !== 'number' || typeof e.title !== 'string' || !e.title) return null;
     if (!KIND[e.kind] || typeof e.duration_min !== 'number' || !(e.duration_min > 0)) return null;
     if (typeof e.seats !== 'number' || typeof e.seats_left !== 'number' || typeof e.taken !== 'number') return null;
+    if (typeof e.organizer_id !== 'number') return null;
     var price = num(e.price);
     if (!(price >= 0)) return null;
     var start = new Date(e.starts_at);
@@ -1356,6 +1357,7 @@ function fromEvents(d) {
       part: now.getTime() >= start.getTime() && now.getTime() < ends ? 'идёт' : partOf(p.hm),
       done: now.getTime() >= ends,
       master: [e.organizer_first_name, e.organizer_last_name].filter(Boolean).join(' ') || 'Без имени',
+      by: e.organizer_id,       // Telegram id ведущего: по нему и только по нему «своё»
       seats: e.seats_left, of: e.seats,
       kind: e.kind, price: price,
       about: typeof e.about === 'string' ? e.about : '',
@@ -1446,6 +1448,81 @@ function afterBooking(r, id, want) {
   });
 }
 
+var EV_BUSY = false;       // отмена мероприятия в пути: второе нажатие молчит
+var EV_ERR = '';           // чем кончилась неудачная отмена — текст на карточке
+var EV_ASK = false;        // спрашиваем: отмена мероприятия снимает записи людей
+
+/* «Своё» мероприятие — это organizer_id из афиши против своего tg id из /me.
+   Сервер отдаёт в organizer_id именно Telegram id (миграция 004: bigint NOT
+   NULL REFERENCES members(tg_user_id)), поэтому сравнение идёт с uid, а не с
+   номером члена: ошибиться здесь — показать чужое управление. */
+function isMyEvent(e) {
+  return !!e && LIVE && typeof e.by === 'number' && !!DATA.member &&
+         typeof DATA.member.uid === 'number' && e.by === DATA.member.uid;
+}
+
+function canCancelEvent(e) { return isMyEvent(e) && !e.done && !EV_BUSY; }
+
+/* Отмена своего мероприятия. У кончившегося её нет: оно уже состоялось, и
+   отмена стёрла бы записи тех, кто на нём был. */
+function cancelEvent(id) {
+  var e = eventById(id);
+  if (!LIVE || !canCancelEvent(e)) return;
+  EV_BUSY = true; EV_ERR = ''; EV_ASK = false; render();
+  api('POST', '/events/' + e.eid + '/cancel').then(function (r) { afterEventCancel(r, id); });
+}
+
+/* Успех — не код ответа, а перечитанная афиша: отменённое мероприятие в ней
+   не публикуется, поэтому исчезновение и есть подтверждение. */
+function afterEventCancel(r, id) {
+  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  api('GET', '/events').then(function (g) {
+    var list = g.status === 200 ? fromEvents(g.data) : null;
+    if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
+    EV_BUSY = false;
+    var e = eventById(id);
+    if (!e) { EV_ERR = ''; haptic('ok'); }
+    else if (r.status === 200) {
+      EV_ERR = 'Сервер принял, а в афише мероприятие осталось. Откройте экран заново и проверьте, прежде чем нажимать снова.';
+      haptic('warn');
+    } else if (r.status === 0) {
+      EV_ERR = 'Сервер не ответил, и в афише ничего не изменилось. Можно попробовать ещё раз.';
+      haptic('warn');
+    } else {
+      EV_ERR = detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r);
+      haptic('warn');
+    }
+    if (current === 'event' || current === 'events' || current === 'home') render();
+  });
+}
+
+/* Управление видно ТОЛЬКО ведущему и только на его мероприятии. Раздачи прав
+   здесь нет и быть не должно: ведущий распоряжается своим событием, а не
+   людьми клуба. Списка записавшихся тоже нет — ручки «кто записался» на бою
+   ещё нет, а пустой список выглядел бы ответом. */
+function manageBlock(e) {
+  if (!isMyEvent(e)) return '';
+  var err = EV_ERR ? '<div class="card strong"><div class="col">' +
+      '<b style="font-size:13px">Не получилось</b><span class="small">' + esc(EV_ERR) + '</span>' +
+    '</div></div>' : '';
+  var head = '<div class="group"><span class="label">Управление</span>' +
+    '<div class="rows"><div><span class="small">Записалось</span>' +
+      '<b class="num">' + (e.of - e.seats) + ' из ' + e.of + '</b></div></div>' + err;
+  if (EV_BUSY) return head + '<div class="card quiet"><span class="small">Отправляем…</span></div></div>';
+  // Один предикат на оба пути: рисование и отправку. Пока их было два,
+  // мутация, снявшая запрет у кончившегося, оставалась зелёной — кнопка
+  // не рисовалась по своему, отдельному условию.
+  if (!canCancelEvent(e)) return head + '<div class="card quiet"><span class="small">' +
+    (e.done ? 'Мероприятие завершилось: отменить его уже нельзя.'
+            : 'Отменить это мероприятие сейчас нельзя.') + '</span></div></div>';
+  if (EV_ASK) return head + '<div class="card strong"><div class="col">' +
+      '<b style="font-size:13px">Отменить мероприятие?</b>' +
+      '<span class="small">Записи всех, кто записался, будут сняты. Вернуть их сможет только каждый сам.</span></div>' +
+      '<button type="button" class="btn ghost" data-action="event-cancel-yes:' + esc(e.id) + '">Да, отменить</button>' +
+      '<button type="button" class="btn quiet" data-action="event-cancel-no">Оставить</button></div></div>';
+  return head + '<button type="button" class="btn ghost" data-action="event-cancel">Отменить мероприятие</button></div>';
+}
+
 function eventList() { return LIVE ? EVENTS : DATA.events; }
 function eventById(id) {
   var list = eventList() || [];
@@ -1495,6 +1572,7 @@ function eventLive(e) {
     '<div class="note">' + svg(ICON.cam) + '<span>' + (e.filmed
       ? 'На этом событии ведётся съёмка. Согласие даётся отдельно и его можно не давать — запись останется в силе.'
       : 'Съёмки на этом событии нет.') + '</span></div>' +
+    manageBlock(e) +
     bookBlock(e);
 }
 
@@ -2961,7 +3039,7 @@ function go(screen, p) {
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
-  if (screen !== 'event') { BOOK_ERR = ''; BOOK_ASK = false; }
+  if (screen !== 'event') { BOOK_ERR = ''; BOOK_ASK = false; EV_ERR = ''; EV_ASK = false; }
   render();
   if (screen === 'barOrder' && LIVE) pollMine();
   if (screen === 'barQueue' && LIVE) loadQueue();
@@ -3192,6 +3270,9 @@ function doAction(a) {
     if (a === 'scan') { scanPass(); return; }
     if (a === 'phone') { askPhone(); return; }
     if (a === 'book' && LIVE) { bookEvent(arg); return; }
+    if (a === 'event-cancel' && LIVE) { EV_ASK = true; EV_ERR = ''; haptic(); render(); return; }
+    if (a === 'event-cancel-yes' && LIVE) { cancelEvent(arg); return; }
+    if (a === 'event-cancel-no') { EV_ASK = false; haptic(); render(); return; }
     if (a === 'book-cancel' && LIVE) { BOOK_ASK = true; BOOK_ERR = ''; haptic(); render(); return; }
     if (a === 'book-cancel-yes' && LIVE) { cancelBooking(arg); return; }
     if (a === 'book-cancel-no') { BOOK_ASK = false; haptic(); render(); return; }
