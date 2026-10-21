@@ -3376,9 +3376,82 @@ function tgChrome() {
   }
 }
 
+/* ── тема человека и безопасные зоны ──────────────────  #101
+   Платформа просит подстраиваться под приложение человека в реальном
+   времени, а интерфейс — уважать безопасные зоны, «to avoid overlapping
+   with control elements» (core.telegram.org/bots/webapps).
+
+   Роли цвета ложатся на поля themeParams. Фирменная палитра остаётся
+   фолбэком в styles.css: поля нет — токен не трогаем вовсе, и экран
+   красится как раньше.
+   ⚠ Статусы (лист, глина) фирменные и такими остаются: их контраст
+   посчитан против НАШЕГО фона, а про чужой мы ничего не знаем.
+   ⚠ Снятая форма: делать это на CSS-переменных --tg-theme-*, которые
+   публикует сам telegram-web-app.js. Отвергнута потому, что стенд
+   подменяет весь telegram.org (tools/live.cjs:108) и переменные
+   расставлял бы он же — замер, совпадающий с самим собой. */
+var THEME_ROLES = [
+  ['--paper',      'bg_color'],
+  ['--surface',    'secondary_bg_color'],
+  ['--ink',        'text_color'],
+  ['--muted',      'hint_color'],
+  ['--accent',     'button_color'],
+  ['--accent-ink', 'button_text_color']
+];
+
+/* ⚠ Привратник на КАЖДОМ чтении, а не на первом: в подделке стенда
+   themeParams нет вовсе, и одно незащищённое чтение убивает инициализацию
+   целиком — молчащим TypeError, а не красной проверкой. Значение вдобавок
+   сверяется с формой #RRGGBB: мусор, пришедший правдоподобной строкой,
+   отсеивается ДО того, как попадёт в токен. */
+function themeColor(field) {
+  var p = tg && tg.themeParams;
+  var v = p && p[field];
+  return /^#[0-9a-fA-F]{6}$/.test(String(v)) ? String(v) : null;
+}
+
+function applySafeArea() {                    // 8.0
+  var root = document.documentElement;
+  [['--tg-sat', 'safeAreaInset', 'top'], ['--tg-sab', 'safeAreaInset', 'bottom'],
+   ['--tg-cat', 'contentSafeAreaInset', 'top'], ['--tg-cab', 'contentSafeAreaInset', 'bottom']
+  ].forEach(function (r) {
+    var o = tgHas('8.0') ? tg[r[1]] : null;
+    var v = o && o[r[2]];
+    /* Ноль здесь — осмысленное значение, поэтому проверяется ТИП, а не
+       истинность: `!v` выбросил бы верный нуль вместе с отсутствующим. */
+    if (typeof v === 'number' && v >= 0) root.style.setProperty(r[0], v + 'px');
+    else root.style.removeProperty(r[0]);
+  });
+}
+
 function applyTheme() {
   var dark = tg && tg.colorScheme === 'dark';
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+
+  var root = document.documentElement;
+  THEME_ROLES.forEach(function (r) {
+    var c = themeColor(r[1]);
+    /* Отсутствующее поле СНИМАЕТ токен, а не оставляет прежний: человек мог
+       вернуться к теме, где этого поля нет, и застрявший цвет дал бы
+       помесь двух палитр. */
+    if (c) root.style.setProperty(r[0], c);
+    else root.style.removeProperty(r[0]);
+  });
+
+  /* Шапка и фон за нашей страницей — ключевым СЛОВОМ, а не цветом: до
+     Bot API 6.9 сеттеры принимали только 'bg_color'/'secondary_bg_color',
+     и hex там был бы отказом. Слово вдобавок само следует за темой.
+     Ворота двойные (версия И наличие), как у haptic: SDK один на все
+     клиенты, и наличие метода не обещает поддержки. try/catch — на
+     неизвестное, привратники отвечают только за известное. */
+  if (tgHas('6.1')) {
+    try {
+      if (tg.setHeaderColor) tg.setHeaderColor('bg_color');
+      if (tg.setBackgroundColor) tg.setBackgroundColor('bg_color');
+    } catch (e) { /* старый клиент — тишина вместо падения */ }
+  }
+
+  applySafeArea();
 }
 
 if (tg) {
@@ -3386,6 +3459,8 @@ if (tg) {
   tg.expand();
   applyTheme();
   tg.onEvent('themeChanged', applyTheme);
+  tg.onEvent('safeAreaChanged', applySafeArea);              // 8.0
+  tg.onEvent('contentSafeAreaChanged', applySafeArea);       // 8.0
   var u = tg.initDataUnsafe && tg.initDataUnsafe.user;
   if (u && u.first_name) {
     // Только для приветствия: подпись здесь не проверена, доверять нельзя.
