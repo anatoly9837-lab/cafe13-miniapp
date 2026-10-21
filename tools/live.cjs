@@ -1647,6 +1647,20 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   // нажатия, человек читает как поломку приложения.
   const freeRow = () => EV({ id: 4, taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null });
   const mineRow = () => EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 });
+  // Нажать «Отменить запись» и подтвердить. false — спроса не было: случай
+  // уже сказал своё, и продолжать сценарий нечем.
+  const confirmCancel = async (s, name) => {
+    await s.p.click('[data-action="book-cancel"]');
+    await s.p.waitForTimeout(150);
+    if (!(await s.p.$('[data-action="book-cancel-yes:4"]'))) {
+      bad.push(`${name}: отмена не спросила подтверждения — подтверждать нечего`);
+      return false;
+    }
+    await s.p.click('[data-action="book-cancel-yes:4"]');
+    await s.p.waitForTimeout(400);
+    return true;
+  };
+
   const openCard = async (handler) => {
     const s = await open(true, true, json(200, OWNER), null, null, null, handler);
     await s.p.evaluate(() => go('events'));
@@ -1692,9 +1706,12 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.p.click('[data-action="book-cancel"]');
     await s.p.waitForTimeout(150);
     const ask = await s.view();
-    if (!ask.includes('Отменить запись?')) bad.push('cancel: отмена не спросила подтверждения');
+    const asked = ask.includes('Отменить запись?');
+    if (!asked) bad.push('cancel: отмена не спросила подтверждения, а ' +
+      (s.calls.some(x => /\/cancel$/.test(x.url)) ? 'сразу ушла на сервер' : 'ничего не показала'));
     if (!ask.includes('Место вернётся в афишу')) bad.push('cancel: не сказано, чем отмена кончится');
     await s.p.screenshot({ path: `${OUT}/live-cancel-ask.png` });
+    if (asked) {
 
     // Передумал — запись на месте, к серверу не ходили.
     await s.p.click('[data-action="book-cancel-no"]');
@@ -1714,6 +1731,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (cancels.length !== 1) bad.push(`cancel: запросов отмены ${cancels.length}, ждали 1`);
     if (s.calls.filter(x => x.url.endsWith('/events')).length !== 3) bad.push('cancel: афиша после отмены не перечитана');
     await s.p.screenshot({ path: `${OUT}/live-cancel-done.png` });
+    }
     if (s.errs.length) bad.push('book: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
   }
@@ -1801,14 +1819,30 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       if (u.endsWith('/events')) return json(200, [mineRow()]);
       return undefined;
     });
-    await s.p.click('[data-action="book-cancel"]');
-    await s.p.waitForTimeout(150);
-    await s.p.click('[data-action="book-cancel-yes:4"]');
-    await s.p.waitForTimeout(400);
+    if (await confirmCancel(s, 'cancel-409')) {
     const t = await s.view();
     if (!t.includes('Мероприятие отменено')) bad.push('cancel-409: текста отказа сервера на экране нет');
     if (!t.includes('Вы записаны')) bad.push('cancel-409: запись пропала с карточки, хотя отмена не прошла');
     await s.p.screenshot({ path: `${OUT}/live-cancel-409.png` });
+    }
+    await s.ctx.close();
+  }
+
+  // 200 есть, а запись в афише осталась — это не отмена. Дыру нашла мутация
+  // «успех по коду», которая на прежнем наборе случаев оставалась зелёной.
+  {
+    const s = await openCard(q => {
+      const u = q.url();
+      if (/\/cancel$/.test(u)) return json(200, { id: 6, state: 'cancelled' });
+      if (u.endsWith('/events')) return json(200, [mineRow()]);     // сервер отвечает «отменено», афиша говорит обратное
+      return undefined;
+    });
+    if (await confirmCancel(s, 'cancel-200-pusto')) {
+    const t = await s.view();
+    if (!t.includes('Сервер принял, а в афише этого нет')) bad.push('cancel-200-pusto: 200 без подтверждения афишей показан отменой');
+    if (!t.includes('Вы записаны')) bad.push('cancel-200-pusto: запись пропала с карточки, хотя афиша её показывает');
+    await s.p.screenshot({ path: `${OUT}/live-cancel-200-pusto.png` });
+    }
     await s.ctx.close();
   }
 
@@ -1822,8 +1856,13 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     });
     await s.p.click('[data-action="book-cancel"]');
     await s.p.waitForTimeout(150);
-    await s.p.click('[data-action="book-cancel-yes:4"]');
-    await s.p.evaluate(() => doAction('book-cancel-yes:4'));
+    if (await s.p.$('[data-action="book-cancel-yes:4"]')) {
+      await s.p.click('[data-action="book-cancel-yes:4"]');
+      await s.p.evaluate(() => doAction('book-cancel-yes:4'));
+    } else {
+      bad.push('cancel-dvazhdy: отмена не спросила подтверждения — подтверждать нечего');
+      await s.p.evaluate(() => doAction('book-cancel-yes:4'));
+    }
     await s.p.waitForTimeout(1200);
     const n = s.calls.filter(x => /\/cancel$/.test(x.url)).length;
     if (n !== 1) bad.push(`cancel-dvazhdy: запросов отмены ${n}, ждали 1`);
@@ -2013,5 +2052,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 170) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 173) + ' случаев');
 })();
