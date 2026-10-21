@@ -590,6 +590,9 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (pp.length !== 1 || JSON.parse(pp[0].body).pay_method !== 'account') bad.push(`${name}: ушло не одно тело со счёта: ` + JSON.stringify(pp.map(c => c.body)));
     const deny = await s.p.$eval('.deny', e => e.textContent).catch(() => null);
     if (deny !== detail) bad.push(`${name}: плашка «${deny}», сервер сказал «${detail}»`);
+    // «Пополнить счёт» — выход только при нехватке; при других отказах деньги не причина
+    const topup = !!(await s.p.$('.deny + [data-go="topup"]'));
+    if (topup !== (name === 'deny-short')) bad.push(`${name}: кнопка «Пополнить счёт» ${topup ? 'есть' : 'нет'}, ждали ${name === 'deny-short' ? 'есть' : 'нет'}`);
     const t = await s.view();
     if (!t.includes('Эспрессо') || !t.includes('Флэт-уайт')) bad.push(`${name}: корзина потеряна после отказа`);
     if (!(await s.p.$('[data-where="к столу"][aria-pressed="true"]'))) bad.push(`${name}: выбор места потерян после отказа`);
