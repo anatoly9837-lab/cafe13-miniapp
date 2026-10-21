@@ -1693,6 +1693,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (posts.length !== 1) bad.push(`book: POST /bookings ушёл ${posts.length} раз, ждали 1`);
     if (posts[0] !== '{"event_id":4}') bad.push(`book: тело запроса «${posts[0]}», ждали {"event_id":4} числом`);
     if (!t.includes('Вы записаны')) bad.push('book: после записи нет «Вы записаны»');
+    if (t.includes('Не получилось')) bad.push('book: удачная запись показана отказом: «' +
+      t.slice(t.indexOf('Не получилось'), t.indexOf('Не получилось') + 90) + '»');
     if (t.includes('Записаться')) bad.push('book: после записи всё ещё предлагают записаться');
     const reread = s.calls.filter(c => c.url.endsWith('/events')).length;
     if (reread !== 2) bad.push(`book: запросов к /events ${reread}, ждали 2 (загрузка и перечитывание)`);
@@ -1727,6 +1729,10 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     const c = await s.view();
     if (c.includes('Вы записаны')) bad.push('cancel: после отмены запись осталась на карточке');
     if (!c.includes('Записаться')) bad.push('cancel: после отмены записаться снова нельзя');
+    // Удачная отмена не кончается экраном отказа: «Не получилось» на этом шаге
+    // значит, что успех разбирается не тем условием.
+    if (c.includes('Не получилось')) bad.push('cancel: удачная отмена показана отказом: «' +
+      c.slice(c.indexOf('Не получилось'), c.indexOf('Не получилось') + 90) + '»');
     const cancels = s.calls.filter(x => /\/bookings\/6\/cancel$/.test(x.url));
     if (cancels.length !== 1) bad.push(`cancel: запросов отмены ${cancels.length}, ждали 1`);
     if (s.calls.filter(x => x.url.endsWith('/events')).length !== 3) bad.push('cancel: афиша после отмены не перечитана');
@@ -1808,6 +1814,24 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (!t.includes('Вы записаны')) bad.push('book-pozdniy-otvet: запись пропала с карточки');
     if (t.includes('Записаться')) bad.push('book-pozdniy-otvet: поздний ответ прежней афиши вернул карточку в «Записаться»');
     if (s.errs.length) bad.push('book-pozdniy-otvet: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
+  // У кончившегося события отмены нет: сервер её примет и сотрёт сам факт
+  // записи, а подтверждение обещало бы вернуть место в афишу — ложно.
+  {
+    const doneRow = () => EV({ id: 4, title: 'Уже закончился',
+      starts_at: new Date(Date.now() - 9000e3).toISOString(), duration_min: 60,
+      taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 });
+    const s = await openCard(q => q.url().endsWith('/events') ? json(200, [doneRow()]) : undefined);
+    const t = await s.view();
+    if (!t.includes('Вы записаны')) bad.push('cancel-konchilos: запись не показана');
+    if (!t.includes('завершилось')) bad.push('cancel-konchilos: событие не помечено завершившимся');
+    if (t.includes('Отмен') || t.includes('отмен')) bad.push('cancel-konchilos: у кончившегося события предложена отмена — «' +
+      t.slice(Math.max(0, t.search(/[Оо]тмен/) - 20), t.search(/[Оо]тмен/) + 70) + '»');
+    if (await s.p.$('[data-action="book-cancel"]')) bad.push('cancel-konchilos: кнопка отмены у кончившегося события');
+    if (await s.p.evaluate(() => window.__main !== null)) bad.push('cancel-konchilos: главная кнопка у кончившегося события');
+    await s.p.screenshot({ path: `${OUT}/live-cancel-konchilos.png` });
     await s.ctx.close();
   }
 
@@ -2052,5 +2076,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 173) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 180) + ' случаев');
 })();
