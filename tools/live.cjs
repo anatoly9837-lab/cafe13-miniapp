@@ -2272,6 +2272,285 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     }
   }
 
+  // ── завести мероприятие (#178, первая половина) ──
+  // Право даёт либо роль клуба, либо купленный уровень — две независимые
+  // ветки, и у каждой свой случай: фикстура с одной ветвью оставила бы
+  // мутацию, снявшую вторую, зелёной (так было с разбором баланса строкой).
+  {
+    const member = clone(OWNER); member.roles = [];                       // уровень member, ролей нет
+    const levelOrg = clone(OWNER); levelOrg.roles = []; levelOrg.membership.level = 'organizer';
+    const curatorOnly = clone(OWNER); curatorOnly.roles = [{ role: 'curator', direction_id: 1 }];
+
+    const newRow = over => EV(Object.assign({ id: 55, title: 'Мой новый вечер', organizer_id: 1,
+      starts_at: bkkDay(1) + 'T19:00:00+07:00', duration_min: 90, seats: 12, kind: 'paid',
+      price: '400.00', about: 'Живой звук', taken: 0, seats_left: 12 }, over || {}));
+
+    // Форма открывается КНОПКОЙ с афиши: проверяется путь, а не функция.
+    // Нет кнопки — случай говорит это своими словами, а не умирает кликом.
+    const openForm = async (name, handler, me, tz) => {
+      const s = await open(true, true, me || json(200, OWNER), null, null, null,
+                           handler || evReply(json(200, [])), tz || null, NOWFIX);
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(120);
+      if (!(await s.p.$('[data-go="eventNew"]'))) {
+        bad.push(`${name}: кнопки «Создать мероприятие» на афише нет — открывать нечем`);
+        return { s, ok: false };
+      }
+      await s.p.click('[data-go="eventNew"]');
+      await s.p.waitForTimeout(120);
+      if (!(await s.p.$('#f-title'))) {
+        bad.push(`${name}: форма не открылась — заполнять нечего`);
+        return { s, ok: false };
+      }
+      return { s, ok: true };
+    };
+
+    const fill = async (p, over) => {
+      const v = Object.assign({ title: 'Мой новый вечер', date: bkkDay(1), time: '19:00',
+                                dur: '90', seats: '12', about: 'Живой звук', price: '400' }, over || {});
+      await p.fill('#f-title', v.title);
+      await p.fill('#f-date', v.date);
+      await p.fill('#f-time', v.time);
+      await p.fill('#f-dur', v.dur);
+      await p.fill('#f-seats', v.seats);
+      await p.fill('#f-about', v.about);
+      if (await p.$('#f-price')) await p.fill('#f-price', v.price);
+    };
+
+    /* Внутри Telegram кнопка на экране скрыта (body.has-main), настоящая —
+       главная кнопка Telegram. Сначала признак, потом нажатие: иначе случай
+       умирает таймаутом по невидимой кнопке вместо своего текста. */
+    const publish = async (p, name) => {
+      if (!(await p.evaluate(() => !!window.__main))) {
+        bad.push(`${name}: главной кнопки «Опубликовать в афише» нет — нажимать нечего`);
+        return false;
+      }
+      await p.evaluate(() => window.__main());
+      return true;
+    };
+
+    // Запрос POST и перечитывание афиши на одном адресе: ответ зависит от метода.
+    const sender = (created, code, body) => {
+      const posts = [];
+      const h = q => {
+        const u = q.url();
+        if (!u.endsWith('/events')) return undefined;
+        if (q.method() === 'POST') { posts.push(q.postData()); return json(code || 201, body || { id: 55 }); }
+        return json(200, posts.length ? [created()] : []);
+      };
+      return { posts, h };
+    };
+
+    // Кнопка входа — по праву из /me, и обе стороны: у кого права нет, у того
+    // и кнопки нет.
+    for (const [name, me, want] of [
+      ['sozdat-knopka-rol', json(200, OWNER), true],
+      ['sozdat-knopka-kurator', json(200, curatorOnly), true],
+      ['sozdat-knopka-uroven', json(200, levelOrg), true],
+      ['sozdat-knopka-chlen', json(200, member), false]]) {
+      const s = await open(true, true, me, null, null, null, evReply(json(200, [])), null, NOWFIX);
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(120);
+      const has = !!(await s.p.$('[data-go="eventNew"]'));
+      if (has !== want) bad.push(`${name}: кнопка «Создать мероприятие» ${has ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
+      if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // Три вида — три подписи в одном месте, а у бесплатного поля нет вовсе.
+    {
+      const { s, ok } = await openForm('sozdat-forma');
+      if (ok) {
+        const t = await s.view();
+        ['Название', 'До 200 знаков', 'Время клуба', 'От 1 до 1440', 'От 1 до 500',
+         'Цена входа', 'Больше нуля', 'Исправить потом нельзя'].forEach(x => {
+          if (!t.includes(x)) bad.push(`sozdat-forma: нет «${x}»`); });
+        await s.p.screenshot({ path: `${OUT}/live-sozdat-platnoe.png` });
+
+        await s.p.click('[data-kind="free"]');
+        await s.p.waitForTimeout(100);
+        const tf = await s.view();
+        if (await s.p.$('#f-price')) bad.push('sozdat-forma: у бесплатного поле цены осталось на экране');
+        if (!tf.includes('брать нечего')) bad.push('sozdat-forma: у бесплатного не сказано, почему поля цены нет');
+        await s.p.screenshot({ path: `${OUT}/live-sozdat-besplatnoe.png` });
+
+        await s.p.click('[data-kind="donation"]');
+        await s.p.waitForTimeout(100);
+        const td = await s.view();
+        if (!(await s.p.$('#f-price'))) bad.push('sozdat-forma: у донейшна поля ориентира нет');
+        ['Ориентир', 'Можно не указывать'].forEach(x => {
+          if (!td.includes(x)) bad.push(`sozdat-forma: у донейшна нет «${x}»`); });
+        if (td.includes('Больше нуля')) bad.push('sozdat-forma: у донейшна осталась подпись платного «Больше нуля»');
+        await s.p.screenshot({ path: `${OUT}/live-sozdat-doneyshn.png` });
+
+        // «Назад» с формы — на афишу: в живом режиме кабинет организатора
+        // показывает придуманные мероприятия.
+        const back = await s.p.evaluate(() => backTo());
+        if (back !== 'events') bad.push(`sozdat-forma: «назад» с формы ведёт на «${back}», а не на афишу`);
+      }
+      await s.ctx.close();
+    }
+
+    // Введённая цена переживает переключение вида: иначе человек платит
+    // вводом за то, что ткнул не туда.
+    {
+      const { s, ok } = await openForm('sozdat-cena-pomnit');
+      if (ok) {
+        await s.p.fill('#f-price', '777');
+        await s.p.click('[data-kind="free"]');
+        await s.p.waitForTimeout(100);
+        await s.p.click('[data-kind="paid"]');
+        await s.p.waitForTimeout(100);
+        const got = await s.p.inputValue('#f-price');
+        if (got !== '777') bad.push(`sozdat-cena-pomnit: после возврата к платному в поле «${got}», а не 777`);
+      }
+      await s.ctx.close();
+    }
+
+    // Отправка целиком: тело запроса сверяется полем за полем, а время —
+    // в поясе КЛУБА при телефоне в третьем поясе. Успех признаётся
+    // перечитанной афишей: карточка своего нового события с управлением.
+    {
+      const { posts, h } = sender(() => newRow());
+      const { s, ok } = await openForm('sozdat-otpravka', h, null, 'America/New_York');
+      if (ok) {
+        await fill(s.p);
+        await publish(s.p, 'sozdat-otpravka');
+        await s.p.waitForTimeout(500);
+        if (posts.length !== 1) bad.push(`sozdat-otpravka: POST /events ушёл ${posts.length} раз, ждали 1`);
+        else {
+          const b = JSON.parse(posts[0]);
+          const want = { title: 'Мой новый вечер', starts_at: bkkDay(1) + 'T19:00:00+07:00',
+                         duration_min: 90, seats: 12, kind: 'paid', price: 400,
+                         about: 'Живой звук', filmed: false };
+          Object.keys(want).forEach(k => {
+            if (JSON.stringify(b[k]) !== JSON.stringify(want[k]))
+              bad.push(`sozdat-otpravka: ${k} = ${JSON.stringify(b[k])}, ждали ${JSON.stringify(want[k])}`);
+          });
+        }
+        const t = await s.view();
+        if (!t.includes('Мой новый вечер')) bad.push(`sozdat-otpravka: карточка нового события не открылась: «${t.slice(0, 100)}»`);
+        if (!t.includes('Управление')) bad.push('sozdat-otpravka: на своём новом событии нет управления');
+        if (t.includes('Не получилось')) bad.push(`sozdat-otpravka: удачное создание показано отказом: «${t.slice(0, 120)}»`);
+        await s.p.screenshot({ path: `${OUT}/live-sozdat-sozdano.png` });
+      }
+      await s.ctx.close();
+    }
+
+    // 201 без подтверждения афишей — не успех; и 201, под номером которого
+    // в афише ДРУГОЕ событие, — тоже не успех.
+    for (const [name, created, want] of [
+      ['sozdat-201-pusto', null, 'в афише мероприятия нет'],
+      ['sozdat-201-drugoe', () => newRow({ title: 'Совсем другое' }), 'в афише другое мероприятие']]) {
+      const { posts, h } = sender(created || (() => null));
+      const handler = created ? h : q => {
+        const u = q.url();
+        if (!u.endsWith('/events')) return undefined;
+        if (q.method() === 'POST') { posts.push(q.postData()); return json(201, { id: 55 }); }
+        return json(200, []);
+      };
+      const { s, ok } = await openForm(name, handler);
+      if (ok) {
+        await fill(s.p);
+        await publish(s.p, name);
+        await s.p.waitForTimeout(500);
+        const t = await s.view();
+        if (!t.includes(want)) bad.push(`${name}: нет слов «${want}», на экране: «${t.slice(0, 140)}»`);
+        if (!t.includes('Не получилось')) bad.push(`${name}: неудача не названа неудачей`);
+      }
+      await s.ctx.close();
+    }
+
+    // Отказ сервера показывается ЕГО словами; а 422 с detail-СПИСКОМ (так
+    // отвечает валидация FastAPI) не печатается как строка: «[object Object]»
+    // человеку ничего не говорит.
+    for (const [name, code, body, want, nope] of [
+      ['sozdat-403', 403, { detail: 'мероприятия заводят организатор, партнёр и работники клуба' },
+        'Мероприятия заводят организатор, партнёр и работники клуба', 'кодом 403'],
+      ['sozdat-422-spisok', 422, { detail: [{ loc: ['body', 'seats'], msg: 'input should be less than 501', type: 'value_error' }] },
+        'Сервер ответил кодом 422', 'object']]) {
+      const { posts, h } = sender(() => null, code, body);
+      const { s, ok } = await openForm(name, h);
+      if (ok) {
+        await fill(s.p);
+        await publish(s.p, name);
+        await s.p.waitForTimeout(500);
+        const t = await s.view();
+        if (posts.length !== 1) bad.push(`${name}: POST /events ушёл ${posts.length} раз, ждали 1`);
+        if (!t.includes(want)) bad.push(`${name}: нет слов «${want}», на экране: «${t.slice(0, 140)}»`);
+        if (t.includes(nope)) bad.push(`${name}: на экране лишнее «${nope}»: «${t.slice(0, 140)}»`);
+      }
+      await s.ctx.close();
+    }
+
+    // Негодная форма до сервера не доходит, и у каждого запрета свой текст.
+    for (const [name, over, want] of [
+      ['sozdat-bez-nazvaniya', { title: '' }, 'Без названия мероприятие в афишу не ставится'],
+      ['sozdat-proshloe', { date: bkkDay(0), time: '07:00' }, 'уже прошло по часам клуба'],
+      ['sozdat-dlitelnost-0', { dur: '0' }, 'от 1 до 1440 минут'],
+      ['sozdat-dlitelnost-1441', { dur: '1441' }, 'от 1 до 1440 минут'],
+      ['sozdat-mest-0', { seats: '0' }, 'от 1 до 500'],
+      ['sozdat-mest-501', { seats: '501' }, 'от 1 до 500'],
+      ['sozdat-platnoe-bez-ceny', { price: '0' }, 'цена больше нуля']]) {
+      const { posts, h } = sender(() => newRow());
+      const { s, ok } = await openForm(name, h);
+      if (ok) {
+        await fill(s.p, over);
+        await publish(s.p, name);
+        await s.p.waitForTimeout(250);
+        const t = await s.view();
+        if (!t.includes(want)) bad.push(`${name}: нет отказа «${want}», на экране: «${t.slice(0, 140)}»`);
+        if (posts.length) bad.push(`${name}: негодная форма ушла на сервер (${posts.length} запрос)`);
+      }
+      await s.ctx.close();
+    }
+
+    // Второе нажатие, пока первое в пути, второго мероприятия не заводит.
+    {
+      const posts = [];
+      const h = q => {
+        const u = q.url();
+        if (!u.endsWith('/events')) return undefined;
+        if (q.method() === 'POST') { posts.push(q.postData());
+          return new Promise(r => setTimeout(() => r(json(201, { id: 55 })), 800)); }
+        return json(200, posts.length ? [newRow()] : []);
+      };
+      const { s, ok } = await openForm('sozdat-dvazhdy', h);
+      if (ok) {
+        await fill(s.p);
+        await publish(s.p, 'sozdat-dvazhdy');
+        await s.p.waitForTimeout(60);
+        // Пока запрос в пути, главной кнопки нет вовсе: кнопка, молчащая по
+        // нажатию, неотличима от зависшей.
+        if (await s.p.evaluate(() => !!window.__main))
+          bad.push('sozdat-dvazhdy: пока создание в пути, главная кнопка осталась на экране');
+        await s.p.evaluate(() => createEvent());
+        await s.p.waitForTimeout(1200);
+        if (posts.length !== 1) bad.push(`sozdat-dvazhdy: POST /events ушёл ${posts.length} раз, ждали 1`);
+      }
+      await s.ctx.close();
+    }
+
+    // У человека без права нет ни формы, ни главной кнопки, и прямой вызов
+    // отправки ничего не отправляет: предикат один на рисование и на путь.
+    {
+      const s = await open(true, true, json(200, member), null, null, null,
+                           evReply(json(200, [])), null, NOWFIX);
+      await s.p.evaluate(() => go('eventNew'));
+      await s.p.waitForTimeout(150);
+      const t = await s.view();
+      if (await s.p.$('#f-title')) bad.push('sozdat-net-prava: форма открылась у человека без права');
+      if (!t.includes('Мероприятия заводят не все')) bad.push(`sozdat-net-prava: не сказано, кто заводит мероприятия: «${t.slice(0, 120)}»`);
+      if (await s.p.evaluate(() => !!window.__main)) bad.push('sozdat-net-prava: главная кнопка Telegram осталась');
+      await s.p.evaluate(() => createEvent());
+      await s.p.waitForTimeout(250);
+      const sent = s.calls.filter(c => c.method === 'POST');
+      if (sent.length) bad.push(`sozdat-net-prava: прямой вызов createEvent() отправил ${sent.length} запрос`);
+      if (s.errs.length) bad.push(`sozdat-net-prava: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
   // Второе нажатие, пока первое в пути, второй записи не делает.
   {
     const posts = [];
