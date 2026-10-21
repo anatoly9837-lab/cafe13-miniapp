@@ -1296,6 +1296,78 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     }
     await s.ctx.close();
   }
+  // Дата задним числом (cafe13-api#28): не тронута — `at` не уходит вовсе
+  // («сегодня» решает сервер); сменена — уходит ровно она, и ответ обязан
+  // лечь на неё же по часам клуба. Отказ сервера — его словами.
+  // Мгновение страницы заморожено, ожидаемые даты — литералы, а не тот же
+  // расчёт, что в клиенте: иначе замер совпал бы сам с собой. Два мгновения,
+  // потому что у границы суток три состояния: днём даты острова и UTC
+  // совпадают, в 00:30 по острову (17:30Z) UTC ещё во вчера.
+  for (const M of [
+    { tag: 'день', now: '2026-12-02T01:00:00Z', today: '2026-12-02', min: '2026-09-03', back: '2026-11-30', words: '30 ноября' },
+    { tag: '00:30 на острове', now: '2026-12-02T17:30:00Z', today: '2026-12-03', min: '2026-09-04', back: '2026-12-02', words: '2 декабря' }]) {
+    const NOW = Date.parse(M.now);
+    // заглушка сервера: момент — 05:00 UTC (полдень по клубу) названного дня
+    const echoAt = dayOf => q => { const x = JSON.parse(q.postData());
+      return json(201, Object.assign({}, EXP_ROW, { amount: money2(x.amount), expense_cat: x.expense_cat, expense_kind: x.expense_kind,
+        paid_by: x.paid_by, note: x.note, at: dayOf(x) + 'T05:00:00+00:00' })); };
+    const w = `(${M.tag})`;
+    // не тронута
+    {
+      const s = await open(true, true, json(200, SASHA), null, null, null, book(), null, NOW); s.name = 'book-date-default';
+      if (await toBook(s, 'book-date-default') && await fillExpense(s, 'book-date-default', '240', ALL_PICKS)) {
+        if (!(await s.p.$('#b-date'))) bad.push(`book-date-default ${w}: нет поля даты`);
+        else {
+          const [v, mx, mn] = await s.p.$eval('#b-date', e => [e.value, e.max, e.min]);
+          if (v !== M.today) bad.push(`book-date-default ${w}: в поле ${v}, сегодня на острове ${M.today}`);
+          if (mx !== M.today || mn !== M.min) bad.push(`book-date-default ${w}: границы поля ${mn}…${mx}, ждали ${M.min}…${M.today}`);
+          if (await askSend(s, 'book-date-default')) {
+            const bp = bookPosts(s);
+            if (bp.length !== 1 || 'at' in JSON.parse(bp[0].body)) bad.push(`book-date-default ${w}: дата не тронута, а \`at\` ушло: ` + JSON.stringify(bp.map(c => c.body)));
+          }
+        }
+      }
+      await s.ctx.close();
+    }
+    // сменена
+    {
+      const s = await open(true, true, json(200, SASHA), null, null, null, book({ exp: echoAt(x => x.at || M.today) }), null, NOW); s.name = 'book-date-back';
+      if (await toBook(s, 'book-date-back') && await fillExpense(s, 'book-date-back', '240', ALL_PICKS) && await s.p.$('#b-date')) {
+        await s.p.fill('#b-date', M.back);
+        await s.p.waitForTimeout(100);
+        let t = await s.view();
+        if (!t.includes('Задним числом: запись попадёт в отчёт за ' + M.words)) bad.push(`book-date-back ${w}: нет подписи, в чей отчёт уйдёт запись`);
+        await tap(s, '[data-action="b-ask"]');
+        await s.p.waitForTimeout(100);
+        t = await s.view();
+        if (!t.includes('За ' + M.words + ' — в сегодняшний отчёт не попадёт')) bad.push(`book-date-back ${w}: подтверждение не называет дату`);
+        if (M.tag === 'день') await s.p.screenshot({ path: `${OUT}/live-book-backdate.png`, fullPage: true });
+        await tap(s, '[data-action="b-send"]');
+        await s.p.waitForTimeout(400);
+        const bp = bookPosts(s);
+        if (bp.length !== 1 || JSON.parse(bp[0].body).at !== M.back) bad.push(`book-date-back ${w}: ушло не \`at\`=${M.back}: ` + JSON.stringify(bp.map(c => c.body)));
+        t = await s.view();
+        if (!t.includes('Расход записан за ' + M.words + ': 240 ฿')) bad.push(`book-date-back ${w}: итог не называет дату: ` + t.slice(0, 200));
+        if ((await s.p.$eval('#b-date', e => e.value).catch(() => null)) !== M.today) bad.push(`book-date-back ${w}: после записи дата не вернулась к сегодняшней`);
+      }
+      if (s.errs.length) bad.push(`book-date-back ${w}: ошибки страницы ` + s.errs.join('; '));
+      await s.ctx.close();
+    }
+    if (M.tag !== 'день') continue;
+    // ответ лёг на другой день — не «записан»; отказ сервера — его словами
+    for (const [name, exp, want] of [
+      ['book-date-otherday', echoAt(() => '2026-11-27'), 'Ответ сервера не разобран'],
+      ['book-date-422', () => json(422, { detail: 'дата 2026-12-05 — из будущего; сегодня в клубе 2026-12-02' }), 'Дата 2026-12-05 — из будущего']]) {
+      const s = await open(true, true, json(200, SASHA), null, null, null, book({ exp }), null, NOW); s.name = name;
+      if (await toBook(s, name) && await fillExpense(s, name, '240', ALL_PICKS) && await s.p.$('#b-date')) {
+        await s.p.fill('#b-date', M.back);
+        await askSend(s, name);
+        const t = await s.view();
+        if (!t.includes(want) || t.includes('Расход записан')) bad.push(`${name}: нет «${want}»: ` + t.slice(0, 200));
+      }
+      await s.ctx.close();
+    }
+  }
   // Не сумма — не уходит.
   for (const v of ['0', 'abc', '1.234']) {
     const s = await open(true, true, json(200, SASHA), null, null, null, book()); s.name = 'book-sasha';
