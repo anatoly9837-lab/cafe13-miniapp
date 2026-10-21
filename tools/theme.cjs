@@ -48,6 +48,13 @@ const FIX = {
    и высота панели не менялась — мутация зеленела на сравнении двух нулей.
    Карточка #101 требует, чтобы мутировалась КАЖДАЯ ветвь, а ветвь мутируема
    только тогда, когда видна в числе. */
+/* Роль действия, заданная НАПОЛОВИНУ: цвет кнопки человека есть, цвета
+   текста на ней нет. Ни одна прежняя фикстура этого не давала — в A и B
+   заданы оба поля, в «только фон» ни одного, — и фолбэк текста кнопки
+   поэтому не проверялся вовсе (Cafe13KPG#136). Пробел ОБЕИХ редакций:
+   и когда фолбэком был var(--paper), и когда стал литералом. */
+const HALF = { bg_color: '#FF00FF', button_color: '#00FF88' };
+
 const SAFE = { safeAreaInset:        { top: 44, bottom: 34, left: 0, right: 0 },
                contentSafeAreaInset: { top: 56, bottom: 21, left: 0, right: 0 } };
 
@@ -146,6 +153,17 @@ const MUT = {
             reddens: ['высота шапки'] },
   cab:    { file: 'css', find: 'var(--tg-sab)) + var(--tg-cab))', put: 'var(--tg-sab)))',
             reddens: ['высота панели'] },
+
+  /* Эта мутация видна ТОЛЬКО на половинной фикстуре: на полной теме поле
+     задано и фолбэк не участвует — потому и своё поле fix. */
+  halfink: { file: 'css', find: '--accent-ink: #FFFFFF;', put: '--accent-ink: var(--paper);',
+             fix: 'HALF',
+             want: { 'токен --paper': HALF.bg_color, 'токен --ink': BRAND.ink,
+                     'токен --muted': BRAND.muted, 'токен --accent': HALF.button_color,
+                     'токен --accent-ink': BRAND.accentInk, 'токен --surface': BRAND.surface,
+                     'кнопка фон': HALF.button_color, 'кнопка текст': BRAND.accentInk,
+                     'пиксель фона': HALF.bg_color },
+             reddens: ['токен --accent-ink', 'кнопка текст'] },
 
   header: { find: "if (tg.setHeaderColor) tg.setHeaderColor('bg_color');",
             put:  "if (tg.setHeaderColor) { /* мутация: шапка не красится */ }",
@@ -323,6 +341,18 @@ async function pixel(ctx, png, x, y) {
     if (m.errs.length) bad.push(`${w}: ошибка страницы «${m.errs[0]}»`);
   }
 
+  /* ── 2в. роль действия задана НАПОЛОВИНУ: цвет кнопки берётся у человека,
+     цвет текста на ней — фирменный, и он НЕ следует за чужим фоном. ── */
+  {
+    const m = await measure({ theme: HALF, safe: SAFE }, 'theme-half-accent');
+    const w = 'фикстура «кнопка без текста кнопки»';
+    eq('токен --accent', m.css.accent, HALF.button_color, w);
+    eq('токен --accent-ink', m.css.accentInk, BRAND.accentInk, w);
+    eq('кнопка фон', m.css.btn.bg, HALF.button_color, w);
+    eq('кнопка текст', m.css.btn.fg, BRAND.accentInk, w);
+    if (m.errs.length) bad.push(`${w}: ошибка страницы «${m.errs[0]}»`);
+  }
+
   /* ── 3. клиент постарше: ворота закрыты, и это не падение ── */
   {
     const m = await measure({ theme: FIX.A, safe: SAFE, ver: '6.0' }, 'theme-old-client');
@@ -381,7 +411,8 @@ async function pixel(ctx, png, x, y) {
        значения (want): после перехода на тему без полей правильный ответ —
        фирменный цвет, а не фикстурный. Таблица ожиданий СОБИРАЕТСЯ, а не
        переписывается: ключ, который мутация не трогает, остаётся общим. */
-    const m = await measure({ theme: FIX.A, safe: SAFE, mut: name, after: MUT[name].after || null },
+    const theme = MUT[name].fix === 'HALF' ? HALF : FIX.A;
+    const m = await measure({ theme: theme, safe: SAFE, mut: name, after: MUT[name].after || null },
                             'mut-' + name);
     const want = Object.assign({}, WANT, MUT[name].want || {});
     const got = { 'токен --paper': m.css.paper, 'токен --ink': m.css.ink,
