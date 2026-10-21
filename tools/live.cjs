@@ -471,7 +471,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (pp.length !== 1 || JSON.stringify(JSON.parse(pp[0].body)) !== JSON.stringify(want))
       bad.push('buy: тело заказа ' + JSON.stringify(pp.map(c => c.body)));
     const o = await s.view();
-    ['261018-01', 'Эспрессо', 'новый', 'отправлен на бар'].forEach(x => { if (!o.includes(x)) bad.push(`buy: на экране заказа нет «${x}»`); });
+    ['261018-01', 'Эспрессо', 'новый', 'номер заказа', 'Назовите его бармену', 'Со счёта · уже списано', '70 ฿'].forEach(x => { if (!o.includes(x)) bad.push(`buy: на экране заказа нет «${x}»`); });
+    if ((await s.p.$eval('#order-number', e => e.textContent).catch(() => null)) !== '261018-01') bad.push('buy: номер заказа не выделен крупно');
     if (s.calls.filter(c => c.url.endsWith('/me')).length !== 2) bad.push('buy: баланс не перезапрошен после заказа');
     if (!s.calls.some(c => c.method === 'GET' && c.url.includes('/bar/orders'))) bad.push('buy: состояние заказа не запрошено');
     await s.p.screenshot({ path: `${OUT}/live-bar-order.png` });
@@ -503,8 +504,9 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
-  // Не хватает на счёте (сервер решает) — экран пополнения, а не немой отказ.
-  // Член без права кассы видит, куда идти; админ — форму внести себе.
+  // Не хватает на счёте (сервер решает) — плашка в корзине словами сервера
+  // (макет E23б) и кнопка пополнения из неё. Член без права кассы видит,
+  // куда идти; админ — форму внести себе.
   const NOTILL = clone(OWNER); NOTILL.roles = [];
   for (const [who, name, want] of [[NOTILL, 'topup-409', 'пополняется у хостес'], [OWNER, 'topup-409-admin', null]]) {
     const s = await open(true, true, json(200, who), null, null, null,
@@ -512,8 +514,11 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await toBar(s);
     await s.p.click('[data-action="buy:11"]');
     await s.p.waitForTimeout(250);
+    if ((await s.p.$eval('.deny', e => e.textContent).catch(() => '')) !== 'на счёте 3170, не хватает 1830') bad.push(`${name}: нет плашки с текстом сервера`);
+    if (!(await s.p.$('[data-go="topup"]'))) bad.push(`${name}: из плашки нехватки некуда идти`);
+    else { await s.p.click('[data-go="topup"]'); await s.p.waitForTimeout(150); }
     const t = await s.view();
-    ['На счёте не хватает', 'не хватает 1830'].concat(want ? [want] : []).forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
+    (want ? [want] : []).forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
     if (!want && !(await s.p.$('#t-amount'))) bad.push(`${name}: админу нет формы внесения`);
     if (want && (await s.p.$('#t-amount'))) bad.push(`${name}: форма внесения без права кассы`);
     await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
@@ -548,8 +553,60 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await toBar(s);
     await s.p.click('[data-action="buy:11"]');
     await s.p.waitForTimeout(250);
-    if (!(await s.view()).includes('Позиция снята с меню: Эспрессо')) bad.push('order-409: причина не показана');
+    if (!(await s.view()).includes('позиция снята с меню: Эспрессо')) bad.push('order-409: причина не показана');
     if (s.calls.filter(c => c.url.includes('/bar/menu')).length !== 2) bad.push('order-409: меню не перезапрошено');
+    await s.ctx.close();
+  }
+
+  // Пять отказов POST /bar/orders (cafe13-api bar.py): у четырёх один код
+  // 409, поэтому признак — ТЕКСТ плашки, равный тексту сервера, а не код.
+  // Каждый случай: корзина из двух позиций «к столу», отказ — плашка над
+  // «Купить», состав и место на месте, нажатие снова возможно.
+  for (const [name, status, detail] of [
+    ['deny-closed', 409, 'бар закрыт: смена не открыта, заказ принять некому'],
+    ['deny-noitems', 400, 'нет таких позиций в этом меню: [12]'],
+    ['deny-hidden', 409, 'позиция снята с меню: Флэт-уайт'],
+    ['deny-cash', 409, 'на баре платят со счёта в клубе; пополнить можно у хостес'],
+    ['deny-short', 409, 'на счёте 240, не хватает 60']]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: json(status, { detail }) }));
+    await toBar(s);
+    await s.p.click('[data-action="cart-add:11"]');
+    await s.p.click('[data-action="cart-add:12"]');
+    await s.p.click('[data-go="barCart"]');
+    await s.p.waitForTimeout(150);
+    if (await s.p.$('[data-pay]')) bad.push(`${name}: в корзине выбор оплаты, а наличные сервер не принимает`);
+    await s.p.click('[data-where="к столу"]');
+    // «Купить» в Telegram — главная кнопка; своя в разметке на этот случай спрятана
+    if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) { bad.push(`${name}: у корзины нет главной кнопки`); await s.ctx.close(); continue; }
+    await s.p.evaluate(() => window.__main());
+    await s.p.waitForTimeout(300);
+    const pp = posts(s);
+    if (pp.length !== 1 || JSON.parse(pp[0].body).pay_method !== 'account') bad.push(`${name}: ушло не одно тело со счёта: ` + JSON.stringify(pp.map(c => c.body)));
+    const deny = await s.p.$eval('.deny', e => e.textContent).catch(() => null);
+    if (deny !== detail) bad.push(`${name}: плашка «${deny}», сервер сказал «${detail}»`);
+    const t = await s.view();
+    if (!t.includes('Эспрессо') || !t.includes('Флэт-уайт')) bad.push(`${name}: корзина потеряна после отказа`);
+    if (!(await s.p.$('[data-where="к столу"][aria-pressed="true"]'))) bad.push(`${name}: выбор места потерян после отказа`);
+    if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push(`${name}: «Купить» не доступна после отказа`);
+    // плашка стоит НАД итогом и кнопкой: в разметке раньше них
+    const above = await s.p.evaluate(() => { const d = document.querySelector('.deny'), m = document.querySelector('.sum');
+      return !!d && !!m && !!(d.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING); });
+    if (!above) bad.push(`${name}: плашка не над кнопкой «Купить»`);
+    if (name === 'deny-short') await s.p.screenshot({ path: `${OUT}/live-cart-denied.png`, fullPage: true });
+    // правка состава снимает плашку: отказ относился к прежнему
+    await s.p.click('[data-action="cart-less:12"]');
+    if (await s.p.$('.deny')) bad.push(`${name}: плашка осталась после правки корзины`);
+    await s.ctx.close();
+  }
+  // Номер заказа — из ответа сервера, а не свой: ответ несёт другой номер.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      bar({ order: json(201, Object.assign({}, ORDER, { number: '261021-05' })), list: json(200, [Object.assign(row('new'), { number: '261021-05' })]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    if ((await s.p.$eval('#order-number', e => e.textContent).catch(() => null)) !== '261021-05') bad.push('order-number: номер не из ответа сервера');
+    await s.p.screenshot({ path: `${OUT}/live-order-accepted.png`, fullPage: true });
     await s.ctx.close();
   }
 
@@ -766,7 +823,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.p.evaluate(() => doAction('buy:11'));
     await s.p.waitForTimeout(150);
     if (posts(s).length) bad.push('bar-closed: заказ ушёл в закрытый бар');
-    if (!(await s.view()).includes('Смена не открыта')) bad.push('bar-closed: отказ без причины');
+    if (!(await s.view()).includes('смена не открыта — заказ не отправлен')) bad.push('bar-closed: отказ без причины');
     await s.ctx.close();
   }
   // Экран думал «открыт», а смену успели закрыть: сервер отказал — причина как есть,
@@ -779,7 +836,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.p.click('[data-action="buy:11"]');
     await s.p.waitForTimeout(300);
     const t = await s.view();
-    if (!t.includes('Бар закрыт: смена не открыта, заказ принять некому')) bad.push('order-409-closed: причина сервера не показана');
+    if (!t.includes('бар закрыт: смена не открыта, заказ принять некому')) bad.push('order-409-closed: причина сервера не показана');
     if (await s.p.evaluate(() => !!document.querySelector('[data-action^="buy:"]'))) bad.push('order-409-closed: «Купить» осталась');
     await s.ctx.close();
   }
@@ -2136,5 +2193,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 182) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 188) + ' случаев');
 })();

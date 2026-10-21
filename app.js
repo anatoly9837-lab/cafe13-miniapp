@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v19 · 21.10.2026';
+var VERSION = 'v21 · 21.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -943,12 +943,28 @@ function fromOrder(d, items) {
            sum: d.sum === undefined ? null : num(d.sum), state: d.state, items: list };
 }
 
+/* Отказ «Купить» — состояние корзины, а не экран (макет E23б): плашка над
+   кнопкой, текст сервера как есть, выбор человека не теряется. Отказ при
+   покупке в одно нажатие из меню переносит позицию в корзину — там видно
+   и причину, и что именно не купилось. */
+var DENY = '';
+function denyInCart(items, text) {
+  DENY = text;
+  if (current !== 'barCart') {
+    CART = {};
+    items.forEach(function (x) { CART[x.id] = x.n; });
+    go('barCart');
+  } else render();
+}
+
 function placeOrder(items, place, pay) {
   if (BUSY) return;
   if (!BAR || !BAR.open) {
-    FLASH = { text: 'Бар закрыт', note: 'Смена не открыта — заказ не отправлен.' };
-    haptic('warn'); render(); return;
+    haptic('warn');
+    denyInCart(items, 'Бар закрыт: смена не открыта — заказ не отправлен.');
+    return;
   }
+  DENY = '';
   BUSY = true;
   render();
   api('POST', '/bar/orders', {
@@ -961,19 +977,13 @@ function placeOrder(items, place, pay) {
       DATA.bar.mine = o;
       CART = {};
       haptic('ok');
-      FLASH = { text: 'Заказ ' + o.id + ' отправлен на бар', note: '' };
+      FLASH = null;
       refreshMe();
       go('barOrder');
       return;
     }
     haptic('warn');
     var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
-    if (r.status === 409 && /^на счёте/.test(detail)) {
-      FLASH = { text: 'На счёте не хватает', note: detail.replace(/^на счёте/, 'На счёте') + ' ฿.' };
-      refreshMe();
-      go('topup');
-      return;
-    }
     if (r.status === 0 || r.status === 201) {
       // Ответ мог потеряться ПОСЛЕ того, как заказ создан, или прийти неразобранным:
       // объявить заказ несозданным — значит подтолкнуть ко второму. Спрашиваем сервер.
@@ -984,17 +994,17 @@ function placeOrder(items, place, pay) {
       go('barOrder');
       return;
     }
-    FLASH = { text: 'Заказ не отправлен',
-              note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : 'Сервер ответил кодом ' + r.status + '.' };
+    // нехватка — баланс мог устареть; закрытый бар и снятая позиция — меню и смена
+    if (/^на счёте/.test(detail)) refreshMe();
     if (r.status === 409) loadMenu();
-    render();
+    denyInCart(items, detail || 'Заказ не отправлен: сервер ответил кодом ' + r.status + '.');
   });
 }
 
 function buy(id) {
   var d = findDrink(id);
   if (!d) return;
-  placeOrder([{ pid: d.pid, title: d.title, n: 1 }], 'за стойку', 'account');
+  placeOrder([{ id: d.id, pid: d.pid, title: d.title, n: 1 }], 'за стойку', 'account');
 }
 
 /* Состояние заказа гость видит у себя: пока заказ не выдан, раз в 8 секунд
@@ -2176,7 +2186,6 @@ var SCREENS = {
               '<span class="small num">' + x.n + ' × ' + x.price + ' = ' + money(x.n * x.price) + ' ฿</span></div>' +
             stepper(d) + '</div></div>';
         }).join('') +
-        '<div class="rows"><div><span>Итог</span><b class="num">' + money(cartSum()) + ' ฿</b></div></div>' +
       '</div>' +
       '<div class="group"><span class="label">Куда подать</span><div class="seg">' +
         wheres.map(function (w) {
@@ -2187,10 +2196,13 @@ var SCREENS = {
          пополняют у хостес. Сервер наличные отклоняет (cafe13-api#13) —
          выбор, которого нет, не показываем ни в живом режиме, ни в демо. */
       '<div class="group"><span class="label">Оплата</span>' +
-        '<span class="small">Со счёта в клубе, сразу при отправке: на счёте ' + money(DATA.member.balance) + ' ฿. Пополнить можно у хостес.</span></div>' +
-      '<button type="button" class="btn dup-main" data-action="send-order">Отправить на бар</button>' +
-      '<div class="note">' + svg(ICON.bell) +
-        '<span>Бар получит уведомление в ту же секунду. Отменить заказ может только бар — тогда деньги вернутся на счёт.</span></div>';
+        '<div class="rows"><div><span>Со счёта в клубе</span><b class="num">на счёте ' + money(DATA.member.balance) + ' ฿</b></div></div>' +
+        '<div class="note">' + svg(ICON.info) +
+          '<span>Спишем со счёта сразу, когда заказ создан, — не при выдаче. Наличные бар не принимает. Пополнить можно у хостес. Отменить заказ может только бар — тогда деньги вернутся на счёт.</span></div></div>' +
+      (DENY ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(DENY) + '</span></div>' +
+              (/^на счёте/.test(DENY) ? '<button type="button" class="btn quiet" data-go="topup">Пополнить счёт</button>' : '') : '') +
+      '<div class="sum"><span class="small">Итого</span><b class="big num">' + money(cartSum()) + ' ฿</b></div>' +
+      '<button type="button" class="btn dup-main" data-action="send-order"' + (BUSY ? ' disabled' : '') + '>' + (BUSY ? 'Отправляем…' : 'Купить') + '</button>';
   },
 
   barOrder: function () {
@@ -2211,6 +2223,27 @@ var SCREENS = {
     if (!o) {
       return '<div class="card quiet"><span class="small">Открытого заказа нет.</span></div>' +
         '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
+    }
+    /* Макет E24: номер — главный элемент, им человек ищет заказ у бармена;
+       номер, состояние и сумма — из ответа сервера, не из своего запроса. */
+    if (LIVE) {
+      return (FLASH ? flash() : '') +
+        '<div class="num-wrap">' +
+          '<span class="label">номер заказа</span>' +
+          '<b class="num-big" id="order-number">' + esc(o.id) + '</b>' +
+          '<span class="small">Назовите его бармену</span>' +
+        '</div>' +
+        '<div class="rows">' +
+          '<div><span class="small">Статус заказа</span><span class="pill' + OSTATE[o.state].pill + '">' + OSTATE[o.state].label + '</span></div>' +
+          '<div><span class="small">Куда</span><b>' + esc(o.where) + '</b></div>' +
+          '<div><span class="small">Оплата</span><b>' + (o.pay === 'со счёта' ? 'Со счёта · уже списано' : esc(o.pay)) + '</b></div>' +
+          (o.sum === null ? '' : '<div><span class="small">Сумма</span><b class="num">' + money(o.sum) + ' ฿</b></div>') +
+        '</div>' +
+        '<div class="group"><h2>Что заказано</h2><div class="rows">' + o.items.map(function (i) {
+          return '<div><span>' + esc(i[0]) + '</span><span class="small num">' + i[1] + ' шт</span></div>';
+        }).join('') + '</div></div>' +
+        (MINE_FAIL ? '<div class="card quiet"><span class="small">' + esc(MINE_FAIL) + '</span></div>' : '') +
+        '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>';
     }
     var line = ['new', 'making', 'ready', 'served'];
     var at = line.indexOf(o.state);
@@ -2959,7 +2992,7 @@ document.addEventListener('click', function (ev) {
     return;
   }
   if (el.hasAttribute('data-drink')) { go('drink', el.getAttribute('data-drink')); return; }
-  if (el.hasAttribute('data-where')) { ORDER.where = el.getAttribute('data-where'); haptic(); render(); return; }
+  if (el.hasAttribute('data-where')) { ORDER.where = el.getAttribute('data-where'); DENY = ''; haptic(); render(); return; }
   if (el.hasAttribute('data-pay'))   { ORDER.pay   = el.getAttribute('data-pay');   haptic(); render(); return; }
   // грабим введённое ДО перерисовки: иначе выбор категории стирал набранный текст
   if (el.hasAttribute('data-exp'))   { grabForm(EXP_FIELDS); EXP.cat = el.getAttribute('data-exp');   haptic(); render(); return; }
@@ -2992,11 +3025,11 @@ function doAction(a) {
       return;
     }
     if (a === 'cart-add') {
-      CART[arg] = (CART[arg] || 0) + 1;
+      CART[arg] = (CART[arg] || 0) + 1; DENY = '';
       haptic(); render(); return;
     }
     if (a === 'cart-less') {
-      CART[arg] = (CART[arg] || 0) - 1;
+      CART[arg] = (CART[arg] || 0) - 1; DENY = '';
       if (CART[arg] <= 0) delete CART[arg];
       haptic(); render(); return;
     }
@@ -3320,7 +3353,7 @@ function mainFor() {
   if (bare() || LIVE && !WIRED[current]) return null;
   if (current === 'eventNew') return { text: 'Опубликовать в афише', a: 'create-event' };
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
-  if (current === 'barCart') return { text: 'Отправить на бар', a: 'send-order' };
+  if (current === 'barCart') return { text: 'Купить', a: 'send-order' };
   if (current === 'barExpense') return { text: 'Записать затрату', a: 'add-expense' };
   if (current === 'drink' && LIVE) {
     var dl = findDrink(param);
