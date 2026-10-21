@@ -2387,7 +2387,9 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     const card = (s, k) => `[data-person="${k}"]`;
     const note = (s, k) => s.p.$eval(`${card(s, k)} .note`, e => e.textContent).catch(() => '');
     const posts = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
-    const act = (s, a) => s.p.evaluate(a => document.querySelector(`[data-action="${a}"]`).click(), a);
+    // нет кнопки — false, а не исключение: иначе отсутствие кнопки краснело бы
+    // падением прогона, а не своим текстом
+    const act = (s, a) => s.p.evaluate(a => { const x = document.querySelector(`[data-action="${a}"]`); if (x) x.click(); return !!x; }, a);
 
     // глава видит вход и список; данные — с сервера, ни одного id на экране
     {
