@@ -699,7 +699,7 @@ function shiftBlock() {
    Списка записей с сервера нет — под формой только то, на что сервер
    ответил здесь и сейчас. Успех — 201 и строка, совпавшая с отправленной:
    201 с чужими полями — «неизвестно», иначе вторая запись тех же денег. */
-var BOOK = { kind: '', amount: '', method: '', cat: '', ekind: '', paid: '', note: '',
+var BOOK = { kind: '', amount: '', method: '', cat: '', ekind: '', paid: '', note: '', date: '',
              ask: false, busy: false, err: '', from: 'home', done: [] };
 var BOOK_FAIL = '';
 // «со счёта» сервер не принимает: остатка у направления нет, деньги посчитались бы дважды
@@ -727,10 +727,28 @@ function bookLoad() {
     if (current === 'barMoney') render();
   });
 }
+/* Дата события (cafe13-api#28). Пусто — сегодня, и тогда `at` не уходит
+   вовсе: «сегодня» решает сервер по часам клуба. Отправляется только дата,
+   которую человек сменил сам. Границы (не из будущего, не старше 90 дней)
+   проверяет сервер, его отказ показывается его словами. */
+var BACKDATE_DAYS = 90;
+function clubDay(iso) {                       // 'YYYY-MM-DD' по часам клуба
+  var d = iso ? new Date(iso) : new Date();
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+}
+function daysBefore(day, n) {
+  var d = new Date(day + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+function dayWords(day) {
+  return new Date(day + 'T12:00:00Z').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+}
 function bookGrab() {
-  var a = document.getElementById('b-amount'), n = document.getElementById('b-note');
+  var a = document.getElementById('b-amount'), n = document.getElementById('b-note'), t = document.getElementById('b-date');
   if (a) BOOK.amount = a.value;
   if (n) BOOK.note = n.value;
+  if (t) BOOK.date = /^\d{4}-\d{2}-\d{2}$/.test(t.value) && t.value !== clubDay() ? t.value : '';
 }
 function bookMissing() {
   if (topupAmount(BOOK.amount) === null) return 'Сумма — число больше нуля, например 240.';
@@ -749,23 +767,26 @@ function bookSend() {
   var body = inc ? { direction_id: BAR.id, amount: amt, method: BOOK.method, note: note }
                  : { direction_id: BAR.id, amount: amt, expense_cat: BOOK.cat, expense_kind: BOOK.ekind,
                      paid_by: BOOK.paid, note: note };
+  if (BOOK.date) body.at = BOOK.date;
   BOOK.busy = true; BOOK.ask = false;
   render();
   api('POST', inc ? '/bar/income' : '/bar/expenses', body).then(function (r) {
     var d = r.data;
     var ok = r.status === 201 && !!d && typeof d.id === 'number' && num(d.amount) === amt && d.note === note &&
+      (!body.at || clubDay(d.at) === body.at) &&
       (inc ? d.method === body.method
            : d.expense_cat === body.expense_cat && d.expense_kind === body.expense_kind && d.paid_by === body.paid_by);
     var detail = d && typeof d.detail === 'string' ? d.detail : '';
     var what = inc ? 'Доход' : 'Расход';
     BOOK.busy = false;
     if (ok) {
-      BOOK.done.unshift({ inc: inc, amount: amt, at: hm(d.at), note: note,
+      BOOK.done.unshift({ inc: inc, amount: amt, at: body.at ? 'за ' + dayWords(clubDay(d.at)) : hm(d.at), note: note,
                           how: inc ? pick(INCOME_HOW, body.method)[1].toLowerCase()
                                    : body.expense_cat + ' · ' + pick(EXP_KINDS, body.expense_kind)[1].toLowerCase() +
                                      ' · ' + pick(PAID_BY, body.paid_by)[1].toLowerCase() });
-      BOOK.amount = ''; BOOK.note = ''; BOOK.method = ''; BOOK.cat = ''; BOOK.ekind = ''; BOOK.paid = '';
-      FLASH = { text: what + ' записан: ' + money(amt) + ' ฿', note: '' };
+      BOOK.amount = ''; BOOK.note = ''; BOOK.method = ''; BOOK.cat = ''; BOOK.ekind = ''; BOOK.paid = ''; BOOK.date = '';
+      FLASH = { text: what + ' записан' + (body.at ? ' за ' + dayWords(body.at) : '') + ': ' + money(amt) + ' ฿',
+                note: body.at ? 'В сегодняшнем отчёте его нет — он в отчёте того дня.' : '' };
       haptic('ok');
     } else if (r.status === 0 || r.status === 201) {
       FLASH = { text: 'Неизвестно, записано ли',
@@ -2307,6 +2328,11 @@ var SCREENS = {
         '<div class="field"><label for="b-note">Комментарий</label>' +
           '<input id="b-note" type="text" maxlength="500" value="' + esc(BOOK.note) + '" placeholder="' +
             (inc ? 'Например: выручка за вечер, 14 чеков' : 'Например: молоко, 6 литров') + '"' + lock + '></div>' +
+        '<div class="field"><label for="b-date">Когда это было</label>' +
+          '<input id="b-date" type="date" value="' + esc(BOOK.date || clubDay()) + '" max="' + clubDay() +
+            '" min="' + daysBefore(clubDay(), BACKDATE_DAYS) + '"' + lock + '></div>' +
+        (BOOK.date ? '<span class="small">Задним числом: запись попадёт в отчёт за ' + esc(dayWords(BOOK.date)) +
+                       ', а не в сегодняшний.</span>' : '') +
         (BOOK.err ? '<span class="small" style="color:var(--clay)">' + esc(BOOK.err) + '</span>' : '') +
         (BOOK.busy ? '<button type="button" class="btn" disabled>Записываем…</button>'
          : BOOK.ask && amt !== null
@@ -2314,6 +2340,7 @@ var SCREENS = {
                '<span class="small">' + esc(inc ? pick(INCOME_HOW, BOOK.method)[1]
                  : BOOK.cat + ' · ' + k[1].toLowerCase() + ' · ' + pick(PAID_BY, BOOK.paid)[1].toLowerCase()) +
                  (BOOK.note.trim() ? ' · ' + esc(BOOK.note.trim()) : '') + '</span>' +
+               (BOOK.date ? '<b>За ' + esc(dayWords(BOOK.date)) + ' — в сегодняшний отчёт не попадёт.</b>' : '') +
                '<span class="small">Это настоящая запись в книге клуба.</span>' +
                '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="b-keep">Не записывать</button>' +
                '<button type="button" class="btn" data-action="b-send">Записать</button></span></div>'
@@ -3176,6 +3203,8 @@ function doAction(a) {
    честный ответ лучше вида работающей отправки. */
 document.addEventListener('change', function (ev) {
   var t = ev.target;
+  // смена даты сразу показывает, в чей отчёт уйдёт запись
+  if (t && t.id === 'b-date' && current === 'barMoney' && !BOOK.busy) { bookGrab(); render(); return; }
   if (!t || (t.id !== 'shot-file' && t.id !== 'bill-file')) return;
   var f = t.files && t.files[0];
   if (!f) return;
