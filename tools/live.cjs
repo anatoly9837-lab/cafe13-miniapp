@@ -2351,6 +2351,208 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   }
 
   // ── заглушки против настоящих ответов ──
+  // ── экран «Люди»: выдача и снятие ответственности (Cafe13KPG#177) ──
+  // Снимка /people нет и не будет: в нём tg_user_id живых людей, и в
+  // публичный репозиторий он не кладётся (cafe13-api roles.py). Форма
+  // заглушки — по коду ручки на стволе 880b4b6. Люди вымышленные.
+  {
+    const ROSTER = { count: 3, people: [
+      { tg_user_id: 701, first_name: 'Алевтина', last_name: 'Тестова', lang: 'ru',
+        roles: [{ id: 31, role: 'curator', direction_id: 7, direction: 'Бар', granted_at: '2026-10-20T10:00:00+00:00' }],
+        memberships: ['member'] },
+      { tg_user_id: 702, first_name: 'Сомчай', last_name: null, lang: 'th', roles: [], memberships: [] },
+      { tg_user_id: 703, first_name: 'Глеб', last_name: 'Главный', lang: 'ru',
+        roles: [{ id: 6, role: 'admin', direction_id: null, direction: null, granted_at: '2026-10-01T10:00:00+00:00' },
+                { id: 5, role: 'head', direction_id: null, direction: null, granted_at: '2026-10-01T10:00:00+00:00' }],
+        memberships: ['member', 'partner'] }] };
+    const DIRS = [{ id: 7, title: 'Бар', is_active: true, is_open: true }, { id: 9, title: 'Старое', is_active: false, is_open: false }];
+    const HEAD_ONLY = clone(OWNER); HEAD_ONLY.roles = [{ role: 'head', direction_id: null }];
+    const MASTER = clone(OWNER); MASTER.roles = [{ role: 'curator', direction_id: 7 }];
+    const peopleCase = (me, r) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url();
+      if (u.endsWith('/people')) return r.people || json(200, ROSTER);
+      if (u.endsWith('/directions')) return json(200, DIRS);
+      if (u.endsWith('/roles')) return r.grant || json(201, { id: 40, member_id: 702, role: 'x', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' });
+      if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
+      return undefined;
+    });
+    const toPeople = async s => {
+      const entry = await s.p.$('[data-go="people"]');
+      if (!entry) return false;
+      await s.p.evaluate(() => document.querySelector('[data-go="people"]').click());
+      await s.p.waitForTimeout(250);
+      return true;
+    };
+    // карточки знают номер строки, а не tg_user_id: 0 Алевтина, 1 Сомчай, 2 Глеб
+    const card = (s, k) => `[data-person="${k}"]`;
+    const note = (s, k) => s.p.$eval(`${card(s, k)} .note`, e => e.textContent).catch(() => '');
+    const posts = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
+    const act = (s, a) => s.p.evaluate(a => document.querySelector(`[data-action="${a}"]`).click(), a);
+
+    // глава видит вход и список; данные — с сервера, ни одного id на экране
+    {
+      const s = await peopleCase(OWNER, {});
+      if (!(await toPeople(s))) bad.push('people-head: у главы клуба нет входа «Люди»');
+      else {
+        const t = await s.view();
+        ['Алевтина Тестова', 'Куратор направления', 'Сомчай', 'Ролей нет', 'без членства', 'Член клуба, Бизнес-партнёр', 'Глава клуба',
+         'единственный глава клуба']
+          .forEach(x => { if (!t.includes(x)) bad.push(`people-head: нет «${x}»`); });
+        // роль и направление — разные строки: длинное направление не рвёт имя роли
+        const under = await s.p.$eval(`${card(s, 0)} .role-row .small`, e => e.textContent).catch(() => null);
+        if (under !== 'Бар') bad.push(`people-head: направление под ролью «${under}», ждали «Бар»`);
+        // tg_user_id — ни текстом, ни в атрибутах разметки
+        if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push('people-head: tg_user_id в разметке');
+        // у админа «Снять» у админа есть
+        if (!(await s.p.$('[data-action="p-ask:6"]'))) bad.push('people-head: админу нечем снять администратора');
+        const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
+        if (/70[123]|Алевтина/.test(stored)) bad.push('people-head: люди из /people легли в хранилище браузера');
+        if (s.calls.filter(c => c.url.endsWith('/people')).length !== 1) bad.push('people-head: /people запрошен не один раз');
+        // поиск по имени прячет чужие карточки
+        await s.p.fill('#p-find', 'алев');
+        const hid = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')].map(e => e.hidden));
+        if (JSON.stringify(hid) !== '[false,true,true]') bad.push('people-head: поиск «алев» оставил ' + JSON.stringify(hid));
+      }
+      if (s.errs.length) bad.push('people-head: ошибки страницы ' + s.errs.join('; '));
+      await s.p.screenshot({ path: `${OUT}/live-people.png` });
+      await s.ctx.close();
+    }
+
+    // мастер (куратор направления): входа нет, и мимо входа экран не грузит людей
+    {
+      const s = await peopleCase(MASTER, {});
+      if (await s.p.$('[data-go="people"]')) bad.push('people-master: у куратора направления есть вход «Люди»');
+      await s.p.evaluate(() => go('people'));
+      await s.p.waitForTimeout(200);
+      if (!(await s.view()).includes('может глава клуба')) bad.push('people-master: экран «Люди» не отказал куратору');
+      if (s.calls.some(c => c.url.endsWith('/people'))) bad.push('people-master: /people запрошен у куратора');
+      await s.ctx.close();
+    }
+
+    // админа выдаёт только админ: у главы без admin такой кнопки нет, у админа — есть
+    for (const [name, me, want] of [['people-pick-head', HEAD_ONLY, false], ['people-pick-admin', OWNER, true]]) {
+      const s = await peopleCase(me, {});
+      if (!(await toPeople(s))) { bad.push(`${name}: нет входа «Люди»`); await s.ctx.close(); continue; }
+      // админа снимает только админ: у главы на строке администратора кнопки нет, есть подпись
+      const ask = !!(await s.p.$('[data-action="p-ask:6"]'));
+      if (ask !== want) bad.push(`${name}: «Снять» у администратора ${ask ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
+      if (!want && !(await s.view()).includes('снимает только администратор')) bad.push(`${name}: нет подписи «снимает только администратор»`);
+      await act(s, 'p-open:1');
+      const has = !!(await s.p.$(`${card(s, 1)} [data-action="p-role:admin"]`));
+      if (has !== want) bad.push(`${name}: выбор «Администратор» ${has ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
+      await s.ctx.close();
+    }
+
+    // выдача роли направления: без направления не уходит; с ним — тело ровно такое
+    {
+      const s = await peopleCase(OWNER, { grant: json(201, { id: 40, member_id: 702, role: 'curator', direction_id: 7, granted_at: '2026-10-21T10:00:00+00:00' }) });
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      await act(s, 'p-role:curator');
+      if (await s.p.$('[data-action="p-dir:9"]')) bad.push('people-grant-dir: предложено закрытое направление');
+      // без направления «Выдать» не нажимается: иначе гарантированный отказ базы
+      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-grant-dir: главная кнопка есть без направления');
+      if (!(await s.view()).includes('Выберите направление.')) bad.push('people-grant-dir: без направления нет подсказки');
+      {
+        await act(s, 'p-dir:7');
+        if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push('people-grant-dir: с направлением нет главной кнопки');
+        await s.p.evaluate(() => window.__main());
+        await s.p.waitForTimeout(300);
+        const pp = posts(s, /\/roles$/);
+        if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'curator', direction_id: 7 }))
+          bad.push('people-grant-dir: ушло ' + JSON.stringify(pp.map(c => c.body)));
+        if (!(await note(s, 1)).includes('Выдано: Куратор направления · Бар.')) bad.push('people-grant-dir: в карточке нет итога «Выдано»');
+        if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-grant-dir: список не перечитан после выдачи');
+      }
+      await s.ctx.close();
+    }
+
+    // общая роль уходит без direction_id
+    {
+      const s = await peopleCase(OWNER, { grant: json(201, { id: 41, member_id: 702, role: 'ops_director', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' }) });
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      await act(s, 'p-role:ops_director');
+      await s.p.evaluate(() => window.__main && window.__main());
+      await s.p.waitForTimeout(300);
+      const pp = posts(s, /\/roles$/);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'ops_director' }))
+        bad.push('people-grant-general: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      if (!(await note(s, 1)).includes('Выдано: Операционный директор.')) bad.push('people-grant-general: в карточке нет итога «Выдано»');
+      await s.ctx.close();
+    }
+
+    // отказы — текстом сервера, в карточке того, кого касаются; успехом не притворяются
+    for (const [name, step, reply, detail] of [
+      ['people-grant-409', 'grant', json(409, { detail: 'такая живая роль у человека уже есть' }), 'Такая живая роль у человека уже есть.'],
+      ['people-grant-403', 'grant', json(403, { detail: 'системного администратора выдаёт и снимает только администратор' }), 'Системного администратора выдаёт и снимает только администратор.'],
+      ['people-revoke-last-head', 'revoke', json(409, { detail: 'это последний глава клуба: сначала назначьте другого, иначе выдавать роли станет некому' }),
+        'Это последний глава клуба: сначала назначьте другого, иначе выдавать роли станет некому.']]) {
+      const s = await peopleCase(OWNER, { [step]: reply });
+      await toPeople(s);
+      const uid = step === 'grant' ? 1 : 2;
+      if (step === 'grant') {
+        await act(s, 'p-open:1'); await act(s, 'p-role:director');
+        await s.p.evaluate(() => window.__main && window.__main());
+      } else {
+        await act(s, 'p-ask:5');
+        if (posts(s, /revoke/).length) bad.push(`${name}: снятие ушло без подтверждения`);
+        if (!(await s.view()).includes('Снять «Глава клуба» у Глеб Главный?')) bad.push(`${name}: нет вопроса перед снятием`);
+        await act(s, 'p-revoke:5');
+      }
+      await s.p.waitForTimeout(300);
+      if (step === 'revoke' && (posts(s, /\/roles\/5\/revoke$/).length !== 1)) bad.push(`${name}: снятие не ушло ровно один раз`);
+      const deny = await s.p.$eval(`${card(s, uid)} .deny`, e => e.textContent).catch(() => null);
+      if (deny !== detail) bad.push(`${name}: плашка «${deny}», ждали «${detail}»`);
+      if ((await s.view()).match(/Выдано:|Снято:/)) bad.push(`${name}: отказ показан успехом`);
+      await s.ctx.close();
+    }
+
+    // уже выданное второй раз не предлагается: общая роль закрыта, роль
+    // направления закрыта только на том направлении, где она уже есть
+    {
+      const s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await act(s, 'p-open:2');
+      if (!(await s.p.$(`${card(s, 2)} [data-action="p-role:head"][disabled]`))) bad.push('people-held: «Глава клуба» у главы не закрыта');
+      if (await s.p.$(`${card(s, 2)} [data-action="p-role:director"][disabled]`)) bad.push('people-held: «Директор» закрыт без причины');
+      await act(s, 'p-open:0'); await act(s, 'p-role:curator');
+      await s.p.waitForTimeout(100);
+      if (!(await s.p.$(`${card(s, 0)} [data-action="p-dir:7"][disabled]`))) bad.push('people-held: куратору Бара снова предложен Бар');
+      if (await s.p.$(`${card(s, 0)} [data-action="p-role:curator"][disabled]`)) bad.push('people-held: роль куратора закрыта целиком, а другое направление законно');
+      await s.ctx.close();
+    }
+
+    // снятие: подтверждение → запрос → итог и перечитанный список
+    {
+      const s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await act(s, 'p-ask:31');
+      await act(s, 'p-keep');
+      if (posts(s, /revoke/).length) bad.push('people-revoke: «Не снимать» отправило снятие');
+      await act(s, 'p-ask:31');
+      await act(s, 'p-revoke:31');
+      await s.p.waitForTimeout(300);
+      if (posts(s, /\/roles\/31\/revoke$/).length !== 1) bad.push('people-revoke: снятие не ушло ровно один раз');
+      if (!(await note(s, 0)).includes('Снято: Куратор направления · Бар.')) bad.push('people-revoke: в карточке нет итога «Снято»');
+      if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-revoke: список не перечитан');
+      await s.ctx.close();
+    }
+
+    // список не дали: текст отказа сервера или «не разобран», а не пустой список
+    for (const [name, reply, want] of [
+      ['people-403', json(403, { detail: 'роли выдаёт и снимает глава клуба' }), 'Роли выдаёт и снимает глава клуба.'],
+      ['people-404', json(404, { detail: 'Not Found' }), 'Сервер ответил кодом 404.'],
+      ['people-broken', json(200, { people: [{ tg_user_id: 1, first_name: 'Х', roles: [{ role: 'head' }], memberships: [] }] }), 'Ответ сервера не разобран.']]) {
+      const s = await peopleCase(OWNER, { people: reply });
+      await toPeople(s);
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+      if (await s.p.$('[data-person]')) bad.push(`${name}: при отказе нарисован список`);
+      await s.ctx.close();
+    }
+  }
+
   // tools/api-keys.json — форма ответов из снимков cafe13-api (DUMP_DIR,
   // tools/keys.py): только ключи, без значений. Заглушка, придумавшая поле
   // или потерявшая обязательное, краснеет здесь, а не на проде.
