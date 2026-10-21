@@ -1726,6 +1726,48 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // До записи карточка не обещает отмены НИ ОДНИМ словом — ни у платного,
+  // ни у бесплатного, ни у донейшна. Обещание, данное до нажатия, человек
+  // прочитает как право, которого у него сегодня нет: отменять нечем.
+  for (const [kind, price] of [['paid', '400.00'], ['free', '0.00'], ['donation', '0.00']]) {
+    const s = await openCard(q => q.url().endsWith('/events')
+      ? json(200, [EV({ id: 4, kind: kind, price: price, taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null })])
+      : undefined);
+    const t = await s.view();
+    if (!t.includes('Записаться')) bad.push(`book-do-zapisi-${kind}: записаться не предлагают`);
+    const found = t.match(/[^.!?]*отмен[^.!?]*/i);
+    if (found) bad.push(`book-do-zapisi-${kind}: до записи обещана отмена — «${found[0].trim()}»`);
+    if (s.errs.length) bad.push(`book-do-zapisi-${kind}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
+  // Поздний ответ афиши, начатой ДО записи, не возвращает карточку в «Записаться».
+  // Без охраны по поколению второе нажатие получило бы 409 «вы уже записаны».
+  {
+    let n = 0, booked = false;
+    const s = await openCard(q => {
+      const u = q.url();
+      if (u.endsWith('/bookings')) { booked = true;
+        return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' }); }
+      if (u.endsWith('/events')) {
+        n += 1;
+        const body = json(200, [booked ? mineRow() : freeRow()]);
+        // второй запрос — начатый до записи и отвечающий уже после неё
+        return n === 2 ? new Promise(r => setTimeout(() => r(body), 1500)) : body;
+      }
+      return undefined;
+    });
+    await s.p.evaluate(() => loadEvents());          // медленный запрос в пути
+    await s.p.waitForTimeout(100);
+    await s.p.evaluate(() => window.__main());       // запись уходит и перечитывает афишу
+    await s.p.waitForTimeout(2200);                  // поздний ответ успевает прийти
+    const t = await s.view();
+    if (!t.includes('Вы записаны')) bad.push('book-pozdniy-otvet: запись пропала с карточки');
+    if (t.includes('Записаться')) bad.push('book-pozdniy-otvet: поздний ответ прежней афиши вернул карточку в «Записаться»');
+    if (s.errs.length) bad.push('book-pozdniy-otvet: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
   // Боевая форма ответа: поля my_booking_id в ней нет вовсе. Карточка обязана
   // работать так же — запись видна, отмена не предлагается, ошибок страницы нет.
   {
@@ -1908,5 +1950,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 145) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 155) + ' случаев');
 })();
