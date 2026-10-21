@@ -1663,6 +1663,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const u = q.url();
       if (u.endsWith('/bookings')) { posts.push(q.postData()); booked = true;
         return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' }); }
+      if (/\/bookings\/\d+\/cancel$/.test(u)) { booked = false; return json(200, { id: 6, state: 'cancelled' }); }
       if (u.endsWith('/events')) return json(200, [booked ? mineRow() : freeRow()]);
       return undefined;
     });
@@ -1684,11 +1685,35 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (await s.p.evaluate(() => window.__main !== null)) bad.push('book: главная кнопка осталась на уже записанном событии');
     await s.p.screenshot({ path: `${OUT}/live-book-done.png` });
 
-    // Отмены в этой ветке нет вовсе: боевой сервер не отдаёт номер записи, а
-    // кнопка, отказывающая по нажатию, хуже своего отсутствия. Проверяем, что
-    // её нет ни разметкой, ни словом, — даже когда номер в ответе есть.
-    if (await s.p.$('[data-action^="book-cancel"]')) bad.push('book: на карточке есть кнопка отмены — она уезжает отдельной веткой');
-    if (t.includes('Отменить запись')) bad.push('book: на карточке предложена отмена, которой на бою нечем сделать');
+    // Номер записи пришёл — отмена предлагается.
+    if (!(await s.p.$('[data-action="book-cancel"]'))) bad.push('book: номер записи пришёл, а кнопки отмены нет');
+
+    // Отмена спрашивает: место уходит другому и может не вернуться.
+    await s.p.click('[data-action="book-cancel"]');
+    await s.p.waitForTimeout(150);
+    const ask = await s.view();
+    if (!ask.includes('Отменить запись?')) bad.push('cancel: отмена не спросила подтверждения');
+    if (!ask.includes('Место вернётся в афишу')) bad.push('cancel: не сказано, чем отмена кончится');
+    await s.p.screenshot({ path: `${OUT}/live-cancel-ask.png` });
+
+    // Передумал — запись на месте, к серверу не ходили.
+    await s.p.click('[data-action="book-cancel-no"]');
+    await s.p.waitForTimeout(150);
+    const kept = await s.view();
+    if (!kept.includes('Вы записаны') || kept.includes('Отменить запись?')) bad.push('cancel: «оставить запись» не вернуло карточку');
+    if (s.calls.filter(x => /\/cancel$/.test(x.url)).length) bad.push('cancel: отказ от отмены сходил на сервер');
+
+    await s.p.click('[data-action="book-cancel"]');
+    await s.p.waitForTimeout(150);
+    await s.p.click('[data-action="book-cancel-yes:4"]');
+    await s.p.waitForTimeout(400);
+    const c = await s.view();
+    if (c.includes('Вы записаны')) bad.push('cancel: после отмены запись осталась на карточке');
+    if (!c.includes('Записаться')) bad.push('cancel: после отмены записаться снова нельзя');
+    const cancels = s.calls.filter(x => /\/bookings\/6\/cancel$/.test(x.url));
+    if (cancels.length !== 1) bad.push(`cancel: запросов отмены ${cancels.length}, ждали 1`);
+    if (s.calls.filter(x => x.url.endsWith('/events')).length !== 3) bad.push('cancel: афиша после отмены не перечитана');
+    await s.p.screenshot({ path: `${OUT}/live-cancel-done.png` });
     if (s.errs.length) bad.push('book: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
   }
@@ -1768,6 +1793,43 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // Отказ на отмену — словами сервера, а не «успешно».
+  {
+    const s = await openCard(q => {
+      const u = q.url();
+      if (/\/cancel$/.test(u)) return json(409, { detail: 'мероприятие отменено' });
+      if (u.endsWith('/events')) return json(200, [mineRow()]);
+      return undefined;
+    });
+    await s.p.click('[data-action="book-cancel"]');
+    await s.p.waitForTimeout(150);
+    await s.p.click('[data-action="book-cancel-yes:4"]');
+    await s.p.waitForTimeout(400);
+    const t = await s.view();
+    if (!t.includes('Мероприятие отменено')) bad.push('cancel-409: текста отказа сервера на экране нет');
+    if (!t.includes('Вы записаны')) bad.push('cancel-409: запись пропала с карточки, хотя отмена не прошла');
+    await s.p.screenshot({ path: `${OUT}/live-cancel-409.png` });
+    await s.ctx.close();
+  }
+
+  // Второе нажатие, пока первое в пути, второй отмены не делает.
+  {
+    const s = await openCard(q => {
+      const u = q.url();
+      if (/\/cancel$/.test(u)) return new Promise(r => setTimeout(() => r(json(200, { id: 6, state: 'cancelled' })), 800));
+      if (u.endsWith('/events')) return json(200, [mineRow()]);
+      return undefined;
+    });
+    await s.p.click('[data-action="book-cancel"]');
+    await s.p.waitForTimeout(150);
+    await s.p.click('[data-action="book-cancel-yes:4"]');
+    await s.p.evaluate(() => doAction('book-cancel-yes:4'));
+    await s.p.waitForTimeout(1200);
+    const n = s.calls.filter(x => /\/cancel$/.test(x.url)).length;
+    if (n !== 1) bad.push(`cancel-dvazhdy: запросов отмены ${n}, ждали 1`);
+    await s.ctx.close();
+  }
+
   // Боевая форма ответа: поля my_booking_id в ней нет вовсе. Карточка обязана
   // работать так же — запись видна, отмена не предлагается, ошибок страницы нет.
   {
@@ -1775,7 +1837,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     const s = await openCard(q => q.url().endsWith('/events') ? json(200, [noId()]) : undefined);
     const t = await s.view();
     if (!t.includes('Вы записаны')) bad.push('book-boevaya-forma: запись не показана на боевой форме ответа');
-    if (t.includes('Отменить')) bad.push('book-boevaya-forma: обещана отмена, которой на бою нечем сделать');
+    if (!t.includes('Отменить запись из приложения пока нельзя')) bad.push('book-boevaya-forma: нет прямой строки о том, что отменить нечем');
+    if (await s.p.$('[data-action="book-cancel"]')) bad.push('book-boevaya-forma: кнопка отмены есть, а номера записи нет');
     if (await s.p.evaluate(() => window.__main !== null)) bad.push('book-boevaya-forma: главная кнопка на уже записанном событии');
     if (s.errs.length) bad.push('book-boevaya-forma: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
@@ -1950,5 +2013,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 155) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 170) + ' случаев');
 })();

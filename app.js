@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v16 · 21.10.2026';
+var VERSION = 'v17 · 21.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1366,11 +1366,13 @@ function loadEvents() {
    Успех признаётся ПЕРЕЧИТАННОЙ афишей, а не кодом 201: код говорит, что
    сервер принял, а человеку нужно то, что сервер теперь отдаёт.
 
-   Отмены записи здесь нет намеренно: она идёт по номеру записи, которого
-   боевой сервер пока не отдаёт, а кнопка, отказывающая по нажатию, хуже
-   своего отсутствия. Отмена — отдельной веткой, после выкладки сервера. */
-var BOOK_BUSY = false;     // запись в пути: второе нажатие молчит
+   Отмена идёт по номеру своей записи (my_booking_id). Сервер отдаёт его не
+   всегда: пока ручка не выложена, номера нет — и тогда отмена не
+   предлагается вовсе, вместо кнопки стоит прямая строка. Кнопка,
+   отказывающая по нажатию, хуже своего отсутствия. */
+var BOOK_BUSY = false;     // запись или отмена в пути: второе нажатие молчит
 var BOOK_ERR = '';         // чем кончилась неудачная попытка — текст на карточке
+var BOOK_ASK = false;      // у отмены спрашивают: место уходит другому и может не вернуться
 
 function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 
@@ -1381,14 +1383,25 @@ function bookEvent(id) {
   if (!LIVE || !canBookEvent(e)) return;
   BOOK_BUSY = true; BOOK_ERR = ''; render();
   api('POST', '/bookings', { event_id: e.eid }).then(function (r) {
-    afterBooking(r, id);
+    afterBooking(r, id, true);
+  });
+}
+
+/* Отмена своей записи. Номер берётся из афиши: своего номера у клиента нет
+   и выдумывать его нельзя — нет номера, нет и кнопки. */
+function cancelBooking(id) {
+  var e = eventById(id);
+  if (!LIVE || BOOK_BUSY || !e || !e.booked || typeof e.bookingId !== 'number') return;
+  BOOK_BUSY = true; BOOK_ERR = ''; BOOK_ASK = false; render();
+  api('POST', '/bookings/' + e.bookingId + '/cancel').then(function (r) {
+    afterBooking(r, id, false);
   });
 }
 
 /* Чем бы ни ответил сервер, афиша перечитывается: и отказ «мест нет», и
    обрыв связи могли случиться потому, что экран устарел. Состоялось ли
    задуманное, решает перечитанное, а не код ответа. */
-function afterBooking(r, id) {
+function afterBooking(r, id, want) {
   var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
   api('GET', '/events').then(function (g) {
     var list = g.status === 200 ? fromEvents(g.data) : null;
@@ -1396,7 +1409,7 @@ function afterBooking(r, id) {
     BOOK_BUSY = false;
     var e = eventById(id);
     if (!e) BOOK_ERR = 'Этого события в афише больше нет.';
-    else if (e.booked) {
+    else if (!!e.booked === want) {
       haptic('ok');            // успех виден самой карточкой: она нарисована по перечитанной афише
     } else if (r.status === 200 || r.status === 201) {
       BOOK_ERR = 'Сервер принял, а в афише этого нет. Откройте экран заново и проверьте, прежде чем нажимать снова.';
@@ -1448,7 +1461,7 @@ function eventLive(e) {
         (e.done ? ' · завершилось' : e.part === 'идёт' ? ' · уже идёт' : '') + '</span></div>' +
     (e.booked ? '<div class="card accent"><div class="row">' +
         '<div class="col"><b>Вы записаны</b>' +
-          '<span class="small">Место держится за вами. Отмена записи появится в приложении позже.</span></div>' +
+          '<span class="small">Место держится за вами.</span></div>' +
         '<span class="pill on">записаны</span>' +
       '</div></div>' : '') +
     '<div class="rows">' +
@@ -1472,10 +1485,24 @@ function bookBlock(e) {
   var err = BOOK_ERR ? '<div class="card strong"><div class="col">' +
       '<b style="font-size:13px">Не получилось</b><span class="small">' + esc(BOOK_ERR) + '</span>' +
     '</div></div>' : '';
+  if (e.booked) {
+    // Номера своей записи сервер может не отдать — тогда отменять нечем, и
+    // это сказано прямо, а не спрятано за кнопкой, которая откажет.
+    if (typeof e.bookingId !== 'number')
+      return err + '<div class="card quiet"><span class="small">Отменить запись из приложения пока нельзя.</span></div>';
+    if (BOOK_ASK)
+      return err + '<div class="card strong"><div class="col">' +
+          '<b>Отменить запись?</b>' +
+          '<span class="small">Место вернётся в афишу и может достаться другому.</span></div>' +
+          '<button type="button" class="btn ghost" data-action="book-cancel-yes:' + esc(e.id) + '">Да, отменить</button>' +
+          '<button type="button" class="btn quiet" data-action="book-cancel-no">Оставить запись</button>' +
+        '</div>';
+    return err + '<button type="button" class="btn ghost" data-action="book-cancel">Отменить запись</button>';
+  }
   if (!canBookEvent(e)) {
-    // Объяснение — там, где человек мог ждать кнопку: мест нет. Записанному и
-    // кончившемуся событию объяснять нечего, у них всё сказано карточкой.
-    return err + (!e.booked && !e.done && e.seats === 0
+    // Объяснение — там, где человек мог ждать кнопку: мест нет. Кончившемуся
+    // событию объяснять нечего, у него всё сказано карточкой.
+    return err + (!e.done && e.seats === 0
       ? '<div class="card quiet"><span class="small">Мест нет. Если кто-то снимет запись, место вернётся в афишу.</span></div>'
       : '');
   }
@@ -2902,7 +2929,7 @@ function go(screen, p) {
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
-  if (screen !== 'event') BOOK_ERR = '';
+  if (screen !== 'event') { BOOK_ERR = ''; BOOK_ASK = false; }
   render();
   if (screen === 'barOrder' && LIVE) pollMine();
   if (screen === 'barQueue' && LIVE) loadQueue();
@@ -3133,6 +3160,9 @@ function doAction(a) {
     if (a === 'scan') { scanPass(); return; }
     if (a === 'phone') { askPhone(); return; }
     if (a === 'book' && LIVE) { bookEvent(arg); return; }
+    if (a === 'book-cancel' && LIVE) { BOOK_ASK = true; BOOK_ERR = ''; haptic(); render(); return; }
+    if (a === 'book-cancel-yes' && LIVE) { cancelBooking(arg); return; }
+    if (a === 'book-cancel-no') { BOOK_ASK = false; haptic(); render(); return; }
     if (a === 'book')  { haptic('ok'); FLASH = 'Вы записаны'; go('bookings'); return; }
   }
 }
