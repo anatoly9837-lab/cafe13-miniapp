@@ -594,8 +594,11 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (!above) bad.push(`${name}: плашка не над кнопкой «Купить»`);
     if (name === 'deny-short') await s.p.screenshot({ path: `${OUT}/live-cart-denied.png`, fullPage: true });
     // правка состава снимает плашку: отказ относился к прежнему
-    await s.p.click('[data-action="cart-less:12"]');
-    if (await s.p.$('.deny')) bad.push(`${name}: плашка осталась после правки корзины`);
+    // щелчок с проверкой: потерянная корзина — уже красное выше, а не таймаут здесь
+    if (await s.p.$('[data-action="cart-less:12"]')) {
+      await s.p.click('[data-action="cart-less:12"]');
+      if (await s.p.$('.deny')) bad.push(`${name}: плашка осталась после правки корзины`);
+    }
     await s.ctx.close();
   }
   // Номер заказа — из ответа сервера, а не свой: ответ несёт другой номер.
