@@ -1488,7 +1488,12 @@ function manageBlock(e) {
     '<div class="rows"><div><span class="small">Записалось</span>' +
       '<b class="num">' + (e.of - e.seats) + ' из ' + e.of + '</b></div></div>' + err;
   if (EV_BUSY) return head + '<div class="card quiet"><span class="small">Отправляем…</span></div></div>';
-  if (e.done) return head + '<div class="card quiet"><span class="small">Мероприятие завершилось: отменить его уже нельзя.</span></div></div>';
+  // Один предикат на оба пути: рисование и отправку. Пока их было два,
+  // мутация, снявшая запрет у кончившегося, оставалась зелёной — кнопка
+  // не рисовалась по своему, отдельному условию.
+  if (!canCancelEvent(e)) return head + '<div class="card quiet"><span class="small">' +
+    (e.done ? 'Мероприятие завершилось: отменить его уже нельзя.'
+            : 'Отменить это мероприятие сейчас нельзя.') + '</span></div></div>';
   if (EV_ASK) return head + '<div class="card strong"><div class="col">' +
       '<b style="font-size:13px">Отменить мероприятие?</b>' +
       '<span class="small">Записи всех, кто записался, будут сняты. Вернуть их сможет только каждый сам.</span></div>' +
