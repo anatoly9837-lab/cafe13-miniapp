@@ -15,6 +15,23 @@
   --clay: #A06F60;
   --clay-ink: #8E5A49;
   --on-accent: #FFFFFF;
+
+  /* Действие — своя роль, а не «тушь на бумаге». В Telegram сюда ложится
+     button_color человека (#101); фолбэк оставлен прежним, чтобы #101 не
+     перекрашивал экраны. Перекраска фолбэка в латунь — #110. */
+  --accent: var(--ink);
+  --accent-ink: var(--paper);
+
+  /* Безопасные зоны из ДВУХ источников, и это разные полосы.
+     env() знает про вырез телефона; телеграмные зоны (Bot API 8.0) знают
+     про СВОИ элементы управления, которых env() внутри клиента не видит.
+     Поэтому вырез берётся максимумом (чтобы не потерять ни один источник),
+     а зона контента Telegram ПРИБАВЛЯЕТСЯ. Значения кладёт applyTheme();
+     вне Telegram они нули, и остаётся прежнее поведение на env(). */
+  --tg-sat: 0px; --tg-sab: 0px;        /* safeAreaInset */
+  --tg-cat: 0px; --tg-cab: 0px;        /* contentSafeAreaInset */
+  --sat: calc(max(env(safe-area-inset-top, 0px), var(--tg-sat)) + var(--tg-cat));
+  --sab: calc(max(env(safe-area-inset-bottom, 0px), var(--tg-sab)) + var(--tg-cab));
 }
 
 :root[data-theme="dark"] {
@@ -41,12 +58,12 @@ body {
   font-family: Manrope, system-ui, -apple-system, sans-serif;
   font-size: 15px;
   line-height: 1.45;
-  padding-top: calc(58px + env(safe-area-inset-top, 0px));
-  padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+  padding-top: calc(58px + var(--sat));
+  padding-bottom: calc(74px + var(--sab));
   -webkit-font-smoothing: antialiased;
 }
 
-body.no-tabs { padding-bottom: env(safe-area-inset-bottom, 0px); }
+body.no-tabs { padding-bottom: var(--sab); }
 
 a { color: inherit; text-decoration: none; }
 img { max-width: 100%; }
@@ -56,8 +73,8 @@ img { max-width: 100%; }
 
 .bar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 10;
-  height: calc(58px + env(safe-area-inset-top, 0px));
-  padding: env(safe-area-inset-top, 0px) 12px 0;
+  height: calc(58px + var(--sat));
+  padding: var(--sat) 12px 0;
   display: flex; align-items: center; gap: 8px;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
@@ -138,7 +155,7 @@ b.num, .big { white-space: nowrap; }
   min-height: 50px; width: 100%;
   display: flex; align-items: center; justify-content: center; gap: 9px;
   border: none; border-radius: 11px;
-  background: var(--ink); color: var(--paper);
+  background: var(--accent); color: var(--accent-ink);
   font-family: Manrope, sans-serif; font-size: 15px; font-weight: 700;
   cursor: pointer; padding: 0 16px;
 }
@@ -224,8 +241,8 @@ b.num, .big { white-space: nowrap; }
 
 .tabs {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
-  height: calc(74px + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  height: calc(74px + var(--sab));
+  padding-bottom: var(--sab);
   display: flex; align-items: stretch;
   background: var(--paper); border-top: 1px solid var(--line);
 }
@@ -300,7 +317,7 @@ body.has-main .dup-main { display: none; }
 
 /* Тестовый режим: полоса над каждым экраном, пока он включён. */
 .test-strip {
-  position: sticky; top: calc(58px + env(safe-area-inset-top, 0px)); z-index: 5;
+  position: sticky; top: calc(58px + var(--sat)); z-index: 5;
   margin: -16px -16px 0; padding: 10px 16px;
   display: flex; align-items: center; gap: 10px; justify-content: space-between;
   background: var(--gold); color: #1A1208;
