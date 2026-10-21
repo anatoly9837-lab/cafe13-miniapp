@@ -91,9 +91,11 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
   const bad = [];
 
-  async function open(inside, on, me, consentReply, passReply, saved, extra, tz) {
+  async function open(inside, on, me, consentReply, passReply, saved, extra, tz, now) {
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU',
                                      ...(tz ? { timezoneId: tz } : {}) });
+    // Без довода ничего не меняется: часы идут настоящие, как и были.
+    if (now) await ctx.clock.setFixedTime(new Date(now));
     // Локальная отметка согласия стоит ВСЕГДА: демо без неё открылось бы
     // согласием, а живой режим обязан её не слушать — решает сервер.
     await ctx.addInitScript(saved => {
@@ -1494,7 +1496,11 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   // приходит строкой («400.00»), booked_by_me у события, на которое не
   // записался никто, — null, а не false, и своей записью он не становится.
   const pad2 = n => String(n).padStart(2, '0');
-  const BKKNOW = new Date(Date.now() + 7 * 3600e3);          // стенные часы острова в полях UTC
+  // Час запуска материалом проверки быть не может: фикстура, привязанная к
+  // «сегодня», зелена утром и красна вечером. Мгновение одно и названо здесь,
+  // страница видит его же (clock.setFixedTime) — остров, среда 2 декабря, 08:00.
+  const NOWFIX = Date.parse('2026-12-02T01:00:00.000Z');
+  const BKKNOW = new Date(NOWFIX + 7 * 3600e3);              // стенные часы острова в полях UTC
   const bkkDay = off => new Date(BKKNOW.getTime() + off * 864e5).toISOString().slice(0, 10);
   const atBkk = (off, h, m) => new Date(Date.parse(bkkDay(off) + 'T' + pad2(h) + ':' + pad2(m || 0) + ':00Z') - 7 * 3600e3).toISOString();
   const EV = over => Object.assign({
@@ -1507,10 +1513,10 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
          price: '0.00', about: '', seats: 6, taken: 6, seats_left: 0, booked_by_me: false }),
     EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
-    EV({ id: 7, title: 'Уже начался', starts_at: new Date(Date.now() - 3600e3).toISOString(),
+    EV({ id: 7, title: 'Уже начался', starts_at: new Date(NOWFIX - 3600e3).toISOString(),
          duration_min: 180, kind: 'donation', price: '0.00', seats: 20, taken: 2, seats_left: 18 }),
     // Сервер отдаёт и то, что кончилось: началось 2,5 часа назад, длилось час.
-    EV({ id: 8, title: 'Уже закончился', starts_at: new Date(Date.now() - 9000e3).toISOString(),
+    EV({ id: 8, title: 'Уже закончился', starts_at: new Date(NOWFIX - 9000e3).toISOString(),
          duration_min: 60, kind: 'free', price: '0.00', seats: 10, taken: 3, seats_left: 7 })
   ];
   const evReply = reply => q => q.url().endsWith('/events') ? reply : undefined;
@@ -1519,7 +1525,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   const SOON = [...AFISHA].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)).map(e => e.title);
 
   {
-    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, AFISHA)));
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, AFISHA)), null, NOWFIX);
     const home = await s.view();
     ['Афиша', 'Вся афиша', SOON[0], SOON[1]].forEach(x => {
       if (!home.includes(x)) bad.push(`events-home: нет «${x}»`); });
@@ -1605,7 +1611,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       ['Афиша не открылась', 'Ответ сервера не разобран'], ['Звуковая практика']],
     ['events-broken', json(200, [EV({}), EV({ id: 9, title: 'Битое', seats_left: 'много' })]),
       ['Афиша не открылась', 'Ответ сервера не разобран'], ['Вечер ханга', 'Битое']]]) {
-    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(reply));
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(reply), null, NOWFIX);
     // Отказ виден на главной: входа в афишу при нём нет вовсе — поэтому сам
     // экран афиши открываем вызовом, иначе его подмена демонстрацией
     // осталась бы непроверенной.
@@ -1626,7 +1632,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   {
     let up = false;
     const s = await open(true, true, json(200, OWNER), null, null, null,
-      q => q.url().endsWith('/events') ? (up ? json(200, AFISHA) : json(502, {})) : undefined);
+      q => q.url().endsWith('/events') ? (up ? json(200, AFISHA) : json(502, {})) : undefined,
+      null, NOWFIX);
     if (!(await s.view()).includes('Афиша не открылась')) bad.push('events-retry: отказ не показан на главной');
     up = true;
     await s.p.click('[data-action="retry-events"]');
@@ -1662,7 +1669,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   };
 
   const openCard = async (handler) => {
-    const s = await open(true, true, json(200, OWNER), null, null, null, handler);
+    const s = await open(true, true, json(200, OWNER), null, null, null, handler, null, NOWFIX);
     await s.p.evaluate(() => go('events'));
     await s.p.waitForTimeout(120);
     await s.p.click('[data-event="4"]');
@@ -1821,7 +1828,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   // записи, а подтверждение обещало бы вернуть место в афишу — ложно.
   {
     const doneRow = () => EV({ id: 4, title: 'Уже закончился',
-      starts_at: new Date(Date.now() - 9000e3).toISOString(), duration_min: 60,
+      starts_at: new Date(NOWFIX - 9000e3).toISOString(), duration_min: 60,
       taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 });
     const s = await openCard(q => q.url().endsWith('/events') ? json(200, [doneRow()]) : undefined);
     const t = await s.view();
@@ -1909,7 +1916,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
 
   // Кончившемуся и заполненному событию записи не предлагают вовсе.
   for (const [name, row, has, hasnt] of [
-    ['book-konchilos', EV({ id: 4, title: 'Уже закончился', starts_at: new Date(Date.now() - 9000e3).toISOString(),
+    ['book-konchilos', EV({ id: 4, title: 'Уже закончился', starts_at: new Date(NOWFIX - 9000e3).toISOString(),
                             duration_min: 60, seats_left: 9, taken: 1 }),
       ['завершилось'], ['Записаться', 'К оплате']],
     ['book-mest-net', EV({ id: 4, taken: 12, seats_left: 0 }),
@@ -1961,7 +1968,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     const label = `${wall.getUTCDate()} ${months[wall.getUTCMonth()]}, ${dows[wall.getUTCDay()]}`;
     const s = await open(true, true, json(200, OWNER), null, null, null,
       evReply(json(200, [EV({ id: 11, title: 'Далёкое событие', starts_at: iso, duration_min: 90 })])),
-      'America/New_York');
+      'America/New_York', NOWFIX);
     await s.p.evaluate(() => go('events'));
     await s.p.waitForTimeout(150);
     const t = await s.view();
@@ -1988,7 +1995,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       if (n === 2) return new Promise(r => setTimeout(() =>
         r(json(200, [EV({ id: 21, title: 'Поздний ответ' })])), 1500));
       return json(200, [EV({ id: 20 + n, title: n === 1 ? 'Первый ответ' : 'Свежий ответ' })]);
-    });
+    }, null, NOWFIX);
     await s.p.evaluate(() => loadEvents());
     await s.p.waitForTimeout(100);
     await s.p.evaluate(() => loadEvents());
