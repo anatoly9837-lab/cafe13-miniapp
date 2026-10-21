@@ -399,15 +399,15 @@ function qrSvg(text) {
     }
   }
   return '<svg viewBox="0 0 ' + (n + 2 * m) + ' ' + (n + 2 * m) + '" role="img" aria-label="Код пропуска ' + esc(text) +
-    '" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path fill="#190F26" d="' + out + '"/></svg>';
+    '" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path fill="#15171A" d="' + out + '"/></svg>';
 }
 
 function passCard(p) {
   return '<div class="pass">' +
       '<div class="who">' +
         '<span class="avatar">' + esc(p.name.slice(0, 1).toUpperCase()) + '</span>' +
-        '<span class="col"><b style="font-size:19px;font-family:\'Zilla Slab\',Georgia,serif">' + esc(p.name) + '</b>' +
-        '<span style="font-size:12px;color:#F0DFF2">' + esc(p.level) + ' · ' + esc(p.lifelong ? 'пожизненно' : 'до ' + ruDate(p.ends)) + '</span></span>' +
+        '<span class="col"><b style="font-size:19px;font-family:Prata,Georgia,serif">' + esc(p.name) + '</b>' +
+        '<span style="font-size:12px;color:#B8B6AE">' + esc(p.level) + ' · ' + esc(p.lifelong ? 'пожизненно' : 'до ' + ruDate(p.ends)) + '</span></span>' +
       '</div>' +
       '<div class="code-box">' + qrSvg(p.code) + '</div>' +
       '<span class="num-big">' + esc(p.code.replace('-', ' · ')) + '</span>' +
@@ -1614,7 +1614,7 @@ function svg(paths, cls) { return '<svg class="' + (cls || '') + '" viewBox="0 0
 function pattern(seed) {
   var s = 0, i;
   for (i = 0; i < seed.length; i++) { s = (s * 31 + seed.charCodeAt(i)) % 100000; }
-  var out = '<svg viewBox="0 0 25 25" role="img" aria-label="Демонстрационный узор вместо кода"><rect width="25" height="25" fill="#fff"/><g fill="#190F26">';
+  var out = '<svg viewBox="0 0 25 25" role="img" aria-label="Демонстрационный узор вместо кода"><rect width="25" height="25" fill="#fff"/><g fill="#15171A">';
   [[1, 1], [18, 1], [1, 18]].forEach(function (p) {
     out += '<path d="M' + p[0] + ' ' + p[1] + 'h6v6h-6z M' + (p[0] + 1) + ' ' + (p[1] + 1) + 'v4h4v-4z M' + (p[0] + 2) + ' ' + (p[1] + 2) + 'h2v2h-2z"/>';
   });
@@ -1730,8 +1730,8 @@ var SCREENS = {
       '<div class="pass">' +
         '<div class="who">' +
           '<span class="avatar">' + esc((m.name || '?').slice(0, 1).toUpperCase()) + '</span>' +
-          '<span class="col"><b style="font-size:19px;font-family:\'Zilla Slab\',Georgia,serif">' + esc(m.name) + '</b>' +
-          '<span style="font-size:12px;color:#F0DFF2">' + esc(m.level) + ' · до ' + esc(m.until) + '</span></span>' +
+          '<span class="col"><b style="font-size:19px;font-family:Prata,Georgia,serif">' + esc(m.name) + '</b>' +
+          '<span style="font-size:12px;color:#B8B6AE">' + esc(m.level) + ' · до ' + esc(m.until) + '</span></span>' +
         '</div>' +
         '<div class="code-box">' + pattern(m.number) + '</div>' +
         '<span class="num-big">' + esc(m.number) + '</span>' +

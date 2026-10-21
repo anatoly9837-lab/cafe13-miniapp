@@ -175,6 +175,59 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // Палитра и шрифты, принятые владельцем 21.10 (Cafe13KPG#110). Признак —
+  // ВЫЧИСЛЕННЫЙ стиль подложенных частей экрана, а не текст styles.css, и
+  // контраст рабочих пар, посчитанный по WCAG на этих же значениях. Темы
+  // Telegram в подделке нет, поэтому видна именно фирменная палитра.
+  {
+    const s = await open(true, true, json(200, OWNER));
+    const ACCEPTED = {
+      light: { paper: '#F2F2EE', card: '#FFFFFF', ink: '#15171A', muted: '#5A5F63', accent: '#8A5F1E', accentInk: '#FFFFFF', sage: '#2F6B57', clay: '#8E3324' },
+      dark:  { paper: '#121416', card: '#1C1F22', ink: '#ECEAE4', muted: '#B8B6AE', accent: '#EBC37A', accentInk: '#15171A', sage: '#7FC0A4' }
+    };
+    for (const mode of ['light', 'dark']) {
+      const m = await s.p.evaluate(mode => {
+        document.documentElement.setAttribute('data-theme', mode);
+        const v = document.getElementById('view');
+        const box = document.createElement('div'); box.id = 'probe';
+        box.innerHTML = '<div class="card"><h1>Т</h1><h2>Т</h2><span class="small">Т</span><b class="big">1</b>' +
+          '<span class="pill on">Т</span><span class="pill warm">Т</span><span class="pill gold">Т</span></div>' +
+          '<button class="btn">Т</button>';
+        v.appendChild(box);
+        const hex = c => { const n = c.match(/\d+/g).slice(0, 3).map(Number); return '#' + n.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase(); };
+        const cs = sel => getComputedStyle(box.querySelector(sel));
+        const font = sel => cs(sel).fontFamily.split(',')[0].replace(/["']/g, '').trim();
+        const r = {
+          paper: hex(getComputedStyle(document.body).backgroundColor), bodyInk: hex(getComputedStyle(document.body).color),
+          card: hex(cs('.card').backgroundColor), muted: hex(cs('.small').color),
+          accent: hex(cs('.btn').backgroundColor), accentInk: hex(cs('.btn').color),
+          sage: hex(cs('.pill.on').backgroundColor), sageInk: hex(cs('.pill.on').color),
+          clay: hex(cs('.pill.warm').color), gold: hex(cs('.pill.gold').color),
+          fBody: font('.small'), fBtn: font('.btn'), fH1: font('h1'), fH2: font('h2'), fBig: font('.big'),
+          fTitle: getComputedStyle(document.getElementById('title')).fontFamily.split(',')[0].replace(/["']/g, '').trim()
+        };
+        box.remove();
+        return r;
+      }, mode);
+      const want = ACCEPTED[mode];
+      for (const k of Object.keys(want)) if (m[k] !== undefined && m[k] !== want[k]) bad.push(`palette ${mode}: ${k} = ${m[k]}, принято ${want[k]}`);
+      if (m.bodyInk !== want.ink) bad.push(`palette ${mode}: текст = ${m.bodyInk}, принято ${want.ink}`);
+      for (const [k, f] of [['fBody', 'Golos Text'], ['fBtn', 'Golos Text'], ['fBig', 'Golos Text'], ['fH1', 'Prata'], ['fH2', 'Prata'], ['fTitle', 'Prata']])
+        if (m[k] !== f) bad.push(`palette ${mode}: шрифт ${k} = ${m[k]}, принят ${f}`);
+      // WCAG 2.1: рабочие пары обязаны давать не меньше 4.5
+      const lum = h => { const c = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(x => x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+      const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+      for (const [name, fg, bg] of [['текст/фон', m.bodyInk, m.paper], ['текст/карточка', m.bodyInk, m.card], ['подпись/фон', m.muted, m.paper],
+                                    ['подпись/карточка', m.muted, m.card], ['кнопка', m.accentInk, m.accent], ['лист', m.sageInk, m.sage],
+                                    ['глина/карточка', m.clay, m.card], ['латунь-текст/карточка', m.gold, m.card]]) {
+        const r = ratio(fg, bg);
+        if (r < 4.5) bad.push(`palette ${mode}: контраст ${name} ${fg} на ${bg} = ${r.toFixed(2)}, нужно ≥ 4.5`);
+      }
+    }
+    if (s.errs.length) bad.push('palette: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
   // Вкладка, ещё не стоящая на сервере, — «не подключено», а не демонстрационные записи.
   {
     const s = await open(true, true, json(200, OWNER));
@@ -2152,5 +2205,5 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + (CASES.length + 184) + ' случаев');
+  console.log('зелёное: ' + (CASES.length + 186) + ' случаев');
 })();
