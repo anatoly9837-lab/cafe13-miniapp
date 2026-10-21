@@ -53,7 +53,8 @@ const SAFE = { safeAreaInset:        { top: 44, bottom: 34, left: 0, right: 0 },
 
 /* Фирменные значения из styles.css, названные ОДИН раз: «фолбэк» в десяти
    местах разными литералами — десять мест, где опечатка выглядит как факт. */
-const BRAND = { ink: '#2B2A28', paper: '#FFFFFF', surface: '#F3F1EB', muted: '#6B7276' };
+const BRAND = { ink: '#15171A', paper: '#F2F2EE', surface: '#EDEDE8', muted: '#5A5F63',
+                accent: '#8A5F1E', accentInk: '#FFFFFF', darkPaper: '#121416' };   // палитра #110
 
 /* Ожидаемая геометрия считается ЗДЕСЬ, по той же формуле, что в styles.css,
    но записанной отдельно: совпадение — это сверка двух независимых записей
@@ -127,9 +128,9 @@ const MUT = {
             put:  'if (c) root.style.setProperty(r[0], c);\n    /* мутация: снятие токена убрано */',
             after: { bg_color: '#FF00FF' },
             want: { 'токен --ink': BRAND.ink, 'токен --muted': BRAND.muted,
-                    'токен --accent': BRAND.ink, 'токен --accent-ink': '#FF00FF',
+                    'токен --accent': BRAND.accent, 'токен --accent-ink': BRAND.accentInk,
                     'токен --surface': BRAND.surface,
-                    'кнопка фон': BRAND.ink, 'кнопка текст': '#FF00FF' },
+                    'кнопка фон': BRAND.accent, 'кнопка текст': BRAND.accentInk },
             reddens: ['токен --ink', 'токен --muted', 'токен --accent',
                       'токен --accent-ink', 'токен --surface',
                       'кнопка фон', 'кнопка текст'] },
@@ -299,7 +300,7 @@ async function pixel(ctx, png, x, y) {
     const m = await measure({ theme: part, safe: SAFE }, 'theme-partial');
     const w = 'фикстура «только фон»';
     eq('токен --paper', m.css.paper, '#FF00FF', w);
-    eq('фолбэк --accent', m.css.accent, BRAND.ink, w);    // фирменная тушь из styles.css
+    eq('фолбэк --accent', m.css.accent, BRAND.accent, w);    // латунь из styles.css (#110)
     if (m.errs.length) bad.push(`${w}: ошибка страницы «${m.errs[0]}»`);
   }
 
@@ -312,13 +313,13 @@ async function pixel(ctx, png, x, y) {
     eq('токен --paper', m.css.paper, '#FF00FF', w);
     eq('токен --ink', m.css.ink, BRAND.ink, w);
     eq('токен --muted', m.css.muted, BRAND.muted, w);
-    eq('токен --accent', m.css.accent, BRAND.ink, w);
+    eq('токен --accent', m.css.accent, BRAND.accent, w);
     eq('токен --surface', m.css.surface, BRAND.surface, w);
-    /* --accent-ink в styles.css — это var(--paper), а --paper сейчас чужой:
-       фолбэк следует за новой темой, а не за фирменной бумагой. */
-    eq('токен --accent-ink', m.css.accentInk, '#FF00FF', w);
-    eq('кнопка фон', m.css.btn.bg, BRAND.ink, w);
-    eq('кнопка текст', m.css.btn.fg, '#FF00FF', w);
+    /* С #110 у действия своя пара — латунь и белое, — и она не следует за
+       чужим фоном: белое по латуни посчитано (5.62), по чужому фону — нет. */
+    eq('токен --accent-ink', m.css.accentInk, BRAND.accentInk, w);
+    eq('кнопка фон', m.css.btn.bg, BRAND.accent, w);
+    eq('кнопка текст', m.css.btn.fg, BRAND.accentInk, w);
     if (m.errs.length) bad.push(`${w}: ошибка страницы «${m.errs[0]}»`);
   }
 
@@ -350,7 +351,7 @@ async function pixel(ctx, png, x, y) {
     const m = await measure({ theme: null, safe: null, scheme: 'dark' }, 'theme-dark-brand');
     const w = 'тёмная схема без темы';
     eq('признак data-theme', m.css.scheme, 'dark', w);
-    eq('фолбэк --paper тёмный', m.css.paper, '#190F26', w);
+    eq('фолбэк --paper тёмный', m.css.paper, BRAND.darkPaper, w);
     if (m.errs.length) bad.push(`${w}: ошибка страницы «${m.errs[0]}»`);
   }
 
