@@ -298,7 +298,7 @@ function untilText(m) {
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
-              events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1,
+              events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -1173,6 +1173,7 @@ function switchTo(on, as) {
     DAY.data = null; DAY.fail = ''; DAY.gen++;
     TOPUP.amount = ''; TOPUP.ask = false;
     peopleReset(); PEOPLE.list = null; PEOPLE.fail = ''; PEOPLE.gen++;
+    cardReset(); CARDS.list = null; CARDS.fail = ''; CARDS.gen++;
     if (!on) TEST.people = null;
     applyMe(me);
     haptic('ok');
@@ -1398,6 +1399,179 @@ function peopleFilter() {
     var p = PEOPLE.list && PEOPLE.list[Number(el.getAttribute('data-person'))];
     el.hidden = !!q && !!p && p.name.toLowerCase().indexOf(q) === -1;
   });
+}
+
+/* ── карточки меню: конструктор и утверждение ──────────  #175
+   Бар заводит карточку черновиком, пишет рецепт и отправляет на утверждение;
+   куратор ставит её в меню или возвращает с причиной. Ручки — cafe13-api
+   bar.py: POST /bar/products, …/recipe, …/state и очередь GET /bar/products.
+   ⚠ Очередь без state не отдаёт hidden — просим все четыре явно, иначе
+   «снятых нет» значило бы «не спрашивали».
+   ⚠ Группы раскладываются здесь, а не порядком ответа: очередь куратора
+   обязана стоять сверху при любой сортировке сервера.
+   ⚠ Правки карточки на сервере нет: поля пишутся один раз, и это сказано до
+   сохранения. Рецепт языка ЗАМЕНЯЕТСЯ, а не добавляется версией.
+   ⚠ «В меню» без рецепта откажет триггер базы; экран знает про рецепт по
+   полю recipes и гасит кнопку заранее. Отказы — текстом сервера. */
+var CARD_STATES = ['draft', 'review', 'active', 'hidden'];
+var CARD_LANGS = [['ru', 'RU'], ['en', 'EN'], ['th', 'TH']];
+var CARD_FIELDS = ['c-title', 'c-group', 'c-price', 'c-mins', 'c-about'];
+var CARDS = { list: null, fail: '', gen: 0 };
+var CARD = { v: {}, alcohol: false, lang: 'ru', text: {}, body: {}, err: '', deny: '', note: '',
+             busy: false, back: false, reason: '', hideAsk: false, groupAsk: '' };
+
+function cardReset() {
+  CARD.v = {}; CARD.alcohol = false; CARD.lang = 'ru'; CARD.text = {}; CARD.body = {}; CARD.err = '';
+  CARD.deny = ''; CARD.note = ''; CARD.back = false; CARD.reason = ''; CARD.hideAsk = false; CARD.groupAsk = '';
+}
+function mayCards() { return LIVE && (grant('admin') || grant('bar') || grant('curator')); }
+function cardCurator() { return !!BAR && (grant('admin') || grant('curator', BAR.id)); }
+function fromCards(d) {
+  if (!Array.isArray(d)) return null;
+  for (var i = 0; i < d.length; i++) {
+    var x = d[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.group !== 'string' ||
+        !(num(x.price) >= 0) || CARD_STATES.indexOf(x.state) === -1 || !Array.isArray(x.recipes)) return null;
+  }
+  return d.map(function (x) {
+    return { id: x.id, title: x.title, group: x.group, price: num(x.price), mins: x.mins || null,
+             about: x.about || '', alcohol: !!x.is_alcohol, state: x.state, recipes: x.recipes.slice(),
+             note: typeof x.decision_note === 'string' ? x.decision_note.trim() : '' };
+  });
+}
+function loadCards() {
+  var gen = ++CARDS.gen, who = WHO;
+  CARDS.fail = '';
+  var go2 = function () {
+    api('GET', '/bar/products?direction_id=' + BAR.id + '&state=' + CARD_STATES.join(',')).then(function (r) {
+      if (gen !== CARDS.gen || who !== WHO) return;
+      var list = r.status === 200 ? fromCards(r.data) : null;
+      if (list) CARDS.list = list;
+      else { CARDS.list = null; CARDS.fail = r.status === 403 ? denyText(r) : failText(r); }
+      if (current === 'barCards' || current === 'barCard') render();
+    });
+  };
+  if (BAR) { go2(); return; }
+  loadBar(function (err) {
+    if (gen !== CARDS.gen) return;
+    if (err) { CARDS.fail = err; if (current === 'barCards' || current === 'barCard') render(); return; }
+    go2();
+  });
+}
+function cardBy(id) { return (CARDS.list || []).filter(function (c) { return String(c.id) === String(id); })[0] || null; }
+// Группа гостю — заголовок меню по строке: «Кофе», «кофе» и «Кофе » дали бы три.
+function groupKey(g) { return g.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ''); }
+function groupsOf() {
+  var out = [];
+  (CARDS.list || []).forEach(function (c) { if (out.indexOf(c.group) === -1) out.push(c.group); });
+  return out;
+}
+function grabCard() {
+  CARD_FIELDS.forEach(function (id) { var el = document.getElementById(id); if (el) CARD.v[id] = el.value; });
+  var t = document.getElementById('c-recipe');
+  if (t) CARD.text[CARD.lang] = t.value;
+  var w = document.getElementById('c-reason');
+  if (w) CARD.reason = w.value;
+}
+function cardMissing() {
+  var v = CARD.v;
+  if (!(v['c-title'] || '').trim()) return 'Нужно название.';
+  if (!(v['c-group'] || '').trim()) return 'Нужна группа меню.';
+  if (topupAmount(v['c-price'] || '') === null && String(v['c-price'] || '').trim() !== '0') return 'Цена — число, например 180.';
+  var m = String(v['c-mins'] || '').trim();
+  if (m && !(/^\d+$/.test(m) && +m > 0 && +m <= 600)) return 'Минуты — целое число от 1 до 600 или пусто.';
+  return '';
+}
+function cardSave(sure) {
+  if (CARD.busy || !BAR) return;
+  grabCard();
+  CARD.err = cardMissing();
+  if (CARD.err) { haptic('warn'); render(); return; }
+  var g = CARD.v['c-group'].trim().replace(/\s+/g, ' ');
+  var same = groupsOf().filter(function (x) { return x.toLowerCase() === g.toLowerCase(); })[0];
+  var like = groupsOf().filter(function (x) { return groupKey(x) === groupKey(g); })[0];
+  if (same) g = same;
+  else if (like && !sure) { CARD.groupAsk = like; render(); return; }
+  if (sure === 'theirs') g = CARD.groupAsk;
+  CARD.groupAsk = '';
+  var body = { direction_id: BAR.id, group: g, title: CARD.v['c-title'].trim(),
+               price: Number(String(CARD.v['c-price']).replace(',', '.')),
+               about: (CARD.v['c-about'] || '').trim(), is_alcohol: CARD.alcohol };
+  var m = String(CARD.v['c-mins'] || '').trim();
+  if (m) body.mins = +m;
+  var gen = CARDS.gen;
+  CARD.busy = true; CARD.deny = ''; render();
+  api('POST', '/bar/products', body).then(function (r) {
+    CARD.busy = false;
+    if (gen !== CARDS.gen) return;
+    var ok = r.status === 201 && r.data && typeof r.data.id === 'number' && r.data.state === 'draft';
+    if (!ok) { CARD.deny = denyText(r); haptic('warn'); render(); return; }
+    haptic('ok');
+    var id = r.data.id;
+    cardReset();
+    CARD.note = 'Черновик сохранён. Теперь рецепт — без него карточку не поставить в меню.';
+    // карточка из ответа — до перечитывания, чтобы экран не моргнул «не найдена»
+    CARDS.list = (CARDS.list || []).concat([{ id: id, title: body.title, group: body.group, price: body.price,
+      mins: body.mins || null, about: body.about, alcohol: body.is_alcohol, state: 'draft', recipes: [], note: '' }]);
+    go('barCard', String(id));
+    loadCards();
+  });
+}
+function recipeLoad(id, lang) {
+  if (CARD.body[lang] !== undefined) return;
+  CARD.body[lang] = null;                     // в пути
+  var gen = CARDS.gen;
+  api('GET', '/bar/products/' + id + '/recipe?lang=' + lang).then(function (r) {
+    if (gen !== CARDS.gen) return;
+    // ручка отдаёт «что есть», если нужного языка нет: чужой язык в поле не кладём
+    CARD.body[lang] = r.status === 200 && r.data && r.data.lang === lang && typeof r.data.body === 'string' ? r.data.body : '';
+    if (CARD.text[lang] === undefined && CARD.body[lang]) CARD.text[lang] = CARD.body[lang];
+    if (current === 'barCard') render();
+  });
+}
+function recipeSave(id) {
+  if (CARD.busy) return;
+  grabCard();
+  var lang = CARD.lang, text = (CARD.text[lang] || '').trim();
+  if (!text) { CARD.err = 'Рецепт пуст.'; haptic('warn'); render(); return; }
+  var gen = CARDS.gen, had = (cardBy(id) || { recipes: [] }).recipes.indexOf(lang) !== -1;
+  CARD.busy = true; CARD.deny = ''; CARD.err = ''; render();
+  api('POST', '/bar/products/' + id + '/recipe', { lang: lang, body: text }).then(function (r) {
+    CARD.busy = false;
+    if (gen !== CARDS.gen) return;
+    if (!(r.status === 201 && r.data && r.data.lang === lang)) { CARD.deny = denyText(r); haptic('warn'); render(); return; }
+    haptic('ok');
+    CARD.body[lang] = text;
+    CARD.note = (had ? 'Рецепт заменён' : 'Рецепт сохранён') + ' (' + lang.toUpperCase() + ').';
+    loadCards(); render();
+  });
+}
+function cardState(id, state, note) {
+  if (CARD.busy) return;
+  var body = { state: state };
+  if (note) body.note = note;
+  var gen = CARDS.gen;
+  CARD.busy = true; CARD.deny = ''; render();
+  api('POST', '/bar/products/' + id + '/state', body).then(function (r) {
+    CARD.busy = false;
+    if (gen !== CARDS.gen) return;
+    // после любого нажатия список перечитывается: состояние из старого списка — не истина
+    if (!(r.status === 200 && r.data && r.data.state === state)) { CARD.deny = denyText(r); haptic('warn'); loadCards(); render(); return; }
+    haptic('ok');
+    CARD.back = false; CARD.reason = ''; CARD.hideAsk = false;
+    CARD.note = state === 'review' ? 'Отправлено на утверждение куратору.'
+              : state === 'active' ? 'Утверждено: позиция в меню.'
+              : note ? 'Возвращено с причиной.' : 'Снято с меню.';
+    loadCards(); render();
+  });
+}
+function cardRow(c) {
+  var rec = c.recipes.length ? 'рецепт: ' + c.recipes.join(', ') : '';
+  return '<button type="button" class="listitem" data-action="c-open:' + c.id + '">' +
+    '<span class="grow"><b>' + esc(c.title) + '</b><span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' +
+      (rec ? ' · ' + esc(rec) : ' · <span style="color:var(--clay-ink)">рецепта нет</span>') + '</span>' +
+      (c.note && c.state === 'hidden' ? '<span class="small">Причина: ' + esc(c.note) + '</span>' : '') +
+    '</span>' + svg(ICON.chev, 'chev') + '</button>';
 }
 
 function applyMe(me) {
@@ -2419,6 +2593,9 @@ var SCREENS = {
           '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' +
+          (mayCards() ? '<button type="button" class="listitem" data-go="barCards">' +
+            '<span class="grow"><b>Карточки меню</b><span class="small">Новые позиции и утверждение</span></span>' +
+            svg(ICON.chev, 'chev') + '</button>' : '') +
           (mayBook() ? '<button type="button" class="listitem" data-go="barMoney">' +
             '<span class="grow"><b>Доход и расход бара</b><span class="small">Выручка и затраты руками, с комментарием</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' : '') +
@@ -3429,6 +3606,106 @@ var SCREENS = {
       '</div>';
   },
 
+  barCards: function () {
+    if (!mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар или куратор направления.</span></div>';
+    if (!CARDS.list) return CARDS.fail
+      ? '<div class="card quiet"><span class="small">' + esc(CARDS.fail) + '</span></div>' +
+        '<button type="button" class="btn ghost" data-action="c-reload">Повторить</button>'
+      : '<div class="card quiet"><span class="small">Загружаем карточки…</span></div>';
+    var L = CARDS.list;
+    var parts = [
+      ['Ждут утверждения', L.filter(function (c) { return c.state === 'review'; })],
+      ['Возвращены', L.filter(function (c) { return c.state === 'hidden' && c.note; })],
+      ['Черновики', L.filter(function (c) { return c.state === 'draft'; })],
+      ['Сняты', L.filter(function (c) { return c.state === 'hidden' && !c.note; })],
+      ['В меню', L.filter(function (c) { return c.state === 'active'; })]
+    ];
+    return '<div class="card quiet"><span class="small">Направление «Бар»</span></div>' +
+      '<button type="button" class="btn ghost" data-action="c-new">Новая карточка</button>' +
+      parts.filter(function (x) { return x[1].length; }).map(function (x) {
+        return '<div class="group" data-cards="' + esc(x[0]) + '"><span class="label">' + esc(x[0]) + ' · ' + x[1].length + '</span>' +
+          x[1].map(cardRow).join('') + '</div>';
+      }).join('') +
+      (L.length ? '' : '<div class="card quiet"><span class="small">Карточек пока нет — ни в меню, ни в работе.</span></div>');
+  },
+
+  barCard: function (id) {
+    if (!mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар или куратор направления.</span></div>';
+    var lock = CARD.busy ? ' disabled' : '';
+    var deny = CARD.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.deny) + '</span></div>' : '';
+    var note = CARD.note ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(CARD.note) + '</span></div>' : '';
+    if (id === 'new') {
+      var v = function (k) { return esc(CARD.v[k] || ''); };
+      var groups = groupsOf();
+      return '<div class="card">' +
+        '<div class="field"><label for="c-title">Название</label><input id="c-title" type="text" maxlength="200" value="' + v('c-title') + '" placeholder="Флэт-уайт"' + lock + '></div>' +
+        '<div class="field"><label for="c-group">Группа меню</label><input id="c-group" type="text" maxlength="80" value="' + v('c-group') + '" placeholder="Кофе"' + lock + '></div>' +
+        (groups.length ? '<div class="seg wrap">' + groups.map(function (g) {
+          return '<button type="button" data-action="c-group:' + esc(g) + '"' + ((CARD.v['c-group'] || '') === g ? ' aria-pressed="true"' : '') + lock + '>' + esc(g) + '</button>';
+        }).join('') + '</div>' : '') +
+        (CARD.groupAsk ? '<div class="note">' + svg(ICON.info) + '<span>Это та же группа, что «' + esc(CARD.groupAsk) + '»?</span></div>' +
+          '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="c-group-theirs">Да, в «' + esc(CARD.groupAsk) + '»</button>' +
+          '<button type="button" class="btn quiet" data-action="c-group-mine">Нет, новая группа</button></div>' : '') +
+        '<div class="row" style="gap:10px"><div class="field"><label for="c-price">Цена, ฿</label><input id="c-price" type="text" inputmode="decimal" value="' + v('c-price') + '" placeholder="180"' + lock + '></div>' +
+        '<div class="field"><label for="c-mins">Минуты</label><input id="c-mins" type="text" inputmode="numeric" value="' + v('c-mins') + '" placeholder="5"' + lock + '></div></div>' +
+        '<div class="field"><label for="c-about">Описание для гостя</label><input id="c-about" type="text" value="' + v('c-about') + '" placeholder="Двойной ристретто, молоко"' + lock + '></div>' +
+        '<div class="seg"><button type="button" data-action="c-alcohol"' + (CARD.alcohol ? ' aria-pressed="true"' : '') + lock + '>Алкоголь</button></div>' +
+        (CARD.err ? '<span class="small" role="alert"><b>' + esc(CARD.err) + '</b></span>' : '') +
+        '<span class="small">Поля потом не исправить — только снять карточку и завести заново.</span>' +
+        deny +
+        '<button type="button" class="btn dup-main" data-action="c-save"' + lock + '>' + (CARD.busy ? 'Сохраняем…' : 'Сохранить черновик') + '</button>' +
+      '</div>';
+    }
+    if (!CARDS.list) return CARDS.fail ? '<div class="card quiet"><span class="small">' + esc(CARDS.fail) + '</span></div>'
+                                       : '<div class="card quiet"><span class="small">Загружаем карточку…</span></div>';
+    var c = cardBy(id);
+    if (!c) return '<div class="card quiet"><span class="small">Карточки нет в списке направления.</span></div>';
+    var cur = cardCurator(), has = c.recipes.indexOf(CARD.lang) !== -1;
+    if (has) recipeLoad(c.id, CARD.lang);     // заменяя рецепт, человек видит прежний
+    var STATE_WORDS = { draft: 'Черновик', review: 'Ждёт утверждения', active: 'В меню', hidden: c.note ? 'Возвращена' : 'Снята' };
+    var langs = '<div class="seg">' + CARD_LANGS.map(function (l) {
+      return '<button type="button" data-action="c-lang:' + l[0] + '"' + (CARD.lang === l[0] ? ' aria-pressed="true"' : '') + lock + '>' +
+        l[1] + (c.recipes.indexOf(l[0]) !== -1 ? ' ·' : '') + '</button>';
+    }).join('') + '</div>';
+    var text = CARD.text[CARD.lang] !== undefined ? CARD.text[CARD.lang] : '';
+    var waiting = has && CARD.body[CARD.lang] === null;
+    var acts = '';
+    if ((c.state === 'draft' || c.state === 'hidden'))
+      acts += '<button type="button" class="btn" data-action="c-review:' + c.id + '"' + lock + '>Отправить на утверждение</button>';
+    if (cur && c.state === 'review') {
+      acts += c.recipes.length
+        ? '<button type="button" class="btn" data-action="c-approve:' + c.id + '"' + lock + '>Утвердить — в меню</button>'
+        : '<button type="button" class="btn" disabled>Утвердить — в меню</button><span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span>';
+      acts += CARD.back
+        ? '<div class="field"><label for="c-reason">Почему возвращаете</label><input id="c-reason" type="text" maxlength="500" value="' + esc(CARD.reason) + '" placeholder="Нет фото, цена выше соседних"' + lock + '></div>' +
+          '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="c-back-keep"' + lock + '>Не возвращать</button>' +
+          '<button type="button" class="btn quiet" data-action="c-back-send:' + c.id + '"' + lock + '>Вернуть</button></div>'
+        : '<button type="button" class="btn quiet" data-action="c-back">Вернуть с причиной</button>';
+    }
+    if (cur && c.state === 'active')
+      acts += CARD.hideAsk
+        ? '<span class="small">Гости перестанут видеть позицию в меню сразу.</span><div class="row" style="gap:6px">' +
+          '<button type="button" class="btn quiet" data-action="c-hide-keep"' + lock + '>Оставить</button>' +
+          '<button type="button" class="btn quiet" data-action="c-hide:' + c.id + '"' + lock + '>Точно снять</button></div>'
+        : '<button type="button" class="btn quiet" data-action="c-hide-ask">Снять с меню</button>';
+    if (!acts && c.state === 'review') acts = '<span class="small">Ждёт решения куратора направления.</span>';
+    return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(c.title) + '</h2>' +
+        '<span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' + (c.mins ? ' · ' + c.mins + ' мин' : '') + (c.alcohol ? ' · алкоголь' : '') + '</span></div>' +
+        '<span class="pill' + (c.state === 'active' ? ' on' : c.state === 'hidden' ? ' warm' : '') + '">' + esc(STATE_WORDS[c.state]) + '</span></div>' +
+        (c.about ? '<span class="small">' + esc(c.about) + '</span>' : '') +
+        (c.note && c.state === 'hidden' ? '<div class="note">' + svg(ICON.info) + '<span>Вернул куратор: ' + esc(c.note) + '</span></div>' : '') +
+      '</div>' + note +
+      '<div class="group"><span class="label">Рецепт</span>' + langs +
+        '<div class="field"><label for="c-recipe">Рецепт (' + CARD.lang.toUpperCase() + ')' + (has ? '' : ' — пока нет') + '</label>' +
+          '<textarea id="c-recipe" rows="6"' + (waiting ? ' disabled' : lock) + '>' + esc(text) + '</textarea></div>' +
+        (CARD.err ? '<span class="small" role="alert"><b>' + esc(CARD.err) + '</b></span>' : '') +
+        '<span class="small">Рецепт видит только бар, гость — нет.</span>' +
+        '<button type="button" class="btn ghost" data-action="c-recipe:' + c.id + '"' + (waiting ? ' disabled' : lock) + '>' +
+          (has ? 'Заменить рецепт (' : 'Сохранить рецепт (') + CARD.lang.toUpperCase() + ')</button>' +
+      '</div>' +
+      '<div class="group"><span class="label">Решение</span>' + deny + (acts || '<span class="small">Действий нет.</span>') + '</div>';
+  },
+
   people: function () {
     if (!mayPeople()) return '<div class="card quiet"><span class="small">Выдавать и снимать ответственность может глава клуба.</span></div>';
     if (!PEOPLE.list) return PEOPLE.fail
@@ -3730,7 +4007,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Люди'
+  people: 'Люди', barCards: 'Карточки меню', barCard: 'Карточка'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -3760,6 +4037,7 @@ var BACK = {
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
   people: 'home',
+  barCards: function () { return homeOf(); }, barCard: 'barCards',
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   barRecipe: function () { return 'drink'; },
@@ -3829,6 +4107,12 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
+  if (screen === 'barCards' && current !== 'barCards' && mayCards()) loadCards();
+  if (screen === 'barCard' && (current !== 'barCard' || String(param) !== String(p))) {
+    // заметка «черновик сохранён» переживает переход с формы на саму карточку
+    var keepNote = current === 'barCard' ? CARD.note : '';
+    cardReset(); CARD.note = keepNote;
+  }
   current = screen;
   param = p || null;
   if (screen === 'barMoney' && LIVE && !BAR) bookLoad();
@@ -3975,6 +4259,32 @@ function doAction(a) {
       haptic(); render(); return;
     }
     if (a === 't-send') { topupSend(); return; }
+    if (a.slice(0, 2) === 'c-' && (current === 'barCards' || current === 'barCard')) {
+      if (CARD.busy) return;
+      grabCard();
+      if (a === 'c-reload') { loadCards(); render(); return; }
+      if (a === 'c-new') { go('barCard', 'new'); return; }
+      if (a === 'c-open') { go('barCard', arg); return; }
+      if (a === 'c-save') { cardSave(); return; }
+      if (a === 'c-group-theirs') { cardSave('theirs'); return; }
+      if (a === 'c-group-mine') { cardSave('mine'); return; }
+      if (a === 'c-recipe') { recipeSave(Number(arg)); return; }
+      if (a === 'c-review') { cardState(Number(arg), 'review'); return; }
+      if (a === 'c-approve') { cardState(Number(arg), 'active'); return; }
+      if (a === 'c-hide') { cardState(Number(arg), 'hidden'); return; }
+      if (a === 'c-back-send') {
+        if (!CARD.reason.trim()) { CARD.err = ''; CARD.deny = 'Напишите причину — её прочтёт бар.'; haptic('warn'); render(); return; }
+        cardState(Number(arg), 'hidden', CARD.reason.trim()); return;
+      }
+      if (a === 'c-group') { CARD.v['c-group'] = arg; CARD.groupAsk = ''; }
+      if (a === 'c-alcohol') CARD.alcohol = !CARD.alcohol;
+      if (a === 'c-lang' && CARD_LANGS.some(function (l) { return l[0] === arg; })) { CARD.lang = arg; CARD.err = ''; }
+      if (a === 'c-back') CARD.back = true;
+      if (a === 'c-back-keep') { CARD.back = false; CARD.reason = ''; }
+      if (a === 'c-hide-ask') CARD.hideAsk = true;
+      if (a === 'c-hide-keep') CARD.hideAsk = false;
+      haptic(); render(); return;
+    }
     if (a.slice(0, 2) === 'p-' && current === 'people') {
       // Против двойного нажатия две линии: эта и своя проверка busy в
       // grantSend/revokeSend. Они прикрывают друг друга: снятие любой одной
@@ -4285,6 +4595,7 @@ function mainFor() {
          : { text: 'Опубликовать в афише', a: 'create-event' };
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
   if (current === 'barCart') return { text: 'Купить', a: 'send-order' };
+  if (current === 'barCard' && param === 'new' && !CARD.busy) return { text: 'Сохранить черновик', a: 'c-save' };
   if (current === 'people' && PEOPLE.open !== null && !PEOPLE.busy && !grantMissing()) return { text: 'Выдать', a: 'p-grant' };
   if (current === 'barExpense') return { text: 'Записать затрату', a: 'add-expense' };
   if (current === 'drink' && LIVE) {

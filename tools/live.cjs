@@ -3762,6 +3762,173 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     }
   }
 
+  // ── карточки меню: конструктор и утверждение (Cafe13KPG#175) ──
+  // Очередь GET /bar/products — по cafe13-api PR #46 (на стволе 880b4b6 её
+  // нет), остальные ручки — bar.py@880b4b6. Ответ очереди нарочно в ОБРАТНОМ
+  // порядке: группы обязаны раскладываться экраном, а не порядком сервера.
+  {
+    const P = (id, state, title, group, recipes, note) => ({ id, direction_id: 7, group, title, about: '', full_text: '',
+      price: '180.00', mins: 5, is_alcohol: false, sort: 0, state, created_by: 1, created_at: '2026-10-21T10:00:00+00:00',
+      decided_by: null, decided_at: null, decision_note: note === undefined ? null : note, recipes });
+    const QUEUE_ = [P(56, 'active', 'Эспрессо', 'Кофе', ['en', 'ru', 'th']), P(55, 'hidden', 'Старый чай', 'Чай', ['ru']),
+      P(54, 'hidden', 'Глинтвейн', 'Сезон', ['ru'], 'нет фото'), P(53, 'draft', 'Какао', 'Кофе', ['ru']),
+      P(52, 'review', 'Раф', 'Кофе', []), P(51, 'review', 'Матча-латте', 'Чай', ['ru', 'th'])];
+    const WORKER = clone(OWNER); WORKER.roles = [{ role: 'bar', direction_id: 7 }];
+    const CUR = clone(OWNER); CUR.roles = [{ role: 'curator', direction_id: 7 }];
+    const MEMBER = clone(OWNER); MEMBER.roles = [];
+    const cardsCase = (me, r) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url(), m = q.method();
+      if (u.endsWith('/directions')) return DIR(true);
+      // заведённая карточка появляется в перечитанной очереди, как на сервере
+      if (/\/bar\/products\?/.test(u)) return r.list || json(200, r.made ? QUEUE_.concat([P(60, 'draft', 'Флэт-уайт', 'Кофе', [])]) : QUEUE_);
+      if (/\/bar\/products\/\d+\/recipe\?lang=ru$/.test(u) && m === 'GET') return json(200, { product_id: 53, lang: 'ru', asked_lang: 'ru', exact: true, body: 'старый рецепт', created_at: '2026-10-21T10:00:00+00:00' });
+      if (/\/bar\/products\/\d+\/recipe/.test(u) && m === 'GET') return json(200, { product_id: 53, lang: 'ru', asked_lang: 'th', exact: false, body: 'чужой язык', created_at: '2026-10-21T10:00:00+00:00' });
+      if (/\/bar\/products\/\d+\/recipe$/.test(u)) return r.recipe || json(201, { id: 90, lang: JSON.parse(q.postData()).lang, created_at: '2026-10-21T10:00:00+00:00' });
+      if (/\/bar\/products\/\d+\/state$/.test(u)) return r.state || json(200, { id: 51, state: JSON.parse(q.postData()).state, decided_at: '2026-10-21T10:00:00+00:00', decision_note: '' });
+      if (/\/bar\/products$/.test(u) && m === 'POST') return (r.made = true, r.create) || json(201, { id: 60, direction_id: 7, group: 'Кофе', title: 'Флэт-уайт', price: '180.00', mins: null, state: 'draft', sort: 0 });
+      return undefined;
+    });
+    const cposts = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
+    const click = (s, a) => s.p.evaluate(a => { const x = document.querySelector(`[data-action="${a}"]`); if (x) x.click(); return !!x; }, a);
+    const toCards = async s => {
+      if (!(await s.p.$('[data-go="barCards"]'))) return false;
+      await s.p.evaluate(() => document.querySelector('[data-go="barCards"]').click());
+      await s.p.waitForTimeout(300);
+      return true;
+    };
+    const openCard = async (s, id) => { await click(s, 'c-open:' + id); await s.p.waitForTimeout(250); };
+
+    // список: hidden запрошен явно, группы — экраном, причина возврата в строке
+    {
+      const s = await cardsCase(WORKER, {});
+      if (!(await toCards(s))) bad.push('cards-list: у работника бара нет входа «Карточки меню»');
+      else {
+        const q = s.calls.filter(c => /\/bar\/products\?/.test(c.url));
+        if (q.length !== 1 || !/direction_id=7&state=draft,review,active,hidden$/.test(decodeURIComponent(q[0].url)))
+          bad.push('cards-list: очередь спрошена не так: ' + JSON.stringify(q.map(c => c.url)));
+        const order = await s.p.evaluate(() => [...document.querySelectorAll('[data-cards]')].map(e => e.getAttribute('data-cards')));
+        if (JSON.stringify(order) !== JSON.stringify(['Ждут утверждения', 'Возвращены', 'Черновики', 'Сняты', 'В меню']))
+          bad.push('cards-list: порядок групп ' + JSON.stringify(order));
+        const t = await s.view();
+        ['Причина: нет фото', 'рецепта нет', 'рецепт: ru, th', 'Направление «Бар»'].forEach(x => { if (!t.includes(x)) bad.push(`cards-list: нет «${x}»`); });
+        await s.p.screenshot({ path: `${OUT}/live-cards.png` });
+      }
+      if (s.errs.length) bad.push('cards-list: ошибки страницы ' + s.errs.join('; '));
+      await s.ctx.close();
+    }
+    // без роли бара — входа нет, и очередь не спрашивается
+    {
+      const s = await cardsCase(MEMBER, {});
+      if (await s.p.$('[data-go="barCards"]')) bad.push('cards-member: у члена клуба без роли есть вход «Карточки меню»');
+      await s.p.evaluate(() => go('barCards')); await s.p.waitForTimeout(200);
+      if (s.calls.some(c => /\/bar\/products/.test(c.url))) bad.push('cards-member: очередь спрошена без права');
+      await s.ctx.close();
+    }
+    // новая карточка: предупреждение до сохранения; группа сводится к существующей без регистра
+    {
+      const s = await cardsCase(WORKER, {});
+      await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('Поля потом не исправить')) bad.push('cards-create: нет предупреждения до сохранения');
+      await s.p.fill('#c-title', 'Флэт-уайт'); await s.p.fill('#c-group', ' кофе '); await s.p.fill('#c-price', '180');
+      if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push('cards-create: у формы нет главной кнопки');
+      await s.p.evaluate(() => window.__main && window.__main());
+      await s.p.waitForTimeout(400);
+      const pp = cposts(s, /\/bar\/products$/);
+      const want = { direction_id: 7, group: 'Кофе', title: 'Флэт-уайт', price: 180, about: '', is_alcohol: false };
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify(want)) bad.push('cards-create: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      const t = await s.view();
+      if (!t.includes('Черновик сохранён') || !t.includes('Флэт-уайт')) bad.push('cards-create: после сохранения не открылась карточка с заметкой');
+      await s.ctx.close();
+    }
+    // похожая группа (пробел внутри) — вопрос, без запроса; «да» — в существующую
+    {
+      const s = await cardsCase(WORKER, {});
+      await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
+      await s.p.fill('#c-title', 'Раф'); await s.p.fill('#c-group', 'Ко фе'); await s.p.fill('#c-price', '200');
+      await click(s, 'c-save'); await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('Это та же группа, что «Кофе»?')) bad.push('cards-group-like: нет вопроса о похожей группе');
+      if (cposts(s, /\/bar\/products$/).length) bad.push('cards-group-like: карточка ушла до ответа');
+      await click(s, 'c-group-theirs'); await s.p.waitForTimeout(300);
+      const pp = cposts(s, /\/bar\/products$/);
+      if (pp.length !== 1 || JSON.parse(pp[0].body).group !== 'Кофе') bad.push('cards-group-like: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      await s.ctx.close();
+    }
+    // рецепт: у языка с рецептом — прежний текст и «Заменить»; новый язык — «Сохранить»; чужой язык в поле не попадает
+    {
+      const s = await cardsCase(WORKER, {});
+      await toCards(s); await openCard(s, 53); await s.p.waitForTimeout(200);
+      if ((await s.p.inputValue('#c-recipe')) !== 'старый рецепт') bad.push('cards-recipe: прежний рецепт RU не в поле');
+      if (!(await s.view()).includes('Заменить рецепт (RU)')) bad.push('cards-recipe: у RU с рецептом нет «Заменить»');
+      await click(s, 'c-lang:th'); await s.p.waitForTimeout(200);
+      if ((await s.p.inputValue('#c-recipe')) !== '') bad.push('cards-recipe: в поле TH чужой текст');
+      if (!(await s.view()).includes('Сохранить рецепт (TH)')) bad.push('cards-recipe: у TH без рецепта нет «Сохранить»');
+      await s.p.fill('#c-recipe', 'สูตร'); await click(s, 'c-recipe:53'); await s.p.waitForTimeout(300);
+      const pp = cposts(s, /\/bar\/products\/53\/recipe$/);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ lang: 'th', body: 'สูตร' })) bad.push('cards-recipe: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      if (!(await s.view()).includes('Рецепт сохранён (TH).')) bad.push('cards-recipe: нет итога');
+      await s.ctx.close();
+    }
+    // бар: черновик — на утверждение; ждущую — утвердить нечем
+    {
+      const s = await cardsCase(WORKER, {});
+      await toCards(s); await openCard(s, 53);
+      await click(s, 'c-review:53'); await s.p.waitForTimeout(300);
+      const pp = cposts(s, /\/bar\/products\/53\/state$/);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'review' })) bad.push('cards-review: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      if (!(await s.view()).includes('Отправлено на утверждение')) bad.push('cards-review: нет итога');
+      if (s.calls.filter(c => /\/bar\/products\?/.test(c.url)).length < 2) bad.push('cards-review: очередь не перечитана');
+      await s.p.evaluate(() => go('barCard', '51')); await s.p.waitForTimeout(200);
+      if (await s.p.$('[data-action^="c-approve"]')) bad.push('cards-review: работнику бара предложено «Утвердить»');
+      if (!(await s.view()).includes('Ждёт решения куратора')) bad.push('cards-review: работник не видит, что ждёт куратора');
+      await s.ctx.close();
+    }
+    // куратор: без рецепта «в меню» погашена заранее; с рецептом — уходит active
+    {
+      const s = await cardsCase(CUR, {});
+      await toCards(s); await openCard(s, 52);
+      if (await s.p.$('[data-action="c-approve:52"]')) bad.push('cards-approve: «в меню» нажимается без рецепта');
+      if (!(await s.view()).includes('Сначала рецепт')) bad.push('cards-approve: нет причины, почему нельзя в меню');
+      await s.p.evaluate(() => go('barCards')); await s.p.waitForTimeout(200); await openCard(s, 51);
+      await click(s, 'c-approve:51'); await s.p.waitForTimeout(300);
+      const pp = cposts(s, /\/bar\/products\/51\/state$/);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'active' })) bad.push('cards-approve: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      if (!(await s.view()).includes('Утверждено')) bad.push('cards-approve: нет итога');
+      await s.ctx.close();
+    }
+    // куратор возвращает: без причины — не уходит; с причиной — hidden + note
+    {
+      const s = await cardsCase(CUR, {});
+      await toCards(s); await openCard(s, 51);
+      await click(s, 'c-back'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(150);
+      if (cposts(s, /state$/).length) bad.push('cards-return: возврат ушёл без причины');
+      await s.p.fill('#c-reason', 'нет фото'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(300);
+      const pp = cposts(s, /\/bar\/products\/51\/state$/);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'hidden', note: 'нет фото' })) bad.push('cards-return: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      await s.ctx.close();
+    }
+    // отказ — текстом сервера, и список перечитан
+    {
+      const detail = 'карточка 51 не может работать без рецепта: сначала рецепт, потом меню';
+      const s = await cardsCase(CUR, { state: json(409, { detail }) });
+      await toCards(s); await openCard(s, 51);
+      await click(s, 'c-approve:51'); await s.p.waitForTimeout(300);
+      const deny = await s.p.$eval('.deny', e => e.textContent).catch(() => null);
+      if (deny !== 'Карточка 51 не может работать без рецепта: сначала рецепт, потом меню.') bad.push(`cards-409: плашка «${deny}»`);
+      if (s.calls.filter(c => /\/bar\/products\?/.test(c.url)).length < 2) bad.push('cards-409: после отказа очередь не перечитана');
+      if ((await s.view()).includes('Утверждено')) bad.push('cards-409: отказ показан успехом');
+      await s.ctx.close();
+    }
+    // битая очередь — «не разобран», а не пустой список
+    {
+      const s = await cardsCase(WORKER, { list: json(200, [{ id: 1, title: 'x' }]) });
+      await toCards(s);
+      const t = await s.view();
+      if (!t.includes('Ответ сервера не разобран.')) bad.push('cards-broken: нет «не разобран»');
+      if (t.includes('Карточек пока нет')) bad.push('cards-broken: битый ответ показан пустым списком');
+      await s.ctx.close();
+    }
+  }
+
   // tools/api-keys.json — форма ответов из снимков cafe13-api (DUMP_DIR,
   // tools/keys.py): только ключи, без значений. Заглушка, придумавшая поле
   // или потерявшая обязательное, краснеет здесь, а не на проде.
