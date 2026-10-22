@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v29 · 22.10.2026';
+var VERSION = 'v30 · 22.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1180,7 +1180,11 @@ var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
                open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '' };
 
 function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
+/* Блокировка снимается вместе с состоянием экрана: вход на экран и смена роли
+   поднимают PEOPLE.gen, и ответ, который снял бы её сам, отбрасывается гардом —
+   без этой строки экран оставался запертым до перезапуска (Cafe13KPG#213). */
 function peopleReset() {
+  PEOPLE.busy = false;
   PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.dir = null; PEOPLE.ask = null; PEOPLE.deny = null; PEOPLE.done = null;
 }
 function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }

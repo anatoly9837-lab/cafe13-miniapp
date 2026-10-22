@@ -3453,6 +3453,33 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
+    // #213: «Выдать»/«Снять» без ожидания ответа, уход и возврат — экран не заперт,
+    // а поздний ответ прежнего захода на новый экран не ложится. Первый запрос
+    // медленный, второй быстрый; тело медленного — нечитаемый маркер.
+    for (const [name, step, start, again, re] of [
+      ['people-late-grant', 'grant', ['p-open:1', 'p-role:ops_director', 'main'], ['p-open:1', 'p-role:ops_director', 'main'], /\/roles$/],
+      ['people-late-revoke', 'revoke', ['p-ask:31', 'p-revoke:31'], ['p-ask:31', 'p-revoke:31'], /\/roles\/31\/revoke$/],
+    ]) {
+      // задержка считается от самого запроса: таймер, заведённый при создании
+      // случая, истекал ещё до ухода с экрана, и мутация на гард оставалась зелёной
+      let n = 0;
+      const slow = () => new Promise(r => setTimeout(() => r(json(409, { detail: 'qzx-позд-qzx' })), 1500));
+      const r = { get [step]() { n++; return n === 1 ? slow() : undefined; } };
+      const s = await peopleCase(OWNER, r);
+      await toPeople(s);
+      const run = async steps => { for (const a of steps) { if (a === 'main') await s.p.evaluate(() => window.__main && window.__main()); else await act(s, a); } };
+      await run(start);
+      await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => { go('home'); go('people'); });
+      await s.p.waitForTimeout(300);
+      await run(again);
+      await s.p.waitForTimeout(300);
+      if (posts(s, re).length !== 2) bad.push(`${name}: после ухода и возврата запрос не ушёл — экран заперт (ушло ${posts(s, re).length})`);
+      await s.p.waitForTimeout(1600);
+      if ((await s.view()).includes('qzx')) bad.push(`${name}: поздний ответ прежнего захода лёг на новый экран`);
+      await s.ctx.close();
+    }
+
     // снятие: подтверждение → запрос → итог и перечитанный список
     {
       const s = await peopleCase(OWNER, {});
