@@ -220,6 +220,25 @@ b.num, .big { white-space: nowrap; }
   font-family: 'Golos Text', sans-serif; font-size: 15px;
 }
 
+/* Крестик очистки у поиска рисует система, и рисует СВОИМ цветом: в поле
+   клуба он приходил синим — единственное синее пятно во всём приложении.
+   Здесь он перекрашивается в подпись (--muted) маской, то есть одной и той
+   же формой в обеих темах, без второго файла и без картинки на каждую тему.
+
+   Размер — 44 px, не 18: столько ровно помещается внутрь поля (46 px минус
+   две обводки), и это тот самый минимум цели нажатия, что у остальных
+   кнопок. Системный крестик был вдвое уже — палец мимо него проходил.
+
+   Firefox такого псевдоэлемента не имеет вовсе: там крестика нет и сейчас,
+   правило просто не применяется. */
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none; appearance: none;
+  width: 44px; height: 44px; margin-right: -8px; cursor: pointer;
+  background: var(--muted);
+  -webkit-mask: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 7l10 10M17 7L7 17' stroke='black' stroke-width='2.2' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") center/18px no-repeat;
+          mask: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 7l10 10M17 7L7 17' stroke='black' stroke-width='2.2' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") center/18px no-repeat;
+}
+
 .cancelled { border-style: dashed; background: var(--surface); }
 .cancelled .strike { text-decoration: line-through; color: var(--muted); }
 
