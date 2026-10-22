@@ -2688,6 +2688,147 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     }
   }
 
+  // ── кто записался (#178, вторая половина) ──
+  // Список спрашивается только на СВОЁМ мероприятии: на чужое запроса нет
+  // вовсе. Обратная проверка обязательна — иначе доказана половина.
+  {
+    const MY = over => EV(Object.assign({ id: 4, title: 'Мой вечер', organizer_id: 1,
+      starts_at: atBkk(1, 19), seats: 12, taken: 3, seats_left: 9 }, over || {}));
+    const ALIEN = EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) });
+    const ROW = over => Object.assign({ id: 15, first_name: 'Образец', last_name: '',
+      booked_at: atBkk(0, 9, 30), state: 'booked', amount_due: '400.00', paid: false }, over || {});
+    const LIST = over => Object.assign({ event_id: 4, title: 'Мой вечер', starts_at: atBkk(1, 19),
+      seats: 12, state: 'published', taken: 3,
+      // Третья строка — `attended`: пришедший гость. Сервер это состояние
+      // отдаёт, и живым оно обязано считаться наравне с `booked`.
+      bookings: [ROW(), ROW({ id: 16, first_name: 'Второй' }),
+                 ROW({ id: 17, first_name: 'Пришедший', state: 'attended' })] }, over || {});
+
+    // reply === 'abort' — обрыв сети; иначе ответ ручки списка.
+    const openSigned = async (reply, evOver) => {
+      const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+        const u = q.url();
+        if (/\/events\/4\/bookings$/.test(u)) return reply;
+        if (u.endsWith('/events')) return json(200, [MY(evOver), ALIEN]);
+        return undefined;
+      }, null, NOWFIX);
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(120);
+      await s.p.click('[data-event="4"]');
+      await s.p.waitForTimeout(300);
+      return s;
+    };
+
+    // Свой: список есть, суммы подписаны записью, графы «оплатил» нет.
+    {
+      const s = await openSigned(json(200, LIST()));
+      const t = await s.view();
+      ['Управление', 'Записалось', '3 из 12', 'Образец', 'Второй', 'Пришедший', 'записан на 400 ฿'].forEach(x => {
+        if (!t.includes(x)) bad.push(`spisok: нет «${x}»`); });
+      // `paid` всегда false — графы оплаты быть не должно ни в каком виде
+      ['оплач', 'Оплач', 'не платил', 'к оплате'].forEach(x => {
+        if (t.includes(x)) bad.push(`spisok: на экране слово об оплате «${x}» — поле paid сегодня всегда false`); });
+      // Telegram id наружу не отдаётся и на экране его быть не может
+      if (/\b\d{6,}\b/.test(t)) bad.push(`spisok: на экране длинное число — не Telegram id ли: «${t.slice(0, 120)}»`);
+      // Пришедший гость — живая запись, а не снятая.
+      if (t.includes('Снятые записи')) bad.push('spisok: пришедший гость (attended) показан среди снятых');
+      const posPr = t.indexOf('Пришедший'), posUpr = t.indexOf('Управление');
+      if (posPr === -1 || posUpr === -1 || posPr < posUpr)
+        bad.push('spisok: пришедшего гостя нет в списке под «Управлением»');
+      await s.p.screenshot({ path: `${OUT}/live-spisok.png` });
+      await s.ctx.close();
+    }
+
+    // ОБРАТНАЯ проверка: на чужом мероприятии ни списка, ни запроса.
+    {
+      const s = await openSigned(json(200, LIST()));
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(120);
+      await s.p.click('[data-event="7"]');
+      await s.p.waitForTimeout(300);
+      const t = await s.view();
+      // «Образец» — имя ведущего, оно стоит на КАЖДОЙ карточке; признаком
+      // списка могут быть только имена из самого списка.
+      ['Управление', 'Второй', 'Третий', 'Снятые записи', 'Пока никто не записался'].forEach(x => {
+        if (t.includes(x)) bad.push(`spisok-chuzhoy: на ЧУЖОМ мероприятии показано «${x}»`); });
+      const asked = s.calls.filter(c => /\/bookings$/.test(c.url) && c.method === 'GET');
+      // Запрос мог уйти при входе на СВОЁ (мы там были) — считаем после перехода
+      const afterAlien = s.calls.slice(s.calls.findIndex(c => c.url.endsWith('/events')) + 1);
+      if (asked.length > 1) bad.push(`spisok-chuzhoy: запросов списка ${asked.length}, на чужое уходить не должно`);
+      if (afterAlien.some(c => /\/events\/7\/bookings$/.test(c.url)))
+        bad.push('spisok-chuzhoy: за списком чужого мероприятия клиент всё-таки сходил');
+      await s.ctx.close();
+    }
+
+    // Отказы: у каждого свой текст, и ни один не выглядит пустым списком.
+    for (const [name, reply, want, nope] of [
+      ['spisok-403', json(403, { detail: 'список записавшихся видит организатор мероприятия или работник клуба' }),
+        'Список записавшихся видит организатор мероприятия или работник клуба', 'Пока никто не записался'],
+      ['spisok-403-privratnik', json(403, { detail: 'доступа нет' }),
+        'Вас ещё не впустили в клуб', 'Доступа нет'],
+      ['spisok-404', json(404, { detail: 'мероприятия нет' }),
+        'Сервер не знает такого мероприятия', 'Пока никто не записался'],
+      ['spisok-set', 'abort', 'Сервер не ответил', 'Пока никто не записался'],
+      // Поля НЕТ вовсе — отсекает проверка типа.
+      ['spisok-bitiy', json(200, LIST({ bookings: [ROW({ booked_at: undefined })] })),
+        'Ответ сервера не разобран', 'Второй'],
+      /* Время ЧИСЛОМ: `new Date(1766000000000)` — законная дата, поэтому
+         разбор его пропустит, и отсечь его может только проверка типа. Без
+         этого случая мутация, снявшая проверку типа, оставалась зелёной —
+         не потому, что проверка лишняя, а потому, что отсутствующее поле
+         ловилось разбором даты. Числу и отсутствию нужны РАЗНЫЕ случаи. */
+      ['spisok-vremya-chislom', json(200, LIST({ bookings: [ROW({ booked_at: 1766000000000 })] })),
+        'Ответ сервера не разобран', 'Второй'],
+      // Поле ЕСТЬ и строкой, но это не дата — проверку типа оно проходит, и
+      // отсечь его может только разбор даты. Без этого случая мутация,
+      // снявшая разбор, оставалась зелёной: до него прогон не доходил.
+      ['spisok-vremya-ne-data', json(200, LIST({ bookings: [ROW({ booked_at: 'позавчера' })] })),
+        'Ответ сервера не разобран', 'Второй'],
+      // Сумма приходит строкой; строка, которая не число, — это не ноль.
+      ['spisok-summa-bitaya', json(200, LIST({ bookings: [ROW({ amount_due: 'много' })] })),
+        'Ответ сервера не разобран', 'записан на']]) {
+      const s = await openSigned(reply);
+      const t = await s.view();
+      if (!t.includes('Список не открылся')) bad.push(`${name}: отказ не назван отказом`);
+      if (!t.includes(want)) bad.push(`${name}: нет слов «${want}», на экране: «${t.slice(0, 160)}»`);
+      if (t.includes(nope)) bad.push(`${name}: на экране лишнее «${nope}»`);
+      await s.ctx.close();
+    }
+
+    // Пустой список — ответ, а не отказ, и наоборот.
+    {
+      const s = await openSigned(json(200, LIST({ taken: 0, bookings: [] })), { taken: 0, seats_left: 12 });
+      const t = await s.view();
+      if (!t.includes('Пока никто не записался')) bad.push(`spisok-pusto: пустой список не назван пустым: «${t.slice(0, 140)}»`);
+      if (t.includes('Список не открылся')) bad.push('spisok-pusto: пустой список показан отказом');
+      await s.ctx.close();
+    }
+
+    // Снятая запись помечена и не смешана с живыми.
+    {
+      const s = await openSigned(json(200, LIST({ taken: 2,
+        bookings: [ROW(), ROW({ id: 16, first_name: 'Второй' }), ROW({ id: 18, first_name: 'Ушедший', state: 'cancelled' })] })),
+        { taken: 2, seats_left: 10 });
+      const t = await s.view();
+      ['Снятые записи', 'снята', 'Ушедший'].forEach(x => {
+        if (!t.includes(x)) bad.push(`spisok-snyataya: нет «${x}»`); });
+      const pos = t.indexOf('Снятые записи');
+      if (pos !== -1 && t.indexOf('Ушедший') < pos)
+        bad.push('spisok-snyataya: снятая запись стоит СРЕДИ живых, а не под своим заголовком');
+      await s.ctx.close();
+    }
+
+    // Число в афише и число в списке считает сервер в двух местах: расхождение
+    // называется словами, а не прячется.
+    {
+      const s = await openSigned(json(200, LIST({ taken: 5 })));
+      const t = await s.view();
+      if (!t.includes('Афиша говорит «3», список — «5»'))
+        bad.push(`spisok-raskhodyatsya: расхождение чисел не названо: «${t.slice(0, 160)}»`);
+      await s.ctx.close();
+    }
+  }
+
   // Второе нажатие, пока первое в пути, второй записи не делает.
   {
     const posts = [];

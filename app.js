@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v27 · 22.10.2026';
+var VERSION = 'v28 · 22.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1719,6 +1719,116 @@ function afterEventCancel(r, id) {
    здесь нет и быть не должно: ведущий распоряжается своим событием, а не
    людьми клуба. Списка записавшихся тоже нет — ручки «кто записался» на бою
    ещё нет, а пустой список выглядел бы ответом. */
+/* ── кто записался ─────────────────────────────────────
+   Ручка отдаёт имя, время записи, сумму и признак оплаты; телефонов и
+   Telegram id в ответе нет вовсе — и не надо.
+
+   ⚠ Графы «оплатил» здесь НЕТ, хотя поле `paid` в ответе есть: сегодня оно
+   всегда false — касса пишет в книгу номер мероприятия, а связи с записью
+   не ставит (карточка #103). Колонка по такому полю говорила бы «не
+   платил» про тех, кто заплатил, то есть врала бы по всей таблице.
+
+   Сумма подписана «записан на N ฿», а не «к оплате»: `amount_due` ничем не
+   гасится, и после оплаты он остался бы прежним.
+
+   Снятые записи не смешиваются с живыми в одном счёте: они показаны
+   отдельно и помечены. Иначе ведущий считал бы пришедших по длине списка.
+   ⚠ Сегодня сервер снятых не отдаёт вовсе (`WHERE b.state <> 'cancelled'`,
+   замер по боевой ревизии `880b4b6`), то есть эта ветка на бою недостижима.
+   Она оставлена не ради вида, а как защита от изменения на сервере: если
+   снятые однажды поедут, они не попадут в счёт живых молча. Случай в
+   прогоне это и сторожит — доказательством живого пути он не является. */
+var SIGNED = { eid: null, state: '', taken: 0, rows: null };
+var SIGNED_GEN = 0;
+
+function fromSigned(d) {
+  if (!d || typeof d !== 'object') return null;
+  if (typeof d.event_id !== 'number' || typeof d.taken !== 'number') return null;
+  if (!Array.isArray(d.bookings)) return null;
+  var now = new Date(), out = [];
+  for (var i = 0; i < d.bookings.length; i++) {
+    var b = d.bookings[i];
+    if (!b || typeof b.id !== 'number') return null;
+    if (typeof b.first_name !== 'string' || typeof b.last_name !== 'string') return null;
+    if (typeof b.booked_at !== 'string' || typeof b.state !== 'string' || !b.state) return null;
+    var when = new Date(b.booked_at);
+    if (isNaN(when.getTime())) return null;
+    var sum = num(b.amount_due);
+    if (!(sum >= 0)) return null;           // сумма строкой, как все деньги в этом API
+    var p = bkk(when);
+    out.push({
+      id: b.id,
+      name: [b.first_name, b.last_name].filter(Boolean).join(' ') || 'Без имени',
+      when: dayLabel(p, now) + ', ' + p.hm,
+      sum: sum,
+      // Живая запись — ВСЁ, кроме снятой: у записи три состояния
+      // (`CHECK (state IN ('booked','cancelled','attended'))`, замер по
+      // боевой ревизии 880b4b6), и `attended` — это пришедший гость.
+      // Сравнение с 'booked' отправляло бы его в «снятые».
+      live: b.state !== 'cancelled'
+    });
+  }
+  return { taken: d.taken, rows: out };
+}
+
+function signedFail(r) {
+  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  // Привратник доступа и отказ прав приходят одним кодом; у них разные
+  // следующие шаги, поэтому и строки разные.
+  if (r.status === 403 && /доступа нет/.test(detail))
+    return 'Вас ещё не впустили в клуб — список поэтому и не открылся.';
+  if (r.status === 404) return 'Сервер не знает такого мероприятия.';
+  return detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r);
+}
+
+function loadSigned(e) {
+  // Список спрашивается ТОЛЬКО на своём мероприятии: на чужое запроса нет
+  // вовсе, а не отказ по ответу. Один предикат с показом «Управления».
+  if (!LIVE || !isMyEvent(e)) return;
+  var gen = ++SIGNED_GEN;
+  SIGNED = { eid: e.eid, state: 'loading', taken: 0, rows: null };
+  api('GET', '/events/' + e.eid + '/bookings').then(function (r) {
+    if (gen !== SIGNED_GEN) return;        // ответ под прежнее событие молчит
+    var got = r.status === 200 ? fromSigned(r.data) : null;
+    if (got) SIGNED = { eid: e.eid, state: 'ok', taken: got.taken, rows: got.rows };
+    else SIGNED = { eid: e.eid, state: signedFail(r), taken: 0, rows: null };
+    if (current === 'event') render();
+  });
+}
+
+function signedRow(p, kind, off) {
+  return '<div class="card"><div class="row">' +
+      '<div class="col"><b>' + esc(p.name) + '</b>' +
+        '<span class="small">' + esc(p.when) +
+          (p.sum > 0 && kind === 'paid' ? ' · записан на ' + money(p.sum) + ' ฿' : '') +
+        '</span></div>' +
+      (off ? '<span class="pill">снята</span>' : '') +
+    '</div></div>';
+}
+
+function signedBlock(e) {
+  if (SIGNED.eid !== e.eid || SIGNED.state === 'loading')
+    return '<div class="card quiet"><span class="small">Читаем, кто записался…</span></div>';
+  if (SIGNED.state !== 'ok')
+    return '<div class="card strong"><div class="col">' +
+      '<b style="font-size:13px">Список не открылся</b>' +
+      '<span class="small">' + esc(SIGNED.state) + '</span></div></div>';
+
+  var live = [], off = [];
+  SIGNED.rows.forEach(function (p) { (p.live ? live : off).push(p); });
+  // Число в афише и число в списке считает сервер в двух местах. Разойдутся —
+  // сказать прямо: ведущий и гость иначе будут спорить о числе, а не о записи.
+  var spor = SIGNED.taken !== (e.of - e.seats)
+    ? '<div class="card quiet"><span class="small">Афиша говорит «' + (e.of - e.seats) +
+      '», список — «' + SIGNED.taken + '». Откройте экран заново: одно из чисел устарело.</span></div>'
+    : '';
+  if (!live.length && !off.length)
+    return spor + '<div class="card quiet"><span class="small">Пока никто не записался.</span></div>';
+  return spor + live.map(function (p) { return signedRow(p, e.kind, false); }).join('') +
+    (off.length ? '<span class="label">Снятые записи</span>' +
+      off.map(function (p) { return signedRow(p, e.kind, true); }).join('') : '');
+}
+
 function manageBlock(e) {
   if (!isMyEvent(e)) return '';
   var err = EV_ERR ? '<div class="card strong"><div class="col">' +
@@ -1726,7 +1836,8 @@ function manageBlock(e) {
     '</div></div>' : '';
   var head = '<div class="group"><span class="label">Управление</span>' +
     '<div class="rows"><div><span class="small">Записалось</span>' +
-      '<b class="num">' + (e.of - e.seats) + ' из ' + e.of + '</b></div></div>' + err;
+      '<b class="num">' + (e.of - e.seats) + ' из ' + e.of + '</b></div></div>' +
+    signedBlock(e) + err;
   if (EV_BUSY) return head + '<div class="card quiet"><span class="small">Отправляем…</span></div></div>';
   // Один предикат на оба пути: рисование и отправку. Пока их было два,
   // мутация, снявшая запрет у кончившегося, оставалась зелёной — кнопка
@@ -3541,6 +3652,9 @@ function go(screen, p) {
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
   if (screen !== 'event') { BOOK_ERR = ''; BOOK_ASK = false; EV_ERR = ''; EV_ASK = false; }
+  // Список записавшихся спрашивается при входе на карточку СВОЕГО события:
+  // loadSigned сам молчит на чужом, поэтому предикат один и здесь.
+  if (screen === 'event' && LIVE) loadSigned(eventById(param));
   if (screen !== 'eventNew') EVN_ERR = '';
   render();
   if (screen === 'barOrder' && LIVE) pollMine();
