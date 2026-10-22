@@ -724,6 +724,32 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     return q => (q.method() === 'POST' && /\/bar\/orders\/\d+\/state$/.test(q.url())) ? (typeof o.state === 'function' ? o.state(q) : o.state) : b(q);
   }
   const statePosts = s => s.calls.filter(c => /\/state$/.test(c.url));
+
+  // Поздний ответ прежнего захода не ложится на свежую очередь (Cafe13KPG#214):
+  // гард у ответа /bar/orders и гард у колбэка loadBar — каждый своим случаем.
+  // Первый ответ медленный (задержка — от запроса), уход и возврат дают второй.
+  for (const [name, step, stale, look, why] of [
+    ['queue-late', 'list', json(200, [worker(9, '261018-09', 'new', { first_name: 'qzx-очередь-qzx' })]), 'qzx',
+      'на экране очереди заказы прежнего захода'],
+    ['queue-late-bar', 'dirs', json(503, {}), '503',
+      'на экране очереди отказ прежнего захода поверх свежей очереди'],
+  ]) {
+    let n = 0, landed = false;
+    const slow = () => new Promise(r => setTimeout(() => { landed = true; r(stale); }, 1500));
+    const fresh = step === 'list' ? json(200, QUEUE) : DIR(true);
+    const o = { list: json(200, QUEUE), [step]: () => ++n === 1 ? slow() : fresh };
+    const s = await open(true, true, json(200, BARMAN), null, null, null, bar(o));
+    await toQueue(s);
+    await s.p.evaluate(() => { go('home'); go('barQueue'); });
+    await s.p.waitForTimeout(300);
+    if (n < 2) bad.push(`${name}: возврат не перечитал (запросов ${n})`);
+    if (landed) bad.push(`${name}: прежний ответ пришёл раньше второго запроса — гонки не было, случай гарда не проверяет`);
+    await s.p.waitForTimeout(1600);
+    const t = await s.view();
+    if (t.includes(look)) bad.push(`${name}: ${why}`);
+    else if (!t.includes('261018-03')) bad.push(`${name}: свежей очереди на экране нет: ` + t.slice(0, 160));
+    await s.ctx.close();
+  }
   async function toQueue(s) {
     await s.p.click('[data-go="barQueue"]');
     await s.p.waitForTimeout(250);
