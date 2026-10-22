@@ -3869,6 +3869,22 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const w = await s.p.evaluate(() => ({ doc: document.documentElement.scrollWidth,
         right: Math.max(...[...document.querySelectorAll('[data-action="c-group-theirs"],[data-action="c-group-mine"]')].map(e => e.getBoundingClientRect().right)) }));
       if (w.doc > 390 || w.right > 390) bad.push(`cards-group-long: ряд «та же / новая» вылез за 390: документ ${w.doc}, правый край ${Math.round(w.right)}`);
+      // и стоят парой: зазор между ними — шаг сегмента, а не пустая середина карточки
+      const gap = await s.p.evaluate(() => { const a = document.querySelector('[data-action="c-group-theirs"]').getBoundingClientRect(),
+        c = document.querySelector('[data-action="c-group-mine"]').getBoundingClientRect(); return Math.round(c.left - a.right); }).catch(() => null);
+      if (gap === null || gap > 12) bad.push(`cards-group-long: «Да, та же» и «Нет, новая» разнесены на ${gap} px — парой не читаются`);
+      await s.ctx.close();
+    }
+    // отказ сервера, затем отказ своей проверки: плашка одна — прошлая не висит рядом с новой
+    {
+      const s = await cardsCase(WORKER, { create: json(409, { detail: 'такая позиция уже есть' }) });
+      await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
+      await put(s, '#c-title', 'Раф', 'cards-deny-stale'); await put(s, '#c-group', 'Кофе', 'cards-deny-stale'); await put(s, '#c-price', '200', 'cards-deny-stale');
+      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(300);
+      await put(s, '#c-title', '', 'cards-deny-stale');
+      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(200);
+      const all = await s.p.$$eval('.deny', l => l.map(e => e.textContent));
+      if (JSON.stringify(all) !== JSON.stringify(['Нужно название.'])) bad.push('cards-deny-stale: плашки ' + JSON.stringify(all) + ', ждали одну «Нужно название.»');
       await s.ctx.close();
     }
     // своя проверка формы — той же плашкой отказа, что и сервер; «Алкоголь» — строкой да/нет и уходит в теле

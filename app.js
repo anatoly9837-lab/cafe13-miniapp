@@ -1485,6 +1485,7 @@ function cardMissing() {
 function cardSave(sure) {
   if (CARD.busy || !BAR) return;
   grabCard();
+  CARD.deny = '';                             // прошлый отказ сервера не висит рядом с новым своим
   CARD.err = cardMissing();
   if (CARD.err) { haptic('warn'); render(); return; }
   var g = CARD.v['c-group'].trim().replace(/\s+/g, ' ');
@@ -1533,7 +1534,7 @@ function recipeSave(id) {
   if (CARD.busy) return;
   grabCard();
   var lang = CARD.lang, text = (CARD.text[lang] || '').trim();
-  if (!text) { CARD.err = 'Рецепт пуст.'; haptic('warn'); render(); return; }
+  if (!text) { CARD.deny = ''; CARD.err = 'Рецепт пуст.'; haptic('warn'); render(); return; }
   var gen = CARDS.gen, had = (cardBy(id) || { recipes: [] }).recipes.indexOf(lang) !== -1;
   CARD.busy = true; CARD.deny = ''; CARD.err = ''; render();
   api('POST', '/bar/products/' + id + '/recipe', { lang: lang, body: text }).then(function (r) {
@@ -3645,8 +3646,9 @@ var SCREENS = {
         }).join('') + '</div>' : '') +
         (CARD.groupAsk ? '<div class="note">' + svg(ICON.info) + '<span>Это та же группа, что «' + esc(CARD.groupAsk) + '»?</span></div>' +
           // имя группы — в вопросе строкой выше, не в кнопке: длинное имя вынесло бы ряд за край
-          '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="c-group-theirs">Да, та же</button>' +
-          '<button type="button" class="btn quiet" data-action="c-group-mine">Нет, новая</button></div>' : '') +
+          // два ответа на один вопрос — пополам, как любой выбор из двух (.seg), а не по краям ряда
+          '<div class="seg"><button type="button" data-action="c-group-theirs">Да, та же</button>' +
+          '<button type="button" data-action="c-group-mine">Нет, новая</button></div>' : '') +
         '<div class="row" style="gap:10px"><div class="field"><label for="c-price">Цена, ฿</label><input id="c-price" type="text" inputmode="decimal" value="' + v('c-price') + '" placeholder="180"' + lock + '></div>' +
         '<div class="field"><label for="c-mins">Минуты</label><input id="c-mins" type="text" inputmode="numeric" value="' + v('c-mins') + '" placeholder="5"' + lock + '>' +
           '<span class="small">От 1 до 600, можно пусто.</span></div></div>' +
