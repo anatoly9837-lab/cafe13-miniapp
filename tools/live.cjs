@@ -750,6 +750,31 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     else if (!t.includes('261018-03')) bad.push(`${name}: свежей очереди на экране нет: ` + t.slice(0, 160));
     await s.ctx.close();
   }
+
+  // Cafe13KPG#221: поздний отказ /directions прежнего опроса очереди не стирает
+  // загруженное направление — иначе опрос своего заказа умирает молча
+  // (pollMine выходит на !BAR до перевооружения таймера). Путь — работник бара
+  // заказывает сам: второй заход в очередь уходит с медленным /directions,
+  // человек идёт в меню и покупает; отказ приходит уже на экран заказа.
+  {
+    let dn = 0, ordered = false, landedAfterOrder = null, polls = 0;
+    const slow = () => new Promise(r => setTimeout(() => { landedAfterOrder = ordered; r(json(503, {})); }, 2500));
+    const s = await open(true, true, json(200, BARMAN), null, null, null, bar({
+      dirs: () => ++dn === 2 ? slow() : DIR(true),
+      order: () => { ordered = true; return json(201, ORDER); },
+      list: () => { if (!ordered) return json(200, [row('new')]); polls++; return json(200, [row(polls === 1 ? 'new' : 'ready')]); } }));
+    await toQueue(s);
+    await s.p.evaluate(() => { go('home'); go('barQueue'); });
+    await s.p.waitForTimeout(100);
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(3000);
+    if (landedAfterOrder !== true) bad.push(`bar-stale: поздний отказ пришёл не после заказа (${landedAfterOrder}) — случай дефекта не воспроизводит`);
+    await s.p.waitForTimeout(7500);
+    const st = await s.p.evaluate(() => DATA.bar.mine && DATA.bar.mine.state);
+    if (st !== 'ready') bad.push(`bar-stale: у заказа «${st}», хотя сервер уже отдаёт «ready» — опрос заказа умер после позднего отказа (опросов ${polls})`);
+    await s.ctx.close();
+  }
   async function toQueue(s) {
     await s.p.click('[data-go="barQueue"]');
     await s.p.waitForTimeout(250);
@@ -1020,6 +1045,34 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     if (!t.includes('Гости могут заказывать') || !t.includes('Закрыть смену')) bad.push('shift-open: после открытия не видно открытой смены');
     if (s.errs.length) bad.push('shift-open: ошибки страницы ' + s.errs.join('; '));
     await s.p.screenshot({ path: `${OUT}/live-shift-open.png`, fullPage: true });
+    await s.ctx.close();
+  }
+  // Cafe13KPG#221, порядок ответов loadBar. Перечитывание после «Открыть смену»
+  // медленное и успешное; за ним — более новые вызовы.
+  //  shift-stale-ok: новее — отказ при заходе в очередь (loadQueue возвращает
+  //    прежний BAR); перечитанная смена всё равно должна лечь.
+  //  shift-stale-empty: новее — успех и затем отказ меню (BAR пуст); поздний
+  //    успех перечитывания обязан заполнить BAR, иначе колбэк смены читает BAR.open у null.
+  for (const [name, fail, why] of [
+    ['shift-stale-ok', [3], 'перечитанная смена потеряна — на экране не «Смена открыта»'],
+    ['shift-stale-empty', [4], 'поздний успех не заполнил пустой BAR'],
+  ]) {
+    let order = [];
+    const slowOk = () => new Promise(r => setTimeout(() => { order.push(2); r(DIR(true)); }, 2000));
+    const s = await open(true, true, json(200, OWNER), null, null, null, shift({
+      dirs: n => n === 2 ? slowOk() : fail.includes(n) ? (order.push(n), json(503, {})) : (n > 2 ? (order.push(n), undefined) : undefined) }));
+    await toQueue(s);
+    await s.p.click('[data-action="shift-open"]');
+    await s.p.waitForTimeout(150);
+    await s.p.evaluate(() => { go('home'); go('barQueue'); });
+    await s.p.waitForTimeout(300);
+    if (name === 'shift-stale-empty') { await toBar(s); await s.p.waitForTimeout(300); }
+    await s.p.waitForTimeout(2000);
+    const last = Math.max(...fail);
+    if (order.indexOf(2) < order.indexOf(last) || order.indexOf(last) === -1)
+      bad.push(`${name}: медленный успех пришёл не последним (${JSON.stringify(order)}) — случай порядка не проверяет`);
+    if (s.errs.length) bad.push(`${name}: ${why}: ошибки страницы ` + s.errs.join('; '));
+    else if (name === 'shift-stale-ok' && !(await s.view()).includes('Гости могут заказывать')) bad.push(`${name}: ${why}`);
     await s.ctx.close();
   }
   // Бармен: открыть не может (это куратор), закрыть — в два нажатия.
