@@ -1331,7 +1331,9 @@ function personCard(p, k) {
            return [d.id, d.title + (have ? ' · уже есть' : ''), have];
          }), PEOPLE.dir, 'p-dir')
        : '<span class="small">' + (PEOPLE.dirsFail ? 'Направления не загрузились: ' + esc(PEOPLE.dirsFail) : 'Загружаем направления…') + '</span>') +
-      '<span class="small">' + (miss ? esc(miss) + ' ' : '') + 'Кто выдал и когда — запишется на сервере.</span>' +
+      '<span class="small">Кто выдал и когда — запишется на сервере.</span>' +
+      // почему «Выдать» не нажимается — своей строкой у кнопки, а не хвостом заметки
+      (miss ? '<span class="small" role="status"><b>' + esc(miss) + '</b></span>' : '') +
       '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="p-close"' + lock + '>Отмена</button>' +
       '<button type="button" class="btn dup-main" data-action="p-grant"' + (miss ? ' disabled' : lock) + '>' + (PEOPLE.busy ? 'Выдаём…' : 'Выдать') + '</button></div>';
   }
@@ -3413,7 +3415,11 @@ function doAction(a) {
       if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
       if (a === 'p-open') { peopleReset(); PEOPLE.open = Number(arg); }
       if (a === 'p-close') peopleReset();
-      if (a === 'p-role' && ROLE_PICK.indexOf(arg) !== -1) { PEOPLE.role = arg; PEOPLE.dir = null; }
+      if (a === 'p-role' && ROLE_PICK.indexOf(arg) !== -1) {
+        PEOPLE.role = arg; PEOPLE.dir = null;
+        // выбор из одного — не выбор: единственное направление ставится само
+        if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1) PEOPLE.dir = PEOPLE.dirs[0].id;
+      }
       if (a === 'p-dir') PEOPLE.dir = Number(arg);
       if (a === 'p-ask') { PEOPLE.ask = Number(arg); PEOPLE.deny = null; }
       if (a === 'p-keep') PEOPLE.ask = null;

@@ -2365,13 +2365,14 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
         roles: [{ id: 6, role: 'admin', direction_id: null, direction: null, granted_at: '2026-10-01T10:00:00+00:00' },
                 { id: 5, role: 'head', direction_id: null, direction: null, granted_at: '2026-10-01T10:00:00+00:00' }],
         memberships: ['member', 'partner'] }] };
-    const DIRS = [{ id: 7, title: 'Бар', is_active: true, is_open: true }, { id: 9, title: 'Старое', is_active: false, is_open: false }];
+    const DIRS = [{ id: 7, title: 'Бар', is_active: true, is_open: true }, { id: 8, title: 'Чай', is_active: true, is_open: false },
+                  { id: 9, title: 'Старое', is_active: false, is_open: false }];
     const HEAD_ONLY = clone(OWNER); HEAD_ONLY.roles = [{ role: 'head', direction_id: null }];
     const MASTER = clone(OWNER); MASTER.roles = [{ role: 'curator', direction_id: 7 }];
     const peopleCase = (me, r) => open(true, true, json(200, me), null, null, null, q => {
       const u = q.url();
       if (u.endsWith('/people')) return r.people || json(200, ROSTER);
-      if (u.endsWith('/directions')) return json(200, DIRS);
+      if (u.endsWith('/directions')) return r.dirs || json(200, DIRS);
       if (u.endsWith('/roles')) return r.grant || json(201, { id: 40, member_id: 702, role: 'x', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' });
       if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
       return undefined;
@@ -2410,13 +2411,17 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
         const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
         if (/70[123]|Алевтина/.test(stored)) bad.push('people-head: люди из /people легли в хранилище браузера');
         if (s.calls.filter(c => c.url.endsWith('/people')).length !== 1) bad.push('people-head: /people запрошен не один раз');
+        await s.p.screenshot({ path: `${OUT}/live-people.png` });
         // поиск по имени прячет чужие карточки
         await s.p.fill('#p-find', 'алев');
         const hid = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')].map(e => e.hidden));
         if (JSON.stringify(hid) !== '[false,true,true]') bad.push('people-head: поиск «алев» оставил ' + JSON.stringify(hid));
       }
+      // кадр формы выдачи: состояние без кадра — состояние, на которое никто не смотрит
+      await s.p.fill('#p-find', '');
+      await act(s, 'p-open:1'); await act(s, 'p-role:curator');
+      await s.p.screenshot({ path: `${OUT}/live-people-form.png` });
       if (s.errs.length) bad.push('people-head: ошибки страницы ' + s.errs.join('; '));
-      await s.p.screenshot({ path: `${OUT}/live-people.png` });
       await s.ctx.close();
     }
 
@@ -2507,6 +2512,39 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const deny = await s.p.$eval(`${card(s, uid)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== detail) bad.push(`${name}: плашка «${deny}», ждали «${detail}»`);
       if ((await s.view()).match(/Выдано:|Снято:/)) bad.push(`${name}: отказ показан успехом`);
+      await s.ctx.close();
+    }
+
+    // единственное направление ставится само: выбор из одного — формальность
+    {
+      const s = await peopleCase(OWNER, { dirs: json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: true }]),
+        grant: json(201, { id: 40, member_id: 702, role: 'bar', direction_id: 7, granted_at: '2026-10-21T10:00:00+00:00' }) });
+      await toPeople(s);
+      await act(s, 'p-open:1'); await act(s, 'p-role:bar');
+      if (!(await s.p.$(`${card(s, 1)} [data-action="p-dir:7"][aria-pressed="true"]`))) bad.push('people-one-dir: единственное направление не выбрано само');
+      await s.p.evaluate(() => window.__main && window.__main());
+      await s.p.waitForTimeout(300);
+      const pp = posts(s, /\/roles$/);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'bar', direction_id: 7 }))
+        bad.push('people-one-dir: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      await s.ctx.close();
+    }
+
+    // ответ 200/201, который не про это действие, — не успех: «не разобран», без «Выдано/Снято»
+    for (const [name, step, reply] of [
+      ['people-revoke-no-revoked-at', 'revoke', json(200, { id: 31, member_id: 701, role: 'curator' })],
+      ['people-revoke-other-id', 'revoke', json(200, { id: 32, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' })],
+      ['people-grant-other-role', 'grant', json(201, { id: 40, member_id: 702, role: 'director', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' })],
+      ['people-grant-other-person', 'grant', json(201, { id: 40, member_id: 701, role: 'ops_director', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' })]]) {
+      const s = await peopleCase(OWNER, { [step]: reply });
+      await toPeople(s);
+      const k = step === 'grant' ? 1 : 0;
+      if (step === 'grant') { await act(s, 'p-open:1'); await act(s, 'p-role:ops_director'); await s.p.evaluate(() => window.__main && window.__main()); }
+      else { await act(s, 'p-ask:31'); await act(s, 'p-revoke:31'); }
+      await s.p.waitForTimeout(300);
+      const deny = await s.p.$eval(`${card(s, k)} .deny`, e => e.textContent).catch(() => null);
+      if (deny !== 'Ответ сервера не разобран.') bad.push(`${name}: плашка «${deny}», ждали «Ответ сервера не разобран.»`);
+      if (/Выдано:|Снято:/.test(await s.view())) bad.push(`${name}: чужой ответ показан успехом`);
       await s.ctx.close();
     }
 
