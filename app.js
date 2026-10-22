@@ -1319,9 +1319,12 @@ function personCard(p, k) {
     // админа выдаёт только админ — кнопку, которую сервер отвергнет, не рисуем.
     // Общую роль, которая уже есть, второй раз не выдать (409); роль направления
     // с другим направлением законна — закрыто только уже занятое направление.
+    // Роль направления, у которой человек занял ВСЕ направления, закрыта целиком:
+    // иначе выбор вёл бы в тупик «выберите направление», где выбрать нечего.
     var picks = ROLE_PICK.filter(function (r) { return r !== 'admin' || grant('admin'); })
       .map(function (r) {
-        var have = DIR_ROLES.indexOf(r) === -1 && holds(p, r);
+        var have = DIR_ROLES.indexOf(r) === -1 ? holds(p, r)
+          : !!PEOPLE.dirs && PEOPLE.dirs.length > 0 && PEOPLE.dirs.every(function (d) { return holds(p, r, d.id); });
         return [r, (ROLE_NAME[r] || r) + (have ? ' · уже есть' : ''), have];
       });
     var needDir = DIR_ROLES.indexOf(PEOPLE.role) !== -1;
@@ -3420,10 +3423,8 @@ function doAction(a) {
       if (a === 'p-role' && ROLE_PICK.indexOf(arg) !== -1) {
         PEOPLE.role = arg; PEOPLE.dir = null;
         // выбор из одного — не выбор: единственное направление ставится само
-        // …кроме направления, где эта роль у человека уже есть: оно закрыто, и выбрать его — значит 409
-        var who = PEOPLE.list && PEOPLE.list[PEOPLE.open];
-        if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1 &&
-            who && !holds(who, arg, PEOPLE.dirs[0].id)) PEOPLE.dir = PEOPLE.dirs[0].id;
+        // (занятое единственное направление сюда не доходит: такая роль закрыта в форме)
+        if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1) PEOPLE.dir = PEOPLE.dirs[0].id;
       }
       if (a === 'p-dir') PEOPLE.dir = Number(arg);
       if (a === 'p-ask') { PEOPLE.ask = Number(arg); PEOPLE.deny = null; }

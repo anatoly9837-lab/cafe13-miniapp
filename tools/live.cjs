@@ -2530,12 +2530,16 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
-    // одно направление, но роль в нём у человека уже есть: само не ставится, «Выдать» не нажимается
+    // одно направление, и роль в нём у человека уже есть: закрыта сама роль — ни 409, ни тупика
+    // «выберите направление», где выбрать нечего (нашли arhitector-47 и designer-55)
     {
       const s = await peopleCase(OWNER, { dirs: json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: true }]) });
       await toPeople(s);
-      await act(s, 'p-open:0'); await act(s, 'p-role:curator');
-      if (await s.p.$(`${card(s, 0)} [data-action="p-dir:7"][aria-pressed="true"]`)) bad.push('people-one-dir-held: само выбрано направление, где роль уже есть');
+      await act(s, 'p-open:0');
+      const role = await s.p.$eval(`${card(s, 0)} [data-action="p-role:curator"]`, e => ({ off: e.disabled, t: e.textContent })).catch(() => null);
+      if (!role || !role.off || !role.t.includes('уже есть')) bad.push('people-one-dir-held: «Куратор направления» не закрыт, хотя единственное направление занято: ' + JSON.stringify(role));
+      await act(s, 'p-role:curator');
+      if (await s.p.$(`${card(s, 0)} [data-action="p-dir:7"][aria-pressed="true"]`)) bad.push('people-one-dir-held: выбрано занятое направление');
       if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-one-dir-held: «Выдать» нажимается на занятую пару');
       await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(200);
       if (posts(s, /\/roles$/).length) bad.push('people-one-dir-held: ушёл дубль роли');
