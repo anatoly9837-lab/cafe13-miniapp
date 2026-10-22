@@ -2570,6 +2570,19 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
+    // направления не загрузились: роль направления НЕ закрыта («заняты все» на пустом
+    // перечне — ложь), а причина видна словами
+    {
+      const s = await peopleCase(OWNER, { dirs: json(500, { detail: 'x' }) });
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      if (await s.p.$(`${card(s, 1)} [data-action="p-role:curator"][disabled]`)) bad.push('people-dirs-failed: роль куратора закрыта, хотя направления просто не пришли');
+      await act(s, 'p-role:curator');
+      if (!(await s.view()).includes('Направления не загрузились: Сервер ответил кодом 500.')) bad.push('people-dirs-failed: нет причины «Направления не загрузились»');
+      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-dirs-failed: «Выдать» нажимается без направления');
+      await s.ctx.close();
+    }
+
     // ответ 200/201, который не про это действие, — не успех: «не разобран», без «Выдано/Снято»
     for (const [name, step, reply] of [
       ['people-revoke-no-revoked-at', 'revoke', json(200, { id: 31, member_id: 701, role: 'curator' })],
