@@ -2067,6 +2067,10 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   // Без охраны по поколению второе нажатие получило бы 409 «вы уже записаны».
   {
     let n = 0, booked = false;
+    // Различитель: без него код 0 несёт ТРИ смысла — «гард сработал»,
+    // «поздний ответ пришёл раньше перечитывания» и «не пришёл вовсе за
+    // отведённое ожидание». Два последних гард не проверяют вообще.
+    const mark = { late: 0, reread: 0 };
     const s = await openCard(q => {
       const u = q.url();
       if (u.endsWith('/bookings')) { booked = true;
@@ -2074,8 +2078,11 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       if (u.endsWith('/events')) {
         n += 1;
         const body = json(200, [booked ? mineRow() : freeRow()]);
+        if (n === 3) mark.reread = Date.now();     // афишу перечитала запись
         // второй запрос — начатый до записи и отвечающий уже после неё
-        return n === 2 ? new Promise(r => setTimeout(() => r(body), 1500)) : body;
+        return n === 2
+          ? new Promise(r => setTimeout(() => { mark.late = Date.now(); r(body); }, 1500))
+          : body;
       }
       return undefined;
     });
@@ -2084,6 +2091,9 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.p.evaluate(() => window.__main());       // запись уходит и перечитывает афишу
     await s.p.waitForTimeout(2200);                  // поздний ответ успевает прийти
     const t = await s.view();
+    if (!mark.late) bad.push('book-pozdniy-otvet: поздний ответ прежней афиши не пришёл за отведённое ожидание — гард не проверен');
+    else if (!mark.reread) bad.push('book-pozdniy-otvet: запись афишу не перечитывала — гонке неоткуда взяться');
+    else if (mark.late < mark.reread) bad.push(`book-pozdniy-otvet: гонки не было — прежняя афиша ответила за ${mark.reread - mark.late} мс ДО перечитывания записью, случай гард не проверяет`);
     if (!t.includes('Вы записаны')) bad.push('book-pozdniy-otvet: запись пропала с карточки');
     if (t.includes('Записаться')) bad.push('book-pozdniy-otvet: поздний ответ прежней афиши вернул карточку в «Записаться»');
     if (s.errs.length) bad.push('book-pozdniy-otvet: ошибки страницы ' + s.errs.join('; '));
