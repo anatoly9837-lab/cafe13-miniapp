@@ -2530,6 +2530,18 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
+    // одно направление, но роль в нём у человека уже есть: само не ставится, «Выдать» не нажимается
+    {
+      const s = await peopleCase(OWNER, { dirs: json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: true }]) });
+      await toPeople(s);
+      await act(s, 'p-open:0'); await act(s, 'p-role:curator');
+      if (await s.p.$(`${card(s, 0)} [data-action="p-dir:7"][aria-pressed="true"]`)) bad.push('people-one-dir-held: само выбрано направление, где роль уже есть');
+      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-one-dir-held: «Выдать» нажимается на занятую пару');
+      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(200);
+      if (posts(s, /\/roles$/).length) bad.push('people-one-dir-held: ушёл дубль роли');
+      await s.ctx.close();
+    }
+
     // ответ 200/201, который не про это действие, — не успех: «не разобран», без «Выдано/Снято»
     for (const [name, step, reply] of [
       ['people-revoke-no-revoked-at', 'revoke', json(200, { id: 31, member_id: 701, role: 'curator' })],

@@ -1242,7 +1242,10 @@ function loadRoster() {
 }
 function grantMissing() {
   if (!PEOPLE.role) return 'Выберите, что поручить.';
-  if (DIR_ROLES.indexOf(PEOPLE.role) !== -1 && PEOPLE.dir === null) return 'Выберите направление.';
+  var need = DIR_ROLES.indexOf(PEOPLE.role) !== -1;
+  if (need && PEOPLE.dir === null) return 'Выберите направление.';
+  var who = PEOPLE.list && PEOPLE.list[PEOPLE.open];
+  if (who && holds(who, PEOPLE.role, need ? PEOPLE.dir : undefined)) return 'Это у человека уже есть.';
   return '';
 }
 function holds(p, role, dir) {
@@ -3420,7 +3423,10 @@ function doAction(a) {
       if (a === 'p-role' && ROLE_PICK.indexOf(arg) !== -1) {
         PEOPLE.role = arg; PEOPLE.dir = null;
         // выбор из одного — не выбор: единственное направление ставится само
-        if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1) PEOPLE.dir = PEOPLE.dirs[0].id;
+        // …кроме направления, где эта роль у человека уже есть: оно закрыто, и выбрать его — значит 409
+        var who = PEOPLE.list && PEOPLE.list[PEOPLE.open];
+        if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1 &&
+            who && !holds(who, arg, PEOPLE.dirs[0].id)) PEOPLE.dir = PEOPLE.dirs[0].id;
       }
       if (a === 'p-dir') PEOPLE.dir = Number(arg);
       if (a === 'p-ask') { PEOPLE.ask = Number(arg); PEOPLE.deny = null; }
