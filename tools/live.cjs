@@ -2546,6 +2546,30 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
+    // два направления: занято одно — роль открыта, само ничего не ставится;
+    // заняты оба — роль закрыта (правило одно с общими ролями)
+    {
+      const s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await act(s, 'p-open:0');
+      if (await s.p.$(`${card(s, 0)} [data-action="p-role:curator"][disabled]`)) bad.push('people-two-dirs-one-held: роль закрыта, хотя «Чай» свободен');
+      await act(s, 'p-role:curator');
+      if (await s.p.$(`${card(s, 0)} [data-action^="p-dir:"][aria-pressed="true"]`)) bad.push('people-two-dirs-one-held: направление выбрано само из двух');
+      await s.ctx.close();
+    }
+    {
+      const both = clone(ROSTER);
+      both.people[0].roles.push({ id: 33, role: 'curator', direction_id: 8, direction: 'Чай', granted_at: '2026-10-20T10:00:00+00:00' });
+      const s = await peopleCase(OWNER, { people: json(200, both) });
+      await toPeople(s);
+      await act(s, 'p-open:0');
+      const role = await s.p.$eval(`${card(s, 0)} [data-action="p-role:curator"]`, e => ({ off: e.disabled, t: e.textContent })).catch(() => null);
+      if (!role || !role.off || !role.t.includes('уже есть')) bad.push('people-two-dirs-held: «Куратор направления» не закрыт, хотя заняты оба направления: ' + JSON.stringify(role));
+      await act(s, 'p-role:curator');
+      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-two-dirs-held: «Выдать» нажимается');
+      await s.ctx.close();
+    }
+
     // ответ 200/201, который не про это действие, — не успех: «не разобран», без «Выдано/Снято»
     for (const [name, step, reply] of [
       ['people-revoke-no-revoked-at', 'revoke', json(200, { id: 31, member_id: 701, role: 'curator' })],
