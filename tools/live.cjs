@@ -3797,6 +3797,11 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       return true;
     };
     const openCard = async (s, id) => { await click(s, 'c-open:' + id); await s.p.waitForTimeout(250); };
+    // поля нет — своя строка, а не таймаут fill на 30 с, который роняет весь прогон
+    const put = async (s, sel, v, name) => {
+      if (await s.p.$(sel)) { await s.p.fill(sel, v); return true; }
+      bad.push(`${name}: нет поля ${sel}`); return false;
+    };
 
     // список: hidden запрошен явно, группы — экраном, причина возврата в строке
     {
@@ -3829,7 +3834,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
       if (!(await s.view()).includes('Поля потом не исправить')) bad.push('cards-create: нет предупреждения до сохранения');
-      await s.p.fill('#c-title', 'Флэт-уайт'); await s.p.fill('#c-group', ' кофе '); await s.p.fill('#c-price', '180');
+      await put(s, '#c-title', 'Флэт-уайт', 'cards'); await put(s, '#c-group', ' кофе ', 'cards'); await put(s, '#c-price', '180', 'cards');
       if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push('cards-create: у формы нет главной кнопки');
       await s.p.evaluate(() => window.__main && window.__main());
       await s.p.waitForTimeout(400);
@@ -3844,7 +3849,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
-      await s.p.fill('#c-title', 'Раф'); await s.p.fill('#c-group', 'Ко фе'); await s.p.fill('#c-price', '200');
+      await put(s, '#c-title', 'Раф', 'cards'); await put(s, '#c-group', 'Ко фе', 'cards'); await put(s, '#c-price', '200', 'cards');
       await click(s, 'c-save'); await s.p.waitForTimeout(150);
       if (!(await s.view()).includes('Это та же группа, что «Кофе»?')) bad.push('cards-group-like: нет вопроса о похожей группе');
       if (cposts(s, /\/bar\/products$/).length) bad.push('cards-group-like: карточка ушла до ответа');
@@ -3862,10 +3867,20 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await click(s, 'c-lang:th'); await s.p.waitForTimeout(200);
       if ((await s.p.inputValue('#c-recipe')) !== '') bad.push('cards-recipe: в поле TH чужой текст');
       if (!(await s.view()).includes('Сохранить рецепт (TH)')) bad.push('cards-recipe: у TH без рецепта нет «Сохранить»');
-      await s.p.fill('#c-recipe', 'สูตร'); await click(s, 'c-recipe:53'); await s.p.waitForTimeout(300);
+      await put(s, '#c-recipe', 'สูตร', 'cards'); await click(s, 'c-recipe:53'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/53\/recipe$/);
       if (pp.length !== 1 || pp[0].body !== JSON.stringify({ lang: 'th', body: 'สูตร' })) bad.push('cards-recipe: ушло ' + JSON.stringify(pp.map(c => c.body)));
       if (!(await s.view()).includes('Рецепт сохранён (TH).')) bad.push('cards-recipe: нет итога');
+      await s.ctx.close();
+    }
+    // язык есть в recipes, а сервер отдал другой («что есть»): чужой текст в поле
+    // не кладётся — иначе «Заменить (TH)» записало бы русский рецепт тайским
+    {
+      const s = await cardsCase(WORKER, {});
+      await toCards(s); await openCard(s, 51);
+      await click(s, 'c-lang:th'); await s.p.waitForTimeout(250);
+      const v = await s.p.inputValue('#c-recipe').catch(() => null);
+      if (v !== '') bad.push(`cards-recipe-foreign: в поле TH «${v}», а сервер отдал рецепт на ru`);
       await s.ctx.close();
     }
     // бар: черновик — на утверждение; ждущую — утвердить нечем
@@ -3901,7 +3916,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await toCards(s); await openCard(s, 51);
       await click(s, 'c-back'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(150);
       if (cposts(s, /state$/).length) bad.push('cards-return: возврат ушёл без причины');
-      await s.p.fill('#c-reason', 'нет фото'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(300);
+      await put(s, '#c-reason', 'нет фото', 'cards'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/51\/state$/);
       if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'hidden', note: 'нет фото' })) bad.push('cards-return: ушло ' + JSON.stringify(pp.map(c => c.body)));
       await s.ctx.close();
