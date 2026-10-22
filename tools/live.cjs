@@ -2118,6 +2118,27 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // У ИДУЩЕГО события отмена остаётся: место ещё можно отдать тому, кто придёт
+  // (решение названо словами в `bookBlock`, единственное условие — `e.done`).
+  // Это парное РАЗРЕШЕНИЕ к запрету выше, и без своего случая ошибка
+  // «перестали предлагать отмену на идущем» прошла бы зелёной: запрет закрыт,
+  // разрешение — нет. Первая проверка здесь сторожит саму фикстуру: событие
+  // обязано ИДТИ, иначе случай судит кончившееся и доказывает запрет второй раз.
+  {
+    const liveRow = () => EV({ id: 4, title: 'Уже начался',
+      starts_at: new Date(NOWFIX - 1800e3).toISOString(), duration_min: 180,
+      taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 });
+    const s = await openCard(q => q.url().endsWith('/events') ? json(200, [liveRow()]) : undefined);
+    const t = await s.view();
+    if (!t.includes('идёт')) bad.push('cancel-idet: событие фикстуры не идёт — случай судит не идущее');
+    if (t.includes('завершилось')) bad.push('cancel-idet: идущее событие помечено завершившимся');
+    if (!t.includes('Вы записаны')) bad.push('cancel-idet: запись не показана');
+    if (!(await s.p.$('[data-action="book-cancel"]'))) bad.push('cancel-idet: у идущего события кнопки отмены нет — своё место не снять');
+    if (s.errs.length) bad.push('cancel-idet: ошибки страницы ' + s.errs.join('; '));
+    await s.p.screenshot({ path: `${OUT}/live-cancel-idet.png` });
+    await s.ctx.close();
+  }
+
   // Отказ на отмену — словами сервера, а не «успешно».
   {
     const s = await openCard(q => {
