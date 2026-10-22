@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v22 · 21.10.2026';
+var VERSION = 'v23 · 22.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -297,7 +297,7 @@ function untilText(m) {
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
-              events: 1, event: 1,
+              events: 1, event: 1, eventNew: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -1533,6 +1533,157 @@ function manageBlock(e) {
   return head + '<button type="button" class="btn ghost" data-action="event-cancel">Отменить мероприятие</button></div>';
 }
 
+/* ── завести мероприятие ───────────────────────────────
+   Право даёт либо роль клуба, либо КУПЛЕННЫЙ уровень членства: уровень
+   покупается и кончается сроком, роль выдаётся главой. Роли «мастер» в базе
+   нет вовсе, поэтому признак здесь только из /me — и при приведении ролей к
+   модели меняется список значений, а не логика экрана.
+
+   Правок у мероприятия не существует: исправить можно лишь снятием, а
+   снятие гости видят как отмену. Поэтому форма говорит это ДО отправки —
+   после неё сказать уже некому.
+
+   Успех — перечитанная афиша И совпадение с отправленным: код 201 обещает
+   только, что сервер принял. */
+var EVN_BUSY = false;      // создание в пути: второе нажатие молчит
+var EVN_ERR = '';          // чем кончилась неудачная попытка — текст на форме
+
+function mayCreateEvent() {
+  return LIVE && (grant('admin') || grant('director') || grant('staff') ||
+                  grant('head') || grant('curator') ||
+                  DATA.role === 'organizer' || DATA.role === 'partner');
+}
+
+/* Форма → тело запроса. Пределы здесь те же, что в подписях полей: подпись
+   говорит до ввода, проверка — после, и расходиться им нельзя. */
+function eventForm() {
+  var title = val('f-title');
+  if (!title) return { err: 'Без названия мероприятие в афишу не ставится.' };
+  if (title.length > 200) return { err: 'Название длиннее 200 знаков: сократите.' };
+  var day = val('f-date'), time = val('f-time');
+  if (!day || !time) return { err: 'Укажите день и время начала.' };
+  // Пояс клуба стоит в строке явно: иначе сутки считает телефон ведущего, а
+  // он может быть где угодно. Перехода на лето в Таиланде нет, смещение
+  // постоянное — поэтому литерал, а не вычисление по часам телефона.
+  var starts = day + 'T' + time + ':00+07:00';
+  var at = Date.parse(starts);
+  if (isNaN(at)) return { err: 'День и время не разобраны: проверьте поля.' };
+  if (at <= Date.now()) return { err: 'Это время уже прошло по часам клуба.' };
+  var dur = parseInt(val('f-dur'), 10);
+  if (!(dur >= 1 && dur <= 1440)) return { err: 'Длительность — от 1 до 1440 минут.' };
+  var seats = parseInt(val('f-seats'), 10);
+  if (!(seats >= 1 && seats <= 500)) return { err: 'Мест — от 1 до 500.' };
+  if (!KIND[FORM.kind]) return { err: 'Выберите вид участия.' };
+  var price = 0, raw = val('f-price');
+  if (FORM.kind === 'paid') {
+    price = parseInt(raw, 10);
+    if (!(price > 0)) return { err: 'У платного мероприятия цена больше нуля.' };
+  } else if (FORM.kind === 'donation' && raw) {
+    price = parseInt(raw, 10);
+    if (!(price >= 0)) return { err: 'Ориентир — число или пустое поле.' };
+  }
+  return { body: { title: title, starts_at: starts, duration_min: dur, seats: seats,
+                   kind: FORM.kind, price: price,
+                   about: val('f-about'), filmed: !!FORM.filmed } };
+}
+
+/* Имена полей запроса по-русски: 422 называет поле в `loc`, и это
+   единственное, что в его теле годится человеку — `msg` приходит
+   по-английски. Поля, которого здесь нет, мы не отправляем вовсе: тогда
+   честнее общий текст с кодом, чем выдуманное имя. */
+var FIELD_RU = { title: 'Название', starts_at: 'Начало', duration_min: 'Длительность',
+                 seats: 'Мест', price: 'Цена', about: 'Описание', kind: 'Вид участия',
+                 filmed: 'Съёмка' };
+
+function badFields(d) {
+  if (!Array.isArray(d)) return [];
+  var out = [];
+  for (var i = 0; i < d.length; i++) {
+    var loc = d[i] && d[i].loc;
+    var ru = Array.isArray(loc) && loc.length ? FIELD_RU[loc[loc.length - 1]] : null;
+    if (ru && out.indexOf(ru) === -1) out.push(ru);
+  }
+  return out;
+}
+
+function createEvent() {
+  // Один предикат на рисование и на отправку: у человека без права кнопки
+  // нет, но и путь закрыт здесь же — иначе мутация, снявшая кнопку,
+  // осталась бы зелёной.
+  if (!mayCreateEvent() || EVN_BUSY) return;
+  // Снять введённое ДО первой перерисовки: экран рисует поля из FORM.v, и без
+  // этого отказ сервера стирал всё набранное — человек платил вводом за то, в
+  // чём не виноват. Нашлось мутацией: второе нажатие не заводило второго
+  // мероприятия не из-за запрета, а потому что поля к тому времени были пусты,
+  // то есть запрет был зелёным по чужой причине.
+  grabForm(EVENT_FIELDS);
+  var f = eventForm();
+  if (f.err) { EVN_ERR = f.err; haptic('warn'); render(); return; }
+  EVN_BUSY = true; EVN_ERR = ''; render();
+  api('POST', '/events', f.body).then(function (r) { afterEventCreate(r, f.body); });
+}
+
+/* Мало того, что событие нашлось под выданным номером: оно должно совпасть
+   с отправленным. Чужое событие под своим номером — правдоподобный успех. */
+function sameAsSent(e, sent) {
+  return e.title === sent.title && e.of === sent.seats && e.kind === sent.kind &&
+         e.at === Date.parse(sent.starts_at) &&
+         (sent.kind === 'paid' ? e.price === sent.price : true);
+}
+
+function afterEventCreate(r, sent) {
+  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var id = r.data && typeof r.data.id === 'number' ? String(r.data.id) : null;
+  api('GET', '/events').then(function (g) {
+    var list = g.status === 200 ? fromEvents(g.data) : null;
+    if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
+    EVN_BUSY = false;
+    var e = id ? eventById(id) : null;
+    if (e && sameAsSent(e, sent)) {
+      EVN_ERR = '';
+      FORM = { kind: 'paid', filmed: false, v: {} };
+      dropDraft();
+      haptic('ok');
+      // Человека уводим на карточку его события только если он всё ещё на
+      // форме: уйти с неё — тоже решение, и отменять его нечем.
+      if (current === 'eventNew') { go('event', id); return; }
+      render(); return;
+    }
+    if (r.status === 201 || r.status === 200) {
+      EVN_ERR = e ? 'Сервер принял, а под этим номером в афише другое мероприятие. Откройте афишу и проверьте, прежде чем заводить снова.'
+                  : 'Сервер принял, а в афише мероприятия нет. Откройте афишу и проверьте, прежде чем заводить снова.';
+      haptic('warn');
+    } else if (r.status === 0) {
+      EVN_ERR = 'Сервер не ответил, и в афише ничего не появилось. Можно попробовать ещё раз.';
+      haptic('warn');
+    } else if (r.status === 422) {
+      // Пределы на экране и модель сервера разошлись: клиент эти же поля
+      // проверяет до отправки, поэтому 422 — не ошибка человека, а
+      // расхождение, и его надо назвать, а не спрятать за кодом.
+      var ff = badFields(r.data && r.data.detail);
+      EVN_ERR = ff.length
+        ? 'Сервер не принял ' + (ff.length > 1 ? 'поля' : 'поле') + ': ' + ff.join(', ') +
+          '. На экране они проверяются иначе — сообщите в клуб, это расхождение.'
+        : failText(r);
+      haptic('warn');
+    } else if (r.status === 403 && /доступа нет/.test(detail)) {
+      // 403 приходит ДВУХ происхождений, и по коду они неразличимы: отказ
+      // прав («мероприятия заводят организатор, партнёр и работники клуба»)
+      // и привратник доступа («доступа нет»). Во втором случае слово сервера
+      // отвечает не на тот вопрос: человек прочитал бы «Доступа нет» посреди
+      // формы и стал бы править поля. Сравнение по ВХОЖДЕНИЮ: текст
+      // привратника может обрасти уточнением, и точное равенство тогда молча
+      // перестанет узнавать свой случай.
+      EVN_ERR = 'Вас ещё не впустили в клуб — дело не в форме. Напишите тому, кто вас приглашал.';
+      haptic('warn');
+    } else {
+      EVN_ERR = detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r);
+      haptic('warn');
+    }
+    render();
+  });
+}
+
 function eventList() { return LIVE ? EVENTS : DATA.events; }
 function eventById(id) {
   var list = eventList() || [];
@@ -1873,7 +2024,11 @@ var SCREENS = {
       }).join('')
       : '<div class="card quiet"><span class="small">' +
         (list.length ? 'На эту часть дня ничего не назначено.' : 'В афише пока ничего нет.') +
-        '</span></div>');
+        '</span></div>') +
+      // Вход в форму стоит у того, кто имеет право завести: гостю кнопка не
+      // показывается вовсе, а не отказывает по нажатию.
+      (mayCreateEvent() ? '<button type="button" class="btn" data-go="eventNew">' +
+        svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' : '');
   },
 
   event: function (id) {
@@ -2003,16 +2158,29 @@ var SCREENS = {
 
   eventNew: function () {
     var paid = FORM.kind === 'paid';
+    // У человека без права формы нет вовсе: форма, отказывающая по нажатию,
+    // хуже прямой строки о том, кто заводит мероприятия.
+    if (LIVE && !mayCreateEvent())
+      return '<div class="card quiet"><div class="col">' +
+        '<b style="font-size:13px">Мероприятия заводят не все</b>' +
+        '<span class="small">Их заводят организатор, бизнес-партнёр и работники клуба. Свой уровень членства видно на экране «Членство».</span>' +
+      '</div></div>';
     return '<p style="font-size:13px">Появится в афише клуба сразу после публикации.</p>' +
 
+      (EVN_ERR ? '<div class="card strong"><div class="col">' +
+        '<b style="font-size:13px">Не получилось</b><span class="small">' + esc(EVN_ERR) + '</span>' +
+      '</div></div>' : '') +
+
       '<div class="field"><label for="f-title">Название</label>' +
-        '<input id="f-title" type="text" value="' + keep('f-title') + '" placeholder="Например: звуковая практика"></div>' +
+        '<input id="f-title" type="text" value="' + keep('f-title') + '" placeholder="Например: звуковая практика">' +
+        '<span class="small">До 200 знаков.</span></div>' +
 
       '<div class="row" style="gap:10px;align-items:stretch">' +
         '<div class="field" style="flex:1 1 0"><label for="f-date">День</label>' +
           '<input id="f-date" type="date" value="' + keep('f-date') + '"></div>' +
         '<div class="field" style="flex:1 1 0"><label for="f-time">Начало</label>' +
-          '<input id="f-time" type="time" value="' + keep('f-time', '19:00') + '"></div>' +
+          '<input id="f-time" type="time" value="' + keep('f-time', '19:00') + '">' +
+          '<span class="small">Время клуба, остров.</span></div>' +
       '</div>' +
 
       '<div class="card quiet"><div class="col">' +
@@ -2028,10 +2196,15 @@ var SCREENS = {
       '</div></div>' +
 
       '<div class="row" style="gap:10px;align-items:stretch">' +
-        '<div class="field" style="flex:1 1 0"><label for="f-dur">Длительность</label>' +
-          '<input id="f-dur" type="text" value="' + keep('f-dur', '90 мин') + '"></div>' +
+        '<div class="field" style="flex:1 1 0"><label for="f-dur">Длительность, мин</label>' +
+          // В старом черновике здесь лежит «90 мин»: числовое поле с такой
+          // строкой рисуется ПУСТЫМ, и человек решил бы, что стёрлось само.
+          '<input id="f-dur" type="number" inputmode="numeric" value="' +
+            keep('f-dur', '90').replace(/\D+/g, '') + '">' +
+          '<span class="small">От 1 до 1440.</span></div>' +
         '<div class="field" style="flex:1 1 0"><label for="f-seats">Мест</label>' +
-          '<input id="f-seats" type="number" inputmode="numeric" value="' + keep('f-seats', '12') + '"></div>' +
+          '<input id="f-seats" type="number" inputmode="numeric" value="' + keep('f-seats', '12') + '">' +
+          '<span class="small">От 1 до 500.</span></div>' +
       '</div>' +
 
       '<div class="group"><span class="label">Участие</span>' +
@@ -2041,12 +2214,20 @@ var SCREENS = {
               (FORM.kind === k[0]) + '">' + k[1] + '</button>';
           }).join('') +
         '</div>' +
-        (paid ? '<div class="field"><label for="f-price">Цена входа, ฿</label>' +
-                '<input id="f-price" type="number" inputmode="numeric" value="' + keep('f-price', '400') + '"></div>'
-              : '<div class="note">' + svg(ICON.info) + '<span>' + (FORM.kind === 'free'
-                  ? 'Бесплатное: человек просто записывается, место держится за ним.'
-                  : 'Донейшн: сумма необязательна, и её отсутствие не мешает записаться.') +
-                '</span></div>') +
+        // Три вида — не три состояния одного поля, а разная ПОДПИСЬ в одном
+        // месте: у платного «Цена», у донейшна «Ориентир». У бесплатного
+        // поля нет в раскладке вовсе — серое поле, которое нельзя заполнить,
+        // выглядит работающим и молчит о причине.
+        (FORM.kind === 'free'
+          ? '<div class="note">' + svg(ICON.info) +
+            '<span>Бесплатное: человек просто записывается, место держится за ним. Поля цены здесь нет — брать нечего.</span></div>'
+          : '<div class="field"><label for="f-price">' + (paid ? 'Цена входа, ฿' : 'Ориентир, ฿') + '</label>' +
+            '<input id="f-price" type="number" inputmode="numeric" value="' +
+              keep('f-price', paid ? '400' : '') + '" placeholder="' + (paid ? '400' : '— ฿') + '">' +
+            '<span class="small">' + (paid
+              ? 'Больше нуля.'
+              : 'Можно не указывать: взнос добровольный, и его отсутствие не мешает записаться.') +
+            '</span></div>') +
       '</div>' +
 
       '<div class="field"><label for="f-about">Описание</label>' +
@@ -2061,7 +2242,12 @@ var SCREENS = {
         '<span class="pill' + (FORM.filmed ? ' on' : '') + '">' + (FORM.filmed ? 'да' : 'нет') + '</span>' +
       '</button>' +
 
-      '<button type="button" class="btn dup-main" data-action="create-event">Опубликовать в афише</button>';
+      (EVN_BUSY
+        ? '<div class="card quiet"><span class="small">Отправляем…</span></div>'
+        : '<button type="button" class="btn dup-main" data-action="create-event">Опубликовать в афише</button>') +
+      // Единственное место, где человек ещё может перечитать поля: правок у
+      // мероприятия не существует, исправляют снятием.
+      '<span class="small" style="text-align:center">Исправить потом нельзя: только снять, а снятие гости видят как отмену. Перечитайте поля.</span>';
   },
 
   eventManage: function (id) {
@@ -2997,7 +3183,12 @@ function homeOf() {
   return 'home';
 }
 var BACK = {
-  event: 'events', eventNew: 'organizer', eventManage: 'organizer',
+  event: 'events',
+  // В живом режиме форма открывается с афиши, в демонстрации — из кабинета.
+  // Без этого «назад» уводило на демонстрационный кабинет, где лежат
+  // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
+  eventNew: function () { return LIVE ? 'events' : 'organizer'; },
+  eventManage: 'organizer',
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
@@ -3073,6 +3264,7 @@ function go(screen, p) {
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
   if (screen !== 'event') { BOOK_ERR = ''; BOOK_ASK = false; EV_ERR = ''; EV_ASK = false; }
+  if (screen !== 'eventNew') EVN_ERR = '';
   render();
   if (screen === 'barOrder' && LIVE) pollMine();
   if (screen === 'barQueue' && LIVE) loadQueue();
@@ -3233,6 +3425,8 @@ function doAction(a) {
       SEG = arg; haptic(); render(); return;
     }
     if (a === 'retry-events') { loadEvents(); render(); return; }
+
+    if (a === 'create-event' && LIVE) { createEvent(); return; }
 
     if (a === 'create-event') {
       var title = (val('f-title') || 'Без названия');
@@ -3461,7 +3655,11 @@ function dropDraft() {
 function mainFor() {
   if (current === 'consent' || current === 'consentFull') return { text: 'Принимаю', a: 'accept-consent' };
   if (bare() || LIVE && !WIRED[current]) return null;
-  if (current === 'eventNew') return { text: 'Опубликовать в афише', a: 'create-event' };
+  // Пока запрос в пути или права нет, главной кнопки Telegram тоже нет:
+  // кнопка, которая молчит по нажатию, неотличима от зависшей.
+  if (current === 'eventNew')
+    return LIVE && (!mayCreateEvent() || EVN_BUSY) ? null
+         : { text: 'Опубликовать в афише', a: 'create-event' };
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
   if (current === 'barCart') return { text: 'Купить', a: 'send-order' };
   if (current === 'barExpense') return { text: 'Записать затрату', a: 'add-expense' };
