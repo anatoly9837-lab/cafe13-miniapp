@@ -2905,7 +2905,23 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       if (await s.p.$(`${card(s, 1)} [data-action="p-role:curator"][disabled]`)) bad.push('people-dirs-failed: роль куратора закрыта, хотя направления просто не пришли');
       await act(s, 'p-role:curator');
       if (!(await s.view()).includes('Направления не загрузились: Сервер ответил кодом 500.')) bad.push('people-dirs-failed: нет причины «Направления не загрузились»');
+      if ((await s.view()).includes('открытых направлений в клубе нет')) bad.push('people-dirs-failed: ложная фраза «открытых направлений нет», а перечень просто не пришёл');
       if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-dirs-failed: «Выдать» нажимается без направления');
+      await s.ctx.close();
+    }
+
+    // направления ещё грузятся: роль открыта, «Загружаем…», и ни слова о том, что их нет
+    {
+      const s = await peopleCase(OWNER, { dirs: new Promise(r => setTimeout(() => r(json(200, DIRS)), 2000)) });
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      if (await s.p.$(`${card(s, 1)} [data-action="p-role:curator"][disabled]`)) bad.push('people-dirs-loading: роль куратора закрыта, пока перечень грузится');
+      await act(s, 'p-role:curator');
+      const t = await s.view();
+      if (!t.includes('Загружаем направления…')) bad.push('people-dirs-loading: нет «Загружаем направления…»');
+      if (t.includes('открытых направлений в клубе нет')) bad.push('people-dirs-loading: ложная фраза «открытых направлений нет», а перечень ещё грузится');
+      // закрыть после ответа: fulfill на закрытой странице роняет прогон
+      await s.p.waitForTimeout(2200);
       await s.ctx.close();
     }
 
