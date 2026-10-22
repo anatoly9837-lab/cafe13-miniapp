@@ -2381,11 +2381,14 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const FAST = { product_id: 12, lang: 'th', asked_lang: 'th', exact: true,
                      body: 'АМЕРИКАНО-ТЕЛО-ВТОРОЙ-ПОЗИЦИИ', created_at: '2026-10-22T07:00:00Z' };
       const base = bar();
+      // Тот же различитель: без него зелёное не отличает «гард работает» от
+      // «поздний ответ успел прийти до ухода с экрана».
+      const mark = { sentB: 0, doneA: 0 };
       const handler = q => {
         const u = q.url();
         if (/\/bar\/products\/11\/recipe/.test(u))
-          return new Promise(r => setTimeout(() => r(json(200, SLOW)), 900));
-        if (/\/bar\/products\/12\/recipe/.test(u)) return json(200, FAST);
+          return new Promise(r => setTimeout(() => { mark.doneA = Date.now(); r(json(200, SLOW)); }, 900));
+        if (/\/bar\/products\/12\/recipe/.test(u)) { mark.sentB = mark.sentB || Date.now(); return json(200, FAST); }
         return base(q);
       };
       const s = await open(true, true, BARMAN, null, null, null, handler);
@@ -2407,6 +2410,10 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
           bad.push(`recipe-pozdniy-otvet: тела второй позиции на экране нет: «${t.slice(0, 140)}»`);
         if (t.includes('ЛАТТЕ-ТЕЛО-ПЕРВОЙ-ПОЗИЦИИ'))
           bad.push('recipe-pozdniy-otvet: поздний ответ по ПРЕЖНЕЙ позиции лёг на экран новой — работник приготовит не то');
+        if (!mark.sentB || !mark.doneA)
+          bad.push(`recipe-pozdniy-otvet: гонки не было — запросов ушло не два (B ${mark.sentB ? 'ушёл' : 'НЕ ушёл'}, A ${mark.doneA ? 'ответил' : 'НЕ ответил'}), случай гард не проверяет`);
+        else if (mark.doneA < mark.sentB)
+          bad.push(`recipe-pozdniy-otvet: гонки не было — первый ответил за ${mark.sentB - mark.doneA} мс ДО ухода на вторую позицию, случай гард не проверяет`);
       }
       await s.ctx.close();
     }
@@ -2898,11 +2905,17 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const LIST_B = { event_id: 8, title: 'Моё второе', starts_at: atBkk(1, 21), seats: 12,
         state: 'published', taken: 1,
         bookings: [ROW({ id: 22, first_name: 'ВТОРОГО-СОБЫТИЯ-ГОСТЬ' })] };
+      /* Различитель «гонка вообще была»: по коду возврата зелёное от
+         работающего гарда неотличимо от зелёного, когда поздний ответ успел
+         прийти ДО ухода с экрана. Поэтому случай сам следит за временем:
+         запоминает, когда ушёл второй запрос и когда ответил первый, и
+         краснеет, если первый успел ответить раньше. */
+      const mark = { sentB: 0, doneA: 0 };
       const s = await open(true, true, json(200, OWNER), null, null, null, q => {
         const u = q.url();
         if (/\/events\/4\/bookings$/.test(u))
-          return new Promise(r => setTimeout(() => r(json(200, LIST_A)), 900));
-        if (/\/events\/8\/bookings$/.test(u)) return json(200, LIST_B);
+          return new Promise(r => setTimeout(() => { mark.doneA = Date.now(); r(json(200, LIST_A)); }, 900));
+        if (/\/events\/8\/bookings$/.test(u)) { mark.sentB = Date.now(); return json(200, LIST_B); }
         if (u.endsWith('/events')) return json(200, [MINE_A, MINE_B]);
         return undefined;
       }, null, NOWFIX);
@@ -2919,6 +2932,10 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
         bad.push(`spisok-pozdniy-otvet: списка второго мероприятия на экране нет: «${t.slice(0, 140)}»`);
       if (t.includes('ПЕРВОГО-СОБЫТИЯ-ГОСТЬ'))
         bad.push('spisok-pozdniy-otvet: поздний список ПРЕЖНЕГО мероприятия лёг на карточку нового — ведущий позовёт не тех');
+      if (!mark.sentB || !mark.doneA)
+        bad.push(`spisok-pozdniy-otvet: гонки не было — запросов ушло не два (B ${mark.sentB ? 'ушёл' : 'НЕ ушёл'}, A ${mark.doneA ? 'ответил' : 'НЕ ответил'}), случай гард не проверяет`);
+      else if (mark.doneA < mark.sentB)
+        bad.push(`spisok-pozdniy-otvet: гонки не было — первый ответил за ${mark.sentB - mark.doneA} мс ДО ухода на второе, случай гард не проверяет`);
       await s.ctx.close();
     }
 
