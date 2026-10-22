@@ -4607,7 +4607,8 @@ function mainFor() {
   if (current === 'barCart') return { text: 'Купить', a: 'send-order' };
   // Право отдельно не спрашивается: список грузится только при mayCards(), а права
   // меняет лишь applyMe, перед которым список сброшен. Мутация на mayCards() здесь
-  // осталась зелёной — проверка была недостижимой.
+  // осталась зелёной — проверка была недостижимой. Что DATA.grants присваивается
+  // в одном месте, сторожит tools/live.cjs до первого случая.
   if (current === 'barCards' && LIVE && CARDS.list) return { text: 'Новая карточка', a: 'c-new' };
   if (current === 'barCard' && param === 'new' && !CARD.busy) return { text: 'Сохранить черновик', a: 'c-save' };
   if (current === 'people' && PEOPLE.open !== null && !PEOPLE.busy && !grantMissing()) return { text: 'Выдать', a: 'p-grant' };

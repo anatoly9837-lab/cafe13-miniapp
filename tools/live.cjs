@@ -86,6 +86,15 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   console.error('КРАСНОЕ: app.js: выключатель API_ON не найден ровно один раз (' + decl.length + ')');
   process.exit(1);
 }
+// Главная кнопка «Новая карточка» не спрашивает mayCards(): права меняет лишь
+// applyMe, перед которым списки сброшены. Довод держится на том, что DATA.grants
+// присваивается в одном месте; второе присваивание — и условие надо вернуть
+// (предложено designer-55, 22.10.2026).
+const grantsSet = src.match(/DATA\.grants\s*=(?!=)/g) || [];
+if (grantsSet.length !== 1) {
+  console.error('КРАСНОЕ: app.js: DATA.grants присваивается не в одном месте (' + grantsSet.length + ') — верните mayCards() в mainFor у barCards');
+  process.exit(1);
+}
 
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
