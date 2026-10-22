@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v32 · 22.10.2026';
+var VERSION = 'v33 · 22.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -477,12 +477,27 @@ function failText(r) {
    режиме. Ответ, ушедший под прежнего и вернувшийся после смены, молчит —
    иначе экран нового человека получил бы направление или меню прежнего. */
 var WHO = 0;
+/* Вызовы loadBar идут внахлёст (опрос очереди, меню, смена, касса), и ответы
+   приходят не по порядку. BAR_SEQ — номер вызова; BAR_SEEN — новейший
+   отвеченный; BAR_OK — новейший успешный.
+   Отказ обнуляет BAR, только если он новее всех ответов: поздний отказ
+   прежнего вызова стирал направление при любом гарде вызывающего, и опрос
+   своего заказа умирал молча — pollMine выходит на !BAR до перевооружения
+   (Cafe13KPG#221). Свежий отказ обнуляет по-прежнему: после смены
+   «не перечиталось» значит «не знаем».
+   Успех применяется, если он новее прежнего успеха — даже после более
+   нового отказа (loadQueue при отказе возвращает прежний BAR, и без этого
+   перечитанная смена потерялась бы), — или если BAR пуст: done('') обещает
+   вызывающему непустой BAR (смена читает BAR.open). */
+var BAR_SEQ = 0, BAR_SEEN = 0, BAR_OK = 0;
 function loadBar(done) {
-  var who = WHO;
+  var who = WHO, seq = ++BAR_SEQ;
   api('GET', '/directions').then(function (r) {
     if (who !== WHO) return;
     var b = r.status === 200 ? fromDirections(r.data) : undefined;
-    BAR = b || null;
+    if (b) { if (seq > BAR_OK || !BAR) { BAR = b; BAR_OK = Math.max(BAR_OK, seq); } }
+    else if (seq > BAR_SEEN) BAR = null;
+    BAR_SEEN = Math.max(BAR_SEEN, seq);
     done(b ? '' : b === null ? 'На сервере не нашлось направления «Бар».' : failText(r));
   });
 }
@@ -1043,6 +1058,14 @@ function pollMine() {
   if (!LIVE || current !== 'barOrder' || !BAR) return;
   var gen = ++POLL_GEN;              // запрос старой цепочки, вернувшийся позже, молчит
   api('GET', '/bar/orders?direction_id=' + BAR.id).then(function (r) {
+    /* Половина `current !== 'barOrder'` недостижима (мутация зелёная, 22.10.2026):
+       current пишет только go(), а go() на входе в barOrder зовёт pollMine и
+       поднимает POLL_GEN — поздний ответ ловит вторая половина; MINE_FAIL и
+       DATA.bar.mine рисуются только на barOrder; switchTo гасит таймер и
+       поднимает POLL_GEN. ОЖИВЁТ, если: в barOrder войдут мимо go() (или go
+       перестанет звать pollMine); свой заказ начнут рисовать на другом экране
+       (плашка «заказ готов» в шапке, на вкладке «Бар»); pollMine перестанет
+       поднимать POLL_GEN на входе. Тогда — случай на неё. */
     if (current !== 'barOrder' || gen !== POLL_GEN) return;
     if (r.status === 200 && Array.isArray(r.data)) {
       var mine = DATA.bar.mine;
