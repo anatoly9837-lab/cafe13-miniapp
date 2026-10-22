@@ -486,6 +486,28 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     await s.ctx.close();
   }
 
+  // Поздний ответ опроса прежнего захода не откатывает состояние заказа
+  // (гард поколения в pollMine). Первый опрос медленный — заказ ещё «новый»,
+  // уход в меню и возврат дают второй, быстрый — «готов». Задержка — от запроса.
+  {
+    let n = 0, landed = false;
+    const slow = () => new Promise(r => setTimeout(() => { landed = true; r(json(200, [row('new')])); }, 1500));
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ list: () => ++n === 1 ? slow() : json(200, [row('ready')]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(250);
+    await s.p.evaluate(() => { go('bar'); go('barOrder'); });
+    await s.p.waitForTimeout(300);
+    const gets = s.calls.filter(c => c.method === 'GET' && c.url.includes('/bar/orders')).length;
+    if (gets !== 2) bad.push(`order-late: возврат не перечитал заказ (запросов ${gets})`);
+    if (landed) bad.push('order-late: прежний ответ пришёл раньше второго запроса — гонки не было, случай гарда не проверяет');
+    await s.p.waitForTimeout(1600);
+    const st = await s.p.evaluate(() => DATA.bar.mine && DATA.bar.mine.state);
+    if (st !== 'ready') bad.push(`order-late: состояние заказа откатилось — «${st}» поверх «ready»`);
+    else if (!(await s.view()).includes('готов')) bad.push('order-late: на экране заказа нет «готов»');
+    await s.ctx.close();
+  }
+
   // Двойное нажатие, пока заказ в пути, — один заказ.
   {
     const slow = () => new Promise(res => setTimeout(() => res(json(201, ORDER)), 600));
