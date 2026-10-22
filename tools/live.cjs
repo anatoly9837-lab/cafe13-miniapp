@@ -2881,6 +2881,47 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       return s;
     };
 
+    /* Поздний ответ под ПРЕЖНЕЕ мероприятие молчит. Защита (`gen !==
+       SIGNED_GEN`) стояла в коде со дня, когда список писался, и не была
+       доказана ни разу: мутация, снимавшая её, оставалась зелёной. Цена:
+       ведущий ушёл с одного своего мероприятия на другое — и увидел бы
+       записавшихся не на то, то есть позвал бы не тех людей.
+
+       Оба мероприятия СВОИ (organizer_id 1): список спрашивается только на
+       своём, и с чужого запроса не уходит вовсе. */
+    {
+      const MINE_A = MY({ id: 4, title: 'Моё первое' });
+      const MINE_B = MY({ id: 8, title: 'Моё второе', starts_at: atBkk(1, 21) });
+      const LIST_A = { event_id: 4, title: 'Моё первое', starts_at: atBkk(1, 19), seats: 12,
+        state: 'published', taken: 1,
+        bookings: [ROW({ id: 21, first_name: 'ПЕРВОГО-СОБЫТИЯ-ГОСТЬ' })] };
+      const LIST_B = { event_id: 8, title: 'Моё второе', starts_at: atBkk(1, 21), seats: 12,
+        state: 'published', taken: 1,
+        bookings: [ROW({ id: 22, first_name: 'ВТОРОГО-СОБЫТИЯ-ГОСТЬ' })] };
+      const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+        const u = q.url();
+        if (/\/events\/4\/bookings$/.test(u))
+          return new Promise(r => setTimeout(() => r(json(200, LIST_A)), 900));
+        if (/\/events\/8\/bookings$/.test(u)) return json(200, LIST_B);
+        if (u.endsWith('/events')) return json(200, [MINE_A, MINE_B]);
+        return undefined;
+      }, null, NOWFIX);
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(120);
+      await s.p.click('[data-event="4"]');
+      await s.p.waitForTimeout(100);                 // ответ по первому ещё в пути
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(80);
+      await s.p.click('[data-event="8"]');
+      await s.p.waitForTimeout(1200);                // поздний ответ по первому уже пришёл
+      const t = await s.view();
+      if (!t.includes('ВТОРОГО-СОБЫТИЯ-ГОСТЬ'))
+        bad.push(`spisok-pozdniy-otvet: списка второго мероприятия на экране нет: «${t.slice(0, 140)}»`);
+      if (t.includes('ПЕРВОГО-СОБЫТИЯ-ГОСТЬ'))
+        bad.push('spisok-pozdniy-otvet: поздний список ПРЕЖНЕГО мероприятия лёг на карточку нового — ведущий позовёт не тех');
+      await s.ctx.close();
+    }
+
     // Свой: список есть, суммы подписаны записью, графы «оплатил» нет.
     {
       const s = await openSigned(json(200, LIST()));
