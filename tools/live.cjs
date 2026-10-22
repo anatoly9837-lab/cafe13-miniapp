@@ -2583,6 +2583,22 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
+    // направления пришли, но их ноль (все сняты): роль закрыта, причина словами, а не пустой сегмент
+    for (const [name, dirs] of [['people-dirs-empty', []], ['people-dirs-all-closed', [{ id: 9, title: 'Старое', is_active: false, is_open: false }]]]) {
+      const s = await peopleCase(OWNER, { dirs: json(200, dirs) });
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      const role = await s.p.$eval(`${card(s, 1)} [data-action="p-role:curator"]`, e => ({ off: e.disabled, t: e.textContent })).catch(() => null);
+      if (!role || !role.off || !role.t.includes('направлений нет')) bad.push(`${name}: «Куратор направления» не закрыт словами: ` + JSON.stringify(role));
+      if (!(await s.view()).includes('открытых направлений в клубе нет')) bad.push(`${name}: нет причины «открытых направлений нет»`);
+      await act(s, 'p-role:curator');
+      if ((await s.view()).includes('Выберите направление.')) bad.push(`${name}: подсказка просит выбрать из пустого перечня`);
+      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push(`${name}: «Выдать» нажимается`);
+      // общая роль при этом выдаётся как обычно
+      if (await s.p.$(`${card(s, 1)} [data-action="p-role:director"][disabled]`)) bad.push(`${name}: закрыта и общая роль`);
+      await s.ctx.close();
+    }
+
     // ответ 200/201, который не про это действие, — не успех: «не разобран», без «Выдано/Снято»
     for (const [name, step, reply] of [
       ['people-revoke-no-revoked-at', 'revoke', json(200, { id: 31, member_id: 701, role: 'curator' })],

@@ -1320,17 +1320,22 @@ function personCard(p, k) {
     // Общую роль, которая уже есть, второй раз не выдать (409). Роль направления
     // закрыта целиком, только если человек занял ВСЕ её направления — иначе выбор
     // вёл бы в тупик «выберите направление», где выбрать нечего; занято не всё —
-    // роль открыта, закрыты лишь занятые направления. Перечень не пришёл или пуст —
-    // роль НЕ закрываем: [].every(...) истинно и закрыло бы её у всех.
+    // роль открыта, закрыты лишь занятые направления. Состояний перечня три:
+    // грузится или не пришёл — роль открыта, под ней причина словами; пришёл
+    // ПУСТЫМ (все направления сняты) — роль закрыта «· направлений нет»: выбрать
+    // нечего никогда. «Заняты все» на пустом перечне не считаем: [].every истинно.
     var picks = ROLE_PICK.filter(function (r) { return r !== 'admin' || grant('admin'); })
       .map(function (r) {
-        var have = DIR_ROLES.indexOf(r) === -1 ? holds(p, r)
+        var dirRole = DIR_ROLES.indexOf(r) !== -1;
+        var none = dirRole && !!PEOPLE.dirs && PEOPLE.dirs.length === 0;
+        var have = !dirRole ? holds(p, r)
           : !!PEOPLE.dirs && PEOPLE.dirs.length > 0 && PEOPLE.dirs.every(function (d) { return holds(p, r, d.id); });
-        return [r, (ROLE_NAME[r] || r) + (have ? ' · уже есть' : ''), have];
+        return [r, (ROLE_NAME[r] || r) + (have ? ' · уже есть' : none ? ' · направлений нет' : ''), have || none];
       });
     var needDir = DIR_ROLES.indexOf(PEOPLE.role) !== -1;
     var miss = grantMissing();
     form = seg('Что поручить', picks, PEOPLE.role, 'p-role') +
+      (PEOPLE.dirs && !PEOPLE.dirs.length ? '<span class="small">Куратора и бара выдать некуда: открытых направлений в клубе нет.</span>' : '') +
       (!needDir ? ''
        : PEOPLE.dirs ? seg('Направление', PEOPLE.dirs.map(function (d) {
            var have = holds(p, PEOPLE.role, d.id);
