@@ -1242,10 +1242,7 @@ function loadRoster() {
 }
 function grantMissing() {
   if (!PEOPLE.role) return 'Выберите, что поручить.';
-  var need = DIR_ROLES.indexOf(PEOPLE.role) !== -1;
-  if (need && PEOPLE.dir === null) return 'Выберите направление.';
-  var who = PEOPLE.list && PEOPLE.list[PEOPLE.open];
-  if (who && holds(who, PEOPLE.role, need ? PEOPLE.dir : undefined)) return 'Это у человека уже есть.';
+  if (DIR_ROLES.indexOf(PEOPLE.role) !== -1 && PEOPLE.dir === null) return 'Выберите направление.';
   return '';
 }
 function holds(p, role, dir) {
