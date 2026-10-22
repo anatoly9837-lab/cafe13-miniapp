@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v23 · 22.10.2026';
+var VERSION = 'v24 · 22.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -237,7 +237,8 @@ var LEVEL = { member: 'Член клуба', organizer: 'Организатор'
 // Имена ролей — только тех, смысл которых записан; остальные показываются кодом.
 var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клуба', god: 'Наследник',
                   admin: 'Администратор', director: 'Директор',
-                  staff: 'Касса', curator: 'Куратор направления', bar: 'Бар · исполнитель' };
+                  staff: 'Касса', curator: 'Куратор направления', bar: 'Бар · исполнитель',
+                  ops_director: 'Операционный директор', art_director: 'Арт-директор' };
 
 function ruDate(iso) {
   var d = new Date(iso);
@@ -297,7 +298,7 @@ function untilText(m) {
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
-              events: 1, event: 1, eventNew: 1,
+              events: 1, event: 1, eventNew: 1, people: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -1142,6 +1143,7 @@ function switchTo(on, as) {
     BOOK.done = []; BOOK.kind = ''; BOOK.ask = false;
     DAY.data = null; DAY.fail = ''; DAY.gen++;
     TOPUP.amount = ''; TOPUP.ask = false;
+    peopleReset(); PEOPLE.list = null; PEOPLE.fail = ''; PEOPLE.gen++;
     if (!on) TEST.people = null;
     applyMe(me);
     haptic('ok');
@@ -1156,6 +1158,213 @@ function testStrip() {
     (TEST.busy ? '' : TEST.as ? '<button type="button" class="btn mini" data-action="test-self">Выйти из просмотра</button>'
                               : '<button type="button" class="btn mini" data-action="test-off">Выйти из теста</button>') +
   '</div>';
+}
+
+/* ── люди и ответственность ────────────────────────────  #177
+   Единственный экран, который раздаёт права, — поэтому вход в него только у
+   главы клуба и админа, и решает это сервер: GET /people отвечает остальным
+   403, а экран показывает его текст. Перечень ролей — из NewRole.role
+   (cafe13-api app/routers/roles.py), а не из письма. Направление нужно ровно
+   у curator и bar — это CHECK базы (002_directions.up.sql:36): остальным его
+   не предлагаем, а этим двум без него «Выдать» не нажимается.
+   ⚠ В ответе /people есть tg_user_id живых людей: он живёт только в памяти
+   страницы — ни в разметке (карточки и кнопки знают номер строки списка, а не
+   id), ни в localStorage, ни в снимках. Своей таблицы людей у клиента нет.
+   Успех — сама перечитанная карточка и строка-заметка в ней, а не плашка
+   сверху: изменение видно там, где оно произошло.
+   Отказы 403 и 409 показываются текстом сервера: «последнего главу не снять»
+   и «админа выдаёт только админ» — правила сервера, пересказ завёл бы копию. */
+var ROLE_PICK = ['head', 'ops_director', 'art_director', 'director', 'staff', 'curator', 'bar', 'admin'];
+var DIR_ROLES = ['curator', 'bar'];
+var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
+               open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '' };
+
+function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
+function peopleReset() {
+  PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.dir = null; PEOPLE.ask = null; PEOPLE.deny = null; PEOPLE.done = null;
+}
+function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }
+
+/* Один битый человек — отказ целиком: список с пропавшей строкой выглядит полным. */
+function fromRoster(d) {
+  if (!d || !Array.isArray(d.people)) return null;
+  var out = [];
+  for (var i = 0; i < d.people.length; i++) {
+    var p = d.people[i];
+    if (!p || typeof p.tg_user_id !== 'number' || typeof p.first_name !== 'string' ||
+        !Array.isArray(p.roles) || !Array.isArray(p.memberships)) return null;
+    var roles = [];
+    for (var j = 0; j < p.roles.length; j++) {
+      var r = p.roles[j];
+      if (!r || typeof r.id !== 'number' || typeof r.role !== 'string') return null;
+      var dt = typeof r.direction === 'string' ? r.direction : '';
+      roles.push({ id: r.id, role: r.role, dir: typeof r.direction_id === 'number' ? r.direction_id : null,
+                   name: ROLE_NAME[r.role] || r.role, dirTitle: dt, words: roleWords(r.role, dt) });
+    }
+    out.push({
+      uid: p.tg_user_id,
+      name: [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Без имени',
+      levels: p.memberships.map(function (l) { return LEVEL[l] || l; }).join(', '),
+      roles: roles
+    });
+  }
+  return out;
+}
+function fromDirList(d) {
+  if (!Array.isArray(d)) return null;
+  for (var i = 0; i < d.length; i++)
+    if (!d[i] || typeof d[i].id !== 'number' || typeof d[i].title !== 'string' || typeof d[i].is_active !== 'boolean') return null;
+  return d.filter(function (x) { return x.is_active; }).map(function (x) { return { id: x.id, title: x.title }; });
+}
+function denyText(r) {
+  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  // 201 с чужим телом — тоже «не разобран», а не «ответил кодом 201»: код успеха отказом не назвать
+  return detail ? cap(detail) + '.' : r.status === 422 ? 'Сервер не принял запрос (код 422).'
+       : r.status >= 200 && r.status < 300 ? 'Ответ сервера не разобран.' : failText(r);
+}
+function loadRoster() {
+  var gen = ++PEOPLE.gen;
+  PEOPLE.list = null; PEOPLE.fail = '';
+  api('GET', '/people').then(function (r) {
+    if (gen !== PEOPLE.gen) return;
+    var list = r.status === 200 ? fromRoster(r.data) : null;
+    if (list) PEOPLE.list = list;
+    else PEOPLE.fail = r.status === 403 ? denyText(r) : failText(r);
+    if (current === 'people') render();
+  });
+  if (PEOPLE.dirs) return;
+  api('GET', '/directions').then(function (r) {
+    if (gen !== PEOPLE.gen) return;
+    var dirs = r.status === 200 ? fromDirList(r.data) : null;
+    PEOPLE.dirs = dirs; PEOPLE.dirsFail = dirs ? '' : failText(r);
+    if (current === 'people') render();
+  });
+}
+function grantMissing() {
+  if (!PEOPLE.role) return 'Выберите, что поручить.';
+  if (DIR_ROLES.indexOf(PEOPLE.role) !== -1 && PEOPLE.dir === null) return 'Выберите направление.';
+  return '';
+}
+function holds(p, role, dir) {
+  return p.roles.some(function (r) { return r.role === role && (dir === undefined || r.dir === dir); });
+}
+function grantSend() {
+  var p = PEOPLE.list && PEOPLE.list[PEOPLE.open];
+  if (!p || PEOPLE.busy || grantMissing()) return;
+  var body = { member_id: p.uid, role: PEOPLE.role };
+  var dir = null;
+  if (DIR_ROLES.indexOf(PEOPLE.role) !== -1) {
+    body.direction_id = PEOPLE.dir;
+    dir = (PEOPLE.dirs || []).filter(function (x) { return x.id === PEOPLE.dir; })[0];
+  }
+  var gen = PEOPLE.gen;
+  PEOPLE.busy = true; PEOPLE.deny = null; render();
+  api('POST', '/roles', body).then(function (r) {
+    if (gen !== PEOPLE.gen) return;
+    PEOPLE.busy = false;
+    var ok = r.status === 201 && r.data && r.data.member_id === p.uid && r.data.role === body.role;
+    if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
+    haptic('ok');
+    peopleReset();
+    PEOPLE.done = { uid: p.uid, text: 'Выдано: ' + roleWords(body.role, dir ? dir.title : '') + '. Кто выдал и когда — записано на сервере.' };
+    loadRoster(); render();
+  });
+}
+function revokeSend(rid) {
+  var p = (PEOPLE.list || []).filter(function (x) { return x.roles.some(function (y) { return y.id === rid; }); })[0];
+  if (!p || PEOPLE.busy) return;
+  var role = p.roles.filter(function (y) { return y.id === rid; })[0];
+  var gen = PEOPLE.gen;
+  PEOPLE.busy = true; PEOPLE.deny = null; render();
+  api('POST', '/roles/' + rid + '/revoke').then(function (r) {
+    if (gen !== PEOPLE.gen) return;
+    PEOPLE.busy = false; PEOPLE.ask = null;
+    var ok = r.status === 200 && r.data && r.data.id === rid && !!r.data.revoked_at;
+    if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
+    haptic('ok');
+    peopleReset();
+    PEOPLE.done = { uid: p.uid, text: 'Снято: ' + role.words + '. Снятая роль остаётся в истории на сервере.' };
+    loadRoster(); render();
+  });
+}
+/* Карточка знает номер строки списка (k), а не tg_user_id: id в разметке
+   уехал бы в снимок экрана и дальше. */
+function personCard(p, k) {
+  var lock = PEOPLE.busy ? ' disabled' : '';
+  var open = PEOPLE.open === k;
+  var heads = PEOPLE.list.filter(function (x) { return holds(x, 'head'); }).length;
+  var rows = p.roles.map(function (r) {
+    var asking = PEOPLE.ask === r.id;
+    // админа снимает только админ (roles.py _may_touch_admin) — кнопки, которая
+    // гарантированно кончится отказом, нет; вместо неё — кто может
+    var btn = r.role === 'admin' && !grant('admin') ? '<span class="small">снимает только администратор</span>'
+      : asking ? '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="p-keep"' + lock + '>Не снимать</button>' +
+                 '<button type="button" class="btn quiet" data-action="p-revoke:' + r.id + '"' + lock + '>Точно снять</button></span>'
+      : '<button type="button" class="btn quiet" data-action="p-ask:' + r.id + '"' + lock + '>Снять</button>';
+    // роль и направление — два факта: длинное название направления не рвёт имя роли
+    var under = [r.dirTitle, r.role === 'head' && heads === 1 ? 'единственный глава клуба' : ''].filter(Boolean).join(' · ');
+    return '<div class="row role-row"><span class="col"><span>' + esc(r.name) + '</span>' +
+        (under ? '<span class="small">' + esc(under) + '</span>' : '') + '</span>' + btn + '</div>' +
+      (asking ? '<span class="small">Снять «' + esc(r.words) + '» у ' + esc(p.name) + '? Права пропадут сразу.</span>' : '');
+  }).join('');
+  var form = '';
+  if (open) {
+    var seg = function (label, list, cur, act) {
+      return '<div class="group"><span class="label">' + label + '</span><div class="seg wrap">' +
+        list.map(function (x) {
+          return '<button type="button" data-action="' + act + ':' + esc(String(x[0])) + '"' +
+            (String(cur) === String(x[0]) ? ' aria-pressed="true"' : '') + (x[2] ? ' disabled' : lock) + '>' + esc(x[1]) + '</button>';
+        }).join('') + '</div></div>';
+    };
+    // админа выдаёт только админ — кнопку, которую сервер отвергнет, не рисуем.
+    // Общую роль, которая уже есть, второй раз не выдать (409). Роль направления
+    // закрыта целиком, только если человек занял ВСЕ её направления — иначе выбор
+    // вёл бы в тупик «выберите направление», где выбрать нечего; занято не всё —
+    // роль открыта, закрыты лишь занятые направления. Состояний перечня три:
+    // грузится или не пришёл — роль открыта, под ней причина словами; пришёл
+    // ПУСТЫМ (все направления сняты) — роль закрыта «· направлений нет»: выбрать
+    // нечего никогда. «Заняты все» на пустом перечне не считаем: [].every истинно.
+    var picks = ROLE_PICK.filter(function (r) { return r !== 'admin' || grant('admin'); })
+      .map(function (r) {
+        var dirRole = DIR_ROLES.indexOf(r) !== -1;
+        var none = dirRole && !!PEOPLE.dirs && PEOPLE.dirs.length === 0;
+        var have = !dirRole ? holds(p, r)
+          : !!PEOPLE.dirs && PEOPLE.dirs.length > 0 && PEOPLE.dirs.every(function (d) { return holds(p, r, d.id); });
+        return [r, (ROLE_NAME[r] || r) + (have ? ' · уже есть' : none ? ' · направлений нет' : ''), have || none];
+      });
+    var needDir = DIR_ROLES.indexOf(PEOPLE.role) !== -1;
+    var miss = grantMissing();
+    form = seg('Что поручить', picks, PEOPLE.role, 'p-role') +
+      (PEOPLE.dirs && !PEOPLE.dirs.length ? '<span class="small">Куратора и бара выдать некуда: открытых направлений в клубе нет.</span>' : '') +
+      (!needDir ? ''
+       : PEOPLE.dirs ? seg('Направление', PEOPLE.dirs.map(function (d) {
+           var have = holds(p, PEOPLE.role, d.id);
+           return [d.id, d.title + (have ? ' · уже есть' : ''), have];
+         }), PEOPLE.dir, 'p-dir')
+       : '<span class="small">' + (PEOPLE.dirsFail ? 'Направления не загрузились: ' + esc(PEOPLE.dirsFail) : 'Загружаем направления…') + '</span>') +
+      '<span class="small">Кто выдал и когда — запишется на сервере.</span>' +
+      // почему «Выдать» не нажимается — своей строкой у кнопки, а не хвостом заметки
+      (miss ? '<span class="small" role="status"><b>' + esc(miss) + '</b></span>' : '') +
+      '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="p-close"' + lock + '>Отмена</button>' +
+      '<button type="button" class="btn dup-main" data-action="p-grant"' + (miss ? ' disabled' : lock) + '>' + (PEOPLE.busy ? 'Выдаём…' : 'Выдать') + '</button></div>';
+  }
+  var mine = function (x) { return x && x.uid === p.uid; };
+  var deny = mine(PEOPLE.deny) ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(PEOPLE.deny.text) + '</span></div>' : '';
+  var done = mine(PEOPLE.done) ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(PEOPLE.done.text) + '</span></div>' : '';
+  var q = PEOPLE.find.trim().toLowerCase();
+  return '<div class="card" data-person="' + k + '"' +
+    (q && p.name.toLowerCase().indexOf(q) === -1 ? ' hidden' : '') + '>' +
+    '<div class="row top"><b>' + esc(p.name) + '</b><span class="small">' + esc(p.levels || 'без членства') + '</span></div>' +
+    (rows || '<span class="small">Ролей нет</span>') + done + deny + form +
+    (open ? '' : '<button type="button" class="btn ghost" data-action="p-open:' + k + '"' + lock + '>Выдать ответственность</button>') +
+  '</div>';
+}
+function peopleFilter() {
+  var q = PEOPLE.find.trim().toLowerCase();
+  [].forEach.call(document.querySelectorAll('[data-person]'), function (el) {
+    var p = PEOPLE.list && PEOPLE.list[Number(el.getAttribute('data-person'))];
+    el.hidden = !!q && !!p && p.name.toLowerCase().indexOf(q) === -1;
+  });
 }
 
 function applyMe(me) {
@@ -1906,6 +2115,10 @@ var SCREENS = {
             '<span class="grow"><b>Доход и расход бара</b><span class="small">Выручка и затраты руками, с комментарием</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' : '') +
           '</div>' : '') +
+        (mayPeople() ? '<div class="group"><span class="label">Клуб</span>' +
+          '<button type="button" class="listitem accent" data-go="people">' +
+            '<span class="grow"><b>Люди и ответственность</b><span class="small">Кто за что отвечает: выдать и снять</span></span>' +
+            svg(ICON.chev, 'chev') + '</button></div>' : '') +
         afishaHome() :
       '<div class="group">' +
         '<div class="row"><span class="label">На этой неделе</span>' +
@@ -2872,6 +3085,18 @@ var SCREENS = {
       '</div>';
   },
 
+  people: function () {
+    if (!mayPeople()) return '<div class="card quiet"><span class="small">Выдавать и снимать ответственность может глава клуба.</span></div>';
+    if (!PEOPLE.list) return PEOPLE.fail
+      ? '<div class="card quiet"><span class="small">' + esc(PEOPLE.fail) + '</span></div>' +
+        '<button type="button" class="btn ghost" data-action="p-reload">Повторить</button>'
+      : '<div class="card quiet"><span class="small">Загружаем людей…</span></div>';
+    return '<div class="field"><label for="p-find">Найти по имени</label>' +
+        '<input id="p-find" type="search" value="' + esc(PEOPLE.find) + '" placeholder="Имя"></div>' +
+      (PEOPLE.list.length ? PEOPLE.list.map(personCard).join('')
+                          : '<div class="card quiet"><span class="small">Сервер не вернул ни одного человека.</span></div>');
+  },
+
   /* Состояния входа. Каждое — свой экран со своей причиной: пустой кабинет
      у незнакомого выглядел бы как «вы в клубе, просто денег нет». */
   loading: function () {
@@ -3160,7 +3385,8 @@ var TITLES = {
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
-  eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга'
+  eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
+  people: 'Люди'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -3189,6 +3415,7 @@ var BACK = {
   // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
+  people: 'home',
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
@@ -3256,6 +3483,7 @@ function go(screen, p) {
     BOOK.from = current === 'barQueue' ? 'barQueue' : homeOf();
     BOOK.ask = false; BOOK.err = '';
   }
+  if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
   current = screen;
   param = p || null;
   if (screen === 'barMoney' && LIVE && !BAR) bookLoad();
@@ -3384,6 +3612,28 @@ function doAction(a) {
       haptic(); render(); return;
     }
     if (a === 't-send') { topupSend(); return; }
+    if (a.slice(0, 2) === 'p-' && current === 'people') {
+      if (PEOPLE.busy) return;
+      if (a === 'p-reload') { loadRoster(); render(); return; }
+      if (a === 'p-grant') { grantSend(); return; }
+      if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
+      if (a === 'p-open') { peopleReset(); PEOPLE.open = Number(arg); }
+      if (a === 'p-close') peopleReset();
+      if (a === 'p-role' && ROLE_PICK.indexOf(arg) !== -1) {
+        PEOPLE.role = arg; PEOPLE.dir = null;
+        // выбор из одного — не выбор: единственное направление ставится само
+        // (занятое единственное направление сюда не доходит: такая роль закрыта в форме)
+        if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1) PEOPLE.dir = PEOPLE.dirs[0].id;
+      }
+      if (a === 'p-dir') PEOPLE.dir = Number(arg);
+      if (a === 'p-ask') { PEOPLE.ask = Number(arg); PEOPLE.deny = null; }
+      if (a === 'p-keep') PEOPLE.ask = null;
+      haptic(); render();
+      // раскрытая форма — в вид: иначе она открылась бы за нижним краем
+      var f = a === 'p-open' && document.querySelector('[data-person="' + PEOPLE.open + '"]');
+      if (f && f.scrollIntoView) f.scrollIntoView({ block: 'start' });
+      return;
+    }
     if (a === 'shift-open') { shiftAct(true); return; }
     if (a === 'shift-ask') { SHIFT_ASK = true; render(); return; }
     if (a === 'shift-keep') { SHIFT_ASK = false; render(); return; }
@@ -3509,6 +3759,10 @@ function doAction(a) {
 
 /* Съёмка напитка и фото чека. Отправить снимок пока некуда — приёма снимков на сервере ещё нет;
    честный ответ лучше вида работающей отправки. */
+document.addEventListener('input', function (ev) {
+  if (ev.target && ev.target.id === 'p-find') { PEOPLE.find = ev.target.value; peopleFilter(); }
+});
+
 document.addEventListener('change', function (ev) {
   var t = ev.target;
   // смена даты сразу показывает, в чей отчёт уйдёт запись
@@ -3662,6 +3916,7 @@ function mainFor() {
          : { text: 'Опубликовать в афише', a: 'create-event' };
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
   if (current === 'barCart') return { text: 'Купить', a: 'send-order' };
+  if (current === 'people' && PEOPLE.open !== null && !PEOPLE.busy && !grantMissing()) return { text: 'Выдать', a: 'p-grant' };
   if (current === 'barExpense') return { text: 'Записать затрату', a: 'add-expense' };
   if (current === 'drink' && LIVE) {
     var dl = findDrink(param);
