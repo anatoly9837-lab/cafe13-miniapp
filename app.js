@@ -3622,14 +3622,15 @@ var SCREENS = {
       ['В меню', L.filter(function (c) { return c.state === 'active'; })]
     ];
     // «Новая карточка» — под списком: работа здесь — очередь утверждения,
-    // а заведение карточки случается реже (designer-55, 22.10.2026).
+    // а заведение карточки случается реже (designer-55, 22.10.2026). В Telegram
+    // её место — главная кнопка (mainFor), доступная при любой длине списка.
     return '<div class="card quiet"><span class="small">Направление «Бар»</span></div>' +
       parts.filter(function (x) { return x[1].length; }).map(function (x) {
         return '<div class="group" data-cards="' + esc(x[0]) + '"><span class="label">' + esc(x[0]) + ' · ' + x[1].length + '</span>' +
           x[1].map(cardRow).join('') + '</div>';
       }).join('') +
       (L.length ? '' : '<div class="card quiet"><span class="small">Карточек пока нет — ни в меню, ни в работе.</span></div>') +
-      '<button type="button" class="btn ghost" data-action="c-new">Новая карточка</button>';
+      '<button type="button" class="btn ghost dup-main" data-action="c-new">Новая карточка</button>';
   },
 
   barCard: function (id) {
@@ -4604,6 +4605,10 @@ function mainFor() {
          : { text: 'Опубликовать в афише', a: 'create-event' };
   if (current === 'serviceNew') return { text: 'Отправить на проверку', a: 'create-service' };
   if (current === 'barCart') return { text: 'Купить', a: 'send-order' };
+  // Право отдельно не спрашивается: список грузится только при mayCards(), а права
+  // меняет лишь applyMe, перед которым список сброшен. Мутация на mayCards() здесь
+  // осталась зелёной — проверка была недостижимой.
+  if (current === 'barCards' && LIVE && CARDS.list) return { text: 'Новая карточка', a: 'c-new' };
   if (current === 'barCard' && param === 'new' && !CARD.busy) return { text: 'Сохранить черновик', a: 'c-save' };
   if (current === 'people' && PEOPLE.open !== null && !PEOPLE.busy && !grantMissing()) return { text: 'Выдать', a: 'p-grant' };
   if (current === 'barExpense') return { text: 'Записать затрату', a: 'add-expense' };

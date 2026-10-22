@@ -3844,6 +3844,13 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
           return !!(b && g && (g.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
         });
         if (!below) bad.push('cards-list: «Новая карточка» стоит не под списком');
+        // в Telegram «Новая карточка» — главная кнопка: длинный список не уводит её за прокрутку
+        if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push('cards-list: нет главной кнопки «Новая карточка»');
+        else {
+          await s.p.evaluate(() => window.__main());
+          await s.p.waitForTimeout(150);
+          if (!(await s.p.evaluate(() => !!document.querySelector('#c-title')))) bad.push('cards-list: главная кнопка не открыла новую карточку');
+        }
         await s.p.screenshot({ path: `${OUT}/live-cards.png` });
       }
       if (s.errs.length) bad.push('cards-list: ошибки страницы ' + s.errs.join('; '));
@@ -3855,6 +3862,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       if (await s.p.$('[data-go="barCards"]')) bad.push('cards-member: у члена клуба без роли есть вход «Карточки меню»');
       await s.p.evaluate(() => go('barCards')); await s.p.waitForTimeout(200);
       if (s.calls.some(c => /\/bar\/products/.test(c.url))) bad.push('cards-member: очередь спрошена без права');
+      if (await s.p.evaluate(() => window.__main !== null)) bad.push('cards-member: главная кнопка без права');
       await s.ctx.close();
     }
     // новая карточка: предупреждение до сохранения; группа сводится к существующей без регистра
@@ -4013,6 +4021,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       const t = await s.view();
       if (!t.includes('Ответ сервера не разобран.')) bad.push('cards-broken: нет «не разобран»');
       if (t.includes('Карточек пока нет')) bad.push('cards-broken: битый ответ показан пустым списком');
+      if (await s.p.evaluate(() => window.__main !== null)) bad.push('cards-broken: главная кнопка без загруженного списка');
       await s.ctx.close();
     }
   }
