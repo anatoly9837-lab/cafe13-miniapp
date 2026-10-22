@@ -1218,7 +1218,9 @@ function fromDirList(d) {
 }
 function denyText(r) {
   var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
-  return detail ? cap(detail) + '.' : r.status === 422 ? 'Сервер не принял запрос (код 422).' : failText(r);
+  // 201 с чужим телом — тоже «не разобран», а не «ответил кодом 201»: код успеха отказом не назвать
+  return detail ? cap(detail) + '.' : r.status === 422 ? 'Сервер не принял запрос (код 422).'
+       : r.status >= 200 && r.status < 300 ? 'Ответ сервера не разобран.' : failText(r);
 }
 function loadRoster() {
   var gen = ++PEOPLE.gen;
