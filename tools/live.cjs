@@ -3462,8 +3462,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     ]) {
       // задержка считается от самого запроса: таймер, заведённый при создании
       // случая, истекал ещё до ухода с экрана, и мутация на гард оставалась зелёной
-      let n = 0;
-      const slow = () => new Promise(r => setTimeout(() => r(json(409, { detail: 'qzx-позд-qzx' })), 1500));
+      let n = 0, landed = false;
+      const slow = () => new Promise(r => setTimeout(() => { landed = true; r(json(409, { detail: 'qzx-позд-qzx' })); }, 1500));
       const r = { get [step]() { n++; return n === 1 ? slow() : undefined; } };
       const s = await peopleCase(OWNER, r);
       await toPeople(s);
@@ -3475,6 +3475,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await run(again);
       await s.p.waitForTimeout(300);
       if (posts(s, re).length !== 2) bad.push(`${name}: после ухода и возврата запрос не ушёл — экран заперт (ушло ${posts(s, re).length})`);
+      // различитель: без него зелёное на мутации гарда значит и «гонки не было»
+      if (landed) bad.push(`${name}: первый ответ пришёл раньше второго запроса — гонки не было, случай гардов не проверяет`);
       await s.p.waitForTimeout(1600);
       if ((await s.view()).includes('qzx')) bad.push(`${name}: поздний ответ прежнего захода лёг на новый экран`);
       await s.ctx.close();
