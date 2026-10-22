@@ -1505,6 +1505,30 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     }
     await s.ctx.close();
   }
+  // Поздний ответ прежнего среза не ложится поверх свежего (гард поколения в
+  // loadDay). Первый отчёт медленный (задержка — от самого запроса), уход на
+  // «Заказы» и возврат дают второй, быстрый. Выручка прежнего среза
+  // другая (1 470 вместо 1 570) и помечена нечитаемой строкой.
+  {
+    let n = 0, landed = false;
+    const OLD = Object.assign({}, DAY_ROW, {
+      income: [Object.assign({}, DAY_ROW.income[0], { amount: '1400.00', note: 'qzx-срез-qzx' }), DAY_ROW.income[1]],
+      income_total: '1470.00' });
+    const slow = () => new Promise(r => setTimeout(() => { landed = true; r(json(200, OLD)); }, 1500));
+    const s = await open(true, true, json(200, SASHA), null, null, null, dayApi(() => ++n === 1 ? slow() : json(200, DAY_ROW))); s.name = 'day-late';
+    if (await toDay(s)) {
+      // пока отчёт грузится, на экране дня кнопок нет — уход вкладкой «Заказы»
+      await tap(s, '#tabs [data-go="barQueue"]'); await s.p.waitForTimeout(250);
+      await tap(s, '#view [data-go="barDay"]'); await s.p.waitForTimeout(300);
+      if (dayGets(s).length !== 2) bad.push(`day-late: возврат не перечитал отчёт (запросов ${dayGets(s).length})`);
+      if (landed) bad.push('day-late: прежний срез пришёл раньше второго запроса — гонки не было, случай гарда не проверяет');
+      await s.p.waitForTimeout(1600);
+      const t = await s.view();
+      if (t.includes('qzx')) bad.push('day-late: на экране дня выручка прежнего среза (1 470 ฿ вместо 1 570 ฿)');
+      else if (!t.includes('1 570 ฿')) bad.push('day-late: свежей выручки 1 570 ฿ на экране нет: ' + t.slice(0, 160));
+    } else bad.push('day-late: не дошли до отчёта');
+    await s.ctx.close();
+  }
   // Сбой обновления не стирает отчёт, а помечает.
   {
     let n = 0;
