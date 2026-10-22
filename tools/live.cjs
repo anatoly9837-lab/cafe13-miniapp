@@ -2272,6 +2272,168 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     }
   }
 
+  /* ── рецепт позиции бара (#176) ──
+     Формы ответа — из снимков `recipe-th.json`, `recipe-en-fallback.json`,
+     `recipe-net.json`, `recipe-denied-guest.json` (прогон координатора на
+     `2dedaa9`): `lang` — язык ПОКАЗАННОГО, `asked_lang` — запрошенный,
+     `exact` — совпали ли; «рецепта нет» — 404 с текстом, а не пустое тело. */
+  {
+    const R_TH = { product_id: 11, lang: 'th', asked_lang: 'th', exact: true,
+                   body: 'ชา: ใบชา 5 กรัม, น้ำ 90 องศา, 3 นาที', created_at: '2026-10-22T05:29:11.317057Z' };
+    const R_RU = { product_id: 11, lang: 'ru', asked_lang: 'en', exact: false,
+                   body: 'Чай: 5 г листа, вода 90°, настаивать 3 минуты', created_at: '2026-10-22T05:29:11.338467Z' };
+    const who = roles => { const w = clone(OWNER); w.roles = roles; return json(200, w); };
+    const BARMAN = who([{ role: 'bar', direction_id: 7 }]);      // направление «Бар» в фикстуре — 7
+    const MEMBER = who([]);
+    const ALIEN = who([{ role: 'curator', direction_id: 9 }]);   // куратор ЧУЖОГО направления
+
+    const isRecipe = u => /\/bar\/products\/\d+\/recipe/.test(u);
+    const withRecipe = reply => { const base = bar(); return q => isRecipe(q.url()) ? reply(q.url()) : base(q); };
+    const toDrink = async (me, extra) => {
+      const s = await open(true, true, me, null, null, null, extra || bar());
+      await toBar(s);
+      await s.p.click('[data-drink="11"]');
+      await s.p.waitForTimeout(150);
+      return s;
+    };
+
+    // Строку видит тот, кому отвечает СЕРВЕР: админ, бар и куратор своего
+    // направления (`_needs_bar_side`, замер по боевой ревизии 880b4b6).
+    for (const [name, me, want] of [
+      ['recipe-knopka-bar', BARMAN, true],
+      ['recipe-knopka-admin', json(200, OWNER), true],
+      ['recipe-knopka-chlen', MEMBER, false],
+      ['recipe-knopka-chuzhoe-napravlenie', ALIEN, false]]) {
+      const s = await toDrink(me);
+      const has = !!(await s.p.$('[data-action="recipe:11"]'));
+      if (has !== want) bad.push(`${name}: строка «Рецепт» ${has ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
+      if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // Два блока целиком, и подмена языка названа своими словами.
+    {
+      const s = await toDrink(BARMAN, withRecipe(u => json(200, /lang=en/.test(u) ? R_RU : R_TH)));
+      await s.p.click('[data-action="recipe:11"]');
+      await s.p.waitForTimeout(300);
+      const t = await s.view();
+      ['Рецепт · สูตร', 'Recipe · English', R_TH.body, R_RU.body,
+       'Рецепта на английском нет — показан на русском', 'ไม่มีภาษาอังกฤษ · แสดงภาษารัสเซีย',
+       // Плашка НАЗЫВАЕТ язык («тайский»), подпись о подмене о нём говорит
+       // («показан на русском») — один падеж на оба места читался как
+       // «ภาษาไทย · тайском», и видно это было только на кадре.
+       'ภาษาไทย · тайский'].forEach(x => {
+        if (!t.includes(x)) bad.push(`recipe: нет «${x}»`); });
+      // Кнопки «Отложить» нет: сервер знает making|ready|served|cancelled.
+      ['Отложить', 'отложить'].forEach(x => {
+        if (t.includes(x)) bad.push(`recipe: на экране «${x}», которого сервер не знает`); });
+      const asked = s.calls.filter(c => isRecipe(c.url)).map(c => c.url.replace(/^.*\/bar/, '/bar'));
+      if (asked.length !== 2) bad.push(`recipe: запросов рецепта ${asked.length}, ждали 2: ${JSON.stringify(asked)}`);
+      if (!asked.some(u => u === '/bar/products/11/recipe'))
+        bad.push(`recipe: нет запроса БЕЗ языка (его выбирает сервер по языку работника): ${JSON.stringify(asked)}`);
+      if (!asked.some(u => u === '/bar/products/11/recipe?lang=en'))
+        bad.push(`recipe: нет запроса на английский: ${JSON.stringify(asked)}`);
+      await s.p.screenshot({ path: `${OUT}/live-recipe.png`, fullPage: true });
+      await s.ctx.close();
+    }
+
+    /* У работника может быть не задан язык: Telegram не прислал
+       `language_code`, `members.lang` пуст, сервер отвечает `asked_lang: ""`
+       и `exact: false` — сравнивать было не с чем. Это НЕ подмена, и
+       говорить о ней нельзя: «Рецепта на «» нет» — сообщение о событии,
+       которого не было. (Возврат архитектора по #40.) */
+    {
+      // Тело — из снимка `recipe-no-lang.json` дословно (cafe13-api `71bcd40`):
+      // запрос БЕЗ параметра работником с пустым `members.lang`. Номер
+      // позиции здесь 11, а не 6 из снимка, — чтобы фикстура сходилась с
+      // меню, по которому открывается экран; разбор его не читает.
+      const R_NOLANG = { product_id: 11, lang: 'th', asked_lang: '', exact: false,
+                         body: 'ชา: ใบชา 5 กรัม, น้ำ 90 องศา, 3 นาที', created_at: '2026-10-22T07:03:34.685038Z' };
+      const s = await toDrink(BARMAN, withRecipe(u => json(200, /lang=en/.test(u) ? R_RU : R_NOLANG)));
+      await s.p.click('[data-action="recipe:11"]');
+      await s.p.waitForTimeout(300);
+      const t = await s.view();
+      ['Ваш язык не задан — показан на тайском', 'ไม่ได้ตั้งภาษา'].forEach(x => {
+        if (!t.includes(x)) bad.push(`recipe-yazyk-ne-zadan: нет «${x}»`); });
+      /* Запрет — ТОЛЬКО в первом блоке: во втором «Рецепта на английском
+         нет» законно, и общий запрет покраснел бы на законном. Проверяем,
+         что в блоке без языка нет НИ СЛОВА о запрошенном языке: иначе
+         первая же правка текста склеит два состояния обратно. */
+      const first = await s.p.evaluate(() => {
+        const g = [...document.querySelectorAll('#view .group')]
+          .filter(x => x.textContent.indexOf('Рецепт · ') === 0 || x.textContent.indexOf('Рецепт · สูตร') !== -1)[0];
+        return g ? g.textContent : '';
+      });
+      if (!first) bad.push('recipe-yazyk-ne-zadan: первый блок не найден — проверять нечего');
+      ['«»', 'Рецепта на', 'нет —'].forEach(x => {
+        if (first.includes(x)) bad.push(`recipe-yazyk-ne-zadan: в блоке без языка сказано «${x}» — это подпись о подмене, которой не было`); });
+      await s.ctx.close();
+    }
+
+    /* Поздний ответ под ПРЕЖНЮЮ позицию молчит. Цена прямая: работник открыл
+       латте, передумал, открыл американо — и ответ по латте лёг бы на экран
+       американо, а приготовил бы он не то. Защита стояла (`gen !==
+       RECIPE.gen`), но её не проверял никто: мутация, снявшая её, была
+       зелёной (возврат архитектора по #40). */
+    {
+      const SLOW = { product_id: 11, lang: 'th', asked_lang: 'th', exact: true,
+                     body: 'ЛАТТЕ-ТЕЛО-ПЕРВОЙ-ПОЗИЦИИ', created_at: '2026-10-22T07:00:00Z' };
+      const FAST = { product_id: 12, lang: 'th', asked_lang: 'th', exact: true,
+                     body: 'АМЕРИКАНО-ТЕЛО-ВТОРОЙ-ПОЗИЦИИ', created_at: '2026-10-22T07:00:00Z' };
+      const base = bar();
+      const handler = q => {
+        const u = q.url();
+        if (/\/bar\/products\/11\/recipe/.test(u))
+          return new Promise(r => setTimeout(() => r(json(200, SLOW)), 900));
+        if (/\/bar\/products\/12\/recipe/.test(u)) return json(200, FAST);
+        return base(q);
+      };
+      const s = await open(true, true, BARMAN, null, null, null, handler);
+      await toBar(s);
+      await s.p.click('[data-drink="11"]');
+      await s.p.waitForTimeout(120);
+      if (!(await s.p.$('[data-action="recipe:11"]'))) bad.push('recipe-pozdniy-otvet: нет строки рецепта у первой позиции');
+      else {
+        await s.p.click('[data-action="recipe:11"]');
+        await s.p.waitForTimeout(100);                 // ответ ещё в пути
+        await s.p.evaluate(() => go('bar'));
+        await s.p.waitForTimeout(80);
+        await s.p.click('[data-drink="12"]');
+        await s.p.waitForTimeout(100);
+        await s.p.click('[data-action="recipe:12"]');
+        await s.p.waitForTimeout(1200);                // поздний ответ по 11 уже пришёл
+        const t = await s.view();
+        if (!t.includes('АМЕРИКАНО-ТЕЛО-ВТОРОЙ-ПОЗИЦИИ'))
+          bad.push(`recipe-pozdniy-otvet: тела второй позиции на экране нет: «${t.slice(0, 140)}»`);
+        if (t.includes('ЛАТТЕ-ТЕЛО-ПЕРВОЙ-ПОЗИЦИИ'))
+          bad.push('recipe-pozdniy-otvet: поздний ответ по ПРЕЖНЕЙ позиции лёг на экран новой — работник приготовит не то');
+      }
+      await s.ctx.close();
+    }
+
+    // Отказы: «рецепта нет» и «не открылось» — разные вещи, и ни одно из них
+    // не выглядит пустым блоком.
+    for (const [name, reply, want, nope] of [
+      // Серверный текст 404 — поручение («напишите его…»), а экран действия
+      // не несёт: печатать его дословно значит упрекать того, кто пришёл
+      // прочитать. Показываем состояние и кто пишет рецепт.
+      ['recipe-net', json(404, { detail: 'у позиции нет живого рецепта: напишите его, иначе её нельзя вернуть в меню' }),
+        'Рецепта пока нет', 'напишите его'],
+      ['recipe-403', json(403, { detail: 'это делает бар или куратор направления' }),
+        'Это делает бар или куратор направления', 'Рецепта нет'],
+      ['recipe-set', 'abort', 'Сервер не ответил', 'Рецепта нет'],
+      ['recipe-bitiy', json(200, { product_id: 11, lang: 'th', body: 'текст', created_at: 'x' }),
+        'Ответ сервера не разобран', 'текст']]) {
+      const s = await toDrink(BARMAN, withRecipe(() => reply));
+      await s.p.click('[data-action="recipe:11"]');
+      await s.p.waitForTimeout(300);
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет слов «${want}», на экране: «${t.slice(0, 160)}»`);
+      if (t.includes(nope)) bad.push(`${name}: на экране лишнее «${nope}»`);
+      await s.ctx.close();
+    }
+  }
+
   // ── завести мероприятие (#178, первая половина) ──
   // Право даёт либо роль клуба, либо купленный уровень — две независимые
   // ветки, и у каждой свой случай: фикстура с одной ветвью оставила бы

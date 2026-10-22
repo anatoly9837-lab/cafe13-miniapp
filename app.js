@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v28 · 22.10.2026';
+var VERSION = 'v29 · 22.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -298,7 +298,7 @@ function untilText(m) {
    балансом выглядела бы так же настоящей. */
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
-              events: 1, event: 1, eventNew: 1, people: 1,
+              events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -2048,6 +2048,116 @@ function afterEventCreate(r, sent) {
   });
 }
 
+/* ── рецепт позиции бара (#176) ─────────────────────
+   Только ЧТЕНИЕ: конструктор карточки и общие функции бара — чужая зона,
+   поэтому здесь своё состояние и свои помощники.
+
+   Построчной пары «тайская строка / английская под ней» не бывает: сервер
+   хранит один живой рецепт НА ЯЗЫК, целым текстом, и записи независимы —
+   число шагов и порядок у них разные. Поэтому два блока целиком.
+
+   ⚠ Ручка на отсутствующий язык отдаёт ЛЮБОЙ живой рецепт, и единственная
+   защита от молчаливой подмены — поля ответа: `lang` — язык ПОКАЗАННОГО,
+   `asked_lang` — запрошенный, `exact` — совпали ли они (снимки
+   `recipe-th.json` и `recipe-en-fallback.json`). При `exact: false` блок
+   обязан сказать, на каком языке текст на самом деле, иначе экран соврёт
+   ровно в том, ради чего заведён.
+
+   Языка работника клиент не знает: в `/me` поля `lang` нет (замер по
+   снимку `me-member.json`). Поэтому первый блок спрашивается БЕЗ `lang` —
+   язык выбирает сервер по `members.lang`, — а какой это оказался язык,
+   видно из `asked_lang` в ответе. Подписи двуязычные: кто читает экран,
+   клиент не знает. */
+var RECIPE = { pid: null, gen: 0, me: null, en: null };
+// Два падежа: в плашке язык НАЗЫВАЮТ («тайский»), в подписи о подмене о нём
+// говорят («показан на русском»). Один список на оба места давал «ภาษาไทย ·
+// тайском» — видно только на отрисованном экране, в коде это незаметно.
+var LANG_RU = { ru: 'русский', en: 'английский', th: 'тайский' };
+var LANG_NA = { ru: 'русском', en: 'английском', th: 'тайском' };
+var LANG_TH = { ru: 'ภาษารัสเซีย', en: 'ภาษาอังกฤษ', th: 'ภาษาไทย' };
+
+function langRu(code) { return LANG_RU[code] || ('«' + code + '»'); }
+function langNa(code) { return LANG_NA[code] || ('«' + code + '»'); }
+function langTh(code) { return LANG_TH[code] || ('«' + code + '»'); }
+
+function mayRecipe() {
+  // Ровно то, что пропускает сервер (`_needs_bar_side`, замер по боевой
+  // ревизии 880b4b6): админ, а бар и куратор — на СВОЁМ направлении.
+  // `BAR` до загрузки направлений null, и `grant(role, undefined)` сняло бы
+  // проверку направления совсем — поэтому обе скобки обязательны.
+  return LIVE && (grant('admin') || (!!BAR && (grant('bar', BAR.id) || grant('curator', BAR.id))));
+}
+
+function fromRecipe(d) {
+  if (!d || typeof d !== 'object') return null;
+  if (typeof d.lang !== 'string' || !d.lang) return null;
+  if (typeof d.body !== 'string' || !d.body) return null;
+  if (typeof d.exact !== 'boolean') return null;
+  return { lang: d.lang, asked: typeof d.asked_lang === 'string' ? d.asked_lang : '',
+           exact: d.exact, body: d.body };
+}
+
+function recipeFail(r) {
+  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  // «Рецепта нет» и «не открылось» — разные вещи: первое чинится письмом
+  // рецепта, второе — правами или сетью.
+  //
+  // ⚠ Текст сервера на 404 («напишите его, иначе её нельзя вернуть в меню»)
+  // дословно НЕ печатается: это поручение, а этот экран действия не несёт —
+  // записи рецепта здесь нет вовсе (решение координатора, 22.10.2026).
+  // Поручение без кнопки читается как упрёк.
+  if (r.status === 404) return { none: true,
+    text: 'Рецепта пока нет. Его пишет бар или куратор направления.' };
+  return { none: false, text: detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r) };
+}
+
+function loadRecipe(pid) {
+  if (!LIVE || !mayRecipe()) return;
+  var gen = ++RECIPE.gen;
+  RECIPE = { pid: pid, gen: gen, me: { state: 'loading' }, en: { state: 'loading' } };
+  ask('', 'me');
+  ask('en', 'en');
+  function ask(lang, slot) {
+    api('GET', '/bar/products/' + pid + '/recipe' + (lang ? '?lang=' + lang : '')).then(function (r) {
+      if (gen !== RECIPE.gen) return;         // ответ под прежнюю позицию молчит
+      var got = r.status === 200 ? fromRecipe(r.data) : null;
+      RECIPE[slot] = got ? { state: 'ok', r: got } : { state: 'fail', fail: recipeFail(r) };
+      if (current === 'barRecipe') render();
+    });
+  }
+}
+
+/* Подпись о подменённом языке — на обоих языках сразу и с НАЗВАНИЕМ того,
+   что показано: «нет на английском, показан русский». Неизвестный код языка
+   печатается как есть, выдумывать названия нельзя. */
+function recipeSwap(asked, lang) {
+  return 'Рецепта на ' + langNa(asked) + ' нет — показан на ' + langNa(lang) + '. · ' +
+         'ไม่มี' + langTh(asked) + ' · แสดง' + langTh(lang);
+}
+
+function recipeBlock(head, slot, want) {
+  var s = RECIPE[slot], top = '<div class="group"><span class="label">' + esc(head) + '</span>';
+  if (!s || s.state === 'loading') return top + '<div class="card quiet"><span class="small">Читаем рецепт…</span></div></div>';
+  if (s.state === 'fail') return top + '<div class="card' + (s.fail.none ? ' quiet' : ' strong') + '"><div class="col">' +
+      '<b style="font-size:13px">' + (s.fail.none ? 'Рецепта нет' : 'Рецепт не открылся') + '</b>' +
+      '<span class="small">' + esc(s.fail.text) + '</span></div></div></div>';
+  var r = s.r;
+  var asked = want || r.asked;
+  // Три случая, а не два. `exact: false` бывает и БЕЗ подмены: у работника
+  // может быть не задан язык (Telegram не прислал language_code), тогда
+  // сервер отвечает `asked_lang: ""` — сравнивать было не с чем. Писать
+  // «Рецепта на «» нет» значит сообщать о подмене, которой не было.
+  var note = r.exact
+    ? '<span class="pill on">' + esc(langTh(r.lang)) + ' · ' + esc(langRu(r.lang)) + '</span>'
+    : !asked
+      ? '<span class="pill">' + esc('Ваш язык не задан — показан на ' + langNa(r.lang) + '. · ' +
+          'ไม่ได้ตั้งภาษา · แสดง' + langTh(r.lang)) + '</span>'
+      : '<span class="pill warm">' + esc(recipeSwap(asked, r.lang)) + '</span>';
+  return top + '<div class="card"><div class="col">' + note +
+      '<p style="font-size:14px;white-space:pre-line">' + esc(r.body) + '</p>' +
+    '</div></div></div>';
+}
+
 function eventList() { return LIVE ? EVENTS : DATA.events; }
 function eventById(id) {
   var list = eventList() || [];
@@ -2808,7 +2918,18 @@ var SCREENS = {
               '<span class="small num">' + n + ' × ' + money(d.price) + ' = ' + money(n * d.price) + ' ฿</span></div>' +
               stepper(d) + '</div></div>' +
             '<button type="button" class="btn ghost" data-go="barCart">Оформить заказ</button>'
-          : '<button type="button" class="btn ghost" data-action="cart-add:' + esc(d.id) + '">В заказ</button>');
+          : '<button type="button" class="btn ghost" data-action="cart-add:' + esc(d.id) + '">В заказ</button>') +
+        // Строка рецепта — рабочая, не гостевая: право ровно такое, какое
+        // пропускает сервер. Стоит ПОСЛЕ блока заказа, чтобы не двигать
+        // «Купить» и «В заказ». (Экран drink — зона frontend-11, строка
+        // поставлена с его согласия, 22.10.2026.)
+        // Ведущего значка нет: остальные `.listitem` в файле его не имеют, а
+        // класс `chev` везде стоит только у стрелки справа — чашка получала
+        // бы стили стрелки (заметил frontend-11 на ревью).
+        (mayRecipe() ? '<button type="button" class="listitem" data-action="recipe:' + esc(d.id) + '">' +
+            '<span class="grow"><b>Рецепт</b>' +
+            '<span class="small">Как готовить · สูตร</span></span>' +
+            svg(ICON.chev, 'chev') + '</button>' : '');
     }
     return tile(d, true) +
       '<div class="group"><h1>' + esc(d.title) + '</h1><p>' + esc(d.full || d.about) + '</p></div>' +
@@ -2826,6 +2947,26 @@ var SCREENS = {
         : '<button type="button" class="btn dup-main" data-action="cart-add:' + esc(d.id) + '">Добавить в заказ</button>') +
       '<div class="note">' + svg(ICON.info) +
         '<span>Фотографию в меню делают из своего снимка: на баре снимают напиток, ИИ-команда собирает карточку, куратор утверждает. Чужих картинок из каталогов здесь не будет — гость должен получить то, что увидел.</span>' +
+      '</div>';
+  },
+
+  /* Экран рецепта (#176). Два блока целиком, построчной пары нет: сервер
+     хранит один живой рецепт на язык, и записи независимы. Кнопки
+     «Отложить заказ» здесь нет — сервер знает только making|ready|served|
+     cancelled, а отмена — это деньги гостя, и называется она отменой. */
+  barRecipe: function (id) {
+    var d = findDrink(id);
+    if (!mayRecipe()) return '<div class="card quiet"><div class="col">' +
+      '<b style="font-size:13px">Рецепт — рабочая запись бара</b>' +
+      '<span class="small">Его показывают бару и куратору направления: гостю сервер его не отдаёт вовсе.</span>' +
+      '</div></div>';
+    return '<div class="col"><h1>' + esc(d ? d.title : 'Позиция ' + id) + '</h1>' +
+        (d ? '<span class="small">' + esc(d.full || d.about || '') + '</span>' : '') +
+      '</div>' +
+      recipeBlock('Рецепт · สูตร', 'me', '') +
+      recipeBlock('Recipe · English', 'en', 'en') +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Рецепт пишет бар: это инструкция работнику, а не карточка гостю. Нет нужного языка — попросите старшего дописать.</span>' +
       '</div>';
   },
 
@@ -3541,7 +3682,7 @@ var TITLES = {
   pass: 'Пропуск', membership: 'Членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно',
-  bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ',
+  bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
@@ -3578,6 +3719,7 @@ var BACK = {
   people: 'home',
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
+  barRecipe: function () { return 'drink'; },
   topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
   barMoney: function () { return BOOK.from; },
   barDay: function () { return LIVE ? DAY.from : homeOf(); },
@@ -3655,6 +3797,7 @@ function go(screen, p) {
   // Список записавшихся спрашивается при входе на карточку СВОЕГО события:
   // loadSigned сам молчит на чужом, поэтому предикат один и здесь.
   if (screen === 'event' && LIVE) loadSigned(eventById(param));
+  if (screen === 'barRecipe' && LIVE) loadRecipe(param);
   if (screen !== 'eventNew') EVN_ERR = '';
   render();
   if (screen === 'barOrder' && LIVE) pollMine();
@@ -3852,6 +3995,7 @@ function doAction(a) {
       SEG = arg; haptic(); render(); return;
     }
     if (a === 'retry-events') { loadEvents(); render(); return; }
+    if (a === 'recipe' && LIVE) { go('barRecipe', arg); return; }
 
     if (a === 'create-event' && LIVE) { createEvent(); return; }
 
