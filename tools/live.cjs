@@ -3586,6 +3586,23 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       if (pp !== 1) bad.push(`people-double: двойной тап «Выдать» отправил ${pp} запросов, а не один`);
       await s.ctx.close();
     }
+    // видимая сторона блокировки: пока «Выдать» в пути — надпись «Выдаём…»,
+    // кнопки карточки заперты (замечание архитектора и координатора к #46)
+    {
+      const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
+      await toPeople(s);
+      await act(s, 'p-open:1'); await act(s, 'p-role:ops_director');
+      await s.p.evaluate(() => window.__main && window.__main());
+      await s.p.waitForTimeout(150);
+      const v = await s.p.evaluate(() => {
+        const b = document.querySelector('#view [data-action="p-grant"]');
+        const c = document.querySelector('#view [data-action="p-close"]');
+        return { text: b && b.textContent.trim(), dis: !!(b && b.disabled), close: !!(c && c.disabled) };
+      });
+      if (v.text !== 'Выдаём…') bad.push(`people-busy-look: пока выдача в пути, на кнопке «${v.text}», а не «Выдаём…»`);
+      if (!v.dis || !v.close) bad.push(`people-busy-look: пока выдача в пути, кнопки не заперты (Выдать ${v.dis}, Отмена ${v.close})`);
+      await s.ctx.close();
+    }
     // то же для «Точно снять»: два нажатия, поставленные в очередь до перерисовки
     {
       const s = await peopleCase(OWNER, { revoke: new Promise(() => {}) });
