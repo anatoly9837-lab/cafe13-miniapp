@@ -3953,6 +3953,11 @@ function doAction(a) {
     }
     if (a === 't-send') { topupSend(); return; }
     if (a.slice(0, 2) === 'p-' && current === 'people') {
+      // Против двойного нажатия две линии: эта и своя проверка busy в
+      // grantSend/revokeSend. Они прикрывают друг друга: снятие любой одной
+      // зелёное, обеих — красное (people-double, people-double-revoke;
+      // Cafe13KPG#214, 22.10.2026). Снимать можно одну, не обе. Эта ещё и
+      // держит p-open/p-close: peopleReset снимает блокировку.
       if (PEOPLE.busy) return;
       if (a === 'p-reload') { loadRoster(); render(); return; }
       if (a === 'p-grant') { grantSend(); return; }
