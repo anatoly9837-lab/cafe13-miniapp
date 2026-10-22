@@ -3817,6 +3817,33 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
           bad.push('cards-list: порядок групп ' + JSON.stringify(order));
         const t = await s.view();
         ['Причина: нет фото', 'рецепта нет', 'рецепт: ru, th', 'Направление «Бар»'].forEach(x => { if (!t.includes(x)) bad.push(`cards-list: нет «${x}»`); });
+        // Цвет «рецепта нет» — глина, и проверяется ЗНАЧЕНИЕМ, а не наличием слов.
+        // 22.10.2026: подмена var(--clay-ink) на системный синий оставила батарею
+        // зелёной (258 из 258) — случай выше смотрел только текст строки.
+        // Сравнение идёт с токеном, вычисленным на ТОЙ ЖЕ странице, а не с литералом:
+        // литерал разойдётся с палитрой при первой её правке и начнёт врать.
+        // (Случай — designer-55, прогнан им парно.)
+        const paint = await s.p.evaluate(() => {
+          const el = [...document.querySelectorAll('#view .listitem .small span')]
+            .find(x => x.textContent.trim() === 'рецепта нет');
+          if (!el) return null;
+          const probe = document.createElement('span');
+          probe.style.color = 'var(--clay-ink)';
+          el.parentNode.appendChild(probe);
+          const want = getComputedStyle(probe).color;
+          probe.remove();
+          return { got: getComputedStyle(el).color, want: want };
+        });
+        if (!paint) bad.push('cards-list: строки «рецепта нет» нет в разметке — цвет мерить не на чем');
+        else if (paint.got !== paint.want)
+          bad.push(`cards-list: «рецепта нет» набрано ${paint.got}, а глина это ${paint.want}`);
+        // «Новая карточка» — под списком, а не над ним
+        const below = await s.p.evaluate(() => {
+          const b = document.querySelector('#view [data-action="c-new"]');
+          const g = [...document.querySelectorAll('#view [data-cards]')].pop();
+          return !!(b && g && (g.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
+        });
+        if (!below) bad.push('cards-list: «Новая карточка» стоит не под списком');
         await s.p.screenshot({ path: `${OUT}/live-cards.png` });
       }
       if (s.errs.length) bad.push('cards-list: ошибки страницы ' + s.errs.join('; '));

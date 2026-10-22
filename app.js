@@ -3621,13 +3621,15 @@ var SCREENS = {
       ['Сняты', L.filter(function (c) { return c.state === 'hidden' && !c.note; })],
       ['В меню', L.filter(function (c) { return c.state === 'active'; })]
     ];
+    // «Новая карточка» — под списком: работа здесь — очередь утверждения,
+    // а заведение карточки случается реже (designer-55, 22.10.2026).
     return '<div class="card quiet"><span class="small">Направление «Бар»</span></div>' +
-      '<button type="button" class="btn ghost" data-action="c-new">Новая карточка</button>' +
       parts.filter(function (x) { return x[1].length; }).map(function (x) {
         return '<div class="group" data-cards="' + esc(x[0]) + '"><span class="label">' + esc(x[0]) + ' · ' + x[1].length + '</span>' +
           x[1].map(cardRow).join('') + '</div>';
       }).join('') +
-      (L.length ? '' : '<div class="card quiet"><span class="small">Карточек пока нет — ни в меню, ни в работе.</span></div>');
+      (L.length ? '' : '<div class="card quiet"><span class="small">Карточек пока нет — ни в меню, ни в работе.</span></div>') +
+      '<button type="button" class="btn ghost" data-action="c-new">Новая карточка</button>';
   },
 
   barCard: function (id) {
