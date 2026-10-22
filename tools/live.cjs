@@ -2841,6 +2841,51 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
+    /* Крестик очистки поиска: цель нажатия, а не цвет.
+
+       Псевдоэлемент `::-webkit-search-cancel-button` не виден ни
+       getBoundingClientRect, ни elementFromPoint, ни querySelector — размер
+       его измерить нечем. Поэтому цель меряется ПОПАДАНИЕМ: клик в точку и
+       вопрос, очистилось ли поле. Системный крестик отзывался только в
+       22…28 px от правого края; правило в styles.css даёт 44 px, то есть
+       10…46. Точки 14 и 40 лежат внутри нашей цели и вне системной — на
+       них проверка и стоит.
+
+       Третья точка — отрицательный контроль: в середине поля клик обязан
+       НЕ очищать. Без него прибор, очищающий поле от любого клика, выглядел
+       бы исправным. */
+    {
+      const s = await peopleCase(OWNER, {});
+      if (!(await toPeople(s))) bad.push('people-find-clear: у главы клуба нет входа «Люди»');
+      else {
+        const box = await s.p.evaluate(() => {
+          const el = document.getElementById('p-find');
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { right: r.right, cy: r.top + r.height / 2, left: r.left };
+        });
+        if (!box) bad.push('people-find-clear: поля поиска нет — мерить нечем');
+        else {
+          for (const [dx, ждём] of [[14, true], [40, true], [120, false]]) {
+            // крестика не существует у поля без фокуса и без значения
+            await s.p.fill('#p-find', 'алев');
+            await s.p.focus('#p-find');
+            await s.p.waitForTimeout(60);
+            await s.p.mouse.click(box.right - dx, box.cy);
+            await s.p.waitForTimeout(60);
+            const пусто = (await s.p.inputValue('#p-find')) === '';
+            if (пусто !== ждём) {
+              bad.push(`people-find-clear: клик в ${dx} px от правого края ` +
+                       `${пусто ? 'очистил' : 'не очистил'} поле, ждали ` +
+                       `${ждём ? 'очистку' : 'сохранение набранного'}`);
+            }
+          }
+        }
+      }
+      if (s.errs.length) bad.push('people-find-clear: ошибки страницы ' + s.errs.join('; '));
+      await s.ctx.close();
+    }
+
     // мастер (куратор направления): входа нет, и мимо входа экран не грузит людей
     {
       const s = await peopleCase(MASTER, {});
