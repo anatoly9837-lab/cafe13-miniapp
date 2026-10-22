@@ -2125,12 +2125,19 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
   // разрешение — нет. Первая проверка здесь сторожит саму фикстуру: событие
   // обязано ИДТИ, иначе случай судит кончившееся и доказывает запрет второй раз.
   {
+    const START = NOWFIX - 1800e3, DUR = 180, ENDS = START + DUR * 60e3;
     const liveRow = () => EV({ id: 4, title: 'Уже начался',
-      starts_at: new Date(NOWFIX - 1800e3).toISOString(), duration_min: 180,
+      starts_at: new Date(START).toISOString(), duration_min: DUR,
       taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 });
+    // Сторож фикстуры считает «идёт» ИЗ САМОЙ ФИКСТУРЫ — её начала, длительности
+    // и мгновения прогона, — а НЕ из того, что нарисовал клиент. Иначе поломка
+    // клиентского расчёта краснеет словами «фикстура не та», и чинить пойдут
+    // фикстуру (увидел архитектор на мутации `done` от начала, 22.10.2026).
+    if (!(NOWFIX >= START && NOWFIX < ENDS))
+      bad.push(`cancel-idet: фикстура не идёт по своим числам — начало ${new Date(START).toISOString()}, конец ${new Date(ENDS).toISOString()}, мгновение прогона ${new Date(NOWFIX).toISOString()}`);
     const s = await openCard(q => q.url().endsWith('/events') ? json(200, [liveRow()]) : undefined);
     const t = await s.view();
-    if (!t.includes('идёт')) bad.push('cancel-idet: событие фикстуры не идёт — случай судит не идущее');
+    if (!t.includes('идёт')) bad.push('cancel-idet: идущее событие не помечено идущим — расчёт клиента, а не фикстура');
     if (t.includes('завершилось')) bad.push('cancel-idet: идущее событие помечено завершившимся');
     if (!t.includes('Вы записаны')) bad.push('cancel-idet: запись не показана');
     if (!(await s.p.$('[data-action="book-cancel"]'))) bad.push('cancel-idet: у идущего события кнопки отмены нет — своё место не снять');
