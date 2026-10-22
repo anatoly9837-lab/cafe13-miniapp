@@ -167,7 +167,15 @@ const MUT = {
 
   header: { find: "if (tg.setHeaderColor) tg.setHeaderColor('bg_color');",
             put:  "if (tg.setHeaderColor) { /* мутация: шапка не красится */ }",
-            reddens: ['вызов setHeaderColor'] }
+            reddens: ['вызов setHeaderColor'] },
+
+  /* Цвет крестика очистки. Мутация — тот самый системный синий, которым он
+     и приходил: правка «цвет в токен» без этой проверки держалась на слове,
+     попадание цвет не меряет ничем (нашёл arhitector-47 на ревью #37). */
+  xcolor: { file: 'css',
+            find: 'background: var(--muted);',
+            put:  'background: #0a84ff;',
+            reddens: ['крестик: синих пикселей', 'крестик: краска подписью'] }
 };
 
 function patch(which, mut) {
@@ -199,6 +207,35 @@ async function pixel(ctx, png, x, y) {
   }, 'data:image/png;base64,' + png.toString('base64'));
   await p.close();
   return rgb.toUpperCase();
+}
+
+/* Область кадра в числах — тем же канвасом, что и одиночный пиксель выше.
+   Два счёта: «синих» (b заметно больше r) называет ровно тот дефект, с
+   которого всё началось, а «краска цвета подписи» ловит и его, и белый
+   системный крестик тёмной темы, который синим не является. */
+async function region(ctx, png, muted) {
+  const p = await ctx.newPage();
+  // ⚠ muted передаётся ДОВОДОМ: region открывает свою страницу, и значение,
+  // положенное в window страницы приложения, здесь не существует.
+  const r = await p.evaluate(async a => {
+    const d = a.d;
+    const img = new Image();
+    await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = d; });
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    const q = c.getContext('2d').getImageData(0, 0, img.width, img.height).data;
+    const mu = a.muted.replace('#', '').match(/../g).map(x => parseInt(x, 16));
+    let blue = 0, ink = 0;
+    for (let i = 0; i < q.length; i += 4) {
+      const R = q[i], G = q[i + 1], B = q[i + 2];
+      if (B > R + 40 && B > 120) blue++;
+      if (Math.abs(R - mu[0]) + Math.abs(G - mu[1]) + Math.abs(B - mu[2]) <= 60) ink++;
+    }
+    return { blue: blue, ink: ink };
+  }, { d: 'data:image/png;base64,' + png.toString('base64'), muted: muted });
+  await p.close();
+  return r;
 }
 
 (async () => {
@@ -284,11 +321,40 @@ async function pixel(ctx, png, x, y) {
                bar: box('bar'), tabs: box('tabs'),
                calls: (window.__tgCalls || []).slice() };
     });
+    /* Крестик очистки поиска. Его цвет не читается НИЧЕМ, кроме пикселей:
+       getComputedStyle(el, '::-webkit-search-cancel-button') возвращает стиль
+       самого поля (проверено: ширина 358px — это ширина инпута), а
+       getBoundingClientRect и elementFromPoint псевдоэлемент не видят вовсе.
+       Поле пробное, как и кнопка выше: проверяется ПРАВИЛО таблицы стилей. */
+    const pr = await s.p.evaluate(() => {
+      const wrap = document.createElement('div');
+      wrap.className = 'field';
+      wrap.style.cssText = 'position:fixed;left:10px;top:10px;width:300px;z-index:9999';
+      wrap.innerHTML = '<input id="x-probe" type="search" value="проба">';
+      document.body.appendChild(wrap);
+      const e = document.getElementById('x-probe'), q = e.getBoundingClientRect();
+      const mu = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
+      return { x: q.right - 46, y: q.top + 3, w: 44, h: q.height - 6, muted: mu };
+    });
+    const clip = { x: pr.x, y: pr.y, width: pr.w, height: pr.h };
+    // крестика не существует у поля без фокуса и без значения
+    await s.p.focus('#x-probe'); await s.p.waitForTimeout(120);
+    const full = await region(ctx, await s.p.screenshot({ clip: clip }), pr.muted);
+    await s.p.fill('#x-probe', ''); await s.p.focus('#x-probe'); await s.p.waitForTimeout(120);
+    const empty = await region(ctx, await s.p.screenshot({ clip: clip }), pr.muted);
+    await s.p.evaluate(() => document.getElementById('x-probe').parentNode.remove());
+    /* Краска считается РАЗНОСТЬЮ с тем же полем без значения, а не абсолютом:
+       в полосе есть и своя постоянная краска (кольцо фокуса, обводка), и при
+       --muted, случайно близком к ней, абсолютный счёт краснел бы без всякого
+       крестика. Это поймала мутация «hint» — отрицательный контроль обязан
+       вычитаться, а не стоять отдельной проверкой. */
+    const x = { blue: full.blue, ink: full.ink - empty.ink > 8 ? 'есть' : 'нет' };
+
     const png = await s.p.screenshot();
     fs.writeFileSync(OUT + '/' + name + '.png', png);
     const px = await pixel(ctx, png, 5, 5);
     await s.p.close();
-    return { css, px, errs: s.errs, calls: s.calls };
+    return { css, px, x, errs: s.errs, calls: s.calls };
   }
 
   /* ── 1. цвета читаются и равны запрошенным, на двух разных фикстурах ── */
@@ -395,6 +461,19 @@ async function pixel(ctx, png, x, y) {
     eq('пиксель фона', m.px, FIX.B.bg_color, w);
   }
 
+  /* ── 4б. крестик очистки поиска красится токеном подписи, а не системой.
+     Два признака, потому что системный крестик разный в двух темах: в
+     светлой он синий, в тёмной белый. «Синих пикселей» называет первый,
+     «краска подписью» ловит оба — белое от --muted отличается так же
+     хорошо, как синее. Отрицательный контроль встроен в сам признак: краска
+     считается разностью с тем же полем БЕЗ значения, где крестика нет. ── */
+  for (const scheme of ['light', 'dark']) {
+    const m = await measure({ theme: FIX.A, safe: SAFE, scheme: scheme }, 'theme-x-' + scheme);
+    const w = 'крестик поиска, тема ' + scheme;
+    eq('крестик: синих пикселей', m.x.blue, 0, w);
+    eq('крестик: краска подписью', m.x.ink, 'есть', w);
+  }
+
   /* ── 5. снятие проверяемого: каждая мутация обязана покраснить ИМЕННО
      свои проверки — и не покраснить лишние. Покраснело лишнее — значит
      прогон упал раньше проверяемого места, и красное получено обманом. ── */
@@ -403,6 +482,7 @@ async function pixel(ctx, png, x, y) {
                  'токен --accent-ink': FIX.A.button_text_color,
                  'токен --surface': FIX.A.secondary_bg_color,
                  'кнопка фон': FIX.A.button_color, 'кнопка текст': FIX.A.button_text_color,
+                 'крестик: синих пикселей': 0, 'крестик: краска подписью': 'есть',
                  'пиксель фона': FIX.A.bg_color, 'высота шапки': BAR, 'высота панели': TABS,
                  'вызов setHeaderColor': true };
 
@@ -419,6 +499,7 @@ async function pixel(ctx, png, x, y) {
                   'токен --muted': m.css.muted, 'токен --accent': m.css.accent,
                   'токен --accent-ink': m.css.accentInk, 'токен --surface': m.css.surface,
                   'кнопка фон': m.css.btn.bg, 'кнопка текст': m.css.btn.fg,
+                  'крестик: синих пикселей': m.x.blue, 'крестик: краска подписью': m.x.ink,
                   'пиксель фона': m.px, 'высота шапки': m.css.bar.h, 'высота панели': m.css.tabs.h,
                   'вызов setHeaderColor': m.css.calls.includes('setHeaderColor:bg_color') };
     const texts = [];
