@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v24 · 22.10.2026';
+var VERSION = 'v25 · 22.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1815,6 +1815,33 @@ function badFields(d) {
   return out;
 }
 
+/* Эхо под полями дня и времени.
+
+   Виджет даты рисуется в формате УСТРОЙСТВА, а не страницы: при русской
+   странице система по-английски печатает «mm/dd/yyyy» и «07:00 PM» (замер
+   на кадре 390px). Первые двенадцать дней месяца такой порядок двусмыслен —
+   «07/08» это и 8 июля, и 7 августа, — и подписью это не лечится: подпись
+   спорила бы с виджетом. Поэтому строка повторяет ПОНЯТОЕ нами нашими
+   словами: месяц словом, год числом, время в поясе клуба.
+
+   И это не украшение: «Время клуба, остров» — обещание, а эхо — посчитанный
+   факт. Потеряется пояс — разойдётся эхо, и видно это будет на кадре. */
+function cur(id, dflt) {
+  var x = FORM.v[id];
+  return x === undefined || x === '' ? (dflt || '') : x;
+}
+
+function echoText(day, time) {
+  if (!day || !time) return 'День и время не заполнены.';
+  var d = new Date(day + 'T' + time + ':00+07:00');
+  if (isNaN(d.getTime())) return 'День и время не разобраны.';
+  // День собирается из ymd ПОЯСА КЛУБА и своего списка месяцев, а не из
+  // toLocaleDateString: тот добавляет «г.» и вообще волен менять вид.
+  var p = bkk(d), x = p.ymd.split('-'), mon = MONTHS[Number(x[1]) - 1];
+  if (!mon) return 'День и время не разобраны.';
+  return p.dow + ', ' + Number(x[2]) + ' ' + mon + ' ' + x[0] + ', ' + p.hm + ' · время клуба';
+}
+
 function createEvent() {
   // Один предикат на рисование и на отправку: у человека без права кнопки
   // нет, но и путь закрыт здесь же — иначе мутация, снявшая кнопку,
@@ -2395,6 +2422,9 @@ var SCREENS = {
           '<input id="f-time" type="time" value="' + keep('f-time', '19:00') + '">' +
           '<span class="small">Время клуба, остров.</span></div>' +
       '</div>' +
+
+      '<div class="note"><span class="small" id="f-echo">' +
+        esc(echoText(cur('f-date'), cur('f-time', '19:00'))) + '</span></div>' +
 
       '<div class="card quiet"><div class="col">' +
         '<b style="font-size:13px">Когда на острове ходят на события</b>' +
@@ -3505,6 +3535,17 @@ function go(screen, p) {
     });
   }
 }
+
+/* Эхо дня и времени правится НА МЕСТЕ, без перерисовки экрана: перерисовка
+   на каждую нажатую клавишу уводила бы курсор из поля. Заодно набранное
+   сразу ложится в память формы — тогда и отказ сервера его не сотрёт. */
+document.addEventListener('input', function (ev) {
+  var t = ev.target;
+  if (!t || (t.id !== 'f-date' && t.id !== 'f-time')) return;
+  FORM.v[t.id] = t.value;
+  var e = document.getElementById('f-echo');
+  if (e) e.textContent = echoText(val('f-date'), val('f-time'));
+});
 
 document.addEventListener('click', function (ev) {
   var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-toggle],[data-manage],[data-action],[data-drink],[data-where],[data-pay],[data-exp],[data-expay]');

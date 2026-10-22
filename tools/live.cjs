@@ -2391,6 +2391,42 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
+    /* Эхо под днём и временем: виджет даты печатает порядок УСТРОЙСТВА, и
+       «07/08» двусмысленно. Ожидание считается НЕЗАВИСИМО от кода экрана —
+       по литералам месяцев и дней недели, а не тем же Intl, что в клиенте:
+       иначе обе стороны ошиблись бы одинаково. */
+    const MONTH_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+                      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    const DOW_RU = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+    const ruWhen = (ymd, hm) => {
+      const [y, m, d] = ymd.split('-').map(Number);
+      return DOW_RU[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] +
+             ', ' + d + ' ' + MONTH_RU[m - 1] + ' ' + y + ', ' + hm + ' · время клуба';
+    };
+    for (const [name, day, time, tz] of [
+      ['sozdat-eho', bkkDay(1), '19:00', null],
+      // Полночь по острову — это ещё предыдущие сутки и в UTC, и в Нью-Йорке:
+      // если эхо считают не в поясе клуба, разойдутся и день, и день недели.
+      ['sozdat-eho-polnoch', bkkDay(2), '00:30', 'America/New_York']]) {
+      const { s, ok } = await openForm(name, null, null, tz);
+      if (ok) {
+        await s.p.fill('#f-date', day);
+        await s.p.fill('#f-time', time);
+        await s.p.waitForTimeout(150);
+        // Сначала признак: без него снятое эхо даёт таймаут ожидания узла,
+        // а не свой текст — случай умирал бы молча и долго.
+        if (!(await s.p.$('#f-echo'))) {
+          bad.push(`${name}: строки эха под днём и временем нет вовсе`);
+          await s.ctx.close();
+          continue;
+        }
+        const got = (await s.p.textContent('#f-echo')) || '';
+        const want = ruWhen(day, time);
+        if (got.trim() !== want) bad.push(`${name}: эхо «${got.trim()}», ждали «${want}»`);
+      }
+      await s.ctx.close();
+    }
+
     // Введённая цена переживает переключение вида: иначе человек платит
     // вводом за то, что ткнул не туда.
     {
