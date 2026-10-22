@@ -2365,14 +2365,14 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
         ['Название', 'До 200 знаков', 'Время клуба', 'От 1 до 1440', 'От 1 до 500',
          'Цена входа', 'Больше нуля', 'Исправить потом нельзя'].forEach(x => {
           if (!t.includes(x)) bad.push(`sozdat-forma: нет «${x}»`); });
-        await s.p.screenshot({ path: `${OUT}/live-sozdat-platnoe.png` });
+        await s.p.screenshot({ path: `${OUT}/live-sozdat-platnoe.png`, fullPage: true });
 
         await s.p.click('[data-kind="free"]');
         await s.p.waitForTimeout(100);
         const tf = await s.view();
         if (await s.p.$('#f-price')) bad.push('sozdat-forma: у бесплатного поле цены осталось на экране');
         if (!tf.includes('брать нечего')) bad.push('sozdat-forma: у бесплатного не сказано, почему поля цены нет');
-        await s.p.screenshot({ path: `${OUT}/live-sozdat-besplatnoe.png` });
+        await s.p.screenshot({ path: `${OUT}/live-sozdat-besplatnoe.png`, fullPage: true });
 
         await s.p.click('[data-kind="donation"]');
         await s.p.waitForTimeout(100);
@@ -2381,7 +2381,7 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
         ['Ориентир', 'Можно не указывать'].forEach(x => {
           if (!td.includes(x)) bad.push(`sozdat-forma: у донейшна нет «${x}»`); });
         if (td.includes('Больше нуля')) bad.push('sozdat-forma: у донейшна осталась подпись платного «Больше нуля»');
-        await s.p.screenshot({ path: `${OUT}/live-sozdat-doneyshn.png` });
+        await s.p.screenshot({ path: `${OUT}/live-sozdat-doneyshn.png`, fullPage: true });
 
         // «Назад» с формы — на афишу: в живом режиме кабинет организатора
         // показывает придуманные мероприятия.
@@ -2466,8 +2466,23 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     // человеку ничего не говорит.
     for (const [name, code, body, want, nope] of [
       ['sozdat-403', 403, { detail: 'мероприятия заводят организатор, партнёр и работники клуба' },
-        'Мероприятия заводят организатор, партнёр и работники клуба', 'кодом 403'],
-      ['sozdat-422-spisok', 422, { detail: [{ loc: ['body', 'seats'], msg: 'input should be less than 501', type: 'value_error' }] },
+        'Мероприятия заводят организатор, партнёр и работники клуба', 'не впустили'],
+      // Тот же код, другое происхождение: привратник доступа. Слово сервера
+      // здесь отвечает не на тот вопрос, поэтому на экране своя строка.
+      ['sozdat-403-privratnik', 403, { detail: 'доступа нет' },
+        'Вас ещё не впустили в клуб', 'Доступа нет'],
+      // Форма взята из снимка event-create-422.json (не подделана): в каждом
+      // объекте есть input и ctx, а msg — по-английски, поэтому на экран идёт
+      // имя ПОЛЯ из loc, а не msg.
+      ['sozdat-422-spisok', 422, { detail: [
+          { type: 'string_too_short', loc: ['body', 'title'],
+            msg: 'String should have at least 1 character', input: '', ctx: { min_length: 1 } },
+          { type: 'greater_than', loc: ['body', 'seats'],
+            msg: 'Input should be greater than 0', input: 0, ctx: { gt: 0 } }] },
+        'Сервер не принял поля: Название, Мест', 'object'],
+      // Тот же код, но поле не названо: тогда честнее общий текст с кодом,
+      // чем выдуманное имя поля.
+      ['sozdat-422-bez-polya', 422, { detail: [{ type: 'value_error', msg: 'nope' }] },
         'Сервер ответил кодом 422', 'object']]) {
       const { posts, h } = sender(() => null, code, body);
       const { s, ok } = await openForm(name, h);
@@ -2479,6 +2494,27 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
         if (posts.length !== 1) bad.push(`${name}: POST /events ушёл ${posts.length} раз, ждали 1`);
         if (!t.includes(want)) bad.push(`${name}: нет слов «${want}», на экране: «${t.slice(0, 140)}»`);
         if (t.includes(nope)) bad.push(`${name}: на экране лишнее «${nope}»: «${t.slice(0, 140)}»`);
+      }
+      await s.ctx.close();
+    }
+
+    // Отказ сервера не стирает набранное: экран рисует поля из памяти формы,
+    // и человек не должен набирать всё заново из-за того, в чём не виноват.
+    {
+      const { posts, h } = sender(() => null, 403, { detail: 'мероприятия заводят организатор, партнёр и работники клуба' });
+      const { s, ok } = await openForm('sozdat-vvod-pri-otkaze', h);
+      if (ok) {
+        await fill(s.p, { title: 'Практика у воды', seats: '7', dur: '75', price: '350' });
+        await publish(s.p, 'sozdat-vvod-pri-otkaze');
+        await s.p.waitForTimeout(400);
+        if (posts.length !== 1) bad.push(`sozdat-vvod-pri-otkaze: POST /events ушёл ${posts.length} раз, ждали 1`);
+        for (const [sel, want] of [['#f-title', 'Практика у воды'], ['#f-date', bkkDay(1)],
+                                   ['#f-time', '19:00'], ['#f-dur', '75'], ['#f-seats', '7'],
+                                   ['#f-price', '350']]) {
+          if (!(await s.p.$(sel))) { bad.push(`sozdat-vvod-pri-otkaze: после отказа нет поля ${sel}`); continue; }
+          const got = await s.p.inputValue(sel);
+          if (got !== want) bad.push(`sozdat-vvod-pri-otkaze: после отказа в ${sel} «${got}», а набрано было «${want}»`);
+        }
       }
       await s.ctx.close();
     }
@@ -2542,6 +2578,17 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       if (await s.p.$('#f-title')) bad.push('sozdat-net-prava: форма открылась у человека без права');
       if (!t.includes('Мероприятия заводят не все')) bad.push(`sozdat-net-prava: не сказано, кто заводит мероприятия: «${t.slice(0, 120)}»`);
       if (await s.p.evaluate(() => !!window.__main)) bad.push('sozdat-net-prava: главная кнопка Telegram осталась');
+      /* Поля подкладываются руками: формы на экране нет, и без них отправку
+         остановила бы проверка полей, а не проверка права — мутация, снявшая
+         право, оставалась зелёной по ЧУЖОЙ причине. Теперь между вызовом и
+         запросом стоит ровно одно: право. */
+      await s.p.evaluate(day => {
+        FORM.kind = 'free';
+        document.getElementById('view').insertAdjacentHTML('beforeend',
+          '<input id="f-title" value="Подложенное"><input id="f-date" value="' + day + '">' +
+          '<input id="f-time" value="19:00"><input id="f-dur" value="90">' +
+          '<input id="f-seats" value="5"><input id="f-about" value="">');
+      }, bkkDay(1));
       await s.p.evaluate(() => createEvent());
       await s.p.waitForTimeout(250);
       const sent = s.calls.filter(c => c.method === 'POST');
