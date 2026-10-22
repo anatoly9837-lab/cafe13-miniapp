@@ -2398,10 +2398,11 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
     const MONTH_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
                       'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
     const DOW_RU = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+    // Хвост «· время клуба» — отдельный узел, поэтому в #f-echo его нет.
     const ruWhen = (ymd, hm) => {
       const [y, m, d] = ymd.split('-').map(Number);
       return DOW_RU[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] +
-             ', ' + d + ' ' + MONTH_RU[m - 1] + ' ' + y + ', ' + hm + ' · время клуба';
+             ', ' + d + ' ' + MONTH_RU[m - 1] + ' ' + y + ', ' + hm;
     };
     for (const [name, day, time, tz] of [
       ['sozdat-eho', bkkDay(1), '19:00', null],
@@ -2423,6 +2424,59 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
         const got = (await s.p.textContent('#f-echo')) || '';
         const want = ruWhen(day, time);
         if (got.trim() !== want) bad.push(`${name}: эхо «${got.trim()}», ждали «${want}»`);
+        // У посчитанной даты хвост «· время клуба» виден: он и делает её
+        // утверждением о поясе, а не просто датой.
+        if (!(await s.p.isVisible('#f-echo-tail'))) bad.push(`${name}: хвоста «· время клуба» не видно`);
+      }
+      await s.ctx.close();
+    }
+
+    /* Утверждение эха о пустоте сверяется с ФАКТИЧЕСКИМ состоянием полей, а
+       не с литералом: тогда случай переживёт и смену формулировок. Три
+       состояния, и форма открывается во втором — день пуст, время 19:00.
+       (Случай предложен designer-55; его форма ожидания сильнее моей, у меня
+       было два литерала. Проверка хвоста — моя.) */
+    {
+      const { s, ok } = await openForm('sozdat-eho-pusto');
+      if (ok) {
+        for (const [day, time] of [[null, null], ['', '19:00'], [bkkDay(1), '']]) {
+          if (day !== null) { await s.p.fill('#f-date', day); await s.p.fill('#f-time', time); }
+          await s.p.waitForTimeout(100);
+          if (!(await s.p.$('#f-echo'))) { bad.push('sozdat-eho-pusto: строки эха нет вовсе'); break; }
+          const st = await s.p.evaluate(() => ({
+            day: document.getElementById('f-date').value,
+            time: document.getElementById('f-time').value,
+            echo: ((document.getElementById('f-echo') || {}).textContent || '').trim()
+          }));
+          const want = !st.day ? 'Выберите день.' : !st.time ? 'Выберите время.' : ruWhen(st.day, st.time);
+          if (st.echo !== want)
+            bad.push(`sozdat-eho-pusto: в полях день «${st.day}» время «${st.time}», эхо «${st.echo}», ждали «${want}»`);
+          // Хвост «· время клуба» принадлежит посчитанной дате, а не просьбе.
+          const tail = await s.p.isVisible('#f-echo-tail');
+          const needTail = !!(st.day && st.time);
+          if (tail !== needTail)
+            bad.push(`sozdat-eho-pusto: хвост ${tail ? 'виден' : 'скрыт'}, а день «${st.day}» время «${st.time}»`);
+        }
+      }
+      await s.ctx.close();
+    }
+
+    // Путь ОТРИСОВКИ эха: после переключения вида экран рисуется заново, и
+    // строка приходит из разметки, а не от слушателя ввода.
+    {
+      const { s, ok } = await openForm('sozdat-eho-otrisovka');
+      if (ok) {
+        await s.p.fill('#f-date', bkkDay(1));
+        await s.p.fill('#f-time', '08:15');
+        await s.p.click('[data-kind="free"]');
+        await s.p.waitForTimeout(150);
+        if (!(await s.p.$('#f-echo'))) bad.push('sozdat-eho-otrisovka: строки эха нет после перерисовки');
+        else {
+          const got = ((await s.p.textContent('#f-echo')) || '').trim();
+          const want = ruWhen(bkkDay(1), '08:15');
+          if (got !== want) bad.push(`sozdat-eho-otrisovka: после перерисовки эхо «${got}», ждали «${want}»`);
+          if (!(await s.p.isVisible('#f-echo-tail'))) bad.push('sozdat-eho-otrisovka: после перерисовки хвоста не видно');
+        }
       }
       await s.ctx.close();
     }

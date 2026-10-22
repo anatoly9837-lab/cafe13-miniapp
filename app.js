@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v25 · 22.10.2026';
+var VERSION = 'v26 · 22.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1831,15 +1831,32 @@ function cur(id, dflt) {
   return x === undefined || x === '' ? (dflt || '') : x;
 }
 
+/* Возвращает {text, ok}: ok — «это посчитанная дата», а не просьба. Хвост
+   «· время клуба» дорисовывается отдельным узлом и прячется у просьбы:
+   «Выберите день · время клуба» было бы бессмыслицей.
+
+   ⚠ Пустые поля называются ПООТДЕЛЬНОСТИ. Общая фраза «День и время не
+   заполнены» верна только когда пусты оба, а форма открывается с пустым
+   днём и временем 19:00 — и плашка спорила с полем в сантиметре от себя
+   (нашёл designer-55 на кадре каталога, 22.10.2026). Мои случаи этого не
+   видели: оба заполняли ОБА поля. */
 function echoText(day, time) {
-  if (!day || !time) return 'День и время не заполнены.';
+  if (!day) return { text: 'Выберите день.', ok: false };
+  if (!time) return { text: 'Выберите время.', ok: false };
   var d = new Date(day + 'T' + time + ':00+07:00');
-  if (isNaN(d.getTime())) return 'День и время не разобраны.';
+  if (isNaN(d.getTime())) return { text: 'День и время не разобраны.', ok: false };
   // День собирается из ymd ПОЯСА КЛУБА и своего списка месяцев, а не из
   // toLocaleDateString: тот добавляет «г.» и вообще волен менять вид.
   var p = bkk(d), x = p.ymd.split('-'), mon = MONTHS[Number(x[1]) - 1];
-  if (!mon) return 'День и время не разобраны.';
-  return p.dow + ', ' + Number(x[2]) + ' ' + mon + ' ' + x[0] + ', ' + p.hm + ' · время клуба';
+  if (!mon) return { text: 'День и время не разобраны.', ok: false };
+  return { text: p.dow + ', ' + Number(x[2]) + ' ' + mon + ' ' + x[0] + ', ' + p.hm, ok: true };
+}
+
+function echoLine(eh) {
+  return '<div class="small" style="margin-top:-2px">' +
+      '<span id="f-echo" style="color:var(--ink)">' + esc(eh.text) + '</span>' +
+      '<span id="f-echo-tail"' + (eh.ok ? '' : ' hidden') + '> · время клуба</span>' +
+    '</div>';
 }
 
 function createEvent() {
@@ -2423,8 +2440,10 @@ var SCREENS = {
           '<span class="small">Время клуба, остров.</span></div>' +
       '</div>' +
 
-      '<div class="note"><span class="small" id="f-echo">' +
-        esc(echoText(cur('f-date'), cur('f-time', '19:00'))) + '</span></div>' +
+      // Не плашка-совет: эхо — ответ поля, а не подсказка. В `.note` оно
+      // вдобавок начиналось на 28 px левее соседних плашек (у тех значок,
+      // у него не было). Дата — тушью, хвост — подписью: разные голоса.
+      echoLine(echoText(cur('f-date'), cur('f-time', '19:00'))) +
 
       '<div class="card quiet"><div class="col">' +
         '<b style="font-size:13px">Когда на острове ходят на события</b>' +
@@ -3543,8 +3562,11 @@ document.addEventListener('input', function (ev) {
   var t = ev.target;
   if (!t || (t.id !== 'f-date' && t.id !== 'f-time')) return;
   FORM.v[t.id] = t.value;
+  var eh = echoText(val('f-date'), val('f-time'));
   var e = document.getElementById('f-echo');
-  if (e) e.textContent = echoText(val('f-date'), val('f-time'));
+  if (e) e.textContent = eh.text;
+  var tail = document.getElementById('f-echo-tail');
+  if (tail) tail.hidden = !eh.ok;
 });
 
 document.addEventListener('click', function (ev) {
