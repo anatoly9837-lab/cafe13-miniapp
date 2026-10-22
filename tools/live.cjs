@@ -3523,6 +3523,59 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       await s.ctx.close();
     }
 
+    // #214: поздний список прежнего захода (люди или направления) не ложится на
+    // свежий. Первый ответ медленный, уход и возврат дают второй, быстрый.
+    // Прежний — с нечитаемой меткой в имени человека или названии направления.
+    for (const [name, step, re, stale, fresh, look] of [
+      ['people-late-roster', 'people', /\/people$/,
+        json(200, { count: 3, people: ROSTER.people.map((x, i) => i ? x : Object.assign({}, x, { first_name: 'qzx-список-qzx' })) }),
+        json(200, ROSTER), []],
+      ['people-late-dirs', 'dirs', /\/directions$/,
+        json(200, DIRS.map((x, i) => i ? x : Object.assign({}, x, { title: 'qzx-напр-qzx' }))),
+        json(200, DIRS), ['p-open:1', 'p-role:curator']],
+    ]) {
+      let n = 0, landed = false;
+      const slow = () => new Promise(r => setTimeout(() => { landed = true; r(stale); }, 1500));
+      const r = { get [step]() { n++; return n === 1 ? slow() : fresh; } };
+      const s = await peopleCase(OWNER, r);
+      if (!(await toPeople(s))) { bad.push(`${name}: нет входа «Люди»`); await s.ctx.close(); continue; }
+      await s.p.evaluate(() => { go('home'); go('people'); });
+      await s.p.waitForTimeout(300);
+      const gets = s.calls.filter(c => c.method === 'GET' && re.test(c.url)).length;
+      if (gets !== 2) bad.push(`${name}: возврат не перечитал (запросов ${gets})`);
+      if (landed) bad.push(`${name}: прежний ответ пришёл раньше второго запроса — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      for (const a of look) await act(s, a);
+      await s.p.waitForTimeout(100);
+      if ((await s.view()).includes('qzx')) bad.push(`${name}: прежний ответ лёг на свежий экран`);
+      await s.ctx.close();
+    }
+
+    // #214: второй тап главной кнопки, пришедший до того, как она спряталась,
+    // не отправляет второй запрос. Обработчик берётся до первого вызова и
+    // зовётся дважды — так приходит тап, поставленный в очередь раньше скрытия.
+    {
+      const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
+      await toPeople(s);
+      await act(s, 'p-open:1'); await act(s, 'p-role:ops_director');
+      await s.p.evaluate(() => { const f = window.__main; f && f(); f && f(); });
+      await s.p.waitForTimeout(300);
+      const pp = posts(s, /\/roles$/).length;
+      if (pp !== 1) bad.push(`people-double: двойной тап «Выдать» отправил ${pp} запросов, а не один`);
+      await s.ctx.close();
+    }
+    // то же для «Точно снять»: два нажатия, поставленные в очередь до перерисовки
+    {
+      const s = await peopleCase(OWNER, { revoke: new Promise(() => {}) });
+      await toPeople(s);
+      await act(s, 'p-ask:31');
+      await s.p.evaluate(() => { doAction('p-revoke:31'); doAction('p-revoke:31'); });
+      await s.p.waitForTimeout(300);
+      const pp = posts(s, /\/roles\/31\/revoke$/).length;
+      if (pp !== 1) bad.push(`people-double-revoke: двойное «Точно снять» отправило ${pp} запросов, а не один`);
+      await s.ctx.close();
+    }
+
     // снятие: подтверждение → запрос → итог и перечитанный список
     {
       const s = await peopleCase(OWNER, {});
