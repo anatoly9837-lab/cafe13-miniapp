@@ -3772,7 +3772,8 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       decided_by: null, decided_at: null, decision_note: note === undefined ? null : note, recipes });
     const QUEUE_ = [P(56, 'active', 'Эспрессо', 'Кофе', ['en', 'ru', 'th']), P(55, 'hidden', 'Старый чай', 'Чай', ['ru']),
       P(54, 'hidden', 'Глинтвейн', 'Сезон', ['ru'], 'нет фото'), P(53, 'draft', 'Какао', 'Кофе', ['ru']),
-      P(52, 'review', 'Раф', 'Кофе', []), P(51, 'review', 'Матча-латте', 'Чай', ['ru', 'th'])];
+      P(52, 'review', 'Раф', 'Кофе', []), P(51, 'review', 'Матча-латте', 'Чай', ['ru', 'th']),
+      P(57, 'active', 'Глинтвейн дома', 'Авторские напитки сезона и тёплые настойки дома', ['ru'])];
     const WORKER = clone(OWNER); WORKER.roles = [{ role: 'bar', direction_id: 7 }];
     const CUR = clone(OWNER); CUR.roles = [{ role: 'curator', direction_id: 7 }];
     const MEMBER = clone(OWNER); MEMBER.roles = [];
@@ -3858,6 +3859,35 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
       if (pp.length !== 1 || JSON.parse(pp[0].body).group !== 'Кофе') bad.push('cards-group-like: ушло ' + JSON.stringify(pp.map(c => c.body)));
       await s.ctx.close();
     }
+    // вопрос о похожей группе с длинным именем не выносит экран за 390 px (designer-55: 43 знака → край 555)
+    {
+      const s = await cardsCase(WORKER, {});
+      await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
+      await put(s, '#c-title', 'Глинтвейн', 'cards-group-long'); await put(s, '#c-group', 'Авторскиенапитки сезона  и тёплые настойки дома', 'cards-group-long'); await put(s, '#c-price', '250', 'cards-group-long');
+      await click(s, 'c-save'); await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('Это та же группа, что «Авторские напитки сезона и тёплые настойки дома»?')) bad.push('cards-group-long: нет вопроса о похожей группе');
+      const w = await s.p.evaluate(() => ({ doc: document.documentElement.scrollWidth,
+        right: Math.max(...[...document.querySelectorAll('[data-action="c-group-theirs"],[data-action="c-group-mine"]')].map(e => e.getBoundingClientRect().right)) }));
+      if (w.doc > 390 || w.right > 390) bad.push(`cards-group-long: ряд «та же / новая» вылез за 390: документ ${w.doc}, правый край ${Math.round(w.right)}`);
+      await s.ctx.close();
+    }
+    // своя проверка формы — той же плашкой отказа, что и сервер; «Алкоголь» — строкой да/нет и уходит в теле
+    {
+      const s = await cardsCase(WORKER, {});
+      await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
+      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(150);
+      const deny = await s.p.$eval('.deny', e => e.textContent).catch(() => null);
+      if (deny !== 'Нужно название.') bad.push(`cards-form-deny: отказ своей проверки «${deny}», ждали плашку «Нужно название.»`);
+      if (!(await s.view()).includes('От 1 до 600, можно пусто.')) bad.push('cards-form-deny: предел минут не назван до попытки');
+      await click(s, 'c-alcohol'); await s.p.waitForTimeout(100);
+      if (!(await s.p.$('[data-action="c-alcohol"][aria-pressed="true"] .pill.on'))) bad.push('cards-form-deny: «Алкоголь» не показывает «да»');
+      await put(s, '#c-title', 'Глинтвейн', 'cards-form-deny'); await put(s, '#c-group', 'Кофе', 'cards-form-deny'); await put(s, '#c-price', '250', 'cards-form-deny');
+      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(300);
+      const pp = cposts(s, /\/bar\/products$/);
+      if (pp.length !== 1 || JSON.parse(pp[0].body).is_alcohol !== true) bad.push('cards-form-deny: «Алкоголь» не ушёл в теле: ' + JSON.stringify(pp.map(c => c.body)));
+      await s.ctx.close();
+    }
+
     // рецепт: у языка с рецептом — прежний текст и «Заменить»; новый язык — «Сохранить»; чужой язык в поле не попадает
     {
       const s = await cardsCase(WORKER, {});

@@ -3644,13 +3644,18 @@ var SCREENS = {
           return '<button type="button" data-action="c-group:' + esc(g) + '"' + ((CARD.v['c-group'] || '') === g ? ' aria-pressed="true"' : '') + lock + '>' + esc(g) + '</button>';
         }).join('') + '</div>' : '') +
         (CARD.groupAsk ? '<div class="note">' + svg(ICON.info) + '<span>Это та же группа, что «' + esc(CARD.groupAsk) + '»?</span></div>' +
-          '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="c-group-theirs">Да, в «' + esc(CARD.groupAsk) + '»</button>' +
-          '<button type="button" class="btn quiet" data-action="c-group-mine">Нет, новая группа</button></div>' : '') +
+          // имя группы — в вопросе строкой выше, не в кнопке: длинное имя вынесло бы ряд за край
+          '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="c-group-theirs">Да, та же</button>' +
+          '<button type="button" class="btn quiet" data-action="c-group-mine">Нет, новая</button></div>' : '') +
         '<div class="row" style="gap:10px"><div class="field"><label for="c-price">Цена, ฿</label><input id="c-price" type="text" inputmode="decimal" value="' + v('c-price') + '" placeholder="180"' + lock + '></div>' +
-        '<div class="field"><label for="c-mins">Минуты</label><input id="c-mins" type="text" inputmode="numeric" value="' + v('c-mins') + '" placeholder="5"' + lock + '></div></div>' +
+        '<div class="field"><label for="c-mins">Минуты</label><input id="c-mins" type="text" inputmode="numeric" value="' + v('c-mins') + '" placeholder="5"' + lock + '>' +
+          '<span class="small">От 1 до 600, можно пусто.</span></div></div>' +
         '<div class="field"><label for="c-about">Описание для гостя</label><input id="c-about" type="text" value="' + v('c-about') + '" placeholder="Двойной ристретто, молоко"' + lock + '></div>' +
-        '<div class="seg"><button type="button" data-action="c-alcohol"' + (CARD.alcohol ? ' aria-pressed="true"' : '') + lock + '>Алкоголь</button></div>' +
-        (CARD.err ? '<span class="small" role="alert"><b>' + esc(CARD.err) + '</b></span>' : '') +
+        // тот же жест, что «Ведётся съёмка» в форме мероприятия: строка с пометкой да/нет
+        '<button type="button" class="listitem" data-action="c-alcohol" aria-pressed="' + CARD.alcohol + '"' + lock + '>' +
+          '<span class="grow"><b>Алкоголь</b><span class="small">Отметьте, если в составе есть алкоголь</span></span>' +
+          '<span class="pill' + (CARD.alcohol ? ' on' : '') + '">' + (CARD.alcohol ? 'да' : 'нет') + '</span></button>' +
+        (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
         '<span class="small">Поля потом не исправить — только снять карточку и завести заново.</span>' +
         deny +
         '<button type="button" class="btn dup-main" data-action="c-save"' + lock + '>' + (CARD.busy ? 'Сохраняем…' : 'Сохранить черновик') + '</button>' +
@@ -3698,7 +3703,7 @@ var SCREENS = {
       '<div class="group"><span class="label">Рецепт</span>' + langs +
         '<div class="field"><label for="c-recipe">Рецепт (' + CARD.lang.toUpperCase() + ')' + (has ? '' : ' — пока нет') + '</label>' +
           '<textarea id="c-recipe" rows="6"' + (waiting ? ' disabled' : lock) + '>' + esc(text) + '</textarea></div>' +
-        (CARD.err ? '<span class="small" role="alert"><b>' + esc(CARD.err) + '</b></span>' : '') +
+        (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
         '<span class="small">Рецепт видит только бар, гость — нет.</span>' +
         '<button type="button" class="btn ghost" data-action="c-recipe:' + c.id + '"' + (waiting ? ' disabled' : lock) + '>' +
           (has ? 'Заменить рецепт (' : 'Сохранить рецепт (') + CARD.lang.toUpperCase() + ')</button>' +
