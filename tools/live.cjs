@@ -4302,6 +4302,19 @@ if (grantsSet.length !== 1) {
         if (g.none !== none) bad.push(`${name}: слот ${g.none ? 'пунктиром' : 'со снимком'}, ждали ${none ? 'пунктир' : 'снимок'}`);
         if (g.limit === none) bad.push(`${name}: плашка-предел ${g.limit ? 'есть у позиции без снимков' : 'потеряна'}`);
         if (!g.recipeAfter) bad.push(`${name}: строка «Снимок» не между шапкой и рецептом`);
+        // инвариант места (замер designer-55, 23.10.2026): всё, что растёт, стоит ВЫШЕ строки,
+        // поэтому «Снимок → Решение» постоянно (561 из 712). Пока оно меньше видимой высоты,
+        // тот, кто долистал до «Решения», видит и снимок; вырастет рецепт — строку двигать или дублировать
+        if (name === 'photo-on') {
+          const d = await s.p.evaluate(() => {
+            const ph = document.querySelector('#view [data-photo]');
+            const dec = [...document.querySelectorAll('#view .group > .label')].find(x => x.textContent === 'Решение');
+            const top = document.getElementById('bar').getBoundingClientRect().bottom, low = document.getElementById('tabs').getBoundingClientRect().top;
+            return ph && dec ? { gap: Math.round(dec.getBoundingClientRect().bottom - ph.getBoundingClientRect().top), room: Math.round(low - top) } : null;
+          });
+          if (!d) bad.push(`${name}: нет «Снимка» или «Решения» — расстояние мерить не на чем`);
+          else if (d.gap > d.room) bad.push(`${name}: от «Снимка» до «Решения» ${d.gap} px при видимых ${d.room} — у «Решения» снимок уже не в виду`);
+        }
       }
       if (s.errs.length) bad.push(`${name}: ошибки страницы ` + s.errs.join('; '));
       await s.ctx.close();
