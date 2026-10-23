@@ -1871,7 +1871,15 @@ if (grantsSet.length !== 1) {
     { id: 1, name: 'Зал', capacity: 30, state: 'active' },
     { id: 2, name: 'Сад', capacity: null, state: 'active' },
     { id: 3, name: 'Двор', capacity: null, state: 'active' },
-    { id: 9, name: 'Склад', capacity: 4, state: 'hidden' }
+    { id: 9, name: 'Склад', capacity: 4, state: 'hidden' },
+    /* Состояние, которого клиент не знает. Сегодня его быть НЕ МОЖЕТ: в схеме
+       стоит `CHECK (state IN ('active','hidden'))`, и `check-migrations.sh`
+       проверяет, что третье состояние база отвергает (замер мой по стволу api
+       `6332425`). Строка здесь не про сегодняшний ответ сервера, а про завтра:
+       отбор разрешающим списком и отбор списком запретов на двух известных
+       состояниях неразличимы, и без третьего выбор между ними не доказан
+       ничем (нашёл архитектор на ревью #53, 23.10.2026). */
+    { id: 10, name: 'Чердак', capacity: null, state: 'archived' }
   ];
   const placesReply = rows => q => q.url().endsWith('/places')
     ? json(200, rows === undefined ? PLACE_ROWS : rows) : undefined;
@@ -2819,10 +2827,15 @@ if (grantsSet.length !== 1) {
       if (ok) {
         const t = await s.view();
         const act = PLACE_ROWS.filter(p => p.state === 'active');
-        const hid = PLACE_ROWS.filter(p => p.state !== 'active');
+        const hid = PLACE_ROWS.filter(p => p.state === 'hidden');
+        // Незнакомое состояние — отдельный список: на нём и расходятся
+        // разрешающий отбор («не active — мимо») и отбор списком запретов
+        // («только hidden — мимо»). Без него обе ветки проходят одинаково.
+        const unk = PLACE_ROWS.filter(p => p.state !== 'active' && p.state !== 'hidden');
         const withCap = act.filter(p => typeof p.capacity === 'number')[0];
         const noCap = act.filter(p => p.capacity === null)[0];
         if (!hid.length) bad.push('forma-mesta: в фикстуре мест нет ни одного скрытого — отбору нечего отбрасывать, проверка слепа');
+        if (!unk.length) bad.push('forma-mesta: в фикстуре нет места незнакомого состояния — разрешающий отбор и список запретов на ней неразличимы');
         if (!withCap || !noCap) bad.push('forma-mesta: в фикстуре нет пары «вместимость названа / не названа» — правило о нуле не проверяется');
         ['Где', 'Без места'].forEach(x => {
           if (!t.includes(x)) bad.push(`forma-mesta: в выборе места нет «${x}»`); });
@@ -2830,6 +2843,8 @@ if (grantsSet.length !== 1) {
           if (!t.includes(p.name)) bad.push(`forma-mesta: открытое место «${p.name}» в выборе не предложено`); });
         hid.forEach(p => {
           if (t.includes(p.name)) bad.push(`forma-mesta: скрытое место «${p.name}» предложено к выбору — назначить на него сервер откажет`); });
+        unk.forEach(p => {
+          if (t.includes(p.name)) bad.push(`forma-mesta: место «${p.name}» в незнакомом состоянии «${p.state}» предложено к выбору — разрешаем известное, а не запрещаем перечисленное`); });
         if (withCap) {
           await s.p.click(`[data-place="${withCap.id}"]`);
           await s.p.waitForTimeout(100);
