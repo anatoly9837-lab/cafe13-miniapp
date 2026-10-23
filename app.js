@@ -1436,7 +1436,10 @@ function fromCards(d) {
   return d.map(function (x) {
     return { id: x.id, title: x.title, group: x.group, price: num(x.price), mins: x.mins || null,
              about: x.about || '', alcohol: !!x.is_alcohol, state: x.state, recipes: x.recipes.slice(),
-             note: typeof x.decision_note === 'string' ? x.decision_note.trim() : '' };
+             note: typeof x.decision_note === 'string' ? x.decision_note.trim() : '',
+             photo: typeof x.photo_id === 'number' ? x.photo_id : null,
+             lastPhoto: typeof x.last_photo_id === 'number' ? x.last_photo_id : null,
+             lastState: typeof x.last_photo_state === 'string' ? x.last_photo_state : null };
   });
 }
 function loadCards() {
@@ -1565,6 +1568,34 @@ function cardState(id, state, note) {
               : note ? 'Возвращено с причиной.' : 'Снято с меню.';
     loadCards(); render();
   });
+}
+/* Строка «Снимок» (кадр E33, Cafe13KPG#270): шесть достижимых сочетаний
+   photo_id × последний (нет / ждёт / утверждён) × «последний — тот же, что в
+   меню». photo_id без последнего недостижим: ставится только из снимка этой
+   позиции, удалять снимки нечем; rejected не присваивает ни одна ручка.
+   Недостижимое и незнакомое — без строки: молчание честнее умолчания. */
+var PHOTO_WAIT = ['new', 'at_ai', 'ready'];
+function photoView(c) {
+  if (c.lastPhoto === null) return c.photo === null
+    ? { none: true, title: 'Фото нет', sub: 'Снимков у позиции нет. В меню она пойдёт без фото.' } : null;
+  if (PHOTO_WAIT.indexOf(c.lastState) !== -1) return c.photo === null
+    ? { title: 'Снимок ждёт утверждения', sub: 'В меню его пока нет: гость увидит фото только после утверждения.' }
+    : { title: 'В меню стоит прежний', sub: 'Пришёл новый, ждёт утверждения. Гость пока видит прежний.' };
+  if (c.lastState !== 'approved') return null;
+  if (c.photo === null) return { title: 'Утверждён, но не в меню', sub: 'Снимок утверждён, но в меню не поставлен: гость фото не видит.' };
+  return c.photo === c.lastPhoto
+    ? { title: 'Фото в меню', sub: 'Гость видит этот снимок.' }
+    : { title: 'Новый утверждён, но не в меню', sub: 'В меню остался прежний снимок — его гость и видит.' };
+}
+function photoBlock(c) {
+  var v = photoView(c);
+  if (!v) return '';
+  return '<div class="group" data-photo><div class="monhead"><span class="label">Снимок</span><span class="small">последний из присланных</span></div>' +
+    '<div class="shot"><div class="ph' + (v.none ? ' none' : '') + '">' + svg(ICON.cam) + '</div>' +
+      '<span class="grow"><b>' + v.title + '</b><span class="small">' + v.sub + '</span></span></div>' +
+    // предел ручки: она отдаёт один снимок — у позиции без снимков прятать нечего
+    (v.none ? '' : '<div class="note">' + svg(ICON.info) + '<span>Показан только последний присланный снимок: прежние неутверждённые через этот экран не открыть. Это решение, а не недоделка — разобрано в карточке направления.</span></div>') +
+  '</div>';
 }
 function cardRow(c) {
   var rec = c.recipes.length ? 'рецепт: ' + c.recipes.join(', ') : '';
@@ -3830,7 +3861,7 @@ var SCREENS = {
         '<span class="pill' + (c.state === 'active' ? ' on' : c.state === 'hidden' ? ' warm' : '') + '">' + esc(STATE_WORDS[c.state]) + '</span></div>' +
         (c.about ? '<span class="small">' + esc(c.about) + '</span>' : '') +
         (c.note && c.state === 'hidden' ? '<div class="note">' + svg(ICON.info) + '<span>Вернул куратор: ' + esc(c.note) + '</span></div>' : '') +
-      '</div>' + note +
+      '</div>' + note + photoBlock(c) +
       '<div class="group"><span class="label">Рецепт</span>' + langs +
         '<div class="field"><label for="c-recipe">Рецепт (' + CARD.lang.toUpperCase() + ')' + (has ? '' : ' — пока нет') + '</label>' +
           '<textarea id="c-recipe" rows="6"' + (waiting ? ' disabled' : lock) + '>' + esc(text) + '</textarea></div>' +

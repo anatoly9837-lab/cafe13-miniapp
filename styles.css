@@ -370,3 +370,20 @@ body.has-main .dup-main { display: none; }
 .num-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 0 4px; }
 .num-wrap .num-big { font-family: 'Golos Text', sans-serif; font-size: 38px; font-weight: 700;
                      letter-spacing: 2px; font-variant-numeric: tabular-nums; line-height: 1; }
+
+/* ── снимок позиции на карточке (кадр E33, Cafe13KPG#270). Слот показывает
+   ПОСЛЕДНИЙ присланный снимок, слова — что видит ГОСТЬ; пунктир — только
+   «фото нет», где показывать нечего. ── */
+.monhead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.monhead .small { font-size: 12px; color: var(--muted); }
+.ph { flex: 0 0 auto; width: 62px; height: 62px; border-radius: 9px;
+      background: var(--surface); color: var(--muted);
+      display: flex; align-items: center; justify-content: center; }
+.ph svg { width: 22px; height: 22px; fill: none; stroke: currentColor;
+          stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ph.none { border: 1px dashed var(--line); background: transparent; }
+.shot { display: flex; gap: 11px; align-items: center; padding: 10px 12px;
+        border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.shot .grow { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.shot .grow b { font-size: 14px; font-weight: 600; }
+.shot .small { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
