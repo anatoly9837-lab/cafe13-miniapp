@@ -1570,7 +1570,9 @@ function cardRow(c) {
   var rec = c.recipes.length ? 'рецепт: ' + c.recipes.join(', ') : '';
   return '<button type="button" class="listitem" data-action="c-open:' + c.id + '">' +
     '<span class="grow"><b>' + esc(c.title) + '</b><span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' +
-      (rec ? ' · ' + esc(rec) : ' · <span style="color:var(--clay-ink)">рецепта нет</span>') + '</span>' +
+      // глина — только там, где это запрет (review без рецепта отобьёт триггер базы);
+      // у черновика рецепта нет по определению — это «ещё не сделано», не ошибка
+      (rec ? ' · ' + esc(rec) : ' · <span' + (c.state === 'review' ? ' style="color:var(--clay-ink)"' : '') + '>рецепта нет</span>') + '</span>' +
       (c.note && c.state === 'hidden' ? '<span class="small">Причина: ' + esc(c.note) + '</span>' : '') +
     '</span>' + svg(ICON.chev, 'chev') + '</button>';
 }
@@ -3618,8 +3620,9 @@ var SCREENS = {
       ['Ждут утверждения', L.filter(function (c) { return c.state === 'review'; })],
       ['Возвращены', L.filter(function (c) { return c.state === 'hidden' && c.note; })],
       ['Черновики', L.filter(function (c) { return c.state === 'draft'; })],
-      ['Сняты', L.filter(function (c) { return c.state === 'hidden' && !c.note; })],
-      ['В меню', L.filter(function (c) { return c.state === 'active'; })]
+      // рабочее меню — над снятым: у бара «В меню» самая длинная группа (решение координатора, 23.10.2026)
+      ['В меню', L.filter(function (c) { return c.state === 'active'; })],
+      ['Сняты', L.filter(function (c) { return c.state === 'hidden' && !c.note; })]
     ];
     // «Новая карточка» — под списком: работа здесь — очередь утверждения,
     // а заведение карточки случается реже (designer-55, 22.10.2026). В Telegram
@@ -3642,8 +3645,10 @@ var SCREENS = {
       var v = function (k) { return esc(CARD.v[k] || ''); };
       var groups = groupsOf();
       return '<div class="card">' +
-        '<div class="field"><label for="c-title">Название</label><input id="c-title" type="text" maxlength="200" value="' + v('c-title') + '" placeholder="Флэт-уайт"' + lock + '></div>' +
-        '<div class="field"><label for="c-group">Группа меню</label><input id="c-group" type="text" maxlength="80" value="' + v('c-group') + '" placeholder="Кофе"' + lock + '></div>' +
+        '<div class="field"><label for="c-title">Название</label><input id="c-title" type="text" maxlength="200" value="' + v('c-title') + '" placeholder="Например: раф на овсяном"' + lock + '>' +
+          '<span class="small">До 200 знаков.</span></div>' +
+        '<div class="field"><label for="c-group">Группа меню</label><input id="c-group" type="text" maxlength="80" value="' + v('c-group') + '" placeholder="Например: кофе"' + lock + '>' +
+          '<span class="small">До 80 знаков.</span></div>' +
         (groups.length ? '<div class="seg wrap">' + groups.map(function (g) {
           return '<button type="button" data-action="c-group:' + esc(g) + '"' + ((CARD.v['c-group'] || '') === g ? ' aria-pressed="true"' : '') + lock + '>' + esc(g) + '</button>';
         }).join('') + '</div>' : '') +
@@ -3652,18 +3657,19 @@ var SCREENS = {
           // два ответа на один вопрос — пополам, как любой выбор из двух (.seg), а не по краям ряда
           '<div class="seg"><button type="button" data-action="c-group-theirs">Да, та же</button>' +
           '<button type="button" data-action="c-group-mine">Нет, новая</button></div>' : '') +
-        '<div class="row" style="gap:10px"><div class="field"><label for="c-price">Цена, ฿</label><input id="c-price" type="text" inputmode="decimal" value="' + v('c-price') + '" placeholder="180"' + lock + '></div>' +
-        '<div class="field"><label for="c-mins">Минуты</label><input id="c-mins" type="text" inputmode="numeric" value="' + v('c-mins') + '" placeholder="5"' + lock + '>' +
+        // stretch — как в eventNew: под «Минутами» подпись, и без перебивки .row центрует поля, разводя подписи
+        '<div class="row" style="gap:10px;align-items:stretch"><div class="field"><label for="c-price">Цена, ฿</label><input id="c-price" type="text" inputmode="decimal" value="' + v('c-price') + '"' + lock + '></div>' +
+        '<div class="field"><label for="c-mins">Минуты</label><input id="c-mins" type="text" inputmode="numeric" value="' + v('c-mins') + '"' + lock + '>' +
           '<span class="small">От 1 до 600, можно пусто.</span></div></div>' +
-        '<div class="field"><label for="c-about">Описание для гостя</label><input id="c-about" type="text" value="' + v('c-about') + '" placeholder="Двойной ристретто, молоко"' + lock + '></div>' +
+        '<div class="field"><label for="c-about">Описание для гостя</label><input id="c-about" type="text" value="' + v('c-about') + '" placeholder="Например: двойной ристретто, молоко"' + lock + '></div>' +
         // тот же жест, что «Ведётся съёмка» в форме мероприятия: строка с пометкой да/нет
         '<button type="button" class="listitem" data-action="c-alcohol" aria-pressed="' + CARD.alcohol + '"' + lock + '>' +
           '<span class="grow"><b>Алкоголь</b><span class="small">Отметьте, если в составе есть алкоголь</span></span>' +
           '<span class="pill' + (CARD.alcohol ? ' on' : '') + '">' + (CARD.alcohol ? 'да' : 'нет') + '</span></button>' +
         (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
-        '<span class="small">Поля потом не исправить — только снять карточку и завести заново.</span>' +
         deny +
         '<button type="button" class="btn dup-main" data-action="c-save"' + lock + '>' + (CARD.busy ? 'Сохраняем…' : 'Сохранить черновик') + '</button>' +
+        '<span class="small">Поля потом не исправить — только снять карточку и завести заново.</span>' +
       '</div>';
     }
     if (!CARDS.list) return CARDS.fail ? '<div class="card quiet"><span class="small">' + esc(CARDS.fail) + '</span></div>'
@@ -3685,9 +3691,10 @@ var SCREENS = {
     if (cur && c.state === 'review') {
       acts += c.recipes.length
         ? '<button type="button" class="btn" data-action="c-approve:' + c.id + '"' + lock + '>Утвердить — в меню</button>'
-        : '<button type="button" class="btn" disabled>Утвердить — в меню</button><span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span>';
+        // запрет верный, вес — нет: недоступное не тяжелее единственного доступного (designer-55)
+        : '<span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span><button type="button" class="btn ghost" disabled>Утвердить — в меню</button>';
       acts += CARD.back
-        ? '<div class="field"><label for="c-reason">Почему возвращаете</label><input id="c-reason" type="text" maxlength="500" value="' + esc(CARD.reason) + '" placeholder="Нет фото, цена выше соседних"' + lock + '></div>' +
+        ? '<div class="field"><label for="c-reason">Почему возвращаете</label><input id="c-reason" type="text" maxlength="500" value="' + esc(CARD.reason) + '" placeholder="Например: нет фото, цена выше соседних"' + lock + '></div>' +
           '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="c-back-keep"' + lock + '>Не возвращать</button>' +
           '<button type="button" class="btn quiet" data-action="c-back-send:' + c.id + '"' + lock + '>Вернуть</button></div>'
         : '<button type="button" class="btn quiet" data-action="c-back">Вернуть с причиной</button>';
@@ -4293,7 +4300,11 @@ function doAction(a) {
       if (a === 'c-back-keep') { CARD.back = false; CARD.reason = ''; }
       if (a === 'c-hide-ask') CARD.hideAsk = true;
       if (a === 'c-hide-keep') CARD.hideAsk = false;
-      haptic(); render(); return;
+      haptic(); render();
+      // поле причины и его кнопки — в вид: иначе они открылись бы за нижним краем
+      var rf = a === 'c-back' && document.getElementById('c-reason');
+      if (rf && rf.scrollIntoView) rf.scrollIntoView({ block: 'start' });
+      return;
     }
     if (a.slice(0, 2) === 'p-' && current === 'people') {
       // Против двойного нажатия две линии: эта и своя проверка busy в

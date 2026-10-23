@@ -3826,7 +3826,7 @@ if (grantsSet.length !== 1) {
         if (q.length !== 1 || !/direction_id=7&state=draft,review,active,hidden$/.test(decodeURIComponent(q[0].url)))
           bad.push('cards-list: очередь спрошена не так: ' + JSON.stringify(q.map(c => c.url)));
         const order = await s.p.evaluate(() => [...document.querySelectorAll('[data-cards]')].map(e => e.getAttribute('data-cards')));
-        if (JSON.stringify(order) !== JSON.stringify(['Ждут утверждения', 'Возвращены', 'Черновики', 'Сняты', 'В меню']))
+        if (JSON.stringify(order) !== JSON.stringify(['Ждут утверждения', 'Возвращены', 'Черновики', 'В меню', 'Сняты']))
           bad.push('cards-list: порядок групп ' + JSON.stringify(order));
         const t = await s.view();
         ['Причина: нет фото', 'рецепта нет', 'рецепт: ru, th', 'Направление «Бар»'].forEach(x => { if (!t.includes(x)) bad.push(`cards-list: нет «${x}»`); });
@@ -3869,6 +3869,29 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push('cards-list: ошибки страницы ' + s.errs.join('; '));
       await s.ctx.close();
     }
+    // «рецепта нет» глиной — только у ждущей утверждения: у черновика рецепта нет
+    // по определению, и красное там читалось бы ошибкой (решение координатора, 23.10.2026)
+    {
+      const s = await cardsCase(WORKER, { list: json(200, [P(52, 'review', 'Раф', 'Кофе', []), P(61, 'draft', 'Какао на овсяном', 'Кофе', [])]) });
+      await toCards(s);
+      const c = await s.p.evaluate(() => {
+        const probe = document.createElement('span'); probe.style.color = 'var(--clay-ink)';
+        document.querySelector('#view').appendChild(probe);
+        const clay = getComputedStyle(probe).color; probe.remove();
+        const of = t => {
+          const b = [...document.querySelectorAll('#view .listitem')].find(x => x.textContent.includes(t));
+          const sp = b && [...b.querySelectorAll('span')].find(x => x.textContent.trim() === 'рецепта нет');
+          return sp ? getComputedStyle(sp).color : null;
+        };
+        return { clay, review: of('Раф'), draft: of('Какао на овсяном') };
+      });
+      if (!c.review || !c.draft) bad.push('cards-paint: нет строки «рецепта нет» — ' + JSON.stringify(c));
+      else {
+        if (c.review !== c.clay) bad.push(`cards-paint: у ждущей утверждения без рецепта «рецепта нет» набрано ${c.review}, а не глиной ${c.clay}`);
+        if (c.draft === c.clay) bad.push('cards-paint: у черновика без рецепта «рецепта нет» глиной — это «ещё не сделано», а не ошибка');
+      }
+      await s.ctx.close();
+    }
     // без роли бара — входа нет, и очередь не спрашивается
     {
       const s = await cardsCase(MEMBER, {});
@@ -3883,6 +3906,22 @@ if (grantsSet.length !== 1) {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
       if (!(await s.view()).includes('Поля потом не исправить')) bad.push('cards-create: нет предупреждения до сохранения');
+      // облик формы — по стандарту eventNew (ревью designer-55, 23.10.2026)
+      const f = await s.p.evaluate(() => {
+        const top = id => { const l = document.querySelector(`label[for="${id}"]`); return l ? l.getBoundingClientRect().top : null; };
+        const save = document.querySelector('#view [data-action="c-save"]');
+        const warn = [...document.querySelectorAll('#view .small')].find(x => x.textContent.startsWith('Поля потом не исправить'));
+        return {
+          ph: [...document.querySelectorAll('#view input[placeholder]')].map(x => x.placeholder).filter(x => !x.startsWith('Например: ')),
+          tops: [top('c-price'), top('c-mins')],
+          under: !!(save && warn && (save.compareDocumentPosition(warn) & Node.DOCUMENT_POSITION_FOLLOWING)),
+          text: document.querySelector('#view').textContent
+        };
+      });
+      if (f.ph.length) bad.push('cards-create: заполнитель читается введённым значением: ' + JSON.stringify(f.ph));
+      if (f.tops[0] === null || f.tops[1] === null || Math.abs(f.tops[0] - f.tops[1]) > 1) bad.push('cards-create: подписи «Цена» и «Минуты» на разной высоте: ' + JSON.stringify(f.tops));
+      if (!f.under) bad.push('cards-create: «Поля потом не исправить» не под кнопкой сохранения');
+      ['До 200 знаков.', 'До 80 знаков.'].forEach(x => { if (!f.text.includes(x)) bad.push(`cards-create: предел поля не назван — нет «${x}»`); });
       await put(s, '#c-title', 'Флэт-уайт', 'cards'); await put(s, '#c-group', ' кофе ', 'cards'); await put(s, '#c-price', '180', 'cards');
       if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push('cards-create: у формы нет главной кнопки');
       await s.p.evaluate(() => window.__main && window.__main());
@@ -3997,6 +4036,14 @@ if (grantsSet.length !== 1) {
       await toCards(s); await openCard(s, 52);
       if (await s.p.$('[data-action="c-approve:52"]')) bad.push('cards-approve: «в меню» нажимается без рецепта');
       if (!(await s.view()).includes('Сначала рецепт')) bad.push('cards-approve: нет причины, почему нельзя в меню');
+      // недоступное — призраком и после объяснения: не тяжелее единственного доступного
+      const off = await s.p.evaluate(() => {
+        const b = [...document.querySelectorAll('#view button[disabled]')].find(x => x.textContent === 'Утвердить — в меню');
+        const why = [...document.querySelectorAll('#view .small')].find(x => x.textContent.startsWith('Сначала рецепт'));
+        return { ghost: !!(b && b.classList.contains('ghost')), before: !!(b && why && (why.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)) };
+      });
+      if (!off.ghost) bad.push('cards-approve: погашенное «Утвердить — в меню» не призраком — тяжелее доступного действия');
+      if (!off.before) bad.push('cards-approve: «Сначала рецепт» стоит не перед погашенной кнопкой');
       await s.p.evaluate(() => go('barCards')); await s.p.waitForTimeout(200); await openCard(s, 51);
       await click(s, 'c-approve:51'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/51\/state$/);
@@ -4004,11 +4051,33 @@ if (grantsSet.length !== 1) {
       if (!(await s.view()).includes('Утверждено')) bad.push('cards-approve: нет итога');
       await s.ctx.close();
     }
-    // куратор возвращает: без причины — не уходит; с причиной — hidden + note
+    // куратор возвращает: без причины — не уходит; с причиной — hidden + note.
+    // Описание длинное нарочно: у короткой карточки поле причины и так в виду,
+    // и случай не отличил бы прокрутку от её отсутствия (так и было: снятая
+    // прокрутка оставалась зелёной; у designer-55 кнопки уходили за край, 23.10.2026).
     {
-      const s = await cardsCase(CUR, {});
+      const long = Object.assign(P(51, 'review', 'Матча-латте', 'Чай', ['ru', 'th']), { about:
+        'Церемониальная матча, взбитая венчиком, на овсяном молоке. Подаём тёплой или со льдом; ' +
+        'сахар и сироп — по просьбе гостя, отдельно. Без кофеина не бывает: в матче его не меньше, чем в эспрессо.' });
+      const s = await cardsCase(CUR, { list: json(200, QUEUE_.map(c => c.id === 51 ? long : c)) });
       await toCards(s); await openCard(s, 51);
-      await click(s, 'c-back'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(150);
+      await click(s, 'c-back'); await s.p.waitForTimeout(150);
+      // кнопки причины — в видимой области: попадание пальцем, а не наличие в разметке
+      const g = await s.p.evaluate(() => {
+        const send = document.querySelector('[data-action="c-back-send:51"]'), tabs = document.getElementById('tabs');
+        return {
+          // где кнопка была бы без прокрутки (вкладки стоят на месте): ниже их верха — значит, случай что-то проверяет
+          deep: !!(send && tabs && send.getBoundingClientRect().bottom + scrollY > tabs.getBoundingClientRect().top),
+          off: ['c-back-keep', 'c-back-send:51'].filter(a => {
+            const b = document.querySelector(`[data-action="${a}"]`); if (!b) return true;
+            const r = b.getBoundingClientRect();
+            return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) !== b;
+          })
+        };
+      });
+      if (!g.deep) bad.push('cards-return: кнопки причины и без прокрутки в виду — случай прокрутку не проверяет');
+      if (g.off.length) bad.push('cards-return: после «Вернуть с причиной» за краем экрана ' + JSON.stringify(g.off));
+      await click(s, 'c-back-send:51'); await s.p.waitForTimeout(150);
       if (cposts(s, /state$/).length) bad.push('cards-return: возврат ушёл без причины');
       await put(s, '#c-reason', 'нет фото', 'cards'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/51\/state$/);
