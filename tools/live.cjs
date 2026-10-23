@@ -3774,13 +3774,15 @@ if (grantsSet.length !== 1) {
   }
 
   // ── карточки меню: конструктор и утверждение (Cafe13KPG#175) ──
-  // Очередь GET /bar/products и остальные ручки — bar.py на бою fa2cebc
-  // (ключи — по чтению кода, снимок ручки ещё не снят). Ответ очереди нарочно в ОБРАТНОМ
+  // Очередь GET /bar/products и остальные ручки — бой fa2cebc; ключи строки
+  // очереди — по снимку координатора (19 ключей, причина без возврата — "",
+  // не null; поля снимка — null). Ответ очереди нарочно в ОБРАТНОМ
   // порядке: группы обязаны раскладываться экраном, а не порядком сервера.
   {
     const P = (id, state, title, group, recipes, note) => ({ id, direction_id: 7, group, title, about: '', full_text: '',
       price: '180.00', mins: 5, is_alcohol: false, sort: 0, state, created_by: 1, created_at: '2026-10-21T10:00:00+00:00',
-      decided_by: null, decided_at: null, decision_note: note === undefined ? null : note, recipes });
+      decided_by: null, decided_at: null, decision_note: note === undefined ? '' : note, recipes,
+      last_photo_state: null, last_photo_id: null, photo_id: null });
     const QUEUE_ = [P(56, 'active', 'Эспрессо', 'Кофе', ['en', 'ru', 'th']), P(55, 'hidden', 'Старый чай', 'Чай', ['ru']),
       P(54, 'hidden', 'Глинтвейн', 'Сезон', ['ru'], 'нет фото'), P(53, 'draft', 'Какао', 'Кофе', ['ru']),
       P(52, 'review', 'Раф', 'Кофе', []), P(51, 'review', 'Матча-латте', 'Чай', ['ru', 'th']),
