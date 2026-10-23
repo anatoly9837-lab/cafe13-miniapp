@@ -1837,7 +1837,10 @@ if (grantsSet.length !== 1) {
     id: 4, title: 'Вечер ханга', starts_at: atBkk(1, 19), duration_min: 90, seats: 12,
     kind: 'paid', price: '400.00', about: 'Живой звук, место у сцены', filmed: false,
     organizer_id: 500, organizer_first_name: 'Образец', organizer_last_name: '',
-    taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null
+    taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null,
+    // Место есть в КАЖДОЙ строке живого ответа (снимок 23.10.2026), и оба
+    // поля бывают null сразу: по умолчанию фикстура — мероприятие без места.
+    place_id: null, place_name: null
   }, over);
   const AFISHA = [
     EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
@@ -1845,11 +1848,33 @@ if (grantsSet.length !== 1) {
     EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
     EV({ id: 7, title: 'Уже начался', starts_at: new Date(NOWFIX - 3600e3).toISOString(),
          duration_min: 180, kind: 'donation', price: '0.00', seats: 20, taken: 2, seats_left: 18 }),
-    // Сервер отдаёт и то, что кончилось: началось 2,5 часа назад, длилось час.
+    // Кончившееся сервер в афише больше НЕ отдаёт — окно считается по концу
+    // события (замер по стволу api 23.10.2026). Строка оставлена нарочно:
+    // между ответом сервера и взглядом человека проходит время, и пометку
+    // «завершилось» клиент обязан ставить сам. Началось 2,5 часа назад, час.
     EV({ id: 8, title: 'Уже закончился', starts_at: new Date(NOWFIX - 9000e3).toISOString(),
          duration_min: 60, kind: 'free', price: '0.00', seats: 10, taken: 3, seats_left: 7 })
   ];
   const evReply = reply => q => q.url().endsWith('/events') ? reply : undefined;
+  /* Сцепка обработчиков: первый, кто ответил не undefined, и отвечает.
+     Нужна потому, что случаю теперь нужны ДВА адреса — афиша и места, — а
+     `extra` у `open` один. */
+  const chainQ = (...hs) => q => {
+    for (let i = 0; i < hs.length; i++) { const x = hs[i] ? hs[i](q) : undefined; if (x !== undefined) return x; }
+    return undefined;
+  };
+  /* Места — форма из снимка `places.json` (23.10.2026, прогон на боевом sha):
+     три открытых, вместимость есть только у зала, у двора и сада `null` —
+     «числа не называли». Четвёртое место СКРЫТОЕ: без него мутация, снявшая
+     отбор по `state`, осталась бы зелёной — нечему было бы просочиться. */
+  const PLACE_ROWS = [
+    { id: 1, name: 'Зал', capacity: 30, state: 'active' },
+    { id: 2, name: 'Сад', capacity: null, state: 'active' },
+    { id: 3, name: 'Двор', capacity: null, state: 'active' },
+    { id: 9, name: 'Склад', capacity: 4, state: 'hidden' }
+  ];
+  const placesReply = rows => q => q.url().endsWith('/places')
+    ? json(200, rows === undefined ? PLACE_ROWS : rows) : undefined;
   // Порядок афиши — по времени начала; на главной видны два первых. Считаем
   // из самой фикстуры: имена руками зависели бы от часа запуска.
   const SOON = [...AFISHA].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)).map(e => e.title);
@@ -2207,6 +2232,48 @@ if (grantsSet.length !== 1) {
     if (!(await s.p.$('[data-action="book-cancel"]'))) bad.push('cancel-idet: у идущего события кнопки отмены нет — своё место не снять');
     if (s.errs.length) bad.push('cancel-idet: ошибки страницы ' + s.errs.join('; '));
     await s.p.screenshot({ path: `${OUT}/live-cancel-idet.png` });
+    await s.ctx.close();
+  }
+
+  /* Место на карточке (#104). Имя приходит полем самого мероприятия, и
+     отсутствие места — ОТСУТСТВИЕ строки, а не слово «не указано»: правки
+     места на сервере нет, обещать её нечем. Три случая: место есть, места
+     нет, пришла половина места. */
+  {
+    const s = await openCard(q => q.url().endsWith('/events')
+      ? json(200, [EV({ id: 4, place_id: 1, place_name: 'Зал', taken: 1, seats_left: 11 })]) : undefined);
+    const t = await s.view();
+    if (!t.includes('Где')) bad.push('place-kartochka: на карточке нет подписи «Где»');
+    if (!t.includes('Зал')) bad.push('place-kartochka: имени места на карточке нет — место пришло, а человек его не видит');
+    if (s.errs.length) bad.push('place-kartochka: ошибки страницы ' + s.errs.join('; '));
+    await s.p.screenshot({ path: `${OUT}/live-place-kartochka.png` });
+    await s.ctx.close();
+  }
+  {
+    const s = await openCard(q => q.url().endsWith('/events')
+      ? json(200, [EV({ id: 4, place_id: null, place_name: null, taken: 1, seats_left: 11 })]) : undefined);
+    const t = await s.view();
+    // Сторож случая: карточка обязана отрисоваться. Иначе «строки „Где“ нет»
+    // верно и на пустом экране, и случай доказывал бы поломку, а не запрет.
+    if (!t.includes('Ведёт')) bad.push('place-net: карточка не отрисовалась — сравнивать нечего, остальные проверки слепы');
+    if (t.includes('Где')) bad.push('place-net: у мероприятия без места нарисована строка «Где»');
+    if (t.includes('не указано')) bad.push('place-net: пустое место названо словами «не указано» — это обещание правки, которой нет');
+    if (s.errs.length) bad.push('place-net: ошибки страницы ' + s.errs.join('; '));
+    await s.p.screenshot({ path: `${OUT}/live-place-net.png` });
+    await s.ctx.close();
+  }
+  {
+    // Половина места — номер без имени. Афиша отказывается ЦЕЛИКОМ: строка с
+    // выдуманным местом отправила бы человека не туда ногами.
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      evReply(json(200, [EV({ id: 4, title: 'Половина места', place_id: 1, place_name: null })])), null, NOWFIX);
+    await s.p.evaluate(() => go('events'));
+    await s.p.waitForTimeout(150);
+    const t = await s.view();
+    if (t.includes('Половина места')) bad.push('place-polovina: афиша показала мероприятие с номером места без имени — порченая строка прошла');
+    if (!t.includes('Ответ сервера не разобран')) bad.push(`place-polovina: отказа на экране нет, видно «${t.slice(0, 120)}»`);
+    if (s.errs.length) bad.push('place-polovina: ошибки страницы ' + s.errs.join('; '));
+    await s.p.screenshot({ path: `${OUT}/live-place-polovina.png` });
     await s.ctx.close();
   }
 
@@ -2631,8 +2698,12 @@ if (grantsSet.length !== 1) {
     // Форма открывается КНОПКОЙ с афиши: проверяется путь, а не функция.
     // Нет кнопки — случай говорит это своими словами, а не умирает кликом.
     const openForm = async (name, handler, me, tz) => {
+      // Места подкладываются ВСЕМ случаям формы: без этого запрос на
+      // /places падал бы в ответ по умолчанию (тело /me), и форма во всех
+      // снимках говорила бы «места не пришли». Свой обработчик случая идёт
+      // первым и может ответить за /places иначе — этим живёт случай отказа.
       const s = await open(true, true, me || json(200, OWNER), null, null, null,
-                           handler || evReply(json(200, [])), tz || null, NOWFIX);
+                           chainQ(handler, placesReply(), evReply(json(200, []))), tz || null, NOWFIX);
       await s.p.evaluate(() => go('events'));
       await s.p.waitForTimeout(120);
       if (!(await s.p.$('[data-go="eventNew"]'))) {
@@ -2730,6 +2801,142 @@ if (grantsSet.length !== 1) {
         // показывает придуманные мероприятия.
         const back = await s.p.evaluate(() => backTo());
         if (back !== 'events') bad.push(`sozdat-forma: «назад» с формы ведёт на «${back}», а не на афишу`);
+      }
+      await s.ctx.close();
+    }
+
+    /* Выбор места в форме (#104). Три обещания, и у каждого свой текст:
+       открытые места предлагаются, скрытое — нет (назначить на него сервер
+       откажет 409), вместимость показывается только там, где она есть.
+
+       Сторожа фикстуры считают из САМОЙ фикстуры и зовут места её же
+       именами: если скрытое место из фикстуры исчезнет, загорится сторож, а
+       проверки экрана смолчат — им нечего будет искать. Так поломка фикстуры
+       и поломка клиента краснеют разными строками (условие архитектора,
+       22.10.2026). */
+    {
+      const { s, ok } = await openForm('forma-mesta');
+      if (ok) {
+        const t = await s.view();
+        const act = PLACE_ROWS.filter(p => p.state === 'active');
+        const hid = PLACE_ROWS.filter(p => p.state !== 'active');
+        const withCap = act.filter(p => typeof p.capacity === 'number')[0];
+        const noCap = act.filter(p => p.capacity === null)[0];
+        if (!hid.length) bad.push('forma-mesta: в фикстуре мест нет ни одного скрытого — отбору нечего отбрасывать, проверка слепа');
+        if (!withCap || !noCap) bad.push('forma-mesta: в фикстуре нет пары «вместимость названа / не названа» — правило о нуле не проверяется');
+        ['Где', 'Без места'].forEach(x => {
+          if (!t.includes(x)) bad.push(`forma-mesta: в выборе места нет «${x}»`); });
+        act.forEach(p => {
+          if (!t.includes(p.name)) bad.push(`forma-mesta: открытое место «${p.name}» в выборе не предложено`); });
+        hid.forEach(p => {
+          if (t.includes(p.name)) bad.push(`forma-mesta: скрытое место «${p.name}» предложено к выбору — назначить на него сервер откажет`); });
+        if (withCap) {
+          await s.p.click(`[data-place="${withCap.id}"]`);
+          await s.p.waitForTimeout(100);
+          const th = await s.view();
+          if (!th.includes('Вместимость: ' + withCap.capacity))
+            bad.push(`forma-mesta: у «${withCap.name}» не показана вместимость ${withCap.capacity} из снимка`);
+        }
+        if (noCap) {
+          await s.p.click(`[data-place="${noCap.id}"]`);
+          await s.p.waitForTimeout(100);
+          const tg = await s.view();
+          // Числа у этого места никто не называл: ноль значил бы «мест нет».
+          if (tg.includes('Вместимость'))
+            bad.push(`forma-mesta: у «${noCap.name}» напечатана вместимость, которой никто не называл`);
+        }
+        if (s.errs.length) bad.push('forma-mesta: ошибки страницы ' + s.errs.join('; '));
+        await s.p.screenshot({ path: `${OUT}/live-forma-mesta.png`, fullPage: true });
+      }
+      await s.ctx.close();
+    }
+
+    /* Что уходит в тело. «Без места» — ОТСУТСТВИЕ ключа `place_id`, а не
+       null: отсутствие — та форма, что стоит в снимке создания без места.
+       Выбранное место — числом. Проверяется по перехваченному телу POST,
+       а не по экрану: экран о теле запроса ничего не знает. */
+    {
+      const mk = sender(() => newRow({ place_id: null, place_name: null }));
+      const { s, ok } = await openForm('forma-telo', mk.h);
+      if (ok) {
+        await fill(s.p);
+        if (await publish(s.p, 'forma-telo')) {
+          await s.p.waitForTimeout(200);
+          if (!mk.posts.length) bad.push('forma-telo: POST не ушёл — проверять нечего');
+          else {
+            const b1 = JSON.parse(mk.posts[0]);
+            if ('place_id' in b1) bad.push(`forma-telo: при «без места» в теле есть place_id = ${JSON.stringify(b1.place_id)} — отправили то, чего человек не выбирал`);
+          }
+        }
+      }
+      await s.ctx.close();
+    }
+    {
+      const mk = sender(() => newRow({ place_id: 1, place_name: 'Зал' }));
+      const { s, ok } = await openForm('forma-telo-mesto', mk.h);
+      if (ok) {
+        await fill(s.p);
+        if (!(await s.p.$('[data-place="1"]'))) bad.push('forma-telo-mesto: кнопки зала в форме нет — выбирать нечем');
+        else {
+          await s.p.click('[data-place="1"]');
+          await s.p.waitForTimeout(100);
+          if (await publish(s.p, 'forma-telo-mesto')) {
+            await s.p.waitForTimeout(200);
+            if (!mk.posts.length) bad.push('forma-telo-mesto: POST не ушёл — проверять нечего');
+            else {
+              const b2 = JSON.parse(mk.posts[0]);
+              if (b2.place_id !== 1) bad.push(`forma-telo-mesto: выбран зал, а в теле place_id = ${JSON.stringify(b2.place_id)}`);
+            }
+          }
+        }
+      }
+      await s.ctx.close();
+    }
+
+    /* Места не пришли — отказ назван своими словами, и мероприятие всё равно
+       заводится: без места оно законно. Молчаливый пустой выбор был бы
+       правдоподобным успехом — человек решил бы, что мест в клубе нет. */
+    {
+      const { s, ok } = await openForm('forma-mest-net',
+        q => q.url().endsWith('/places') ? json(500, { detail: 'внутренняя ошибка' }) : undefined);
+      if (ok) {
+        const t = await s.view();
+        if (!t.includes('Места не пришли')) bad.push(`forma-mest-net: об отказе по местам не сказано, видно «${t.slice(0, 140)}»`);
+        if (!t.includes('Сервер ответил кодом 500')) bad.push('forma-mest-net: код отказа не назван');
+        if (await s.p.$('[data-place]')) bad.push('forma-mest-net: кнопки мест нарисованы при отказе — выбирать из ничего');
+        if (!(await s.p.evaluate(() => !!window.__main))) bad.push('forma-mest-net: главной кнопки нет — без места завести нельзя, хотя без места законно');
+        if (s.errs.length) bad.push('forma-mest-net: ошибки страницы ' + s.errs.join('; '));
+        await s.p.screenshot({ path: `${OUT}/live-forma-mest-net.png`, fullPage: true });
+      }
+      await s.ctx.close();
+    }
+
+    /* Отказ по местам не вечен: повторный вход спрашивает сервер снова.
+       Без этого случая «места не пришли» осталось бы на форме навсегда —
+       и экран врал бы о НАСТОЯЩЕМ, уже после того как сервер выздоровел.
+       Счёт запросов здесь — проверка независимая от экрана: текст мог бы
+       исчезнуть и по другой причине (перерисовка, сброс состояния). */
+    {
+      let tries = 0;
+      const { s, ok } = await openForm('forma-mest-povtor', q => {
+        if (!q.url().endsWith('/places')) return undefined;
+        tries += 1;
+        return tries === 1 ? json(500, { detail: 'внутренняя ошибка' }) : json(200, PLACE_ROWS);
+      });
+      if (ok) {
+        const t1 = await s.view();
+        if (!t1.includes('Места не пришли')) bad.push(`forma-mest-povtor: первый отказ не назван — проверять нечего, видно «${t1.slice(0, 120)}»`);
+        await s.p.evaluate(() => go('events'));
+        await s.p.waitForTimeout(120);
+        await s.p.evaluate(() => go('eventNew'));
+        await s.p.waitForTimeout(300);
+        const t2 = await s.view();
+        if (tries < 2) bad.push(`forma-mest-povtor: запросов к /places ${tries}, ждали 2 — на повторном входе сервер не спрошен`);
+        if (t2.includes('Места не пришли')) bad.push('forma-mest-povtor: отказ по местам лежит на форме и после возврата — экран говорит о прошлом');
+        const act = PLACE_ROWS.filter(p => p.state === 'active');
+        act.forEach(p => { if (!t2.includes(p.name)) bad.push(`forma-mest-povtor: после возврата место «${p.name}» так и не предложено`); });
+        if (s.errs.length) bad.push('forma-mest-povtor: ошибки страницы ' + s.errs.join('; '));
+        await s.p.screenshot({ path: `${OUT}/live-forma-mest-povtor.png`, fullPage: true });
       }
       await s.ctx.close();
     }
@@ -4162,7 +4369,7 @@ if (grantsSet.length !== 1) {
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
     'order-state-worker': { id: 3, number: '261018-03', state: 'making' },
     'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW,
-    'events-afisha': AFISHA
+    'events-afisha': AFISHA, 'places': PLACE_ROWS
   };
   Object.keys(STUBS).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }

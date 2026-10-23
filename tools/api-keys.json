@@ -166,6 +166,8 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "place_id": null,
+    "place_name": null,
     "price": null,
     "seats": null,
     "seats_left": null,
@@ -190,6 +192,34 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "place_id": null,
+    "place_name": null,
+    "price": null,
+    "seats": null,
+    "seats_left": null,
+    "starts_at": null,
+    "taken": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "events-afisha-with-place": {
+  "request": "GET /events",
+  "shape": [
+   {
+    "about": null,
+    "booked_by_me": null,
+    "duration_min": null,
+    "filmed": null,
+    "id": null,
+    "kind": null,
+    "my_booking_id": null,
+    "organizer_first_name": null,
+    "organizer_id": null,
+    "organizer_last_name": null,
+    "place_id": null,
+    "place_name": null,
     "price": null,
     "seats": null,
     "seats_left": null,
@@ -382,6 +412,18 @@
    "photo_url": null,
    "valid_until": null
   },
+  "status": 200
+ },
+ "places": {
+  "request": "GET /places",
+  "shape": [
+   {
+    "capacity": null,
+    "id": null,
+    "name": null,
+    "state": null
+   }
+  ],
   "status": 200
  },
  "till-topup": {

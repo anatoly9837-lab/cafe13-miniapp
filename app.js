@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v34 · 23.10.2026';
+var VERSION = 'v35 · 23.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1654,7 +1654,7 @@ var DEMAND = [
 ];
 
 /* Состояние форм. В демонстрации созданное живёт до перезагрузки вкладки. */
-var FORM = { kind: 'paid', filmed: false, v: {} };
+var FORM = { kind: 'paid', filmed: false, place: null, v: {} };
 var FLASH = null;
 /* Сообщение живёт до следующего перехода, а не до первой отрисовки: в живом
    режиме ответ сервера перерисовывает экран, и «Заказ отправлен» исчезал
@@ -1728,12 +1728,26 @@ var KIND = {
    строкой («400.00»); booked_by_me у события, на которое не записался
    никто, приходит null, а не false, — поэтому поле проверяется на
    правдивость, а не на равенство; my_booking_id появился позже остальных и
-   его отсутствие ответ не портит — просто отменять нечем. Афиша отдаёт и
-   то, что началось до трёх часов назад: «идёт» — состояние события, а не
-   мусор в ответе. */
+   его отсутствие ответ не портит — просто отменять нечем.
+
+   Место приходит ДВУМЯ полями, `place_id` и `place_name`, и оба бывают
+   null сразу: мероприятия, заведённые до миграции мест, места не имеют и
+   получить его не могут — ручки правки события на сервере нет вовсе.
+   Половина места (номер без имени или имя без номера) — порченая строка, и
+   афиша отказывается целиком: за выдуманным местом человек поедет ногами.
+
+   Афиша отдаёт только то, что ещё НЕ кончилось — окно сервер считает по
+   КОНЦУ события (`NOT (starts_at + duration_min <= now())`, замер по
+   стволу api 23.10.2026). Поэтому «идёт» — обычное состояние строки, а
+   «завершилось» попадает на экран лишь в щель между ответом сервера и
+   взглядом человека. Пометка всё равно нужна: за эту щель жмут
+   «Записаться». */
 var EVENTS = null;          // афиша с сервера или null, пока не пришла
 var EVENTS_STATE = '';      // '' — не грузили, 'loading', 'ok', иначе текст отказа
 var EVENTS_GEN = 0;         // ответ старого запроса, пришедший позже, молчит
+var EV_PLACES = null;       // места клуба для формы или null, пока не пришли
+var EV_PLACES_STATE = '';   // '' — не спрашивали, 'loading', 'ok', иначе отказ
+var EV_PLACES_GEN = 0;      // ответ старого запроса, пришедший позже, молчит
 var SEG = 'все';            // выбранная часть дня на экране афиши
 var TZ = 'Asia/Bangkok';    // афиша клуба живёт по острову, а не по поясу телефона
 
@@ -1770,6 +1784,13 @@ function fromEvents(d) {
     if (!KIND[e.kind] || typeof e.duration_min !== 'number' || !(e.duration_min > 0)) return null;
     if (typeof e.seats !== 'number' || typeof e.seats_left !== 'number' || typeof e.taken !== 'number') return null;
     if (typeof e.organizer_id !== 'number') return null;
+    // Место: отсутствие приходит null'ом в ОБОИХ полях. Пустая строка в
+    // имени — не место, а след поломки, поэтому имя требуется непустым.
+    var pid = e.place_id === undefined ? null : e.place_id;
+    var pname = e.place_name === undefined ? null : e.place_name;
+    if (!(pid === null || typeof pid === 'number')) return null;
+    if (!(pname === null || typeof pname === 'string' && pname)) return null;
+    if ((pid === null) !== (pname === null)) return null;
     var price = num(e.price);
     if (!(price >= 0)) return null;
     var start = new Date(e.starts_at);
@@ -1780,9 +1801,11 @@ function fromEvents(d) {
       id: String(e.id), eid: e.id, at: start.getTime(),
       title: e.title, day: dayLabel(p, now), time: p.hm, until: fin.hm,
       seg: partOf(p.hm),
-      // Сервер отдаёт и то, что началось до трёх часов назад. «Идёт» верно
-      // только до конца события: часовая практика, начавшаяся два часа
-      // назад, идущей не является — это было бы правдоподобной ложью.
+      // «Идёт» верно только до конца события: часовая практика,
+      // начавшаяся два часа назад, идущей не является — это было бы
+      // правдоподобной ложью. Кончившееся сервер в афише уже не отдаёт, но
+      // считать конец всё равно нам: между его ответом и этим взглядом
+      // проходит время.
       part: now.getTime() >= start.getTime() && now.getTime() < ends ? 'идёт' : partOf(p.hm),
       done: now.getTime() >= ends,
       master: [e.organizer_first_name, e.organizer_last_name].filter(Boolean).join(' ') || 'Без имени',
@@ -1793,10 +1816,49 @@ function fromEvents(d) {
       filmed: !!e.filmed,
       booked: !!e.booked_by_me,
       // номер своей записи — им отменяют; читать его будет следующий шаг
-      bookingId: typeof e.my_booking_id === 'number' ? e.my_booking_id : null
+      bookingId: typeof e.my_booking_id === 'number' ? e.my_booking_id : null,
+      place: pname, placeId: pid
     });
   }
   return out.sort(function (a, b) { return a.at - b.at; });
+}
+
+/* Список мест нужен только форме: в афише место приходит полями самого
+   мероприятия, и отдельный запрос там был бы вторым источником правды.
+
+   Порядок — по имени, здесь: сервер своего порядка не обещает, а чем
+   сортировать сетку, решает владелец (Cafe13KPG#250) — это одна строка.
+   `capacity: null` в снимке стоит у двора и сада: число никто не называл.
+   Ноль вместо него был бы «мест нет» — ложь противоположного смысла. */
+function fromPlaces(d) {
+  if (!Array.isArray(d)) return null;
+  var out = [];
+  for (var i = 0; i < d.length; i++) {
+    var p = d[i];
+    if (!p || typeof p.id !== 'number' || typeof p.name !== 'string' || !p.name) return null;
+    if (typeof p.state !== 'string' || !p.state) return null;
+    var cap = p.capacity === undefined ? null : p.capacity;
+    if (!(cap === null || typeof cap === 'number' && cap > 0)) return null;
+    // В выбор идёт только 'active': на скрытое место сервер назначить
+    // откажет (409 «место … сейчас не используется»), а кнопка, ведущая к
+    // верному отказу, обманывает дважды. Незнакомое состояние — тоже мимо:
+    // разрешаем известное, а не запрещаем перечисленное.
+    if (p.state !== 'active') continue;
+    out.push({ id: p.id, name: p.name, capacity: typeof cap === 'number' ? cap : null });
+  }
+  return out.sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+}
+
+function loadPlaces() {
+  EV_PLACES_STATE = 'loading';
+  var gen = ++EV_PLACES_GEN;
+  api('GET', '/places').then(function (r) {
+    if (gen !== EV_PLACES_GEN) return;
+    var list = r.status === 200 ? fromPlaces(r.data) : null;
+    if (list) { EV_PLACES = list; EV_PLACES_STATE = 'ok'; }
+    else { EV_PLACES = null; EV_PLACES_STATE = failText(r); }
+    if (current === 'eventNew') render();
+  });
 }
 
 function loadEvents() {
@@ -2122,9 +2184,13 @@ function eventForm() {
     price = parseInt(raw, 10);
     if (!(price >= 0)) return { err: 'Ориентир — число или пустое поле.' };
   }
-  return { body: { title: title, starts_at: starts, duration_min: dur, seats: seats,
-                   kind: FORM.kind, price: price,
-                   about: val('f-about'), filmed: !!FORM.filmed } };
+  var body = { title: title, starts_at: starts, duration_min: dur, seats: seats,
+               kind: FORM.kind, price: price,
+               about: val('f-about'), filmed: !!FORM.filmed };
+  // «Без места» уходит ОТСУТСТВИЕМ ключа, а не null: обе формы сервер
+  // принимает, но отсутствие — та, что стоит в снимке создания без места.
+  if (typeof FORM.place === 'number') body.place_id = FORM.place;
+  return { body: body };
 }
 
 /* Имена полей запроса по-русски: 422 называет поле в `loc`, и это
@@ -2133,7 +2199,53 @@ function eventForm() {
    честнее общий текст с кодом, чем выдуманное имя. */
 var FIELD_RU = { title: 'Название', starts_at: 'Начало', duration_min: 'Длительность',
                  seats: 'Мест', price: 'Цена', about: 'Описание', kind: 'Вид участия',
-                 filmed: 'Съёмка' };
+                 filmed: 'Съёмка', place_id: 'Место' };
+
+/* Места демонстрации: те же три, что отдаёт сервер клуба, и у двух из них
+   вместимость неизвестна — демонстрация обязана показывать ту же форму
+   данных, иначе снимок описи обещает не то, что увидит человек. */
+var DEMO_PLACES = [{ id: 3, name: 'Двор', capacity: null },
+                   { id: 1, name: 'Зал', capacity: 30 },
+                   { id: 2, name: 'Сад', capacity: null }];
+
+/* Выбор места в форме. Состояний у этого куска ПЯТЬ, и каждое говорит
+   своё: не спрашивали, спрашиваем, отказ сервера, пустой список активных
+   мест, список пришёл. Пустой список — не «выбирайте»: сервер назвал ноль
+   мест, и честнее это сказать, чем показать одну кнопку «без места» и
+   промолчать о причине.
+
+   Вместимость показываем только там, где она есть: у двора и сада в снимке
+   `capacity: null` — «числа никто не называл». Ноль нарисовать нельзя, он
+   значит ровно обратное. */
+function placeSeg() {
+  // Вне Telegram приложение показывает демонстрацию, и места в ней зашиты,
+  // как числа афиши: спрашивать сервер там некого, а «места не пришли» на
+  // демонстрационном экране — отказ без отказа.
+  var list = LIVE ? EV_PLACES : DEMO_PLACES;
+  if (LIVE && (EV_PLACES_STATE === 'loading' || EV_PLACES_STATE === ''))
+    return '<div class="note">' + svg(ICON.info) + '<span>Спрашиваем места у сервера…</span></div>';
+  if (!list)
+    return '<div class="note">' + svg(ICON.info) + '<span>Места не пришли: ' +
+      esc(EV_PLACES_STATE) + ' Мероприятие заводится и без места — в афише у него просто не будет строки «где».</span></div>';
+  if (!list.length)
+    return '<div class="note">' + svg(ICON.info) +
+      '<span>Сервер не назвал ни одного открытого места. Заводите без места: место потом не поменять — ручки правки события нет.</span></div>';
+  var sel = null;
+  for (var i = 0; i < list.length; i++) if (list[i].id === FORM.place) sel = list[i];
+  var hint = FORM.place === null
+    ? 'Без места — тоже ответ: в афише не будет строки «где».'
+    : sel ? (sel.capacity
+        ? 'Вместимость: ' + sel.capacity + '. Если место в это время занято, сервер скажет — с названием и временем того, что уже стоит.'
+        : 'Сколько человек влезает, нам не называли — числа здесь нет. Если место занято, сервер скажет чем.')
+      : 'Это место больше не предлагается — выберите другое или заводите без места.';
+  return '<div class="seg wrap"><button type="button" data-place="" aria-pressed="' +
+      (FORM.place === null) + '">Без места</button>' +
+    list.map(function (p) {
+      return '<button type="button" data-place="' + esc(String(p.id)) +
+        '" aria-pressed="' + (FORM.place === p.id) + '">' + esc(p.name) + '</button>';
+    }).join('') + '</div>' +
+    '<span class="small" style="margin-top:6px;display:block">' + esc(hint) + '</span>';
+}
 
 function badFields(d) {
   if (!Array.isArray(d)) return [];
@@ -2225,7 +2337,7 @@ function afterEventCreate(r, sent) {
     var e = id ? eventById(id) : null;
     if (e && sameAsSent(e, sent)) {
       EVN_ERR = '';
-      FORM = { kind: 'paid', filmed: false, v: {} };
+      FORM = { kind: 'paid', filmed: false, place: null, v: {} };
       dropDraft();
       haptic('ok');
       // Человека уводим на карточку его события только если он всё ещё на
@@ -2419,6 +2531,9 @@ function eventLive(e) {
       '</div></div>' : '') +
     '<div class="rows">' +
       '<div><span class="small">Ведёт</span><b>' + esc(e.master) + '</b></div>' +
+      // Места нет — строки нет вовсе. «Место не указано» обещало бы, что
+      // его когда-нибудь укажут: ручки правки события на сервере нет.
+      (e.place ? '<div><span class="small">Где</span><b>' + esc(e.place) + '</b></div>' : '') +
       '<div><span class="small">Мест осталось</span><b class="num">' +
         (e.seats === 0 ? 'мест нет' : e.seats + ' из ' + e.of) + '</b></div>' +
       '<div><span class="small">Участие</span><b class="num">' + KIND[e.kind].label(e) + '</b></div>' +
@@ -2911,6 +3026,10 @@ var SCREENS = {
         '<div class="field" style="flex:1 1 0"><label for="f-seats">Мест</label>' +
           '<input id="f-seats" type="number" inputmode="numeric" value="' + keep('f-seats', '12') + '">' +
           '<span class="small">От 1 до 500.</span></div>' +
+      '</div>' +
+
+      '<div class="group"><span class="label">Где</span>' +
+        placeSeg() +
       '</div>' +
 
       '<div class="group"><span class="label">Участие</span>' +
@@ -4137,6 +4256,11 @@ function go(screen, p) {
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
+  // Места спрашиваются ЗАНОВО, если прошлый ответ списка не принёс: иначе
+  // отказ, случившийся однажды, лежит на форме навсегда — человек читает
+  // «места не пришли» уже после того, как сервер выздоровел. Пустой
+  // список при этом второй раз не просим: `[]` — ответ, а не отказ.
+  if (screen === 'eventNew' && LIVE && EV_PLACES_STATE !== 'loading' && !EV_PLACES) loadPlaces();
   if (screen !== 'event') { BOOK_ERR = ''; BOOK_ASK = false; EV_ERR = ''; EV_ASK = false; }
   // Список записавшихся спрашивается при входе на карточку СВОЕГО события:
   // loadSigned сам молчит на чужом, поэтому предикат один и здесь.
@@ -4171,7 +4295,7 @@ document.addEventListener('input', function (ev) {
 });
 
 document.addEventListener('click', function (ev) {
-  var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-toggle],[data-manage],[data-action],[data-drink],[data-where],[data-pay],[data-exp],[data-expay]');
+  var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-place],[data-toggle],[data-manage],[data-action],[data-drink],[data-where],[data-pay],[data-exp],[data-expay]');
   if (!el) return;
 
   if (el.hasAttribute('data-role')) {
@@ -4188,6 +4312,13 @@ document.addEventListener('click', function (ev) {
   if (el.hasAttribute('data-expay')) { grabForm(EXP_FIELDS); EXP.pay = el.getAttribute('data-expay'); haptic(); render(); return; }
   if (el.hasAttribute('data-kind')) {
     grabForm(EVENT_FIELDS); FORM.kind = el.getAttribute('data-kind'); haptic(); saveDraft(); render(); return;
+  }
+  if (el.hasAttribute('data-place')) {
+    // Пустая строка в data-place — это «без места», а не поломка: числа
+    // у места начинаются с единицы, и Number('') дал бы ноль-мероприятие.
+    var pv = el.getAttribute('data-place');
+    grabForm(EVENT_FIELDS); FORM.place = pv ? Number(pv) : null;
+    haptic(); saveDraft(); render(); return;
   }
   if (el.hasAttribute('data-toggle')) {
     grabForm(EVENT_FIELDS); FORM.filmed = !FORM.filmed; haptic(); saveDraft(); render(); return;
@@ -4392,7 +4523,7 @@ function doAction(a) {
         about: val('f-about') || 'Описание не заполнено.' });
       FLASH = 'Мероприятие «' + title + '» опубликовано в афише';
       haptic('ok');
-      FORM = { kind: 'paid', filmed: false, v: {} };
+      FORM = { kind: 'paid', filmed: false, place: null, v: {} };
       dropDraft();
       go('organizer');
       return;
@@ -4583,7 +4714,7 @@ function askPhone() {                          // 6.9
    не заменяет сервер — бармен в нём ничего не увидит. */
 function saveDraft() {
   if (!tgHas('6.9') || !tg.CloudStorage) return;
-  var d = JSON.stringify({ v: FORM.v, kind: FORM.kind, filmed: FORM.filmed });
+  var d = JSON.stringify({ v: FORM.v, kind: FORM.kind, filmed: FORM.filmed, place: FORM.place });
   if (d.length > 4096) return;                 // предел значения
   try { tg.CloudStorage.setItem('draft_event', d, function () {}); } catch (e) {}
 }
@@ -4595,6 +4726,7 @@ function loadDraft(done) {
       try {
         var d = JSON.parse(value);
         FORM.v = d.v || {}; FORM.kind = d.kind || 'paid'; FORM.filmed = !!d.filmed;
+        FORM.place = typeof d.place === 'number' ? d.place : null;
         done(true);
       } catch (e) { done(false); }
     });
