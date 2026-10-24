@@ -163,6 +163,9 @@ b.num, .big { white-space: nowrap; }
 /* «не закончено», а не запрет: исход приёма неизвестен (кадр E34zh) */
 .card.warm { background: var(--deny-bg); border-color: var(--clay); }
 .card.warm b, .card.warm .small { color: var(--clay-ink); }
+/* возврат автору в строке списка (E39): незакрытое, ждёт действия — глина */
+.listitem.warm { background: var(--deny-bg); border-color: var(--clay); }
+.said { font-size: 12px; color: var(--clay-ink); }
 
 .btn {
   min-height: 50px; width: 100%;

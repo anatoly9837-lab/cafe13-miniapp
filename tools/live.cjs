@@ -4381,6 +4381,8 @@ if (grantsSet.length !== 1) {
       last_photo_state: null, last_photo_id: null, photo_id: null });
     const QUEUE_ = [P(56, 'active', 'Эспрессо', 'Кофе', ['en', 'ru', 'th']), P(55, 'hidden', 'Старый чай', 'Чай', ['ru']),
       P(54, 'hidden', 'Глинтвейн', 'Сезон', ['ru'], 'нет фото'), P(53, 'draft', 'Какао', 'Кофе', ['ru']),
+      // возврат после api#66 — draft с замечанием (Cafe13KPG#307); hidden с замечанием выше — прежний вид
+      P(58, 'draft', 'Тоник', 'Кофе', ['ru'], 'нет тайского рецепта'),
       P(52, 'review', 'Раф', 'Кофе', []), P(51, 'review', 'Матча-латте', 'Чай', ['ru', 'th']),
       P(57, 'active', 'Глинтвейн дома', 'Авторские напитки сезона и тёплые настойки дома', ['ru'])];
     const WORKER = clone(OWNER); WORKER.roles = [{ role: 'bar', direction_id: 7 }];
@@ -4425,7 +4427,19 @@ if (grantsSet.length !== 1) {
         if (JSON.stringify(order) !== JSON.stringify(['Ждут утверждения', 'Возвращены', 'Черновики', 'В меню', 'Сняты']))
           bad.push('cards-list: порядок групп ' + JSON.stringify(order));
         const t = await s.view();
-        ['Причина: нет фото', 'рецепта нет', 'рецепт: ru, th', 'Направление «Бар»'].forEach(x => { if (!t.includes(x)) bad.push(`cards-list: нет «${x}»`); });
+        ['Замечание: нет фото', 'рецепта нет', 'рецепт: ru, th', 'Направление «Бар»'].forEach(x => { if (!t.includes(x)) bad.push(`cards-list: нет «${x}»`); });
+        // Вернули автору — оба вида в «Возвращены», с замечанием в строке и глиной;
+        // черновик без замечания — в «Черновиках», и пустой подписи там нет (близнец, designer-55).
+        const groups = await s.p.evaluate(() => Object.fromEntries([...document.querySelectorAll('#view [data-cards]')].map(g =>
+          [g.getAttribute('data-cards'), [...g.querySelectorAll('.listitem')].map(r =>
+            r.querySelector('b').textContent + (r.classList.contains('warm') ? ':глина' : '') +
+            (r.querySelector('.said') ? '|' + r.querySelector('.said').textContent : ''))])));
+        const wantG = { 'Возвращены': ['Глинтвейн:глина|Замечание: нет фото', 'Тоник:глина|Замечание: нет тайского рецепта'],
+                        'Черновики': ['Какао'], 'Сняты': ['Старый чай'] };
+        for (const [g, rows] of Object.entries(wantG))
+          if (JSON.stringify((groups[g] || []).slice().sort()) !== JSON.stringify(rows))
+            bad.push(`cards-returned: группа «${g}» ${JSON.stringify(groups[g] || [])}, ждали ${JSON.stringify(rows)}`);
+        if (!groups['Черновики']) bad.push('cards-returned: ПРОВЕРКА НЕ ВЫПОЛНЕНА — группы «Черновики» нет, близнецу не на чем стоять');
         // Цвет «рецепта нет» — глина, и проверяется ЗНАЧЕНИЕМ, а не наличием слов.
         // 22.10.2026: подмена var(--clay-ink) на системный синий оставила батарею
         // зелёной (258 из 258) — случай выше смотрел только текст строки.
@@ -4463,6 +4477,28 @@ if (grantsSet.length !== 1) {
         await s.p.screenshot({ path: `${OUT}/live-cards.png` });
       }
       if (s.errs.length) bad.push('cards-list: ошибки страницы ' + s.errs.join('; '));
+      await s.ctx.close();
+    }
+    // карточка, возвращённая новым видом (draft + замечание): внутри — «Возвращена»
+    // и замечание куратора; обычный черновик — «Черновик» без замечания
+    // Плашка состояния: глина — только у возврата (ждёт действия автора); «Снята»
+    // спокойная — решение куратора принято и закрыто (словарь облика, E39b)
+    for (const [id, want, not, pill, warm] of [
+      [58, ['Возвращена', 'Вернул куратор: нет тайского рецепта', 'Отправить на утверждение'], ['Черновик'], 'Возвращена', true],
+      [53, ['Черновик', 'Отправить на утверждение'], ['Возвращена', 'Вернул куратор'], 'Черновик', false],
+      [55, ['Снята'], ['Возвращена', 'Вернул куратор'], 'Снята', false]]) {
+      const s = await cardsCase(WORKER, {});
+      await toCards(s); await openCard(s, id);
+      const t = await s.view();
+      if (!t.includes('Рецепт')) bad.push(`card-${id}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — карточка не открылась`);
+      else {
+        want.forEach(x => { if (!t.includes(x)) bad.push(`card-${id}: нет «${x}»`); });
+        not.forEach(x => { if (t.includes(x)) bad.push(`card-${id}: лишнее «${x}»`); });
+        const p = await s.p.evaluate(w => { const e = [...document.querySelectorAll('#view .pill')].find(x => x.textContent.trim() === w);
+          return e ? e.classList.contains('warm') : null; }, pill);
+        if (p === null) bad.push(`card-${id}: плашки «${pill}» нет`);
+        else if (p !== warm) bad.push(`card-${id}: плашка «${pill}» ${warm ? 'не глиной' : 'глиной, а решение закрыто'}`);
+      }
       await s.ctx.close();
     }
     // «рецепта нет» глиной — только у ждущей утверждения: у черновика рецепта нет

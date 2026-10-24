@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v40 · 24.10.2026';
+var VERSION = 'v41 · 24.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1788,14 +1788,25 @@ function photoBlock(c) {
     (v.none ? '' : '<div class="note">' + svg(ICON.info) + '<span>Показан только последний присланный снимок: прежние неутверждённые через этот экран не открыть. Это решение, а не недоделка — разобрано в карточке направления.</span></div>') +
   '</div>';
 }
+/* Вернули автору (Cafe13KPG#307, кадр E39). Два вида одного события:
+   `draft` + замечание — после api#66; `hidden` + замечание — прежний способ,
+   и такие строки в базе остаются. `hidden` с замечанием читается возвратом
+   ПО СОГЛАШЕНИЮ: единственный путь в такие данные — наша кнопка «Вернуть с
+   причиной» у карточки на проверке («Снять с меню» замечания не шлёт). Придёт
+   такой `hidden` извне клиента — подпись соврёт. */
+function cardReturned(c) {
+  return !!c.note && (c.state === 'draft' || c.state === 'hidden');
+}
 function cardRow(c) {
   var rec = c.recipes.length ? 'рецепт: ' + c.recipes.join(', ') : '';
-  return '<button type="button" class="listitem" data-action="c-open:' + c.id + '">' +
+  var back = cardReturned(c);
+  return '<button type="button" class="listitem' + (back ? ' warm' : '') + '" data-action="c-open:' + c.id + '">' +
     '<span class="grow"><b>' + esc(c.title) + '</b><span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' +
       // глина — только там, где это запрет (review без рецепта отобьёт триггер базы);
       // у черновика рецепта нет по определению — это «ещё не сделано», не ошибка
       (rec ? ' · ' + esc(rec) : ' · <span' + (c.state === 'review' ? ' style="color:var(--clay-ink)"' : '') + '>рецепта нет</span>') + '</span>' +
-      (c.note && c.state === 'hidden' ? '<span class="small">Причина: ' + esc(c.note) + '</span>' : '') +
+      // замечание живёт до следующей смены состояния — читать его до нажатия
+      (back ? '<span class="said">Замечание: ' + esc(c.note) + '</span>' : '') +
     '</span>' + svg(ICON.chev, 'chev') + '</button>';
 }
 
@@ -4056,8 +4067,8 @@ var SCREENS = {
     var L = CARDS.list;
     var parts = [
       ['Ждут утверждения', L.filter(function (c) { return c.state === 'review'; })],
-      ['Возвращены', L.filter(function (c) { return c.state === 'hidden' && c.note; })],
-      ['Черновики', L.filter(function (c) { return c.state === 'draft'; })],
+      ['Возвращены', L.filter(cardReturned)],
+      ['Черновики', L.filter(function (c) { return c.state === 'draft' && !c.note; })],
       // рабочее меню — над снятым: у бара «В меню» самая длинная группа (решение координатора, 23.10.2026)
       ['В меню', L.filter(function (c) { return c.state === 'active'; })],
       ['Сняты', L.filter(function (c) { return c.state === 'hidden' && !c.note; })]
@@ -4116,7 +4127,8 @@ var SCREENS = {
     if (!c) return '<div class="card quiet"><span class="small">Карточки нет в списке направления.</span></div>';
     var cur = cardCurator(), has = c.recipes.indexOf(CARD.lang) !== -1;
     if (has) recipeLoad(c.id, CARD.lang);     // заменяя рецепт, человек видит прежний
-    var STATE_WORDS = { draft: 'Черновик', review: 'Ждёт утверждения', active: 'В меню', hidden: c.note ? 'Возвращена' : 'Снята' };
+    var back = cardReturned(c);
+    var STATE_WORDS = { draft: back ? 'Возвращена' : 'Черновик', review: 'Ждёт утверждения', active: 'В меню', hidden: back ? 'Возвращена' : 'Снята' };
     var langs = '<div class="seg">' + CARD_LANGS.map(function (l) {
       return '<button type="button" data-action="c-lang:' + l[0] + '"' + (CARD.lang === l[0] ? ' aria-pressed="true"' : '') + lock + '>' +
         l[1] + (c.recipes.indexOf(l[0]) !== -1 ? ' ·' : '') + '</button>';
@@ -4146,9 +4158,9 @@ var SCREENS = {
     if (!acts && c.state === 'review') acts = '<span class="small">Ждёт решения куратора направления.</span>';
     return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(c.title) + '</h2>' +
         '<span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' + (c.mins ? ' · ' + c.mins + ' мин' : '') + (c.alcohol ? ' · алкоголь' : '') + '</span></div>' +
-        '<span class="pill' + (c.state === 'active' ? ' on' : c.state === 'hidden' ? ' warm' : '') + '">' + esc(STATE_WORDS[c.state]) + '</span></div>' +
+        '<span class="pill' + (c.state === 'active' ? ' on' : back ? ' warm' : '') + '">' + esc(STATE_WORDS[c.state]) + '</span></div>' +
         (c.about ? '<span class="small">' + esc(c.about) + '</span>' : '') +
-        (c.note && c.state === 'hidden' ? '<div class="note">' + svg(ICON.info) + '<span>Вернул куратор: ' + esc(c.note) + '</span></div>' : '') +
+        (back ? '<div class="note">' + svg(ICON.info) + '<span>Вернул куратор: ' + esc(c.note) + '</span></div>' : '') +
       '</div>' + note + photoBlock(c) +
       '<div class="group"><span class="label">Рецепт</span>' + langs +
         '<div class="field"><label for="c-recipe">Рецепт (' + CARD.lang.toUpperCase() + ')' + (has ? '' : ' — пока нет') + '</label>' +
