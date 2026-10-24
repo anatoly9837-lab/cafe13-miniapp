@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v39 · 24.10.2026';
+var VERSION = 'v40 · 24.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -233,7 +233,10 @@ function api(method, path, body) {
   });
 }
 
-var LEVEL = { member: 'Член клуба', organizer: 'Организатор', partner: 'Бизнес-партнёр' };
+// «Мастер», а не «Организатор» (решение координатора 24.10.2026): так зовёт
+// вид владелец в приглашении и сервер в комментарии. Ключ в данных остаётся
+// `organizer`; «организатор» — отношение к конкретному мероприятию, не вид.
+var LEVEL = { member: 'Член клуба', organizer: 'Мастер', partner: 'Бизнес-партнёр' };
 // Имена ролей — только тех, смысл которых записан; остальные показываются кодом.
 var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клуба', god: 'Наследник',
                   admin: 'Администратор', director: 'Директор',
@@ -267,6 +270,18 @@ function fromMe(d) {
       if (!until) return null;          // конечное членство без конца — не разобрано
     }
   }
+  // Все живые членства, по одному на вид (виды не старше друг друга). Поля
+  // нет или оно не список — ответ не разобран целиком: пустой список значит
+  // «членств нет», и подменять им неразобранное нельзя.
+  if (!Array.isArray(d.memberships)) return null;
+  var all = [];
+  for (var i = 0; i < d.memberships.length; i++) {
+    var m = d.memberships[i];
+    if (!m || typeof m !== 'object' || !LEVEL[m.level] || typeof m.lifelong !== 'boolean') return null;
+    var mu = m.lifelong ? null : m.ends_at ? ruDate(m.ends_at) : null;
+    if (!m.lifelong && !mu) return null;
+    all.push({ level: m.level, until: mu, lifelong: m.lifelong });
+  }
   var p = d.member;
   return {
     role: d.membership_active ? ms.level : 'guest',
@@ -283,6 +298,7 @@ function fromMe(d) {
       until: until,
       ends: d.membership_active && !lifelong ? ms.ends_at : null,   // ISO — для запаса пропуска
       lifelong: lifelong,
+      memberships: all,
       balance: bal,
       number: p.pass_code || null
     }
@@ -3037,10 +3053,13 @@ var SCREENS = {
   },
 
   membership: function () {
+    // уровень — из оплаченных членств (/me), а не из роли; в демо их нет
+    var have = DATA.member && DATA.member.memberships;
+    var mine = function (k) { return have ? have.some(function (m) { return m.level === k; }) : DATA.role === k; };
     var tiers = [
-      { name: 'Член клуба', price: '[100] $', about: 'Вход в пространство без оплаты. Афиша, записи, жизнь клуба.', mine: DATA.role === 'member' },
-      { name: 'Организатор', price: '[200] $', about: 'Всё, что у члена клуба, плюс право проводить свои мероприятия и назначать их цену.', mine: DATA.role === 'organizer' },
-      { name: 'Бизнес-партнёр', price: '[300] $', about: 'Всё, что у члена клуба, плюс своё направление внутри клуба и его отчётность.', mine: false, split: true }
+      { name: LEVEL.member, price: '[100] $', about: 'Вход в пространство без оплаты. Афиша, записи, жизнь клуба.', mine: mine('member') },
+      { name: LEVEL.organizer, price: '[200] $', about: 'Всё, что у члена клуба, плюс право проводить свои мероприятия и назначать их цену.', mine: mine('organizer') },
+      { name: LEVEL.partner, price: '[300] $', about: 'Всё, что у члена клуба, плюс своё направление внутри клуба и его отчётность.', mine: mine('partner'), split: true }
     ];
     return tiers.map(function (t) {
       return '<div class="card' + (t.mine ? ' strong' : '') + '">' +
@@ -4222,7 +4241,7 @@ var SCREENS = {
     var roles = [
       ['guest', 'Гость', 'без членства: только услуги'],
       ['member', 'Член клуба', 'пропуск, афиша, записи'],
-      ['organizer', 'Организатор', 'то же плюс свои мероприятия'],
+      ['organizer', LEVEL.organizer, 'то же плюс свои мероприятия'],
       ['partner', 'Бизнес-партнёр', 'то же плюс своё направление и его отчётность'],
       ['staff', 'Работник', 'касса: внести и отменить'],
       ['bar', 'Бар · исполнитель', 'заказы, съёмка напитков, затраты, смена'],

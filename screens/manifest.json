@@ -133,19 +133,19 @@
  },
  {
   "file": "23-organizer.png",
-  "group": "Организатор",
+  "group": "Мастер",
   "caption": "Свои мероприятия и наполненность.",
   "screen": "organizer"
  },
  {
   "file": "24-event-new.png",
-  "group": "Организатор",
+  "group": "Мастер",
   "caption": "Создание мероприятия.",
   "screen": "eventNew"
  },
  {
   "file": "25-event-manage.png",
-  "group": "Организатор",
+  "group": "Мастер",
   "caption": "Управление своим мероприятием и список записавшихся.",
   "screen": "eventManage"
  },

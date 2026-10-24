@@ -50,6 +50,11 @@ const finite = clone(OWNER);
 finite.membership.ends_at = '2026-11-14T10:00:00+07:00'; finite.membership.lifelong = false;
 const noEnd = clone(OWNER); noEnd.membership.lifelong = false;          // конечное без конца
 const noConsent = clone(OWNER); noConsent.member.consent_data_at = null;
+// список членств: поля нет, не список, вид чужой, конечное без конца — всё «не разобран»
+const msNone = clone(OWNER); delete msNone.memberships;
+const msObj = clone(OWNER); msObj.memberships = msObj.membership;
+const msAlien = clone(OWNER); msAlien.memberships = [{ level: 'boss', starts_at: null, ends_at: null, lifelong: true }];
+const msNoEnd = clone(OWNER); msNoEnd.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: false });
 
 /* [имя, внутри Telegram, API_ON, ответ /me, есть, нет, сколько запросов к API, после] */
 const CASES = [
@@ -66,6 +71,10 @@ const CASES = [
   ['html-200', true, true, { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
     ['Ответ сервера не разобран'], ['Баланс'], 1],
   ['finite-without-end', true, true, json(200, noEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
+  ['memberships-none', true, true, json(200, msNone), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
+  ['memberships-object', true, true, json(200, msObj), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
+  ['memberships-alien', true, true, json(200, msAlien), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
+  ['memberships-noend', true, true, json(200, msNoEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
   ['network-down', true, true, 'abort', ['Сервер не ответил'], ['Баланс'], 1],
   ['outside-telegram', false, true, json(200, OWNER),
     ['Действует до 14 ноября', '1 250', 'Звуковая практика'], ['Пожизненно'], 0],
@@ -417,9 +426,24 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   {
-    const gone = clone(OWNER); gone.membership_active = false; gone.membership = null; gone.member.pass_code = 'XIII-0042';
+    const gone = clone(OWNER); gone.membership_active = false; gone.membership = null; gone.memberships = []; gone.member.pass_code = 'XIII-0042';
     const s = await open(true, true, json(200, gone), null, null, SAVED);
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('me-inactive: запас не стёрт при неактивном членстве');
+    await s.ctx.close();
+  }
+  // «Ваш уровень» — из списка оплаченных членств, а не из роли: одиночное
+  // `membership` говорит «член клуба», список — мастер и партнёр.
+  {
+    const two = clone(OWNER);
+    two.memberships = [{ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-04-24T05:00:00+00:00', lifelong: false },
+                       { level: 'partner', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }];
+    const s = await open(true, true, json(200, two), null, null, null);
+    await s.p.evaluate(() => go('membership'));
+    const mine = await s.p.evaluate(() => [...document.querySelectorAll('#view .card')]
+      .filter(c => c.querySelector('h2')).map(c => c.querySelector('h2').textContent + (c.querySelector('.pill.on') ? ':мой' : '')));
+    const want = ['Член клуба', 'Мастер:мой', 'Бизнес-партнёр:мой'];
+    if (JSON.stringify(mine) !== JSON.stringify(want)) bad.push('membership-mine: уровни не из списка членств: ' + JSON.stringify(mine));
+    if ((await s.view()).includes('Организатор')) bad.push('membership-mine: вид назван «Организатор», а не «Мастер»');
     await s.ctx.close();
   }
   // /pass без даты и без lifelong — не пропуск (пустая дата законна только при lifelong: true).
@@ -1364,7 +1388,8 @@ if (grantsSet.length !== 1) {
         if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'membership', amount: 3000, method: 'card', member_id: PID, level: 'organizer', months: 6 }))
           bad.push('till-sell: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
         t = await s.view();
-        for (const w of ['Принято 3 000 ฿ картой', 'Организатор', 'до 24 апреля 2027', 'Следующий человек', 'правки членства в приложении пока нет'])
+        if (t.includes('Организатор')) bad.push('till-sell: вид назван «Организатор», а не «Мастер»');
+        for (const w of ['Принято 3 000 ฿ картой', 'Мастер', 'до 24 апреля 2027', 'Следующий человек', 'правки членства в приложении пока нет'])
           if (!t.includes(w)) bad.push(`till-sell: на итоге нет «${w}»`);
         if (finds(s).length !== 2) bad.push(`till-sell: карточка после приёма не перечитана (запросов by-pass: ${finds(s).length})`);
         await s.p.screenshot({ path: `${OUT}/live-till-done.png`, fullPage: true });
@@ -1518,7 +1543,7 @@ if (grantsSet.length !== 1) {
   const bookPosts = s => s.calls.filter(c => c.method === 'POST' && /\/bar\/(expenses|income)$/.test(c.url));
   // Саша — куратор Бара без членства: путь только через вкладку «Заказы»
   const SASHA = clone(OWNER); SASHA.roles = [{ role: 'curator', direction_id: 7 }];
-  SASHA.membership_active = false; SASHA.membership = null;
+  SASHA.membership_active = false; SASHA.membership = null; SASHA.memberships = [];
   async function toBook(s, name) {
     for (const sel of ['#tabs [data-go="barQueue"]', '#view [data-go="barQueue"]']) {
       if (await s.p.$(sel)) { await tap(s, sel); await s.p.waitForTimeout(250); break; }
@@ -2019,7 +2044,7 @@ if (grantsSet.length !== 1) {
   // обязаны дойти до очереди за нажатия, без знания адресов.
   for (const [name, member] of [['barman-guest', false], ['barman-member', true]]) {
     const who = clone(OWNER); who.roles = [{ role: 'bar', direction_id: 7 }];
-    if (!member) { who.membership_active = false; who.membership = null; }
+    if (!member) { who.membership_active = false; who.membership = null; who.memberships = []; }
     const s = await open(true, true, json(200, who), null, null, null, queue());
     let reached = false;
     for (const sel of ['#tabs [data-go="barQueue"]', '#view [data-go="barQueue"]']) {
