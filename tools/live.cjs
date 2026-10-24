@@ -3533,6 +3533,64 @@ if (grantsSet.length !== 1) {
       return s;
     };
 
+    /* Оплата в списке записавшихся (#271, второй шаг). Организатор видит,
+       кто уже заплатил: `paid` приходит булевым по каждой записи, и поле
+       есть на бою — коммит, который его завёл, предок боевого sha.
+
+       Сторожа считают из САМОЙ фикстуры: событие обязано быть платным, а
+       среди живых записей обязаны быть и оплаченная, и неоплаченная. Иначе
+       случай слеп — метку «оплачено» на одних оплаченных не отличить от
+       метки, прибитой гвоздями. */
+    {
+      const ev = MY({ kind: 'paid' });
+      const rows = [ROW({ id: 31, first_name: 'Заплатил', paid: true }),
+                    ROW({ id: 32, first_name: 'Не-заплатил', paid: false }),
+                    ROW({ id: 33, first_name: 'Пришедший', state: 'attended', paid: true })];
+      const live = rows.filter(r => r.state !== 'cancelled');
+      const s = await openSigned(json(200, LIST({ bookings: rows, taken: 3 })), { kind: 'paid' });
+      const t = await s.view();
+      if (ev.kind !== 'paid')
+        bad.push(`signed-oplata: фикстура события имеет вид «${ev.kind}», а случай судит ПЛАТНОЕ — ветка не та, вердикт не выносится`);
+      else if (!live.some(r => r.paid) || !live.some(r => !r.paid))
+        bad.push('signed-oplata: в фикстуре нет обеих сторон (оплаченной и неоплаченной записи) — метку не с чем сравнить, проверка слепа');
+      else {
+        ['оплачено', 'не оплачено'].forEach(x => {
+          if (!t.includes(x)) bad.push(`signed-oplata: в списке нет метки «${x}»`); });
+        const want = 'Оплатили ' + live.filter(r => r.paid).length + ' из ' + live.length;
+        if (!t.includes(want)) bad.push(`signed-oplata: нет сводки «${want}», на экране «${t.slice(t.indexOf('Оплатили'), t.indexOf('Оплатили') + 60)}»`);
+        if (!t.includes('Неоплаченную запись можно снять')) bad.push('signed-oplata: не сказано, что делать с неоплаченной записью');
+      }
+      if (s.errs.length) bad.push('signed-oplata: ошибки страницы ' + s.errs.join('; '));
+      await s.p.screenshot({ path: `${OUT}/live-signed-oplata.png` });
+      await s.ctx.close();
+    }
+
+    /* У бесплатного мероприятия метки оплаты нет вовсе: платить нечего, и
+       «не оплачено» было бы упрёком ни за что. Донейшн здесь же по смыслу —
+       взнос добровольный. */
+    {
+      const s = await openSigned(json(200, LIST({ bookings: [ROW({ paid: false })], taken: 1 })),
+                                 { kind: 'free', price: '0.00', taken: 1, seats_left: 11 });
+      const t = await s.view();
+      ['оплачено', 'не оплачено', 'Оплатили'].forEach(x => {
+        if (t.includes(x)) bad.push(`signed-oplata-free: у бесплатного мероприятия показано «${x}» — платить нечего`); });
+      if (!t.includes('Образец')) bad.push('signed-oplata-free: список не отрисовался — проверять нечего');
+      if (s.errs.length) bad.push('signed-oplata-free: ошибки страницы ' + s.errs.join('; '));
+      await s.ctx.close();
+    }
+
+    /* `paid` разбирается строго булевым: `null` и отсутствие поля на
+       правдивость прочитались бы как «не оплачено», то есть поломка сервера
+       стала бы на экране обвинением человеку. Отказ целиком — честнее. */
+    {
+      const s = await openSigned(json(200, LIST({ bookings: [ROW({ paid: null })], taken: 1 })));
+      const t = await s.view();
+      if (!t.includes('Список не открылся')) bad.push(`signed-paid-null: список с нечитаемой оплатой показан как обычный: «${t.slice(0, 160)}»`);
+      if (t.includes('не оплачено')) bad.push('signed-paid-null: нечитаемое поле нарисовано как «не оплачено» — обвинение человеку за поломку сервера');
+      if (s.errs.length) bad.push('signed-paid-null: ошибки страницы ' + s.errs.join('; '));
+      await s.ctx.close();
+    }
+
     /* Поздний ответ под ПРЕЖНЕЕ мероприятие молчит. Защита (`gen !==
        SIGNED_GEN`) стояла в коде со дня, когда список писался, и не была
        доказана ни разу: мутация, снимавшая её, оставалась зелёной. Цена:
@@ -3584,15 +3642,24 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
-    // Свой: список есть, суммы подписаны записью, графы «оплатил» нет.
+    // Свой: список есть, суммы подписаны записью.
     {
       const s = await openSigned(json(200, LIST()));
       const t = await s.view();
       ['Управление', 'Записалось', '3 из 12', 'Образец', 'Второй', 'Пришедший', 'записан на 400 ฿'].forEach(x => {
         if (!t.includes(x)) bad.push(`spisok: нет «${x}»`); });
-      // `paid` всегда false — графы оплаты быть не должно ни в каком виде
-      ['оплач', 'Оплач', 'не платил', 'к оплате'].forEach(x => {
-        if (t.includes(x)) bad.push(`spisok: на экране слово об оплате «${x}» — поле paid сегодня всегда false`); });
+      /* ⚠ Прежде здесь стоял запрет на ЛЮБОЕ слово об оплате с доводом
+         «поле paid сегодня всегда false». Довод устарел, и это замер, а не
+         мнение: `BOOKING_PAID` — это `(b.ledger_id IS NOT NULL)`
+         (`app/queries.py:227`), а приём денег за запись (`POST /till`,
+         `kind=event`) ставит `bookings.ledger_id` (`app/routers/till.py:284`).
+         Коммит, который завёл эту ручку (`48a56bc`), — предок БОЕВОГО sha,
+         то есть `paid` может быть true уже сегодня. Метку оплаты теперь
+         судят свои случаи (`signed-oplata`, `signed-oplata-free`), а здесь
+         остаются слова, которых мы не говорим НИГДЕ: «не платил» — чужая
+         речь, «к оплате» — речь гостевой карточки, а не списка ведущего. */
+      ['не платил', 'к оплате'].forEach(x => {
+        if (t.includes(x)) bad.push(`spisok: в списке ведущего чужие слова «${x}»`); });
       // Telegram id наружу не отдаётся и на экране его быть не может
       if (/\b\d{6,}\b/.test(t)) bad.push(`spisok: на экране длинное число — не Telegram id ли: «${t.slice(0, 120)}»`);
       // Пришедший гость — живая запись, а не снятая.

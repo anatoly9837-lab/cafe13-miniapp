@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v38 · 24.10.2026';
+var VERSION = 'v39 · 24.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -2229,12 +2229,18 @@ function fromSigned(d) {
     if (isNaN(when.getTime())) return null;
     var sum = num(b.amount_due);
     if (!(sum >= 0)) return null;           // сумма строкой, как все деньги в этом API
+    // Оплата читается СТРОГО булевой. На правдивость её проверять нельзя:
+    // `null` и отсутствие поля прочитались бы как «не оплачено», то есть
+    // поломка сервера стала бы на экране обвинением человеку. Поле на бою
+    // есть (замер: коммит, который его завёл, — предок боевого sha).
+    if (typeof b.paid !== 'boolean') return null;
     var p = bkk(when);
     out.push({
       id: b.id,
       name: [b.first_name, b.last_name].filter(Boolean).join(' ') || 'Без имени',
       when: dayLabel(p, now) + ', ' + p.hm,
       sum: sum,
+      paid: b.paid,
       // Живая запись — ВСЁ, кроме снятой: у записи три состояния
       // (`CHECK (state IN ('booked','cancelled','attended'))`, замер по
       // боевой ревизии 880b4b6), и `attended` — это пришедший гость.
@@ -2270,13 +2276,18 @@ function loadSigned(e) {
   });
 }
 
+/* Метка оплаты — только у ПЛАТНОГО мероприятия: у бесплатного платить нечего,
+   а у донейшна взнос добровольный, и «не оплачено» там было бы упрёком за то,
+   что человек имел право не делать. Это решение, а не недосмотр. */
 function signedRow(p, kind, off) {
   return '<div class="card"><div class="row">' +
       '<div class="col"><b>' + esc(p.name) + '</b>' +
         '<span class="small">' + esc(p.when) +
           (p.sum > 0 && kind === 'paid' ? ' · записан на ' + money(p.sum) + ' ฿' : '') +
         '</span></div>' +
-      (off ? '<span class="pill">снята</span>' : '') +
+      (off ? '<span class="pill">снята</span>'
+           : kind === 'paid' ? '<span class="pill' + (p.paid ? ' on' : '') + '">' +
+             (p.paid ? 'оплачено' : 'не оплачено') + '</span>' : '') +
     '</div></div>';
 }
 
@@ -2308,7 +2319,17 @@ function signedBlock(e) {
     : '';
   if (!live.length && !off.length)
     return spor + '<div class="card quiet"><span class="small">Пока никто не записался.</span></div>';
-  return spor + live.map(function (p) { return signedRow(p, e.kind, false); }).join('') +
+  // Сводка по оплате — у платного и только по ЖИВЫМ записям: снятая запись
+  // денег не ждёт. Считается из тех же строк, что нарисованы ниже, поэтому
+  // разойтись с ними не может.
+  var paidN = 0;
+  live.forEach(function (p) { if (p.paid) paidN += 1; });
+  var itog = e.kind === 'paid' && live.length
+    ? '<div class="card quiet"><span class="small">Оплатили ' + paidN + ' из ' + live.length +
+      (paidN < live.length ? '. Неоплаченную запись можно снять — место вернётся в афишу.' : '.') +
+      '</span></div>'
+    : '';
+  return spor + itog + live.map(function (p) { return signedRow(p, e.kind, false); }).join('') +
     (off.length ? '<span class="label">Снятые записи</span>' +
       off.map(function (p) { return signedRow(p, e.kind, true); }).join('') : '');
 }
