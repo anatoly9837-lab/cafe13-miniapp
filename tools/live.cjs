@@ -431,19 +431,34 @@ if (grantsSet.length !== 1) {
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('me-inactive: запас не стёрт при неактивном членстве');
     await s.ctx.close();
   }
-  // «Ваш уровень» — из списка оплаченных членств, а не из роли: одиночное
-  // `membership` говорит «член клуба», список — мастер и партнёр.
+  // Сумма на экране — это ДЕНЬГИ, а не любые цифры: дата срока законна.
+  // Признак: цифра в квадратных скобках, у ฿/$/руб или после «цена/стоимость/взнос».
+  const MONEY = /\[\s*\d[\d\s]*\]|\d[\d\s\u00a0.,]*\s*(?:฿|\$|руб)|(?:цена|стоимост|взнос)\D{0,15}\d/i;
+  for (const [t, want] of [['[100] $', true], ['взнос от 13 000 ฿ в месяц', true], ['Цена: 500', true],
+                           ['Действует до 24 апреля 2027 г.', false], ['Член клуба', false]])
+    if (MONEY.test(t) !== want) bad.push(`самопроверка денег: «${t}» ${want ? 'не пойман' : 'пойман зря'}`);
+  // Экран членства в живом режиме ВЫКЛЮЧЕН до Cafe13KPG#301: показывает
+  // «ещё не подключено», ни одной суммы. Уровень на нём — из списка
+  // оплаченных членств (рисуем напрямую: одиночное `membership` говорит
+  // «член клуба», список — мастер и партнёр).
   {
     const two = clone(OWNER);
     two.memberships = [{ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-04-24T05:00:00+00:00', lifelong: false },
                        { level: 'partner', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }];
     const s = await open(true, true, json(200, two), null, null, null);
     await s.p.evaluate(() => go('membership'));
-    const mine = await s.p.evaluate(() => [...document.querySelectorAll('#view .card')]
-      .filter(c => c.querySelector('h2')).map(c => c.querySelector('h2').textContent + (c.querySelector('.pill.on') ? ':мой' : '')));
+    const t = await s.view();
+    if (!t.includes('ещё не подключено')) bad.push('membership-off: экран членства включён в живом режиме до решения #301');
+    const m = t.match(MONEY);
+    if (m) bad.push(`membership-off: на экране членства сумма «${m[0]}»`);
+    const mine = await s.p.evaluate(() => {
+      const d = document.createElement('div'); d.innerHTML = SCREENS.membership();
+      return [...d.querySelectorAll('.card')].filter(c => c.querySelector('h2'))
+        .map(c => c.querySelector('h2').textContent + (c.querySelector('.pill.on') ? ':мой' : ''));
+    });
     const want = ['Член клуба', 'Мастер:мой', 'Бизнес-партнёр:мой'];
     if (JSON.stringify(mine) !== JSON.stringify(want)) bad.push('membership-mine: уровни не из списка членств: ' + JSON.stringify(mine));
-    if ((await s.view()).includes('Организатор')) bad.push('membership-mine: вид назван «Организатор», а не «Мастер»');
+    if (mine.some(x => x.startsWith('Организатор'))) bad.push('membership-mine: вид назван «Организатор», а не «Мастер»');
     await s.ctx.close();
   }
   // /pass без даты и без lifelong — не пропуск (пустая дата законна только при lifelong: true).

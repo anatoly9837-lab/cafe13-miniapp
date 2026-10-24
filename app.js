@@ -313,7 +313,10 @@ function untilText(m) {
 /* Экраны, которые уже стоят на данных сервера. Остальные в живом режиме
    показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
    балансом выглядела бы так же настоящей. */
-var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
+// `membership` нет нарочно: экран обещал суммы-заглушки («[100] $»), кнопки
+// без действия и путь через кассу, который новичку сегодня не пройти
+// (Cafe13KPG#301). Вернётся кадром E38 после слова владельца.
+var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
               staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1,
