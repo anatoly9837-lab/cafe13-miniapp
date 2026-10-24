@@ -52,19 +52,40 @@ def main(src):
             continue
         with open(os.path.join(src, name), encoding='utf-8') as f:
             d = json.load(f)
-        if d.get('status') not in (200, 201):
-            bad.append('%s: статус %r' % (name, d.get('status')))
+        st = d.get('status')
+        if not isinstance(st, int):
+            bad.append('%s: статус %r — не число, снимок испорчен' % (name, st))
             continue
         req = d.get('request') or {}
         out[name[:-5]] = {
-            'status': d['status'],
+            'status': st,
             'request': '%s %s' % (req.get('method'), re.sub(r'\d+', 'N', str(req.get('path')))),
             'shape': shape(d.get('body')),
         }
     if bad:
-        sys.exit('снимки с отказом вместо ответа:\n  ' + '\n  '.join(bad))
+        sys.exit('снимки с испорченным статусом:\n  ' + '\n  '.join(bad))
     if not out:
         sys.exit('в %s нет снимков' % src)
+    # ⚠ ОТКАЗЫ ИДУТ В ФАЙЛ СО СВОИМ СТАТУСОМ, а не отбрасываются. Прежняя
+    # редакция падала на первом же снимке с кодом не 200/201 — и после
+    # 22.10.2026, когда снимки стали включать отказы (409 «место занято»,
+    # 403 гостю, 422 на перечне, 404 без рецепта), файл перестал
+    # пересобираться ВОВСЕ: он простоял с 20.10 на 23 ручках против 39
+    # успешных снимков, и клиент сверял заглушки с формой из прошлого.
+    # Молчания не заметил никто, потому что падение было в генераторе, а не
+    # в батарее.
+    #
+    # Отбрасывать отказы нельзя и по второй причине: клиент печатает
+    # `detail` дословно, а форма у него РАЗНАЯ — строка у 403/409 и СПИСОК
+    # объектов у 422. Это ровно то, что снимок обязан показывать.
+    #
+    # Защиту «заглушка не сверяется с отказом» держит потребитель
+    # (`tools/live.cjs`: статус не 200/201 → «снимок — отказ»), поэтому
+    # наличие отказов в файле её не ослабляет.
+    otkazy = sorted(k for k, v in out.items() if v['status'] not in (200, 201))
+    sys.stderr.write('снимков %d: успешных %d, отказов %d%s\n' % (
+        len(out), len(out) - len(otkazy), len(otkazy),
+        (' (' + ', '.join(otkazy) + ')') if otkazy else ''))
     json.dump(out, sys.stdout, ensure_ascii=False, indent=1, sort_keys=True)
     sys.stdout.write('\n')
 
