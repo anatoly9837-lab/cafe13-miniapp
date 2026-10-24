@@ -160,6 +160,9 @@ b.num, .big { white-space: nowrap; }
 .pill.on   { background: var(--sage); border-color: var(--sage); color: var(--on-accent); }
 .pill.warm { color: var(--clay-ink); border-color: var(--clay); }
 .pill.gold { color: var(--gold-ink); border-color: var(--gold); }
+/* «не закончено», а не запрет: исход приёма неизвестен (кадр E34zh) */
+.card.warm { background: var(--deny-bg); border-color: var(--clay); }
+.card.warm b, .card.warm .small { color: var(--clay-ink); }
 
 .btn {
   min-height: 50px; width: 100%;

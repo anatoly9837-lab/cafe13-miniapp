@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v36 · 23.10.2026';
+var VERSION = 'v37 · 24.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -299,6 +299,7 @@ function untilText(m) {
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
+              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -683,6 +684,175 @@ function topupSend() {
       if (current === 'topup') render();
     });
   });
+}
+
+/* ── касса: человек по коду пропуска ────────────────────
+   Цепочка экранов (staff → tillPerson → tillMembership | tillTopup), чтобы системная
+   «назад» Telegram вела с формы к карточке, а с карточки — к скану: у
+   вкладки staff своей записи в BACK нет, и состояние внутри одного экрана
+   «назад» не получило бы вовсе (кадры E34, designer-55).
+   member_id из by-pass — это tg_user_id человека. Он живёт только здесь,
+   в памяти, на время одной операции: не в разметку, не в data-атрибуты,
+   не во флэш и не в хранилище. Репозиторий публичный — tools/ids-clean.cjs.
+   Цен членства на сервере нет: сумму называет касса, подсказки нет, пока
+   владелец не назовёт прейскурант. Срок — тоже касса, 1…24 по серверу. */
+var TP = { code: '', who: null, gen: 0, busy: false, deny: '', kind: '',
+           level: 'member', months: '', amount: '', method: 'cash', err: '', done: null };
+
+function tillReset() {
+  TP.gen++; TP.who = null; TP.busy = false; TP.deny = ''; TP.done = null; TP.err = '';
+}
+
+// Ответ by-pass → карточка. Чего не хватает — отказ целиком: человек с
+// пустым именем или остаток 0 вместо неразобранного выглядели бы найденными.
+function fromTillPerson(d, code) {
+  if (!d || typeof d !== 'object' || typeof d.member_id !== 'number') return null;
+  if (typeof d.first_name !== 'string' || typeof d.membership_active !== 'boolean') return null;
+  var bal = num(d.balance), ms = d.membership, until = null, lifelong = false;
+  if (!isFinite(bal)) return null;
+  if (d.membership_active) {
+    if (!ms || typeof ms !== 'object' || !LEVEL[ms.level] || typeof ms.lifelong !== 'boolean') return null;
+    lifelong = ms.lifelong;
+    if (!lifelong && !(until = ms.ends_at ? ruDate(ms.ends_at) : null)) return null;
+  }
+  var m = /^(?:XIII-)?(\d{4})$/.exec(code.trim().toUpperCase());
+  return { id: d.member_id,
+           name: [d.first_name, typeof d.last_name === 'string' ? d.last_name : ''].filter(Boolean).join(' ') || 'Без имени',
+           code: m ? 'XIII-' + m[1] : code.trim().toUpperCase(),
+           level: d.membership_active ? ms.level : '', until: until, lifelong: lifelong, balance: bal };
+}
+
+// Ответ сервера с текстом — текст дословно, с заглавной; иначе — код ответа.
+function said(r) {
+  var t = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  return t ? t[0].toUpperCase() + t.slice(1) : failText(r);
+}
+
+/* Найти по коду. Ответ, вернувшийся после «следующего человека» или смены
+   человека в тестовом режиме, молчит: иначе карточка прежнего встала бы
+   под новым кодом. done(rec | null, r) — для перечитывания после приёма. */
+function tillLookup(code, done) {
+  var gen = TP.gen;
+  api('GET', '/till/by-pass/' + encodeURIComponent(code.trim())).then(function (r) {
+    if (gen !== TP.gen) return;
+    done(r.status === 200 ? fromTillPerson(r.data, code) : null, r);
+  });
+}
+
+function tillFind(code) {
+  if (TP.busy) return;
+  TP.code = String(code || '').trim();
+  if (!TP.code) return;
+  tillReset(); TP.busy = true;
+  render();
+  tillLookup(TP.code, function (rec, r) {
+    TP.busy = false;
+    if (rec) { TP.who = rec; haptic('ok'); go('tillPerson'); return; }
+    TP.deny = r.status === 200 ? 'Ответ сервера не разобран.' : said(r);
+    haptic('warn');
+    if (current === 'staff') render();
+  });
+}
+
+function tillOpen(kind) {
+  if (!TP.who) return;
+  TP.kind = kind === 'membership' ? 'membership' : 'topup';
+  TP.months = ''; TP.amount = ''; TP.err = ''; TP.deny = '';
+  TP.level = TP.who.level || 'member';
+  TP.method = 'cash';
+  go(TP.kind === 'membership' ? 'tillMembership' : 'tillTopup');
+}
+
+var PAY_HOW = { cash: 'наличными', card: 'картой', account: 'со счёта' };
+
+function tillSend() {
+  if (TP.busy || !TP.who) return;
+  var who = TP.who, kind = TP.kind, level = TP.level, method = TP.method, amt = topupAmount(TP.amount);
+  var months = /^\d{1,2}$/.test(TP.months.trim()) ? Number(TP.months.trim()) : 0;
+  TP.err = kind === 'membership' && (months < 1 || months > 24) ? 'Срок — целое число месяцев, от 1 до 24.'
+         : amt === null ? 'Сумма — число больше нуля, например 500.' : '';
+  TP.deny = '';
+  if (TP.err) { render(); return; }
+  var body = { kind: kind, amount: amt, method: method, member_id: who.id };
+  if (kind === 'membership') { body.level = level; body.months = months; }
+  else if (method === 'account') return;            // у пополнения этой кнопки нет
+  TP.busy = true;
+  render();
+  var gen = TP.gen;
+  api('POST', '/till', body).then(function (r) {
+    if (gen !== TP.gen) return;
+    var d = r.data, ms = d && d.membership;
+    var ok = r.status === 201 && !!d && d.kind === kind && num(d.amount) === amt && d.member_id === who.id &&
+             (kind !== 'membership' || !!ms && ms.level === level && !!ruDate(ms.ends_at));
+    if (r.status !== 0 && r.status !== 201) {
+      TP.busy = false; TP.deny = said(r); haptic('warn'); render(); return;
+    }
+    // Принято или неизвестно — карточка перечитывается в обоих случаях:
+    // остаток после оплаты со счёта иначе остался бы прежним, то есть ложным.
+    tillLookup(who.code, function (rec) {
+      TP.busy = false;
+      if (ok) {
+        var now = rec || Object.assign({}, who, { balance: null });
+        if (kind === 'membership') {
+          now.level = ms.level; now.until = ruDate(ms.ends_at); now.lifelong = false;
+        }
+        TP.who = now;
+        var grew = kind !== 'topup' || !rec || Math.abs(rec.balance - who.balance - amt) < 0.005;
+        TP.done = { kind: kind, text: 'Принято ' + money(amt) + ' ฿ ' + PAY_HOW[method],
+                    note: 'Строка ушла в книгу клуба. Исправить её задним числом нельзя — только отменить и внести заново.',
+                    warn: grew ? '' : 'Остаток изменился не на эту сумму: было ' + money(who.balance) +
+                                      ' ฿. Не вносите снова — сверьте с администратором клуба.' };
+        haptic(grew ? 'ok' : 'warn');
+      } else {
+        // прежний остаток не показывается как нынешний: его могли уже списать
+        TP.who = rec || Object.assign({}, who, { balance: null });
+        TP.done = { kind: '', unsure: true, text: 'Неизвестно, принято ли',
+                    note: (r.status === 0 ? 'Ответ сервера не дошёл. ' : 'Ответ сервера не разобран. ') +
+                          (rec ? 'Ниже — перечитанная карточка; ' : 'Карточку перечитать не удалось; ') +
+                          'прежний остаток ' + money(who.balance) + ' ฿. Сверьте, прежде чем принимать снова: повтор дал бы двойной приём.' };
+        haptic('warn');
+      }
+      go('tillPerson');
+    });
+  });
+}
+
+function tillForm(kind) {
+  var w = TP.who;
+  if (!w || TP.kind !== kind) return '<div class="card quiet"><span class="small">Человек не выбран.</span></div>' +
+    '<button type="button" class="btn" data-go="staff">К скану пропуска</button>';
+  var lock = TP.busy ? ' disabled' : '', mem = kind === 'membership';
+  var seg = function (act, list, on) {
+    return list.map(function (x) {
+      return '<button type="button" data-action="' + act + ':' + x[0] + '"' + (on === x[0] ? ' aria-pressed="true"' : '') + lock + '>' + x[1] + '</button>';
+    }).join('');
+  };
+  var ways = [['cash', 'Наличные'], ['card', 'Карта']].concat(mem ? [['account', 'Со счёта']] : []);
+  return '<div class="card quiet"><div class="row"><div class="col"><span class="small">Кому</span><b>' + esc(w.name) + '</b></div>' +
+      '<span class="small num">' + esc(w.code) + '</span></div></div>' +
+    (mem ? '<div class="group"><span class="label">Вид членства</span><div class="seg wrap">' +
+             seg('tp-level', [['member', LEVEL.member], ['organizer', LEVEL.organizer], ['partner', LEVEL.partner]], TP.level) + '</div></div>' +
+           '<div class="group"><span class="label">Срок</span><div class="field"><label for="tp-months">Месяцев</label>' +
+             '<input id="tp-months" type="text" inputmode="numeric" autocomplete="off" value="' + esc(TP.months) + '"' + lock + '></div>' +
+             '<span class="small">От 1 до 24.</span></div>' : '') +
+    '<div class="field"><label for="tp-amount">Сумма, ฿</label>' +
+      '<input id="tp-amount" type="text" inputmode="decimal" autocomplete="off" value="' + esc(TP.amount) + '"' + lock + '>' +
+      '<span class="small">' + (mem ? 'Цену называет касса: прейскуранта на сервере нет.' : 'Сумму называет человек у стойки.') + '</span></div>' +
+    '<div class="group"><span class="label">Чем платят</span><div class="seg">' + seg('tp-method', ways, TP.method) + '</div></div>' +
+    (TP.err ? '<span class="small" style="color:var(--clay)">' + esc(TP.err) + '</span>' : '') +
+    (TP.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TP.deny) + '</span></div>' : '') +
+    '<button type="button" class="btn" data-action="tp-send"' + lock + '>' + (TP.busy ? 'Вносим…' : 'Внести') + '</button>' +
+    (mem ? '' : '<div class="note">' + svg(ICON.info) + '<span>Перевести со счёта на счёт нельзя — только наличные или карта.</span></div>');
+}
+
+function tillCard(w) {
+  var ms = w.level ? (w.lifelong ? 'Пожизненно' : 'до ' + w.until) : 'нет';
+  return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(w.name) + '</h2>' +
+      '<span class="small num">Пропуск ' + esc(w.code) + '</span></div>' +
+      '<span class="pill' + (w.level ? ' on' : '') + '">' + esc(w.level ? LEVEL[w.level] : 'Членства нет') + '</span></div>' +
+    '<div class="rows"><div><span class="small">Членство</span><b class="num">' + esc(ms) + '</b></div>' +
+      '<div><span class="small">На счёте</span><b class="num">' +
+        (w.balance === null ? 'не перечитан' : money(w.balance) + ' ฿') + '</b></div></div></div>';
 }
 
 function shiftBlock() {
@@ -1172,6 +1342,7 @@ function switchTo(on, as) {
     BOOK.done = []; BOOK.kind = ''; BOOK.ask = false;
     DAY.data = null; DAY.fail = ''; DAY.gen++;
     TOPUP.amount = ''; TOPUP.ask = false;
+    tillReset();
     peopleReset(); PEOPLE.list = null; PEOPLE.fail = ''; PEOPLE.gen++;
     cardReset(); CARDS.list = null; CARDS.fail = ''; CARDS.gen++;
     if (!on) TEST.people = null;
@@ -2939,6 +3110,21 @@ var SCREENS = {
   },
 
   staff: function () {
+    if (LIVE) {
+      if (!canTopup()) return '<div class="card quiet"><span class="small">Касса — для работников с правом кассы.</span></div>';
+      var lock = TP.busy ? ' disabled' : '';
+      return (FLASH ? flash() : '') +
+        '<button type="button" class="btn" data-action="scan"' + lock + '>' + svg(ICON.till) + 'Сканировать пропуск</button>' +
+        '<div class="group"><span class="label">Или код с экрана пропуска</span>' +
+          (TP.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TP.deny) + '</span></div>' : '') +
+          '<div class="row" style="gap:8px;align-items:flex-end"><div style="flex:1 1 auto;min-width:0">' +
+            '<div class="field"><label for="tp-code">Код</label>' +
+              '<input id="tp-code" type="text" inputmode="numeric" autocomplete="off" value="' + esc(TP.code) + '" placeholder="0000"' + lock + '></div></div>' +
+            '<button type="button" class="btn mini" data-action="tp-find"' + lock + '>' + (TP.busy ? 'Ищем…' : 'Найти') + '</button></div>' +
+          '<span class="small">Четыре цифры. Можно с «XIII-» или без — касса читает оба вида.</span></div>' +
+        '<div class="note">' + svg(ICON.info) +
+          '<span>Деньги вносятся только тому, кого нашли по пропуску: сервер принимает приём по номеру человека, а у кассира на руках только код. Карточка человека — это и есть проверка, что деньги уйдут не чужому.</span></div>';
+    }
     var total = DATA.shift.reduce(function (a, r) { return r.cancelled ? a : a + r.sum; }, 0);
     return (FLASH ? flash() : '') +
       '<button type="button" class="btn" data-action="scan">' + svg(ICON.till) + 'Сканировать пропуск</button>' +
@@ -2969,6 +3155,43 @@ var SCREENS = {
         '<span>Каждая строка попадает в книгу событий клуба. По ней считается прибыль направления — поэтому задним числом её не меняют.</span>' +
       '</div>';
   },
+
+  tillPerson: function () {
+    var w = TP.who;
+    if (!w) return '<div class="card quiet"><span class="small">Человек не выбран.</span></div>' +
+      '<button type="button" class="btn" data-go="staff">К скану пропуска</button>';
+    var d = TP.done, again = d ? ' ghost' : '', reload = TP.busy ? 'Перечитываем…' : 'Перечитать карточку';
+    /* Неизвестный исход — глиной и с громким «Перечитать»: у стойки смотрят
+       вполглаза, и серая карточка того же веса, что «Принято», отличалась бы
+       только словами (кадр E34zh, designer-55). */
+    if (d && d.unsure) return '<div class="card warm"><div class="col"><b style="font-size:13px">' + esc(d.text) + '</b>' +
+          '<span class="small">' + esc(d.note) + '</span></div></div>' +
+        tillCard(w) +
+        '<button type="button" class="btn" data-action="tp-reload"' + (TP.busy ? ' disabled' : '') + '>' + reload + '</button>' +
+        '<button type="button" class="btn quiet" data-action="tp-next">Следующий человек</button>' +
+        '<div class="note">' + svg(ICON.info) + '<span>Кнопки «Внести ещё раз» здесь нет: если платёж прошёл, вторая отправка создаст второй. Сверьтесь по карточке и, если строки нет, внесите заново с начала.</span></div>';
+    return (d ? '<div class="card quiet"><div class="col"><b style="font-size:13px">' + esc(d.text) + '</b>' +
+                '<span class="small">' + esc(d.note) + '</span></div></div>' : '') +
+      tillCard(w) +
+      (d && d.warn ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(d.warn) + '</span></div>' : '') +
+      (w.balance === null ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Остаток не перечитан — обновите карточку</span></div>' +
+                            '<button type="button" class="btn quiet" data-action="tp-reload"' + (TP.busy ? ' disabled' : '') + '>' +
+                            reload + '</button>' : '') +
+      (d ? '<button type="button" class="btn" data-action="tp-next">Следующий человек</button>' : '') +
+      '<div class="group"><span class="label">' + (d ? 'Тому же человеку' : 'Что принимаем') + '</span>' +
+        '<button type="button" class="btn' + again + '" data-action="tp-open:membership">Продать членство</button>' +
+        '<button type="button" class="btn ghost" data-action="tp-open:topup">Внести на счёт</button></div>' +
+      (d && d.kind === 'membership'
+        ? '<div class="note">' + svg(ICON.info) + '<span>Отменить строку членства отсюда нельзя: «правки членства в приложении пока нет — нужен администратор клуба».</span></div>'
+        : '') +
+      (d ? '' : '<div class="note">' + svg(ICON.info) +
+        '<span>По коду пропуска сервер отдаёт имя, членство и остаток — ни телефона, ни фотографии. Этого хватает, чтобы не внести деньги не тому, и это весь объём: ручка под ролями кассы, но данные ограничены задачей, а не ролью.</span></div>' +
+        '<div class="note">' + svg(ICON.info) +
+        '<span>«Принять за запись» и «за услугу» появятся своим листом: по коду пропуска записи человека сервер пока не отдаёт, и мероприятие пришлось бы угадывать из афиши.</span></div>');
+  },
+
+  tillMembership: function () { return tillForm('membership'); },
+  tillTopup: function () { return tillForm('topup'); },
 
   organizer: function () {
     var signed = DATA.myEvents.reduce(function (a, e) { return a + e.signed; }, 0);
@@ -4174,7 +4397,8 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Люди', barCards: 'Карточки меню', barCard: 'Карточка'
+  people: 'Люди', barCards: 'Карточки меню', barCard: 'Карточка',
+  tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -4184,6 +4408,9 @@ function tabList() {
   var t = (TABS[DATA.role] || []).slice();
   if (LIVE && DATA.barSide && !t.some(function (x) { return x[0] === 'barQueue'; }))
     t.unshift(['barQueue', 'Заказы', ICON.bell]);
+  // касса — от права, а не от уровня: кассир с членством — член клуба по уровню
+  if (canTopup() && !t.some(function (x) { return x[0] === 'staff'; }))
+    t.unshift(['staff', 'Касса', ICON.till]);
   return t;
 }
 
@@ -4204,6 +4431,7 @@ var BACK = {
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
   people: 'home',
+  tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson',
   barCards: function () { return homeOf(); }, barCard: 'barCards',
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
@@ -4412,6 +4640,21 @@ function doAction(a) {
       TOPUP.ask = !TOPUP.err; render(); return;
     }
     if (a === 't-keep') { TOPUP.ask = false; render(); return; }
+    if (a === 'tp-find') { tillFind(val('tp-code')); return; }
+    if (a === 'tp-next') { tillReset(); TP.code = ''; go('staff'); return; }
+    if (a === 'tp-open') { TP.done = null; tillOpen(arg); return; }
+    if (a === 'tp-level' && LEVEL[arg] && !TP.busy) { TP.level = arg; render(); return; }
+    if (a === 'tp-method' && PAY_HOW[arg] && !TP.busy && (arg !== 'account' || TP.kind === 'membership')) { TP.method = arg; render(); return; }
+    if (a === 'tp-send') { tillSend(); return; }
+    if (a === 'tp-reload' && TP.who && !TP.busy) {
+      TP.busy = true; render();
+      tillLookup(TP.who.code, function (rec, r) {
+        TP.busy = false;
+        if (rec) TP.who = rec; else FLASH = { text: 'Карточка не перечиталась', note: said(r) };
+        render();
+      });
+      return;
+    }
     if (a === 'book-retry') { bookLoad(); render(); return; }
     if (a === 'test-health') { loadHealth(); render(); return; }
     if (a === 'day-reload') { loadDay(); render(); return; }
@@ -4625,6 +4868,13 @@ document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'p-find') { PEOPLE.find = ev.target.value; peopleFilter(); }
 });
 
+// Касса: набранное сразу в память формы — перерисовка от выбора способа или
+// отказ сервера иначе стёрли бы сумму и срок.
+document.addEventListener('input', function (ev) {
+  var t = ev.target, f = t && { 'tp-code': 'code', 'tp-months': 'months', 'tp-amount': 'amount' }[t.id];
+  if (f) TP[f] = t.value;
+});
+
 document.addEventListener('change', function (ev) {
   var t = ev.target;
   // смена даты сразу показывает, в чей отчёт уйдёт запись
@@ -4718,6 +4968,12 @@ function scanPass() {                         // 6.4
     return;
   }
   tg.showScanQrPopup({ text: 'Наведите на код пропуска' }, function (text) {
+    if (LIVE && canTopup()) {          // в QR пропуска ровно код: XIII-0042
+      tg.closeScanQrPopup();
+      TP.code = String(text).slice(0, 40);
+      tillFind(TP.code);
+      return true;
+    }
     haptic('ok');
     FLASH = { text: 'Пропуск прочитан: ' + String(text).slice(0, 40),
               note: 'Отметить вход пока некуда: на сервере для этого ещё нет ручки — код только показан.' };
