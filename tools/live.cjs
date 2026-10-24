@@ -4449,6 +4449,9 @@ if (grantsSet.length !== 1) {
   if ((row0('orders-curator')['?'] || []).includes('sum') || !('sum' in row0('orders-curator'))) bad.push('shape: у куратора суммы не в каждой строке');
   if ('share_club' in row0('directions-guest') || !('share_club' in row0('directions-curator'))) bad.push('shape: доли направления видны не тем');
 
+  // Номера людей: репозиторий публичный — разрешающий список, tools/ids-clean.cjs.
+  bad.push(...require('./ids-clean.cjs').idsClean(ROOT));
+
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
