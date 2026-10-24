@@ -313,7 +313,7 @@ function untilText(m) {
 /* Экраны, которые уже стоят на данных сервера. Остальные в живом режиме
    показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
    балансом выглядела бы так же настоящей. */
-// `membership` нет нарочно: экран обещал суммы-заглушки («[100] $»), кнопки
+// `membership` нет нарочно: экран обещал суммы-заглушки в скобках, кнопки
 // без действия и путь через кассу, который новичку сегодня не пройти
 // (Cafe13KPG#301). Вернётся кадром E38 после слова владельца.
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1,
@@ -3061,19 +3061,17 @@ var SCREENS = {
     var have = DATA.member && DATA.member.memberships;
     var mine = function (k) { return have ? have.some(function (m) { return m.level === k; }) : DATA.role === k; };
     var tiers = [
-      { name: LEVEL.member, price: '[100] $', about: 'Вход в пространство без оплаты. Афиша, записи, жизнь клуба.', mine: mine('member') },
-      { name: LEVEL.organizer, price: '[200] $', about: 'Всё, что у члена клуба, плюс право проводить свои мероприятия и назначать их цену.', mine: mine('organizer') },
-      { name: LEVEL.partner, price: '[300] $', about: 'Всё, что у члена клуба, плюс своё направление внутри клуба и его отчётность.', mine: mine('partner'), split: true }
+      { name: LEVEL.member, about: 'Вход в пространство без оплаты. Афиша, записи, жизнь клуба.', mine: mine('member') },
+      { name: LEVEL.organizer, about: 'Всё, что у члена клуба, плюс право проводить свои мероприятия и назначать их цену.', mine: mine('organizer') },
+      { name: LEVEL.partner, about: 'Всё, что у члена клуба, плюс своё направление внутри клуба и его отчётность.', mine: mine('partner') }
     ];
+    // Ни одной суммы и ни одной кнопки без действия — и в демо тоже: цен
+    // владелец не называл, а демо показывают ему (решение координатора 24.10).
     return tiers.map(function (t) {
       return '<div class="card' + (t.mine ? ' strong' : '') + '">' +
-        '<div class="row"><h2>' + esc(t.name) + '</h2><b class="num" style="font-size:18px">' + esc(t.price) + '</b></div>' +
+        '<div class="row"><h2>' + esc(t.name) + '</h2></div>' +
         '<p style="font-size:13px">' + esc(t.about) + '</p>' +
-        (t.split ? '<div class="card quiet" style="padding:11px 13px"><div class="row">' +
-          '<span class="small">Прибыль направления</span><b class="num" style="font-size:13px">[70] % вам · [30] % клубу</b>' +
-        '</div></div>' : '') +
-        (t.mine ? '<span class="pill on" style="align-self:flex-start">Ваш уровень</span>'
-                : '<button type="button" class="btn ghost">' + (t.split ? 'Обсудить с директором' : 'Перейти на уровень') + '</button>') +
+        (t.mine ? '<span class="pill on" style="align-self:flex-start">Ваш уровень</span>' : '') +
       '</div>';
     }).join('') +
     (FLASH ? flash() : '') +

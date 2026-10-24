@@ -54,6 +54,7 @@ const noConsent = clone(OWNER); noConsent.member.consent_data_at = null;
 const msNone = clone(OWNER); delete msNone.memberships;
 const msObj = clone(OWNER); msObj.memberships = msObj.membership;
 const msAlien = clone(OWNER); msAlien.memberships = [{ level: 'boss', starts_at: null, ends_at: null, lifelong: true }];
+const msLife = clone(OWNER); msLife.memberships[0].lifelong = 'true';   // строка, не булево
 const msNoEnd = clone(OWNER); msNoEnd.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: false });
 
 /* [имя, внутри Telegram, API_ON, ответ /me, есть, нет, сколько запросов к API, после] */
@@ -74,6 +75,7 @@ const CASES = [
   ['memberships-none', true, true, json(200, msNone), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
   ['memberships-object', true, true, json(200, msObj), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
   ['memberships-alien', true, true, json(200, msAlien), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
+  ['memberships-lifelong-str', true, true, json(200, msLife), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
   ['memberships-noend', true, true, json(200, msNoEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
   ['network-down', true, true, 'abort', ['Сервер не ответил'], ['Баланс'], 1],
   ['outside-telegram', false, true, json(200, OWNER),
@@ -451,11 +453,16 @@ if (grantsSet.length !== 1) {
     if (!t.includes('ещё не подключено')) bad.push('membership-off: экран членства включён в живом режиме до решения #301');
     const m = t.match(MONEY);
     if (m) bad.push(`membership-off: на экране членства сумма «${m[0]}»`);
-    const mine = await s.p.evaluate(() => {
+    // сам экран (тот же, что в демо и каталоге): ни сумм, ни кнопок без действия
+    const [mine, drawn, dead] = await s.p.evaluate(() => {
       const d = document.createElement('div'); d.innerHTML = SCREENS.membership();
-      return [...d.querySelectorAll('.card')].filter(c => c.querySelector('h2'))
-        .map(c => c.querySelector('h2').textContent + (c.querySelector('.pill.on') ? ':мой' : ''));
+      return [[...d.querySelectorAll('.card')].filter(c => c.querySelector('h2'))
+        .map(c => c.querySelector('h2').textContent + (c.querySelector('.pill.on') ? ':мой' : '')),
+        d.textContent, [...d.querySelectorAll('button')].filter(x => !x.dataset.action && !x.dataset.go).length];
     });
+    const dm = drawn.match(MONEY);
+    if (dm) bad.push(`membership-demo: экран членства называет сумму «${dm[0]}»`);
+    if (dead) bad.push(`membership-demo: кнопок без действия на экране членства: ${dead}`);
     const want = ['Член клуба', 'Мастер:мой', 'Бизнес-партнёр:мой'];
     if (JSON.stringify(mine) !== JSON.stringify(want)) bad.push('membership-mine: уровни не из списка членств: ' + JSON.stringify(mine));
     if (mine.some(x => x.startsWith('Организатор'))) bad.push('membership-mine: вид назван «Организатор», а не «Мастер»');
