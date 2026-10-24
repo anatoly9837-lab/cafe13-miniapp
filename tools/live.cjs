@@ -1319,6 +1319,7 @@ if (grantsSet.length !== 1) {
     await s.p.click('#tabs [data-go="staff"]');
     await s.p.waitForTimeout(100);
     if (!(await s.p.$('#tp-code'))) { bad.push(`${name}: на кассе нет поля кода`); return false; }
+    if ((await s.view()).includes('Внесено за смену')) bad.push(`${name}: на живой кассе демонстрационный блок смены`);
     await s.p.fill('#tp-code', code || '0042');
     await s.p.click('[data-action="tp-find"]');
     await s.p.waitForTimeout(300);
@@ -1444,7 +1445,7 @@ if (grantsSet.length !== 1) {
     ['till-level', 'membership', { post: q => json(201, { id: 95, kind: 'membership', amount: '3000.00', method: 'cash', member_id: PID, note: '',
       membership: { id: 7, level: 'member', starts_at: ENDS, ends_at: ENDS } }) }, ['Неизвестно, принято ли'], ['Принято']],
     ['till-noreread', 'topup', { refind: () => json(500, { detail: 'x' }) }, ['Принято 500', 'Остаток не перечитан — обновите карточку', 'Перечитать карточку'], []],
-    ['till-nogrow', 'topup', { after: { balance: 0 } }, ['остаток изменился не на эту сумму', 'Не вносите снова'], []]]) {
+    ['till-nogrow', 'topup', { after: { balance: 0 } }, ['Остаток изменился не на эту сумму', 'Не вносите снова'], []]]) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash(o));
     if (await toPerson(s, name) && await toForm(s, name, kind)) {
       if (kind === 'membership') { await s.p.fill('#tp-months', '1'); await s.p.click('[data-action="tp-level:organizer"]'); }
@@ -1457,6 +1458,18 @@ if (grantsSet.length !== 1) {
       // остаток — только перечитанный: прежний после приёма был бы ложью
       if (name === 'till-noreread' && await s.p.$eval('#view .rows > div:last-child b', e => e.textContent) !== 'не перечитан')
         bad.push('till-noreread: в строке «На счёте» прежний остаток вместо «не перечитан»');
+      // вес, а не только слова: неизвестный исход глиной и с громким «Перечитать» (кадр E34zh)
+      if (name === 'till-lost') {
+        const g = await s.p.evaluate(() => ({
+          warm: !!document.querySelector('#view .card.warm'),
+          loud: [...document.querySelectorAll('#view .btn')].filter(b => !/\b(quiet|ghost)\b/.test(b.className)).map(b => b.textContent),
+          sell: !!document.querySelector('[data-action="tp-open:membership"]') }));
+        if (!g.warm) bad.push('till-lost: неизвестный исход не глиной — тот же вес, что у «Принято»');
+        if (g.loud.join('|') !== 'Перечитать карточку') bad.push('till-lost: громкая кнопка не «Перечитать карточку»: ' + JSON.stringify(g.loud));
+        if (g.sell) bad.push('till-lost: при неизвестном исходе предложено принять снова');
+      }
+      if (name === 'till-nogrow' && !(await s.p.evaluate(() => [...document.querySelectorAll('#view .deny')].some(e => e.textContent.includes('Не вносите снова')))))
+        bad.push('till-nogrow: «Не вносите снова» не плашкой, а тихой подписью');
       if (name === 'till-409' && (await at(s) !== 'tillMembership' || (await s.p.$eval('#tp-amount', e => e.value)) !== '3000'))
         bad.push('till-409: после отказа ушли с формы или стёрли сумму');
     }
@@ -4646,6 +4659,17 @@ if (grantsSet.length !== 1) {
   if ((row0('orders-curator')['?'] || []).includes('sum') || !('sum' in row0('orders-curator'))) bad.push('shape: у куратора суммы не в каждой строке');
   if ('share_club' in row0('directions-guest') || !('share_club' in row0('directions-curator'))) bad.push('shape: доли направления видны не тем');
 
+  // Одно имя верхнего уровня — одно объявление. Повторное `function` в обычном
+  // скрипте молча перекрывает прежнее, и `node --check` этого не видит: разбор
+  // человека кассы однажды назвался `fromPass`, как разбор пропуска, и
+  // пропуск сломался у всех, а покраснели чужие случаи, а не касса.
+  {
+    const src = fs.readFileSync(`${ROOT}/app.js`, 'utf8'), seen = {};
+    for (const m of src.matchAll(/^(?:function|var|let|const) ([A-Za-z_$][\w$]*)/gm)) seen[m[1]] = (seen[m[1]] || 0) + 1;
+    const twice = Object.keys(seen).filter(k => seen[k] > 1);
+    if (!Object.keys(seen).length) bad.push('app.js: имена верхнего уровня не найдены — проверка дублей слепа');
+    if (twice.length) bad.push('app.js: имя объявлено на верхнем уровне больше одного раза, второе молча перекрывает первое: ' + twice.join(', '));
+  }
   // Номера людей: репозиторий публичный — разрешающий список, tools/ids-clean.cjs.
   bad.push(...require('./ids-clean.cjs').idsClean(ROOT));
 

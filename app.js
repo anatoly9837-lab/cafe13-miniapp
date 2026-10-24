@@ -705,7 +705,7 @@ function tillReset() {
 
 // Ответ by-pass → карточка. Чего не хватает — отказ целиком: человек с
 // пустым именем или остаток 0 вместо неразобранного выглядели бы найденными.
-function fromPass(d, code) {
+function fromTillPerson(d, code) {
   if (!d || typeof d !== 'object' || typeof d.member_id !== 'number') return null;
   if (typeof d.first_name !== 'string' || typeof d.membership_active !== 'boolean') return null;
   var bal = num(d.balance), ms = d.membership, until = null, lifelong = false;
@@ -735,7 +735,7 @@ function tillLookup(code, done) {
   var gen = TP.gen;
   api('GET', '/till/by-pass/' + encodeURIComponent(code.trim())).then(function (r) {
     if (gen !== TP.gen) return;
-    done(r.status === 200 ? fromPass(r.data, code) : null, r);
+    done(r.status === 200 ? fromTillPerson(r.data, code) : null, r);
   });
 }
 
@@ -799,16 +799,17 @@ function tillSend() {
         TP.who = now;
         var grew = kind !== 'topup' || !rec || Math.abs(rec.balance - who.balance - amt) < 0.005;
         TP.done = { kind: kind, text: 'Принято ' + money(amt) + ' ฿ ' + PAY_HOW[method],
-                    note: grew ? 'Строка ушла в книгу клуба. Исправить её задним числом нельзя — только отменить и внести заново.'
-                               : 'Строка ушла в книгу, но остаток изменился не на эту сумму: было ' + money(who.balance) +
-                                 ' ฿. Не вносите снова — сверьте с администратором клуба.' };
+                    note: 'Строка ушла в книгу клуба. Исправить её задним числом нельзя — только отменить и внести заново.',
+                    warn: grew ? '' : 'Остаток изменился не на эту сумму: было ' + money(who.balance) +
+                                      ' ฿. Не вносите снова — сверьте с администратором клуба.' };
         haptic(grew ? 'ok' : 'warn');
       } else {
-        if (rec) TP.who = rec;
-        TP.done = { kind: '', text: 'Неизвестно, принято ли',
-                    note: (r.status === 0 ? 'Сервер не ответил. ' : 'Ответ сервера не разобран. ') +
-                          (rec ? 'Карточка перечитана — ' : 'Карточку перечитать не удалось. ') +
-                          'Было на счёте ' + money(who.balance) + ' ฿. Сверьте, прежде чем принимать снова: повтор дал бы двойной приём.' };
+        // прежний остаток не показывается как нынешний: его могли уже списать
+        TP.who = rec || Object.assign({}, who, { balance: null });
+        TP.done = { kind: '', unsure: true, text: 'Неизвестно, принято ли',
+                    note: (r.status === 0 ? 'Ответ сервера не дошёл. ' : 'Ответ сервера не разобран. ') +
+                          (rec ? 'Ниже — перечитанная карточка; ' : 'Карточку перечитать не удалось; ') +
+                          'прежний остаток ' + money(who.balance) + ' ฿. Сверьте, прежде чем принимать снова: повтор дал бы двойной приём.' };
         haptic('warn');
       }
       go('tillPerson');
@@ -3159,13 +3160,23 @@ var SCREENS = {
     var w = TP.who;
     if (!w) return '<div class="card quiet"><span class="small">Человек не выбран.</span></div>' +
       '<button type="button" class="btn" data-go="staff">К скану пропуска</button>';
-    var d = TP.done, again = d ? ' ghost' : '';
+    var d = TP.done, again = d ? ' ghost' : '', reload = TP.busy ? 'Перечитываем…' : 'Перечитать карточку';
+    /* Неизвестный исход — глиной и с громким «Перечитать»: у стойки смотрят
+       вполглаза, и серая карточка того же веса, что «Принято», отличалась бы
+       только словами (кадр E34zh, designer-55). */
+    if (d && d.unsure) return '<div class="card warm"><div class="col"><b style="font-size:13px">' + esc(d.text) + '</b>' +
+          '<span class="small">' + esc(d.note) + '</span></div></div>' +
+        tillCard(w) +
+        '<button type="button" class="btn" data-action="tp-reload"' + (TP.busy ? ' disabled' : '') + '>' + reload + '</button>' +
+        '<button type="button" class="btn quiet" data-action="tp-next">Следующий человек</button>' +
+        '<div class="note">' + svg(ICON.info) + '<span>Кнопки «Внести ещё раз» здесь нет: если платёж прошёл, вторая отправка создаст второй. Сверьтесь по карточке и, если строки нет, внесите заново с начала.</span></div>';
     return (d ? '<div class="card quiet"><div class="col"><b style="font-size:13px">' + esc(d.text) + '</b>' +
                 '<span class="small">' + esc(d.note) + '</span></div></div>' : '') +
       tillCard(w) +
+      (d && d.warn ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(d.warn) + '</span></div>' : '') +
       (w.balance === null ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Остаток не перечитан — обновите карточку</span></div>' +
                             '<button type="button" class="btn quiet" data-action="tp-reload"' + (TP.busy ? ' disabled' : '') + '>' +
-                            (TP.busy ? 'Перечитываем…' : 'Перечитать карточку') + '</button>' : '') +
+                            reload + '</button>' : '') +
       (d ? '<button type="button" class="btn" data-action="tp-next">Следующий человек</button>' : '') +
       '<div class="group"><span class="label">' + (d ? 'Тому же человеку' : 'Что принимаем') + '</span>' +
         '<button type="button" class="btn' + again + '" data-action="tp-open:membership">Продать членство</button>' +
