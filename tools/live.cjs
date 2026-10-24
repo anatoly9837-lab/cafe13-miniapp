@@ -456,11 +456,12 @@ if (grantsSet.length !== 1) {
     const m = t.match(MONEY);
     if (m) bad.push(`membership-off: на экране членства сумма «${m[0]}»`);
     // сам экран (тот же, что в демо и каталоге): ни сумм, ни кнопок без действия
-    const [mine, drawn, dead] = await s.p.evaluate(() => {
+    const [mine, drawn, dead, phone] = await s.p.evaluate(() => {
       const d = document.createElement('div'); d.innerHTML = SCREENS.membership();
       return [[...d.querySelectorAll('.card')].filter(c => c.querySelector('h2'))
         .map(c => c.querySelector('h2').textContent + (c.querySelector('.pill.on') ? ':мой' : '')),
-        d.textContent, [...d.querySelectorAll('button')].filter(x => !x.dataset.action && !x.dataset.go).length];
+        d.textContent, [...d.querySelectorAll('button')].filter(x => !x.dataset.action && !x.dataset.go).length,
+        !!d.querySelector('[data-action="phone"]')];
     });
     // якорь присутствия: «сумм нет» говорится только о тексте нужного экрана
     if (!drawn.includes('Член клуба') || !drawn.includes('Бизнес-партнёр'))
@@ -468,6 +469,8 @@ if (grantsSet.length !== 1) {
     const dm = drawn.match(MONEY);
     if (dm) bad.push(`membership-demo: экран членства называет сумму «${dm[0]}»`);
     if (dead) bad.push(`membership-demo: кнопок без действия на экране членства: ${dead}`);
+    // телефон не собираем (Cafe13KPG#312): ни кнопки, ни обещания про него
+    if (phone || /телефон/i.test(drawn)) bad.push('membership-phone: на экране членства просят телефон — контакт ушёл бы боту, хранить его негде');
     const want = ['Член клуба', 'Мастер:мой', 'Бизнес-партнёр:мой'];
     if (JSON.stringify(mine) !== JSON.stringify(want)) bad.push('membership-mine: уровни не из списка членств: ' + JSON.stringify(mine));
     if (mine.some(x => x.startsWith('Организатор'))) bad.push('membership-mine: вид назван «Организатор», а не «Мастер»');
@@ -4887,6 +4890,21 @@ if (grantsSet.length !== 1) {
   if (!(row0('orders-worker')['?'] || []).includes('sum')) bad.push('shape: у работника sum не помечен необязательным — либо утечка, либо снимок без своего заказа');
   if ((row0('orders-curator')['?'] || []).includes('sum') || !('sum' in row0('orders-curator'))) bad.push('shape: у куратора суммы не в каждой строке');
   if ('share_club' in row0('directions-guest') || !('share_club' in row0('directions-curator'))) bad.push('shape: доли направления видны не тем');
+
+  // Контакт человека боту не уходит (Cafe13KPG#312): в исходнике нет вызова
+  // requestContact. Свойство по коду, а не слово на экране — кнопку можно
+  // назвать как угодно («Поделиться номером» — так её зовёт согласие).
+  // Предел: обращение через строку (tg['request' + 'Contact']) мимо признака.
+  {
+    const CALL = /\.requestContact\s*\(|\[\s*['"]requestContact['"]\s*\]\s*\(/;
+    for (const [t, want] of [['tg.requestContact(function (ok) {', true], ["tg['requestContact'](f)", true],
+                             ['// requestContact отдаёт контакт боту', false]])
+      if (CALL.test(t) !== want) bad.push(`самопроверка контакта: «${t}» ${want ? 'не пойман' : 'пойман зря'}`);
+    const src = fs.readFileSync(`${ROOT}/app.js`, 'utf8');
+    if (!/function render\(/.test(src)) bad.push('контакт: ПРОВЕРКА НЕ ВЫПОЛНЕНА — app.js прочитан не тот или пустой');
+    const hit = src.split('\n').findIndex(l => CALL.test(l));
+    if (hit !== -1) bad.push(`app.js:${hit + 1}: вызов requestContact — контакт человека ушёл бы боту, хранить его негде (#312)`);
+  }
 
   // Одно имя верхнего уровня — одно объявление. Повторное `function` в обычном
   // скрипте молча перекрывает прежнее, и `node --check` этого не видит: разбор
