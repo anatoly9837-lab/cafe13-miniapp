@@ -4481,8 +4481,12 @@ if (grantsSet.length !== 1) {
     }
     // карточка, возвращённая новым видом (draft + замечание): внутри — «Возвращена»
     // и замечание куратора; обычный черновик — «Черновик» без замечания
-    for (const [id, want, not] of [[58, ['Возвращена', 'Вернул куратор: нет тайского рецепта', 'Отправить на утверждение'], ['Черновик']],
-                                   [53, ['Черновик', 'Отправить на утверждение'], ['Возвращена', 'Вернул куратор']]]) {
+    // Плашка состояния: глина — только у возврата (ждёт действия автора); «Снята»
+    // спокойная — решение куратора принято и закрыто (словарь облика, E39b)
+    for (const [id, want, not, pill, warm] of [
+      [58, ['Возвращена', 'Вернул куратор: нет тайского рецепта', 'Отправить на утверждение'], ['Черновик'], 'Возвращена', true],
+      [53, ['Черновик', 'Отправить на утверждение'], ['Возвращена', 'Вернул куратор'], 'Черновик', false],
+      [55, ['Снята'], ['Возвращена', 'Вернул куратор'], 'Снята', false]]) {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await openCard(s, id);
       const t = await s.view();
@@ -4490,6 +4494,10 @@ if (grantsSet.length !== 1) {
       else {
         want.forEach(x => { if (!t.includes(x)) bad.push(`card-${id}: нет «${x}»`); });
         not.forEach(x => { if (t.includes(x)) bad.push(`card-${id}: лишнее «${x}»`); });
+        const p = await s.p.evaluate(w => { const e = [...document.querySelectorAll('#view .pill')].find(x => x.textContent.trim() === w);
+          return e ? e.classList.contains('warm') : null; }, pill);
+        if (p === null) bad.push(`card-${id}: плашки «${pill}» нет`);
+        else if (p !== warm) bad.push(`card-${id}: плашка «${pill}» ${warm ? 'не глиной' : 'глиной, а решение закрыто'}`);
       }
       await s.ctx.close();
     }
