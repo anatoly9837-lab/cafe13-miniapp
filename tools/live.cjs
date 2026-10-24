@@ -4664,8 +4664,24 @@ if (grantsSet.length !== 1) {
       if (!stub || typeof stub !== 'object' || Array.isArray(stub)) { out.push(path + ': в ответе объект'); return out; }
       const opt = real['?'] || [];
       Object.keys(real).filter(k => k !== '?').forEach(k => {
-        if (!(k in stub)) { if (!opt.includes(k)) out.push(path + '.' + k + ': нет в заглушке'); }
-        else diffShape(real[k], stub[k], path + '.' + k, out);
+        if (!(k in stub)) {
+          if (opt.includes(k)) return;
+          // ⚠ ИСКЛЮЧЕНИЕ РАБОТАЕТ И ЗДЕСЬ, а не только в ветке пустого
+          // списка. 24.10.2026 координатор вписал пять исключений вида
+          // `events-afisha[].my_booking_paid`, и прогон дал ДЕСЯТЬ строк
+          // вместо пяти: прежние пять остались (эта ветка про UNVERIFIED не
+          // знала), и к ним добавились пять «исключение больше не нужно» —
+          // потому что ни одно не попало в USED. Замер frontend-events-9d.
+          //
+          // Самоуборка сохранена: исключение, попавшее в USED, живёт; как
+          // только заглушка получает поле, ветка сюда не заходит, USED
+          // пустеет и сторож ниже требует убрать исключение.
+          const key = path + '.' + k;
+          if (UNVERIFIED[key]) { USED.add(key); notes.push(key + ': не сверено — ' + UNVERIFIED[key]); }
+          else out.push(key + ': нет в заглушке');
+          return;
+        }
+        diffShape(real[k], stub[k], path + '.' + k, out);
       });
       Object.keys(stub).filter(k => k !== '?' && !(k in real)).forEach(k => out.push(path + '.' + k + ': в ответе сервера такого нет'));
     }
@@ -4673,7 +4689,25 @@ if (grantsSet.length !== 1) {
   }
   const notes = [];
   const UNVERIFIED = {
-    'me-member.roles': 'у вымышленного члена в снимках cafe13-api ролей нет; попросить координатора дать ему роль'
+    'me-member.roles': 'у вымышленного члена в снимках cafe13-api ролей нет; попросить координатора дать ему роль',
+    // ⚠ Пять строк ниже открылись 24.10.2026, когда api-keys.json пересобрали
+    // после двух дней простоя (генератор падал на снимках отказов). Правка
+    // их не создала — она их ПОКАЗАЛА. Причины у них РАЗНЫЕ, и путать их
+    // нельзя: первые две про будущее, остальные три — про настоящий пробел.
+    //
+    // Впереди боя: поля завёл api 2c5735f, он НЕ предок боевого sha. Добавить
+    // в фикстуру афиши — после выкладки api, не раньше: иначе батарея станет
+    // требовать от клиента разбора полей, которых у человека нет. Зона
+    // frontend-events-9d, третий шаг Cafe13KPG#271.
+    'events-afisha[].my_booking_paid': 'поле есть в снимке, но НЕ на бою (api 2c5735f не предок боевого sha); фикстура — после выкладки, frontend-events-9d',
+    'events-afisha[].my_amount_due': 'то же: есть в снимке, нет на бою; фикстура после выкладки, frontend-events-9d',
+    // На бою ЕСТЬ (api d0a8c9f — предок боевого sha), то есть это настоящее
+    // расхождение заглушек с живым сервером, пролежавшее незамеченным два
+    // дня. Зона frontend-11, карточка Cafe13KPG#297. Исключение снимается
+    // правкой заглушек, а не выкладкой.
+    'me-member.memberships': 'на бою есть (api d0a8c9f), в заглушке нет — наряд frontend-11, Cafe13KPG#297',
+    'orders-guest[].items[].product_id': 'на бою есть (api d0a8c9f), в заглушке нет — наряд frontend-11, Cafe13KPG#297',
+    'orders-worker[].items[].product_id': 'на бою есть (api d0a8c9f), в заглушке нет — наряд frontend-11, Cafe13KPG#297'
   };
   const USED = new Set();
   const STUBS = {

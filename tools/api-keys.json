@@ -118,6 +118,26 @@
   ],
   "status": 200
  },
+ "directions-curator2": {
+  "request": "GET /directions",
+  "shape": [
+   {
+    "?": [
+     "share_club",
+     "share_mode",
+     "share_partner"
+    ],
+    "id": null,
+    "is_active": null,
+    "is_open": null,
+    "share_club": null,
+    "share_mode": null,
+    "share_partner": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
  "directions-guest": {
   "request": "GET /directions",
   "shape": [
@@ -128,6 +148,59 @@
     "title": null
    }
   ],
+  "status": 200
+ },
+ "event-bookings-denied": {
+  "request": "GET /events/N/bookings",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "event-bookings-organizer": {
+  "request": "GET /events/N/bookings",
+  "shape": {
+   "bookings": [
+    {
+     "amount_due": null,
+     "booked_at": null,
+     "first_name": null,
+     "id": null,
+     "last_name": null,
+     "paid": null,
+     "state": null
+    }
+   ],
+   "event_id": null,
+   "seats": null,
+   "starts_at": null,
+   "state": null,
+   "taken": null,
+   "title": null
+  },
+  "status": 200
+ },
+ "event-bookings-worker": {
+  "request": "GET /events/N/bookings",
+  "shape": {
+   "bookings": [
+    {
+     "amount_due": null,
+     "booked_at": null,
+     "first_name": null,
+     "id": null,
+     "last_name": null,
+     "paid": null,
+     "state": null
+    }
+   ],
+   "event_id": null,
+   "seats": null,
+   "starts_at": null,
+   "state": null,
+   "taken": null,
+   "title": null
+  },
   "status": 200
  },
  "event-cancel": {
@@ -144,6 +217,7 @@
   "shape": {
    "id": null,
    "kind": null,
+   "place_id": null,
    "price": null,
    "seats": null,
    "starts_at": null,
@@ -151,6 +225,71 @@
    "title": null
   },
   "status": 201
+ },
+ "event-create-422": {
+  "request": "POST /events",
+  "shape": {
+   "detail": [
+    {
+     "ctx": {
+      "?": [
+       "gt",
+       "min_length"
+      ],
+      "gt": null,
+      "min_length": null
+     },
+     "input": null,
+     "loc": [],
+     "msg": null,
+     "type": null
+    }
+   ]
+  },
+  "status": 422
+ },
+ "event-create-by-level": {
+  "request": "POST /events",
+  "shape": {
+   "id": null,
+   "kind": null,
+   "place_id": null,
+   "price": null,
+   "seats": null,
+   "starts_at": null,
+   "state": null,
+   "title": null
+  },
+  "status": 201
+ },
+ "event-create-denied": {
+  "request": "POST /events",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "event-create-in-place": {
+  "request": "POST /events",
+  "shape": {
+   "id": null,
+   "kind": null,
+   "place_id": null,
+   "place_name": null,
+   "price": null,
+   "seats": null,
+   "starts_at": null,
+   "state": null,
+   "title": null
+  },
+  "status": 201
+ },
+ "event-place-busy-409": {
+  "request": "POST /events",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
  },
  "events-afisha": {
   "request": "GET /events",
@@ -162,7 +301,9 @@
     "filmed": null,
     "id": null,
     "kind": null,
+    "my_amount_due": null,
     "my_booking_id": null,
+    "my_booking_paid": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -188,7 +329,37 @@
     "filmed": null,
     "id": null,
     "kind": null,
+    "my_amount_due": null,
     "my_booking_id": null,
+    "my_booking_paid": null,
+    "organizer_first_name": null,
+    "organizer_id": null,
+    "organizer_last_name": null,
+    "place_id": null,
+    "place_name": null,
+    "price": null,
+    "seats": null,
+    "seats_left": null,
+    "starts_at": null,
+    "taken": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "events-afisha-paid": {
+  "request": "GET /events",
+  "shape": [
+   {
+    "about": null,
+    "booked_by_me": null,
+    "duration_min": null,
+    "filmed": null,
+    "id": null,
+    "kind": null,
+    "my_amount_due": null,
+    "my_booking_id": null,
+    "my_booking_paid": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -214,7 +385,9 @@
     "filmed": null,
     "id": null,
     "kind": null,
+    "my_amount_due": null,
     "my_booking_id": null,
+    "my_booking_paid": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -228,6 +401,94 @@
     "title": null
    }
   ],
+  "status": 200
+ },
+ "events-history-member": {
+  "request": "GET /events/history",
+  "shape": [],
+  "status": 200
+ },
+ "events-history-organizer": {
+  "request": "GET /events/history",
+  "shape": [
+   {
+    "about": null,
+    "booked_by_me": null,
+    "duration_min": null,
+    "filmed": null,
+    "id": null,
+    "kind": null,
+    "my_amount_due": null,
+    "my_booking_id": null,
+    "my_booking_paid": null,
+    "organizer_first_name": null,
+    "organizer_id": null,
+    "organizer_last_name": null,
+    "place_id": null,
+    "place_name": null,
+    "price": null,
+    "seats": null,
+    "seats_left": null,
+    "starts_at": null,
+    "taken": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "events-history-staff": {
+  "request": "GET /events/history",
+  "shape": [
+   {
+    "about": null,
+    "booked_by_me": null,
+    "duration_min": null,
+    "filmed": null,
+    "id": null,
+    "kind": null,
+    "my_amount_due": null,
+    "my_booking_id": null,
+    "my_booking_paid": null,
+    "organizer_first_name": null,
+    "organizer_id": null,
+    "organizer_last_name": null,
+    "place_id": null,
+    "place_name": null,
+    "price": null,
+    "seats": null,
+    "seats_left": null,
+    "starts_at": null,
+    "taken": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "me-curator": {
+  "request": "GET /me",
+  "shape": {
+   "balance": null,
+   "member": {
+    "consent_data_at": null,
+    "consent_filming_at": null,
+    "created_at": null,
+    "first_name": null,
+    "last_name": null,
+    "pass_code": null,
+    "photo_url": null,
+    "tg_user_id": null,
+    "username": null
+   },
+   "membership": null,
+   "membership_active": null,
+   "memberships": [],
+   "roles": [
+    {
+     "direction_id": null,
+     "role": null
+    }
+   ]
+  },
   "status": 200
  },
  "me-member": {
@@ -252,6 +513,14 @@
     "starts_at": null
    },
    "membership_active": null,
+   "memberships": [
+    {
+     "ends_at": null,
+     "level": null,
+     "lifelong": null,
+     "starts_at": null
+    }
+   ],
    "roles": []
   },
   "status": 200
@@ -272,6 +541,38 @@
     "title": null
    }
   ],
+  "status": 200
+ },
+ "occupancy-day": {
+  "request": "GET /places/occupancy?day=N-N-N",
+  "shape": {
+   "day_end": null,
+   "day_start": null,
+   "places": [
+    {
+     "capacity": null,
+     "events": [
+      {
+       "duration_min": null,
+       "ends_at": null,
+       "id": null,
+       "organizer_first_name": null,
+       "organizer_id": null,
+       "organizer_last_name": null,
+       "place_id": null,
+       "seats": null,
+       "starts_at": null,
+       "title": null
+      }
+     ],
+     "id": null,
+     "name": null,
+     "state": null
+    }
+   ],
+   "tz": null,
+   "unplaced": []
+  },
   "status": 200
  },
  "order-create": {
@@ -319,6 +620,7 @@
     "items": [
      {
       "price": null,
+      "product_id": null,
       "qty": null,
       "title": null
      }
@@ -348,6 +650,7 @@
     "items": [
      {
       "price": null,
+      "product_id": null,
       "qty": null,
       "title": null
      }
@@ -383,6 +686,7 @@
        "price"
       ],
       "price": null,
+      "product_id": null,
       "qty": null,
       "title": null
      }
@@ -425,6 +729,278 @@
    }
   ],
   "status": 200
+ },
+ "product-about-at-limit": {
+  "request": "POST /bar/products",
+  "shape": {
+   "direction_id": null,
+   "group": null,
+   "id": null,
+   "mins": null,
+   "price": null,
+   "sort": null,
+   "state": null,
+   "title": null
+  },
+  "status": 201
+ },
+ "product-about-too-long": {
+  "request": "POST /bar/products",
+  "shape": {
+   "detail": [
+    {
+     "ctx": {
+      "max_length": null
+     },
+     "input": null,
+     "loc": [],
+     "msg": null,
+     "type": null
+    }
+   ]
+  },
+  "status": 422
+ },
+ "product-create": {
+  "request": "POST /bar/products",
+  "shape": {
+   "direction_id": null,
+   "group": null,
+   "id": null,
+   "mins": null,
+   "price": null,
+   "sort": null,
+   "state": null,
+   "title": null
+  },
+  "status": 201
+ },
+ "product-fulltext-too-long": {
+  "request": "POST /bar/products",
+  "shape": {
+   "detail": [
+    {
+     "ctx": {
+      "max_length": null
+     },
+     "input": null,
+     "loc": [],
+     "msg": null,
+     "type": null
+    }
+   ]
+  },
+  "status": 422
+ },
+ "products-list-bad-state": {
+  "request": "GET /bar/products?direction_id=N&state=draft,nosuchstate",
+  "shape": {
+   "detail": null
+  },
+  "status": 422
+ },
+ "products-list-curator": {
+  "request": "GET /bar/products?direction_id=N&state=draft,review,active,hidden",
+  "shape": [
+   {
+    "about": null,
+    "created_at": null,
+    "created_by": null,
+    "decided_at": null,
+    "decided_by": null,
+    "decision_note": null,
+    "full_text": null,
+    "group": null,
+    "id": null,
+    "is_alcohol": null,
+    "last_photo_id": null,
+    "last_photo_state": null,
+    "mins": null,
+    "photo_id": null,
+    "price": null,
+    "recipes": [],
+    "sort": null,
+    "state": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "products-list-denied-guest": {
+  "request": "GET /bar/products?direction_id=N&state=draft,review,active,hidden",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "products-list-state-too-long": {
+  "request": "GET /bar/products?direction_id=N&state=draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft",
+  "shape": {
+   "detail": [
+    {
+     "ctx": {
+      "max_length": null
+     },
+     "input": null,
+     "loc": [],
+     "msg": null,
+     "type": null
+    }
+   ]
+  },
+  "status": 422
+ },
+ "products-list-worker": {
+  "request": "GET /bar/products?direction_id=N&state=draft,review,active,hidden",
+  "shape": [
+   {
+    "about": null,
+    "created_at": null,
+    "created_by": null,
+    "decided_at": null,
+    "decided_by": null,
+    "decision_note": null,
+    "full_text": null,
+    "group": null,
+    "id": null,
+    "is_alcohol": null,
+    "last_photo_id": null,
+    "last_photo_state": null,
+    "mins": null,
+    "photo_id": null,
+    "price": null,
+    "recipes": [],
+    "sort": null,
+    "state": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "recipe-denied-guest": {
+  "request": "GET /bar/products/N/recipe?lang=th",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "recipe-en-fallback": {
+  "request": "GET /bar/products/N/recipe?lang=en",
+  "shape": {
+   "asked_lang": null,
+   "body": null,
+   "created_at": null,
+   "exact": null,
+   "lang": null,
+   "product_id": null
+  },
+  "status": 200
+ },
+ "recipe-net": {
+  "request": "GET /bar/products/N/recipe?lang=th",
+  "shape": {
+   "detail": null
+  },
+  "status": 404
+ },
+ "recipe-no-lang": {
+  "request": "GET /bar/products/N/recipe",
+  "shape": {
+   "asked_lang": null,
+   "body": null,
+   "created_at": null,
+   "exact": null,
+   "lang": null,
+   "product_id": null
+  },
+  "status": 200
+ },
+ "recipe-th": {
+  "request": "GET /bar/products/N/recipe?lang=th",
+  "shape": {
+   "asked_lang": null,
+   "body": null,
+   "created_at": null,
+   "exact": null,
+   "lang": null,
+   "product_id": null
+  },
+  "status": 200
+ },
+ "till-by-pass": {
+  "request": "GET /till/by-pass/XIII-N",
+  "shape": {
+   "balance": null,
+   "bookings": [
+    {
+     "amount_due": null,
+     "event_id": null,
+     "kind": null,
+     "paid": null,
+     "starts_at": null,
+     "title": null
+    }
+   ],
+   "first_name": null,
+   "last_name": null,
+   "member_id": null,
+   "membership": {
+    "ends_at": null,
+    "level": null,
+    "lifelong": null,
+    "starts_at": null
+   },
+   "membership_active": null,
+   "memberships": [
+    {
+     "ends_at": null,
+     "level": null,
+     "lifelong": null,
+     "starts_at": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "till-by-pass-no-bookings": {
+  "request": "GET /till/by-pass/XIII-N",
+  "shape": {
+   "balance": null,
+   "bookings": [],
+   "first_name": null,
+   "last_name": null,
+   "member_id": null,
+   "membership": {
+    "ends_at": null,
+    "level": null,
+    "lifelong": null,
+    "starts_at": null
+   },
+   "membership_active": null,
+   "memberships": [
+    {
+     "ends_at": null,
+     "level": null,
+     "lifelong": null,
+     "starts_at": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "till-event": {
+  "request": "POST /till",
+  "shape": {
+   "amount": null,
+   "at": null,
+   "booking_id": null,
+   "id": null,
+   "kind": null,
+   "member_id": null,
+   "method": null,
+   "note": null
+  },
+  "status": 201
  },
  "till-topup": {
   "request": "POST /till",
