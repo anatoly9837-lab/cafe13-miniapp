@@ -4273,6 +4273,54 @@ if (grantsSet.length !== 1) {
       if (!(await s.view()).includes('Утверждено')) bad.push('cards-approve: нет итога');
       await s.ctx.close();
     }
+    // строка «Снимок» (кадр E33, Cafe13KPG#270): шесть достижимых сочетаний — каждое своим
+    // заголовком, пунктир только у «фото нет», плашка-предел у всех, кроме «фото нет»;
+    // недостижимое и незнакомое — без строки. Видят все, кто видит карточку (бар тоже).
+    for (const [name, photo_id, last_photo_id, last_photo_state, title, none, who] of [
+      ['photo-none', null, null, null, 'Фото нет', true, WORKER],
+      ['photo-wait', null, 70, 'at_ai', 'Снимок ждёт утверждения', false, WORKER],
+      ['photo-approved-off', null, 70, 'approved', 'Утверждён, но не в меню', false, WORKER],
+      ['photo-replaced', 69, 70, 'new', 'В меню стоит прежний', false, CUR],
+      ['photo-on', 70, 70, 'approved', 'Фото в меню', false, CUR],
+      ['photo-other-approved', 69, 70, 'approved', 'Новый утверждён, но не в меню', false, CUR],
+      ['photo-unreachable', 69, null, null, null, false, WORKER],
+      ['photo-rejected', null, 70, 'rejected', null, false, WORKER]]) {
+      const row = Object.assign(P(51, 'review', 'Матча-латте', 'Чай', ['ru', 'th']), { photo_id, last_photo_id, last_photo_state });
+      const s = await cardsCase(who, { list: json(200, QUEUE_.map(c => c.id === 51 ? row : c)) });
+      await toCards(s); await openCard(s, 51);
+      const g = await s.p.evaluate(() => {
+        const b = document.querySelector('#view [data-photo]');
+        if (!b) return null;
+        const ph = b.querySelector('.ph');
+        return { title: (b.querySelector('.shot b') || {}).textContent || '', none: !!(ph && ph.classList.contains('none')),
+                 limit: !!b.querySelector('.note'), recipeAfter: !!document.querySelector('#view [data-photo] ~ .group #c-recipe') };
+      });
+      if (title === null) { if (g) bad.push(`${name}: недостижимое сочетание нарисовано строкой «${g.title}»`); }
+      else if (!g) bad.push(`${name}: строки «Снимок» нет`);
+      else {
+        if (g.title !== title) bad.push(`${name}: заголовок «${g.title}», ждали «${title}»`);
+        if (g.none !== none) bad.push(`${name}: слот ${g.none ? 'пунктиром' : 'со снимком'}, ждали ${none ? 'пунктир' : 'снимок'}`);
+        if (g.limit === none) bad.push(`${name}: плашка-предел ${g.limit ? 'есть у позиции без снимков' : 'потеряна'}`);
+        if (!g.recipeAfter) bad.push(`${name}: строка «Снимок» не между шапкой и рецептом`);
+        // инвариант места (замер designer-55, 23.10.2026): всё, что растёт, стоит ВЫШЕ строки,
+        // поэтому «Снимок → Решение» постоянно: gap 605 px (dec.bottom − ph.top, эта фикстура, карточка
+        // с описанием) при видимых 712 px (tabs.top − bar.bottom); на стенде designer-55 с пустым
+        // описанием 567 px — разница от данных, не от кода. Пока gap меньше видимой высоты,
+        // тот, кто долистал до «Решения», видит и снимок; вырастет рецепт — строку двигать или дублировать
+        if (name === 'photo-on') {
+          const d = await s.p.evaluate(() => {
+            const ph = document.querySelector('#view [data-photo]');
+            const dec = [...document.querySelectorAll('#view .group > .label')].find(x => x.textContent === 'Решение');
+            const top = document.getElementById('bar').getBoundingClientRect().bottom, low = document.getElementById('tabs').getBoundingClientRect().top;
+            return ph && dec ? { gap: Math.round(dec.getBoundingClientRect().bottom - ph.getBoundingClientRect().top), room: Math.round(low - top) } : null;
+          });
+          if (!d) bad.push(`${name}: нет «Снимка» или «Решения» — расстояние мерить не на чем`);
+          else if (d.gap > d.room) bad.push(`${name}: от «Снимка» до «Решения» ${d.gap} px при видимых ${d.room} — у «Решения» снимок уже не в виду`);
+        }
+      }
+      if (s.errs.length) bad.push(`${name}: ошибки страницы ` + s.errs.join('; '));
+      await s.ctx.close();
+    }
     // куратор возвращает: без причины — не уходит; с причиной — hidden + note.
     // Описание длинное нарочно: у короткой карточки поле причины и так в виду,
     // и случай не отличил бы прокрутку от её отсутствия (так и было: снятая
