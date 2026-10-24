@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v43 · 24.10.2026';
+var VERSION = 'v44 · 24.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -76,11 +76,9 @@ var DATA = {
     { what: 'Членство · [имя члена]', when: '18:12 · карта', sum: 3300, cancelled: false },
     { what: 'Событие · [имя члена]', when: 'внесено 17:40, отменено 17:43', sum: 400, cancelled: true }
   ],
-  services: [
-    { title: 'Аренда байка', about: 'По дням, с залогом и доставкой' },
-    { title: 'Доставка воды', about: 'Разово или по расписанию' },
-    { title: 'Помощь на дороге', about: 'Сантехник, электрик, механик' }
-  ],
+  // Выдуманные услуги не показываем и в демо — решение владельца,
+  // anatoly9837-lab/Cafe13KPG#102 (со слов координатора, 21.10.2026).
+  services: [],
   // что ведёт организатор
   myEvents: [
     { id: 'sound', title: 'Звуковая практика', day: 'Сегодня, четверг', time: '19:00',
@@ -92,9 +90,7 @@ var DATA = {
     { name: '[имя члена]', when: 'записался 11:15', paid: false }
   ],
   // что ведёт бизнес-партнёр
-  myServices: [
-    { title: 'Аренда байка', about: 'По дням, с залогом и доставкой', price: '250 ฿/день', state: 'работает' }
-  ]
+  myServices: []
 };
 
 /* ── бар: первый бизнес-юнит клуба ─────────────────────
@@ -3042,7 +3038,10 @@ var SCREENS = {
             '<span class="grow"><b>Бар Café XIII</b><span class="small">Кофе, чай, авторские · заказ из приложения</span></span>' +
             svg(ICON.chev, 'chev') +
           '</button>' +
-        '</div>' + notWired('Услуги острова');
+        '</div>';
+      // «Услуги острова — ещё не подключено» снято: оно обещало раздел, которого
+      // у клуба нет (решение владельца, Cafe13KPG#102, со слов координатора).
+      // Вернуть, когда у клуба появятся настоящие услуги и ручка под них.
     }
     return '' +
       '<div class="group"><span class="label">Бар клуба</span>' +
@@ -3056,11 +3055,11 @@ var SCREENS = {
         '</button>' +
       '</div>' +
       '<div class="group"><span class="label">Услуги острова</span>' +
-        DATA.services.map(function (s) {
+        (DATA.services.length ? DATA.services.map(function (s) {
           return '<button type="button" class="listitem">' +
             '<span class="grow"><b>' + esc(s.title) + '</b><span class="small">' + esc(s.about) + '</span></span>' +
             svg(ICON.chev, 'chev') + '</button>';
-        }).join('') +
+        }).join('') : '<div class="card quiet"><span class="small">Пока ни одной.</span></div>') +
       '</div>' +
       (isMember() ? '' :
       '<div class="card strong">' +
@@ -3515,11 +3514,11 @@ var SCREENS = {
   serviceNew: function () {
     return '<p style="font-size:13px">Появится в разделе «Услуги» после проверки директором.</p>' +
       '<div class="field"><label for="s-title">Название</label>' +
-        '<input id="s-title" type="text" placeholder="Например: аренда байка"></div>' +
+        '<input id="s-title" type="text" placeholder="Как её назовут гости"></div>' +
       '<div class="field"><label for="s-about">Коротко, что это</label>' +
-        '<input id="s-about" type="text" placeholder="По дням, с залогом и доставкой"></div>' +
+        '<input id="s-about" type="text" placeholder="Одной строкой"></div>' +
       '<div class="field"><label for="s-price">Цена</label>' +
-        '<input id="s-price" type="text" placeholder="250 ฿/день"></div>' +
+        '<input id="s-price" type="text" placeholder="Цена в батах"></div>' +
       '<div class="field"><label for="s-contact">Кто выполняет</label>' +
         '<input id="s-contact" type="text" placeholder="Вы сами или ваш работник"></div>' +
       '<div class="card quiet"><div class="col">' +

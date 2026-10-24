@@ -476,6 +476,30 @@ if (grantsSet.length !== 1) {
     if (mine.some(x => x.startsWith('Организатор'))) bad.push('membership-mine: вид назван «Организатор», а не «Мастер»');
     await s.ctx.close();
   }
+  // Услуг у клуба нет (решение владельца, Cafe13KPG#102, со слов координатора): гость в живом режиме
+  // видит бар и не видит обещания «Услуги острова — ещё не подключено».
+  {
+    const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = [];
+    const s = await open(true, true, json(200, guest), null, null, null);
+    const t = await s.view();
+    if (!t.includes('Бар Café XIII')) bad.push('guest-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — гость не на своём экране');
+    else if (t.includes('Услуги острова')) bad.push('guest-services: гостю обещан раздел «Услуги острова», которого у клуба нет');
+    await s.ctx.close();
+  }
+  // И в демо услуг нет вовсе — свойство, а не имена: оба списка пусты.
+  // Именной признак вторым: ловит возврат тех выдумок, что уже были.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null);
+    const d = await s.p.evaluate(() => ({ a: Array.isArray(DATA.services) && Array.isArray(DATA.myServices),
+      n: (DATA.services || []).length + (DATA.myServices || []).length,
+      t: JSON.stringify([DATA.services, DATA.myServices]) }));
+    if (!d.a) bad.push('demo-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — списков услуг в DATA нет');
+    else if (d.n) bad.push(`demo-services: в демо услуги, которых у клуба нет: ${d.t}`);
+    await s.ctx.close();
+    const src = fs.readFileSync(`${ROOT}/app.js`, 'utf8');
+    const m = src.match(/байк|массаж|Доставка воды|Помощь на дороге/i);
+    if (m) bad.push(`demo-services: в клиенте выдуманная услуга «${m[0]}»`);
+  }
   // /pass без даты и без lifelong — не пропуск (пустая дата законна только при lifelong: true).
   {
     const s = await open(true, true, json(200, OWNER), null,
