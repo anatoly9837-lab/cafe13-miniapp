@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v37 · 24.10.2026';
+var VERSION = 'v38 · 24.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3060,8 +3060,17 @@ var SCREENS = {
     var k = KIND[e.kind];
     var foot;
     if (e.kind === 'paid') {
-      foot = '<button type="button" class="btn dup-main" data-action="book">Оплатить ' + e.price + ' ฿ и записаться</button>' +
-             '<span class="small" style="text-align:center">Место держится 15 минут, пока идёт оплата. Не оплачено — место возвращается в афишу.</span>';
+      // Демонстрация показывает ровно то, что видит человек в живом режиме:
+      // кнопка «Записаться» и та же подпись, что в `bookBlock`. Прежние слова
+      // («Оплатить … и записаться», «место держится 15 минут, пока идёт
+      // оплата») обещали механизм, которого в системе НЕТ: в таблице
+      // `bookings` нет ни срока, ни фонового снятия (замер по стволу api
+      // 24.10.2026), и неоплаченная запись держит место вечно. В живом
+      // режиме этой лжи не было никогда — она жила здесь и в описи, то есть
+      // ровно там, где по продукту судят.
+      foot = '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
+             '<span class="small" style="text-align:center">К оплате ' + money(e.price) +
+             ' ฿ на месте: при записи со счёта не списывается.</span>';
     } else if (e.kind === 'free') {
       foot = '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
              '<span class="small" style="text-align:center">Если передумали — отмените запись, чтобы место досталось другому.</span>';
