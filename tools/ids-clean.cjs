@@ -2,19 +2,40 @@
    это его Telegram. Настоящие номера живут только в приватных репозиториях
    (Cafe13KPG, cafe13-api); здесь — выдуманные из общей фикстуры.
 
-   Проверка РАЗРЕШАЮЩАЯ, а не поиск известного: краснеет любая цепочка из
-   7+ цифр, которой нет в списке ниже. Поиск по известным номерам пропустил
-   бы как раз тот, о котором не знали. 7, а не 8, как в api
-   (tools/check-dumps-clean.sh): у ранних аккаунтов Telegram номер короче
-   восьми знаков, а кассир с правами вносит ровно такие.
+   Проверка РАЗРЕШАЮЩАЯ и ищет СВОЙСТВО, а не форму записи: «в одной лексеме
+   7 и больше цифр, считая только цифры». Первая редакция искала форму —
+   семь цифр подряд в файлах из перечня расширений — и архитектор обошёл её
+   шестью способами: числовым разделителем JS, пробелами, телефоном через
+   тире, шестнадцатеричным литералом, файлом `.yml` и файлом без расширения
+   (сами подлоги — в SELF ниже, собранные из частей). Тот же путь страж api
+   прошёл 21.10 (cafe13-api tools/dumps_digits.py): формой записи, списком
+   разделителей и областью обхода. Поэтому:
+   - ОБЛАСТЬ — каждый файл дерева, кроме двоичных по признаку (NUL в первых
+     8 КБ), а не перечень расширений;
+   - РАЗДЕЛИТЕЛИ — цифры склеиваются через пробел, табуляцию, `_ . - / ( ) +`
+     (до двух подряд), но не через перенос строки: склейка всей строки, как в
+     api, в исходнике дала бы ложное красное на `margin: 12px 16px 20px`;
+   - ЗАКОННЫЕ ФОРМАТЫ вырезаются заранее ЦЕЛИКОМ: даты (ISO, ДД.ММ.ГГГГ),
+     время ЧЧ:ММ, номер заказа ГГММДД-NN, сумма с копейками, геометрия SVG
+     (`d=`, `viewBox=`, `points=`). Иначе «23.10.2026» склеилось бы в восемь
+     цифр, контур значка — в десять, страж краснел бы на законном, и его
+     выключили бы. Номер, спрятанный внутри контура SVG, — тоже предел;
+   - ШЕСТНАДЦАТЕРИЧНЫЕ `0x…` переводятся в десятичное и проверяются как число.
 
-   Запуск сам по себе: node tools/ids-clean.cjs [корень], код 0 — чисто,
-   1 — нашлось, 2 — проверить нечем. Батарея (live.cjs) зовёт его в конце. */
+   Пределы, названные, а не забытые: двоичные файлы (PNG описи и PDF каталога
+   — в текстовом слое PDF лежит всё, что отрисовано на экранах, и номер,
+   показанный экраном, уехал бы туда непрочитанным); сообщения коммитов и тела
+   PR; номер короче 7 цифр; число, собранное в коде из частей; цифры не ASCII.
+
+   Порог 7, а не 8, как в api: у ранних аккаунтов Telegram номер короче
+   восьми знаков. Каждое разрешённое число — с причиной.
+
+   Запуск: node tools/ids-clean.cjs [корень] — 0 чисто, 1 нашлось, 2 проверить
+   нечем (пустой корень или провалена самопроверка). Батарея зовёт его в конце. */
 
 const fs = require('fs');
 const path = require('path');
 
-// Каждое число — с причиной: список без причин разрастается молча.
 const ALLOW = {
   '86400000': 'миллисекунд в сутках',
   '1103515245': 'множитель генератора псевдослучайных (app.js)',
@@ -22,42 +43,96 @@ const ALLOW = {
   '1760000000': 'auth_date в выдуманной initData (live.cjs)',
   '1766000000000': 'время числом — случай spisok-vremya-chislom (live.cjs)',
   '6332425': 'sha коммита cafe13-api в комментарии (live.cjs)',
+  '18729405': 'номер вопроса stackoverflow в комментарии vendor/qrcode',
+  '1114111': '0x10FFFF, последняя точка Unicode (vendor/qrcode)',
+  '1048575': '0xFFFFF, граница плоскостей Unicode (vendor/qrcode)',
 };
 // Общая фикстура людей у api и клиента: 200000001…200000014.
 for (let i = 1; i <= 14; i++) ALLOW[String(2e8 + i)] = 'выдуманный человек общей фикстуры';
 
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'vendor']);
-const TEXT = /\.(js|cjs|mjs|json|html|css|md|py|sh|txt|svg)$/i;
+const SKIP_DIRS = new Set(['.git', 'node_modules']);
+const ISO = /\d{4}-\d{2}-\d{2}(?:T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?/g;
+const DMY = /\b\d{2}\.\d{2}\.\d{4}\b/g;
+const CLOCK = /\b\d{1,2}:\d{2}(?::\d{2})?\b/g;
+const ORDER_NO = /\b\d{6}-\d{2}\b/g;
+const CENTS = /(?<![\d.])\d{1,6}\.\d{2}(?![\d.])/g;
+const SVG = /\b(?:d|viewBox|points)="[^"]*"/g;
+const HEX = /\b0x[0-9a-f]+\b/gi;
+const RUN = /\d(?:[ \t_.\-/()+]{0,2}\d)+/g;
 
-function walk(dir, out) {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name), out); }
-    else if (TEXT.test(e.name)) out.push(path.join(dir, e.name));
+// Строка → числа из 7+ цифр, которых нет в списке: [[запись, цифры], …].
+function scan(line) {
+  const t = line.replace(SVG, ' ').replace(ISO, ' ').replace(DMY, ' ').replace(CLOCK, ' ')
+                .replace(ORDER_NO, ' ').replace(CENTS, ' ')
+                .replace(HEX, h => ' ' + BigInt(h).toString() + ' ');
+  const out = [];
+  for (const m of t.matchAll(RUN)) {
+    const d = m[0].replace(/\D/g, '');
+    if (d.length >= 7 && !ALLOW[d]) out.push([m[0].trim(), d]);
   }
   return out;
 }
 
-// → строки «файл:строка: число — …» про каждое неразрешённое число.
+/* Подлог на каждый закрытый способ, и на законное — тоже: страж, который не
+   краснеет никогда, неотличим от отсутствующего, а краснеющий на дате —
+   выключат. Номер собран из частей, чтобы обход файла не нашёл его здесь. */
+const N = ['918', '273', '645'];
+const SELF = [
+  ['подряд', N.join(''), true],
+  ['числовой разделитель JS', N.join('_'), true],
+  ['пробелами', '// владелец: ' + N.join(' '), true],
+  ['телефон через тире', ['081', '234', '5678'].join('-'), true],
+  ['телефон с кодом и скобками', '+66 (81) ' + ['234', '5678'].join(' '), true],
+  ['шестнадцатеричный', 'var OWNER = 0x' + (+N.join('')).toString(16) + ';', true],
+  ['дата ISO со временем', '2026-10-24T10:00:00+00:00', false],
+  ['дата ДД.ММ.ГГГГ', 'v36 · 23.10.2026', false],
+  ['время клуба', '05.12 15:00–16:30', false],
+  ['отступы', 'margin: 12px 16px 20px;', false],
+  ['деньги', '13 170 ฿', false],
+  ['сумма с копейками', "amount: '25240.00'", false],
+  ['номер заказа', "number: '261018-03'", false],
+  ['контур значка', '<path d="M12 2a5 5 0 01-1 1 0 1.8 3.6 3.2 8 3.2"/>', false],
+  ['телефон точками', ['081', '234', '5678'].join('.'), true],
+];
+function selfCheck() {
+  return SELF.filter(([, s, red]) => (scan(s).length > 0) !== red)
+    .map(([name, , red]) => `ids-clean самопроверка: «${name}» ${red ? 'прошёл зелёным' : 'дал красное на законном'}`);
+}
+
+function walk(dir, out) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const f = path.join(dir, e.name);
+    if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(f, out); }
+    else if (e.isFile()) out.push(f);
+  }
+  return out;
+}
+
+// → строки отказа: самопроверка, затем «файл:строка: число …».
 function idsClean(root) {
+  const self = selfCheck();
+  if (self.length) return self;
   const files = walk(root, []);
-  if (!files.length) throw new Error('в ' + root + ' нет ни одного текстового файла — проверять нечего');
+  if (!files.length) throw new Error('в ' + root + ' нет ни одного файла — проверять нечего');
   const bad = [];
   for (const f of files) {
-    fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
-      for (const m of line.matchAll(/(?<![0-9])[0-9]{7,}(?![0-9])/g)) {
-        if (!ALLOW[m[0]]) bad.push(`${path.relative(root, f)}:${i + 1}: число ${m[0]} не в разрешённом списке tools/ids-clean.cjs — номер человека в публичный репозиторий не кладём; если это не человек, внесите в список с причиной`);
-      }
+    const buf = fs.readFileSync(f);
+    if (buf.subarray(0, 8192).includes(0)) continue;             // двоичный — предел, назван в шапке
+    buf.toString('utf8').split('\n').forEach((line, i) => {
+      for (const [raw, d] of scan(line))
+        bad.push(`${path.relative(root, f)}:${i + 1}: «${raw}» — ${d.length} цифр (${d}) не в разрешённом списке tools/ids-clean.cjs. Номер человека в публичный репозиторий не кладём; если это не человек — внесите в список С ПРИЧИНОЙ, а не разбивайте запись на части: страж ловит свойство, разбивка его не лечит, а прячет`);
     });
   }
   return bad;
 }
 
-module.exports = { idsClean };
+module.exports = { idsClean, scan };
 
 if (require.main === module) {
   let bad;
   try { bad = idsClean(process.argv[2] || path.join(__dirname, '..')); }
   catch (e) { console.log('ids-clean: проверка НЕ ВЫПОЛНЕНА — ' + e.message); process.exit(2); }
+  if (bad.length && bad[0].startsWith('ids-clean самопроверка')) { console.log('ids-clean: проверка НЕ ВЫПОЛНЕНА —\n' + bad.join('\n')); process.exit(2); }
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
   console.log('ids-clean: чисто');
 }
