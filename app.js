@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v39 · 24.10.2026';
+var VERSION = 'v40 · 24.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -233,7 +233,11 @@ function api(method, path, body) {
   });
 }
 
-var LEVEL = { member: 'Член клуба', organizer: 'Организатор', partner: 'Бизнес-партнёр' };
+// «Мастер» с большой — ВИД членства; «мастер» с маленькой — тот, кто ВЕДЁТ
+// вечер; «организатор» — кто вечер завёл. Регистр несёт смысл, это не
+// опечатка. Определение одно и живёт в Cafe13KPG, _docs/design/obliq-slovar.md,
+// раздел «Мастер, мастер, организатор»; слово данных остаётся `organizer`.
+var LEVEL = { member: 'Член клуба', organizer: 'Мастер', partner: 'Бизнес-партнёр' };
 // Имена ролей — только тех, смысл которых записан; остальные показываются кодом.
 var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клуба', god: 'Наследник',
                   admin: 'Администратор', director: 'Директор',
@@ -267,6 +271,18 @@ function fromMe(d) {
       if (!until) return null;          // конечное членство без конца — не разобрано
     }
   }
+  // Все живые членства, по одному на вид (виды не старше друг друга). Поля
+  // нет или оно не список — ответ не разобран целиком: пустой список значит
+  // «членств нет», и подменять им неразобранное нельзя.
+  if (!Array.isArray(d.memberships)) return null;
+  var all = [];
+  for (var i = 0; i < d.memberships.length; i++) {
+    var m = d.memberships[i];
+    if (!m || typeof m !== 'object' || !LEVEL[m.level] || typeof m.lifelong !== 'boolean') return null;
+    var mu = m.lifelong ? null : m.ends_at ? ruDate(m.ends_at) : null;
+    if (!m.lifelong && !mu) return null;
+    all.push({ level: m.level, until: mu, lifelong: m.lifelong });
+  }
   var p = d.member;
   return {
     role: d.membership_active ? ms.level : 'guest',
@@ -283,6 +299,7 @@ function fromMe(d) {
       until: until,
       ends: d.membership_active && !lifelong ? ms.ends_at : null,   // ISO — для запаса пропуска
       lifelong: lifelong,
+      memberships: all,
       balance: bal,
       number: p.pass_code || null
     }
@@ -296,7 +313,10 @@ function untilText(m) {
 /* Экраны, которые уже стоят на данных сервера. Остальные в живом режиме
    показывают «ещё не подключено»: демонстрационная афиша рядом с настоящим
    балансом выглядела бы так же настоящей. */
-var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, membership: 1, demo: 1,
+// `membership` нет нарочно: экран обещал суммы-заглушки в скобках, кнопки
+// без действия и путь через кассу, который новичку сегодня не пройти
+// (Cafe13KPG#301). Вернётся кадром E38 после слова владельца.
+var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
               staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1,
@@ -3037,20 +3057,21 @@ var SCREENS = {
   },
 
   membership: function () {
+    // уровень — из оплаченных членств (/me), а не из роли; в демо их нет
+    var have = DATA.member && DATA.member.memberships;
+    var mine = function (k) { return have ? have.some(function (m) { return m.level === k; }) : DATA.role === k; };
     var tiers = [
-      { name: 'Член клуба', price: '[100] $', about: 'Вход в пространство без оплаты. Афиша, записи, жизнь клуба.', mine: DATA.role === 'member' },
-      { name: 'Организатор', price: '[200] $', about: 'Всё, что у члена клуба, плюс право проводить свои мероприятия и назначать их цену.', mine: DATA.role === 'organizer' },
-      { name: 'Бизнес-партнёр', price: '[300] $', about: 'Всё, что у члена клуба, плюс своё направление внутри клуба и его отчётность.', mine: false, split: true }
+      { name: LEVEL.member, about: 'Вход в пространство без оплаты. Афиша, записи, жизнь клуба.', mine: mine('member') },
+      { name: LEVEL.organizer, about: 'Всё, что у члена клуба, плюс право проводить свои мероприятия и назначать их цену.', mine: mine('organizer') },
+      { name: LEVEL.partner, about: 'Всё, что у члена клуба, плюс своё направление внутри клуба и его отчётность.', mine: mine('partner') }
     ];
+    // Ни одной суммы и ни одной кнопки без действия — и в демо тоже: цен
+    // владелец не называл, а демо показывают ему (решение координатора 24.10).
     return tiers.map(function (t) {
       return '<div class="card' + (t.mine ? ' strong' : '') + '">' +
-        '<div class="row"><h2>' + esc(t.name) + '</h2><b class="num" style="font-size:18px">' + esc(t.price) + '</b></div>' +
+        '<div class="row"><h2>' + esc(t.name) + '</h2></div>' +
         '<p style="font-size:13px">' + esc(t.about) + '</p>' +
-        (t.split ? '<div class="card quiet" style="padding:11px 13px"><div class="row">' +
-          '<span class="small">Прибыль направления</span><b class="num" style="font-size:13px">[70] % вам · [30] % клубу</b>' +
-        '</div></div>' : '') +
-        (t.mine ? '<span class="pill on" style="align-self:flex-start">Ваш уровень</span>'
-                : '<button type="button" class="btn ghost">' + (t.split ? 'Обсудить с директором' : 'Перейти на уровень') + '</button>') +
+        (t.mine ? '<span class="pill on" style="align-self:flex-start">Ваш уровень</span>' : '') +
       '</div>';
     }).join('') +
     (FLASH ? flash() : '') +
@@ -4222,7 +4243,7 @@ var SCREENS = {
     var roles = [
       ['guest', 'Гость', 'без членства: только услуги'],
       ['member', 'Член клуба', 'пропуск, афиша, записи'],
-      ['organizer', 'Организатор', 'то же плюс свои мероприятия'],
+      ['organizer', LEVEL.organizer, 'то же плюс свои мероприятия'],
       ['partner', 'Бизнес-партнёр', 'то же плюс своё направление и его отчётность'],
       ['staff', 'Работник', 'касса: внести и отменить'],
       ['bar', 'Бар · исполнитель', 'заказы, съёмка напитков, затраты, смена'],
