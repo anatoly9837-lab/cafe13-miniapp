@@ -4664,8 +4664,24 @@ if (grantsSet.length !== 1) {
       if (!stub || typeof stub !== 'object' || Array.isArray(stub)) { out.push(path + ': в ответе объект'); return out; }
       const opt = real['?'] || [];
       Object.keys(real).filter(k => k !== '?').forEach(k => {
-        if (!(k in stub)) { if (!opt.includes(k)) out.push(path + '.' + k + ': нет в заглушке'); }
-        else diffShape(real[k], stub[k], path + '.' + k, out);
+        if (!(k in stub)) {
+          if (opt.includes(k)) return;
+          // ⚠ ИСКЛЮЧЕНИЕ РАБОТАЕТ И ЗДЕСЬ, а не только в ветке пустого
+          // списка. 24.10.2026 координатор вписал пять исключений вида
+          // `events-afisha[].my_booking_paid`, и прогон дал ДЕСЯТЬ строк
+          // вместо пяти: прежние пять остались (эта ветка про UNVERIFIED не
+          // знала), и к ним добавились пять «исключение больше не нужно» —
+          // потому что ни одно не попало в USED. Замер frontend-events-9d.
+          //
+          // Самоуборка сохранена: исключение, попавшее в USED, живёт; как
+          // только заглушка получает поле, ветка сюда не заходит, USED
+          // пустеет и сторож ниже требует убрать исключение.
+          const key = path + '.' + k;
+          if (UNVERIFIED[key]) { USED.add(key); notes.push(key + ': не сверено — ' + UNVERIFIED[key]); }
+          else out.push(key + ': нет в заглушке');
+          return;
+        }
+        diffShape(real[k], stub[k], path + '.' + k, out);
       });
       Object.keys(stub).filter(k => k !== '?' && !(k in real)).forEach(k => out.push(path + '.' + k + ': в ответе сервера такого нет'));
     }
