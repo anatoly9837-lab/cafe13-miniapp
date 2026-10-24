@@ -2326,7 +2326,13 @@ function signedBlock(e) {
   live.forEach(function (p) { if (p.paid) paidN += 1; });
   var itog = e.kind === 'paid' && live.length
     ? '<div class="card quiet"><span class="small">Оплатили ' + paidN + ' из ' + live.length +
-      (paidN < live.length ? '. Неоплаченную запись можно снять — место вернётся в афишу.' : '.') +
+      // Кто может снять — словами сервера, а не «можно снять»: чужую запись
+      // снимает РАБОТНИК КЛУБА (`own or staff`, где staff — админ либо
+      // director/staff/head; организатора там нет, отказ звучит «чужую
+      // запись снимает работник клуба»). Этот экран читает организатор, и
+      // «можно снять» обещало бы ему действие, которого у него нет — а
+      // кнопки снятия здесь нет вовсе ни у кого.
+      (paidN < live.length ? '. Неоплаченную запись снимает работник клуба — место вернётся в афишу.' : '.') +
       '</span></div>'
     : '';
   return spor + itog + live.map(function (p) { return signedRow(p, e.kind, false); }).join('') +

@@ -3558,7 +3558,10 @@ if (grantsSet.length !== 1) {
           if (!t.includes(x)) bad.push(`signed-oplata: в списке нет метки «${x}»`); });
         const want = 'Оплатили ' + live.filter(r => r.paid).length + ' из ' + live.length;
         if (!t.includes(want)) bad.push(`signed-oplata: нет сводки «${want}», на экране «${t.slice(t.indexOf('Оплатили'), t.indexOf('Оплатили') + 60)}»`);
-        if (!t.includes('Неоплаченную запись можно снять')) bad.push('signed-oplata: не сказано, что делать с неоплаченной записью');
+        // Названо ДЕЙСТВУЮЩЕЕ ЛИЦО, а не возможность: экран читает организатор,
+        // который снять чужую запись не может (замер по боевой ревизии).
+        if (!t.includes('снимает работник клуба')) bad.push(`signed-oplata: не названо, КТО снимает неоплаченную запись, на экране «${t.slice(t.indexOf('Оплатили'), t.indexOf('Оплатили') + 120)}»`);
+        if (t.includes('можно снять')) bad.push('signed-oplata: сводка обещает организатору снятие, которого он не может сделать — чужую запись снимает работник клуба');
       }
       if (s.errs.length) bad.push('signed-oplata: ошибки страницы ' + s.errs.join('; '));
       await s.p.screenshot({ path: `${OUT}/live-signed-oplata.png` });
