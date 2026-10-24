@@ -1276,6 +1276,200 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  // ── касса: человек по коду пропуска (Cafe13KPG#102, кадры E34) ──
+  // Формы ответов — cafe13-api app/routers/till.py на боевом fa2cebc, по коду:
+  // by-pass отдаёт member_id, имя, членство (queries.ACTIVE_MEMBERSHIP_SQL) и
+  // остаток; POST /till — строку книги, у членства с ключом membership.
+  // member_id — это tg_user_id: номер из общей выдуманной фикстуры, и он
+  // не должен оказаться ни в разметке, ни в хранилище страницы.
+  const PID = 200000003;
+  const PERSON = { member_id: PID, first_name: 'Пробный', last_name: 'Гость', membership: null,
+                   membership_active: false, balance: 0 };
+  const ENDS = '2027-04-24T05:00:00+00:00';
+  function cash(o) {
+    o = Object.assign({ find: () => json(200, PERSON), after: null, refind: null,
+      post: q => { const x = JSON.parse(q.postData());
+        const row = { id: 95, at: '2026-10-24T10:00:00+00:00', kind: x.kind, amount: Number(x.amount).toFixed(2), method: x.method,
+                      member_id: x.member_id, note: '' };
+        if (x.kind === 'membership') row.membership = { id: 7, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS };
+        return json(201, row); } }, o);
+    const st = { posted: false };
+    return r => {
+      const u = r.url();
+      if (r.method() === 'GET' && u.includes('/till/by-pass/')) {
+        if (!st.posted) return o.find(r);
+        if (o.refind) return o.refind(r);
+        return json(200, Object.assign({}, PERSON, o.after || {}));
+      }
+      if (r.method() === 'POST' && u.endsWith('/till')) {
+        st.posted = true;
+        return o.post === 'abort' ? 'abort' : o.post(r);
+      }
+      return undefined;
+    };
+  }
+  const finds = s => s.calls.filter(c => c.method === 'GET' && c.url.includes('/till/by-pass/'));
+  // Номер человека — ни в разметке (с атрибутами), ни в хранилище.
+  const leak = s => s.p.evaluate(id => {
+    let st = ''; try { st = JSON.stringify(Object.assign({}, localStorage, sessionStorage)); } catch (e) {}
+    return document.documentElement.outerHTML.includes(id) || st.includes(id);
+  }, String(PID));
+  async function toPerson(s, name, code) {
+    if (!(await s.p.$('#tabs [data-go="staff"]'))) { bad.push(`${name}: у кассира нет вкладки «Касса»`); return false; }
+    await s.p.click('#tabs [data-go="staff"]');
+    await s.p.waitForTimeout(100);
+    if (!(await s.p.$('#tp-code'))) { bad.push(`${name}: на кассе нет поля кода`); return false; }
+    await s.p.fill('#tp-code', code || '0042');
+    await s.p.click('[data-action="tp-find"]');
+    await s.p.waitForTimeout(300);
+    return true;
+  }
+  async function toForm(s, name, kind) {
+    if (!(await s.p.$(`[data-action="tp-open:${kind}"]`))) { bad.push(`${name}: на карточке нет «${kind}»`); return false; }
+    await s.p.click(`[data-action="tp-open:${kind}"]`);
+    await s.p.waitForTimeout(100);
+    const want = kind === 'membership' ? ['tillMembership', 'Членство'] : ['tillTopup', 'На счёт'];
+    if (await at(s) !== want[0]) bad.push(`${name}: форма «${kind}» не на экране ${want[0]}`);
+    if (!(await s.p.evaluate(t => document.getElementById('title').textContent === t, want[1])))
+      bad.push(`${name}: в шапке формы нет «${want[1]}»`);
+    return !!(await s.p.$('#tp-amount')) || (bad.push(`${name}: нет формы приёма`), false);
+  }
+  const at = s => s.p.evaluate(() => current);
+
+  // Продать членство: скан → карточка → форма → итог по ответу и перечитанной карточке.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ after: { balance: 0 } }));
+    if (await toPerson(s, 'till-sell')) {
+      let t = await s.view();
+      if (await at(s) !== 'tillPerson') bad.push('till-sell: найденный человек не на своём экране');
+      for (const w of ['Пробный Гость', 'Пропуск XIII-0042', 'Членства нет', 'Продать членство', 'Внести на счёт'])
+        if (!t.includes(w)) bad.push(`till-sell: на карточке нет «${w}»`);
+      if (finds(s)[0] && !finds(s)[0].url.endsWith('/till/by-pass/0042')) bad.push('till-sell: искали не тот код: ' + finds(s)[0].url);
+      if (await s.p.evaluate(() => backTo()) !== 'staff') bad.push('till-sell: «назад» с карточки ведёт не к скану');
+      if (await toForm(s, 'till-sell', 'membership')) {
+        if (await s.p.evaluate(() => backTo()) !== 'tillPerson') bad.push('till-sell: «назад» с формы ведёт не к карточке');
+        if (await s.p.$eval('#tp-amount', e => e.value + e.placeholder) !== '') bad.push('till-sell: в поле суммы что-то стоит до ввода');
+        await s.p.click('[data-action="tp-level:organizer"]');
+        await s.p.fill('#tp-months', '6');
+        await s.p.fill('#tp-amount', '3000');
+        await s.p.click('[data-action="tp-method:card"]');
+        if (await s.p.$eval('#tp-amount', e => e.value) !== '3000') bad.push('till-sell: выбор способа стёр сумму');
+        await s.p.click('[data-action="tp-send"]');
+        await s.p.waitForTimeout(400);
+        const tp = tillPosts(s);
+        if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'membership', amount: 3000, method: 'card', member_id: PID, level: 'organizer', months: 6 }))
+          bad.push('till-sell: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
+        t = await s.view();
+        for (const w of ['Принято 3 000 ฿ картой', 'Организатор', 'до 24 апреля 2027', 'Следующий человек', 'правки членства в приложении пока нет'])
+          if (!t.includes(w)) bad.push(`till-sell: на итоге нет «${w}»`);
+        if (finds(s).length !== 2) bad.push(`till-sell: карточка после приёма не перечитана (запросов by-pass: ${finds(s).length})`);
+        await s.p.screenshot({ path: `${OUT}/live-till-done.png`, fullPage: true });
+        if (await leak(s)) bad.push('till-sell: номер человека попал в разметку или хранилище');
+        await s.p.click('[data-action="tp-next"]');
+        await s.p.waitForTimeout(100);
+        if (await at(s) !== 'staff' || (await s.p.$eval('#tp-code', e => e.value)) !== '') bad.push('till-sell: «Следующий человек» не вернул к пустому скану');
+      }
+    }
+    if (s.errs.length) bad.push('till-sell: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Внести на счёт: у пополнения нет «со счёта», остаток — из перечитанной карточки.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ after: { balance: '500.00' } }));
+    if (await toPerson(s, 'till-topup') && await toForm(s, 'till-topup', 'topup')) {
+      if (await s.p.$('[data-action="tp-method:account"]')) bad.push('till-topup: у пополнения есть «со счёта» — кнопка к верному отказу 409');
+      if (await s.p.$('#tp-months')) bad.push('till-topup: у пополнения поле срока');
+      if (!(await s.view()).includes('Перевести со счёта на счёт нельзя')) bad.push('till-topup: нет строки «со счёта на счёт нельзя» (кадр E34e)');
+      if (await s.p.evaluate(() => backTo()) !== 'tillPerson') bad.push('till-topup: «назад» с формы ведёт не к карточке');
+      await s.p.fill('#tp-amount', '500');
+      await s.p.click('[data-action="tp-send"]');
+      await s.p.waitForTimeout(400);
+      const tp = tillPosts(s);
+      if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'topup', amount: 500, method: 'cash', member_id: PID }))
+        bad.push('till-topup: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
+      const t = await s.view();
+      if (!t.includes('Принято 500 ฿ наличными') || !t.includes('500 ฿')) bad.push('till-topup: нет итога с остатком');
+      if (t.includes('правки членства')) bad.push('till-topup: плашка про членство у пополнения');
+      if (await leak(s)) bad.push('till-topup: номер человека попал в разметку или хранилище');
+    }
+    await s.ctx.close();
+  }
+  // Отказы поиска — словами сервера, на скане, без перехода к карточке.
+  for (const [name, find, want] of [
+    ['till-422', () => json(422, { detail: 'код пропуска — четыре цифры, с «XIII-» или без' }), 'Код пропуска — четыре цифры, с «XIII-» или без'],
+    ['till-404', () => json(404, { detail: 'пропуск не найден' }), 'Пропуск не найден'],
+    ['till-noname', () => json(200, Object.assign({}, PERSON, { first_name: null })), 'Ответ сервера не разобран'],
+    ['till-nobal', () => json(200, Object.assign({}, PERSON, { balance: null })), 'Ответ сервера не разобран'],
+    ['till-noend', () => json(200, Object.assign({}, PERSON, { membership_active: true,
+       membership: { level: 'member', starts_at: ENDS, ends_at: null, lifelong: false } })), 'Ответ сервера не разобран']]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find }));
+    if (await toPerson(s, name, '123')) {
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+      if (await at(s) !== 'staff') bad.push(`${name}: отказ открыл карточку`);
+    }
+    await s.ctx.close();
+  }
+  // Пожизненное членство — словом стандарта, а не датой.
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, Object.assign({}, PERSON,
+      { membership_active: true, membership: { level: 'partner', starts_at: ENDS, ends_at: null, lifelong: true } })) }));
+    if (await toPerson(s, 'till-lifelong')) {
+      const t = await s.view();
+      if (!t.includes('Пожизненно') || !t.includes('Бизнес-партнёр') || t.includes('Членства нет')) bad.push('till-lifelong: пожизненное не так: ' + t.slice(0, 160));
+    }
+    await s.ctx.close();
+  }
+  // Срок и сумма не те — не отправляется.
+  for (const [months, amount, want] of [['0', '100', 'от 1 до 24'], ['25', '100', 'от 1 до 24'], ['abc', '100', 'от 1 до 24'],
+                                        ['6', '0', 'Сумма — число больше нуля']]) {
+    const name = `till-form-${months}-${amount}`;
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash());
+    if (await toPerson(s, name) && await toForm(s, name, 'membership')) {
+      await s.p.fill('#tp-months', months);
+      await s.p.fill('#tp-amount', amount);
+      await s.p.click('[data-action="tp-send"]');
+      await s.p.waitForTimeout(150);
+      if (tillPosts(s).length || !(await s.view()).includes(want)) bad.push(`${name}: принято без «${want}»`);
+    }
+    await s.ctx.close();
+  }
+  // Приём: отказ сервера, потерянный ответ, чужая строка, карточка не перечиталась.
+  for (const [name, kind, o, want, nowant] of [
+    ['till-409', 'membership', { post: () => json(409, { detail: 'на счёте 0, не хватает 3000' }) }, ['На счёте 0, не хватает 3000'], ['Принято']],
+    ['till-lost', 'membership', { post: 'abort' }, ['Неизвестно, принято ли', 'Сверьте, прежде чем принимать снова'], ['Принято']],
+    ['till-alien', 'topup', { post: q => json(201, { id: 95, kind: 'topup', amount: '500.00', method: 'cash', member_id: 200000004, note: '' }) },
+      ['Неизвестно, принято ли'], ['Принято']],
+    // сумма и номер верные: иначе их несовпадение перекрыло бы проверку вида
+    ['till-level', 'membership', { post: q => json(201, { id: 95, kind: 'membership', amount: '3000.00', method: 'cash', member_id: PID, note: '',
+      membership: { id: 7, level: 'member', starts_at: ENDS, ends_at: ENDS } }) }, ['Неизвестно, принято ли'], ['Принято']],
+    ['till-noreread', 'topup', { refind: () => json(500, { detail: 'x' }) }, ['Принято 500', 'Остаток не перечитан — обновите карточку', 'Перечитать карточку'], []],
+    ['till-nogrow', 'topup', { after: { balance: 0 } }, ['остаток изменился не на эту сумму', 'Не вносите снова'], []]]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash(o));
+    if (await toPerson(s, name) && await toForm(s, name, kind)) {
+      if (kind === 'membership') { await s.p.fill('#tp-months', '1'); await s.p.click('[data-action="tp-level:organizer"]'); }
+      await s.p.fill('#tp-amount', kind === 'membership' ? '3000' : '500');
+      await s.p.click('[data-action="tp-send"]');
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      for (const w of want) if (!t.includes(w)) bad.push(`${name}: нет «${w}»`);
+      for (const w of nowant) if (t.includes(w)) bad.push(`${name}: есть «${w}»`);
+      // остаток — только перечитанный: прежний после приёма был бы ложью
+      if (name === 'till-noreread' && await s.p.$eval('#view .rows > div:last-child b', e => e.textContent) !== 'не перечитан')
+        bad.push('till-noreread: в строке «На счёте» прежний остаток вместо «не перечитан»');
+      if (name === 'till-409' && (await at(s) !== 'tillMembership' || (await s.p.$eval('#tp-amount', e => e.value)) !== '3000'))
+        bad.push('till-409: после отказа ушли с формы или стёрли сумму');
+    }
+    await s.ctx.close();
+  }
+  // Без права кассы — вкладки нет.
+  {
+    const plain = clone(OWNER); plain.roles = [];
+    const s = await open(true, true, json(200, plain), null, null, null, cash());
+    if (await s.p.$('#tabs [data-go="staff"]')) bad.push('till-norole: вкладка «Касса» у члена клуба без права кассы');
+    await s.ctx.close();
+  }
+
   // ── доход и расход бара ──
   // Формы ответов — снимки bar-expense и bar-income (сверка ниже, в shape).
   // Заглушка по умолчанию отвечает строкой, собранной из отправленного, —
