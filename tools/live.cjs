@@ -35,6 +35,9 @@ const OWNER = {
             pass_code: null, created_at: '2026-10-01T00:00:00+00:00',
             consent_data_at: '2026-10-18T10:00:00+00:00', consent_filming_at: null },
   membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true },
+  // все членства человека (api d0a8c9f, на бою есть; Cafe13KPG#297). Клиент
+  // их пока не читает — поле здесь, чтобы заглушка совпадала с боем по форме
+  memberships: [{ level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }],
   membership_active: true,
   balance: 3170,                      // не 1250: 1250 — демонстрационный баланс, его не спутать
   roles: [{ role: 'head', direction_id: null }, { role: 'admin', direction_id: null },
@@ -446,7 +449,7 @@ if (grantsSet.length !== 1) {
                   place: 'за стойку', pay_method: 'account', ledger_id: 41 };
   const row = st => { const r = Object.assign({}, ORDER, { state: st, member_id: 1, first_name: 'Тест', last_name: '',
     photo_url: null, accepted_at: null, ready_at: null, served_at: null,
-    items: [{ title: 'Эспрессо', price: '70.00', qty: 1 }] }); delete r.ledger_id; return r; };
+    items: [{ product_id: 11, title: 'Эспрессо', price: '70.00', qty: 1 }] }); delete r.ledger_id; return r; };
   // id 7, а не 1: так видно, что он взят с сервера, а не угадан
   // гостю — без долей направления (их видит только куратор): так отдаёт сервер
   const DIR = (open, extra) => json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: open }].concat(extra || []));
@@ -725,7 +728,7 @@ if (grantsSet.length !== 1) {
   const worker = (id, number, st, extra) => Object.assign({ id, number, state: st, place: 'к столу', pay_method: 'account',
     created_at: '2026-10-18T12:0' + id + ':00+00:00', accepted_at: null, ready_at: null, served_at: null,
     member_id: 50 + id, first_name: 'Гость' + id, last_name: '', photo_url: null,
-    items: [{ title: 'Эспрессо', qty: 2 }] }, extra);
+    items: [{ product_id: 11, title: 'Эспрессо', qty: 2 }] }, extra);
   const QUEUE = [worker(3, '261018-03', 'new', { photo_url: 'https://t.me/i/userpic/320/x.jpg' }),
                  worker(2, '261018-02', 'making'), worker(1, '261018-01', 'served')];
   const BARMAN = clone(OWNER); BARMAN.roles = [{ role: 'bar', direction_id: 7 }];
@@ -4690,24 +4693,19 @@ if (grantsSet.length !== 1) {
   const notes = [];
   const UNVERIFIED = {
     'me-member.roles': 'у вымышленного члена в снимках cafe13-api ролей нет; попросить координатора дать ему роль',
-    // ⚠ Пять строк ниже открылись 24.10.2026, когда api-keys.json пересобрали
+    // ⚠ Две строки ниже открылись 24.10.2026, когда api-keys.json пересобрали
     // после двух дней простоя (генератор падал на снимках отказов). Правка
-    // их не создала — она их ПОКАЗАЛА. Причины у них РАЗНЫЕ, и путать их
-    // нельзя: первые две про будущее, остальные три — про настоящий пробел.
+    // их не создала — она их ПОКАЗАЛА. Тогда же открылись ещё три, с другой
+    // причиной: поля на бою были, а в заглушках нет (`me-member.memberships`,
+    // `items[].product_id` у заказов гостя и работника). Их сняла правка
+    // заглушек (Cafe13KPG#297), а не выкладка — путать эти два случая нельзя.
     //
     // Впереди боя: поля завёл api 2c5735f, он НЕ предок боевого sha. Добавить
     // в фикстуру афиши — после выкладки api, не раньше: иначе батарея станет
     // требовать от клиента разбора полей, которых у человека нет. Зона
     // frontend-events-9d, третий шаг Cafe13KPG#271.
     'events-afisha[].my_booking_paid': 'поле есть в снимке, но НЕ на бою (api 2c5735f не предок боевого sha); фикстура — после выкладки, frontend-events-9d',
-    'events-afisha[].my_amount_due': 'то же: есть в снимке, нет на бою; фикстура после выкладки, frontend-events-9d',
-    // На бою ЕСТЬ (api d0a8c9f — предок боевого sha), то есть это настоящее
-    // расхождение заглушек с живым сервером, пролежавшее незамеченным два
-    // дня. Зона frontend-11, карточка Cafe13KPG#297. Исключение снимается
-    // правкой заглушек, а не выкладкой.
-    'me-member.memberships': 'на бою есть (api d0a8c9f), в заглушке нет — наряд frontend-11, Cafe13KPG#297',
-    'orders-guest[].items[].product_id': 'на бою есть (api d0a8c9f), в заглушке нет — наряд frontend-11, Cafe13KPG#297',
-    'orders-worker[].items[].product_id': 'на бою есть (api d0a8c9f), в заглушке нет — наряд frontend-11, Cafe13KPG#297'
+    'events-afisha[].my_amount_due': 'то же: есть в снимке, нет на бою; фикстура после выкладки, frontend-events-9d'
   };
   const USED = new Set();
   const STUBS = {
