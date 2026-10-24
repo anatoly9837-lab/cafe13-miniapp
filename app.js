@@ -14,7 +14,7 @@
 /* Видимая версия. Telegram держит мини-приложения в своём кэше, и «у меня
    не изменилось» без неё не отличить от «не выложено». Поднимать при каждой
    заметной правке — вместе с ?v= в index.html и в кнопке меню бота. */
-var VERSION = 'v41 · 24.10.2026';
+var VERSION = 'v42 · 24.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3086,9 +3086,11 @@ var SCREENS = {
       '</div>';
     }).join('') +
     (FLASH ? flash() : '') +
-    '<button type="button" class="btn ghost" data-action="phone">Поделиться телефоном</button>' +
+    // Кнопки «Поделиться телефоном» нет (Cafe13KPG#312): requestContact отдаёт
+    // контакт БОТУ, приложению его хранить негде, а касса по телефону не ищет.
+    // Вернётся, только если владелец решит собирать телефоны.
     '<div class="note">' + svg(ICON.info) +
-      '<span>Телефон нужен кассе, чтобы найти вас без поиска по имени. Оплата — в кассе, наличными или картой: работник отметит её, и уровень обновится здесь.</span>' +
+      '<span>Оплата — в кассе, наличными или картой: работник отметит её, и уровень обновится здесь.</span>' +
     '</div>';
   },
 
@@ -4927,7 +4929,6 @@ function doAction(a) {
     if (a === 'retry-pass') { loadPass(); render(); return; }
 
     if (a === 'scan') { scanPass(); return; }
-    if (a === 'phone') { askPhone(); return; }
     if (a === 'book' && LIVE) { bookEvent(arg); return; }
     if (a === 'event-cancel' && LIVE) { EV_ASK = true; EV_ERR = ''; haptic(); render(); return; }
     if (a === 'event-cancel-yes' && LIVE) { cancelEvent(arg); return; }
@@ -5060,19 +5061,6 @@ function scanPass() {                         // 6.4
   });
 }
 
-function askPhone() {                          // 6.9
-  if (!tgHas('6.9') || !tg.requestContact) {
-    FLASH = 'Телефон запрашивается только внутри Telegram';
-    render();
-    return;
-  }
-  tg.requestContact(function (ok) {
-    haptic(ok ? 'ok' : 'warn');
-    FLASH = { text: ok ? 'Телефон получен' : 'Без телефона тоже можно',
-              note: ok ? 'Сохранить его пока некуда: на сервере для телефона ещё нет места.' : '' };
-    render();
-  });
-}
 
 /* Черновик формы: CloudStorage, 6.9. ⚠ Он виден только этому человеку и
    не заменяет сервер — бармен в нём ничего не увидит. */
