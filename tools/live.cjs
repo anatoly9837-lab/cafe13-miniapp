@@ -4891,6 +4891,21 @@ if (grantsSet.length !== 1) {
   if ((row0('orders-curator')['?'] || []).includes('sum') || !('sum' in row0('orders-curator'))) bad.push('shape: у куратора суммы не в каждой строке');
   if ('share_club' in row0('directions-guest') || !('share_club' in row0('directions-curator'))) bad.push('shape: доли направления видны не тем');
 
+  // Контакт человека боту не уходит (Cafe13KPG#312): в исходнике нет вызова
+  // requestContact. Свойство по коду, а не слово на экране — кнопку можно
+  // назвать как угодно («Поделиться номером» — так её зовёт согласие).
+  // Предел: обращение через строку (tg['request' + 'Contact']) мимо признака.
+  {
+    const CALL = /\.requestContact\s*\(|\[\s*['"]requestContact['"]\s*\]\s*\(/;
+    for (const [t, want] of [['tg.requestContact(function (ok) {', true], ["tg['requestContact'](f)", true],
+                             ['// requestContact отдаёт контакт боту', false]])
+      if (CALL.test(t) !== want) bad.push(`самопроверка контакта: «${t}» ${want ? 'не пойман' : 'пойман зря'}`);
+    const src = fs.readFileSync(`${ROOT}/app.js`, 'utf8');
+    if (!/function render\(/.test(src)) bad.push('контакт: ПРОВЕРКА НЕ ВЫПОЛНЕНА — app.js прочитан не тот или пустой');
+    const hit = src.split('\n').findIndex(l => CALL.test(l));
+    if (hit !== -1) bad.push(`app.js:${hit + 1}: вызов requestContact — контакт человека ушёл бы боту, хранить его негде (#312)`);
+  }
+
   // Одно имя верхнего уровня — одно объявление. Повторное `function` в обычном
   // скрипте молча перекрывает прежнее, и `node --check` этого не видит: разбор
   // человека кассы однажды назвался `fromPass`, как разбор пропуска, и
