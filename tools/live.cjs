@@ -4885,6 +4885,16 @@ if (grantsSet.length !== 1) {
            предмет. */
         const donor = ELEM_FROM[path];
         if (donor) {
+          /* Донор годится только от ТОЙ ЖЕ ручки, и теперь это проверяется, а не
+             только обещается соседним комментарием: без этой строки следующая
+             запись в `ELEM_FROM` может указать на ЧУЖУЮ ручку, и сверка пройдёт по
+             чужой форме — зелёное на непроверенном. Найдено архитектором на
+             ревью #66 (не к мерджу, сделано следующим PR). Признак — поле `request`
+             самих снимков, то есть слово источника, а не догадка по имени. */
+          const self = path.split('.')[0];
+          const rqD = REAL[donor] && REAL[donor].request, rqS = REAL[self] && REAL[self].request;
+          if (!rqD || !rqS) out.push(path + ': у снимка нет поля `request` — одна ли ручка у донора и получателя, проверить нечем');
+          else if (rqD !== rqS) out.push(path + ': донор `' + donor + '` отвечает на ДРУГУЮ ручку (' + rqD + ' против ' + rqS + ') — форма была бы сверена по чужой');
           const d = REAL[donor] && REAL[donor].shape;
           const dl = d && path.split('.').slice(1).reduce((o, k) => (o || {})[k], d);
           if (!Array.isArray(dl) || !dl.length)
