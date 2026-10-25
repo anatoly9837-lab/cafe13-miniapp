@@ -337,7 +337,7 @@ function untilText(m) {
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
-              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1,
+              staff: 1, tillPerson: 1, tillBookings: 1, tillBooking: 1, tillMembership: 1, tillTopup: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -725,7 +725,7 @@ function topupSend() {
 }
 
 /* ── касса: человек по коду пропуска ────────────────────
-   Цепочка экранов (staff → tillPerson → tillMembership | tillTopup), чтобы системная
+   Цепочка экранов (staff → tillPerson → tillMembership | tillTopup | tillBookings → tillBooking), чтобы системная
    «назад» Telegram вела с формы к карточке, а с карточки — к скану: у
    вкладки staff своей записи в BACK нет, и состояние внутри одного экрана
    «назад» не получило бы вовсе (кадры E34, designer-55).
@@ -734,11 +734,11 @@ function topupSend() {
    не во флэш и не в хранилище. Репозиторий публичный — tools/ids-clean.cjs.
    Цен членства на сервере нет: сумму называет касса, подсказки нет, пока
    владелец не назовёт прейскурант. Срок — тоже касса, 1…24 по серверу. */
-var TP = { code: '', who: null, gen: 0, busy: false, deny: '', kind: '',
+var TP = { code: '', who: null, gen: 0, busy: false, deny: '', kind: '', book: null,
            level: 'member', months: '', amount: '', method: 'cash', err: '', done: null };
 
 function tillReset() {
-  TP.gen++; TP.who = null; TP.busy = false; TP.deny = ''; TP.done = null; TP.err = '';
+  TP.gen++; TP.who = null; TP.book = null; TP.busy = false; TP.deny = ''; TP.done = null; TP.err = '';
 }
 
 // Ответ by-pass → карточка. Чего не хватает — отказ целиком: человек с
@@ -754,10 +754,43 @@ function fromTillPerson(d, code) {
     if (!lifelong && !(until = ms.ends_at ? ruDate(ms.ends_at) : null)) return null;
   }
   var m = /^(?:XIII-)?(\d{4})$/.exec(code.trim().toUpperCase());
-  return { id: d.member_id,
+  return { id: d.member_id, bookings: fromTillBookings(d.bookings),
            name: [d.first_name, typeof d.last_name === 'string' ? d.last_name : ''].filter(Boolean).join(' ') || 'Без имени',
            code: m ? 'XIII-' + m[1] : code.trim().toUpperCase(),
            level: d.membership_active ? ms.level : '', until: until, lifelong: lifelong, balance: bal };
+}
+
+/* Живые записи человека из того же ответа by-pass (Cafe13KPG#275): только
+   будущие и не снятые, отбирает сервер. Карточку человека они не валят —
+   без записей касса по-прежнему продаёт членство и пополняет счёт, — но
+   три исхода различаются: список (и пустой — «записей нет»), 'absent' —
+   поля нет вовсе (сервер старше api#62), 'bad' — поле есть, форма не та.
+   Пустой список вместо двух последних сказал бы кассиру, что человек ни на
+   что не записан, то есть честное «не знаю» стало бы неправдой о человеке. */
+function fromTillBookings(v) {
+  if (v === undefined) return 'absent';
+  if (!Array.isArray(v)) return 'bad';
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    var b = v[i], due = b && num(b.amount_due), at = b && new Date(b.starts_at);
+    if (!b || typeof b !== 'object' || typeof b.event_id !== 'number' || typeof b.title !== 'string' || !b.title) return 'bad';
+    if (!KIND[b.kind] || typeof b.paid !== 'boolean' || !(due >= 0) || typeof b.starts_at !== 'string' || isNaN(at.getTime())) return 'bad';
+    var p = bkk(at), x = p.ymd.split('-');
+    var mon = MONTHS[Number(x[1]) - 1] || '';
+    out.push({ eid: b.event_id, title: b.title, kind: b.kind, due: due, paid: b.paid, time: p.hm,
+               day: Number(x[2]) + ' ' + mon.slice(0, 3), date: Number(x[2]) + ' ' + mon + ', ' + p.hm });
+  }
+  return out;
+}
+
+// Что с записью у стойки — словами кадра E35 (designer-55). Платную и
+// донейшн ещё можно оплатить; бесплатную и оплаченную — нечего, и их строки
+// не нажимаются: кнопка к верному отказу сервера обманывала бы дважды.
+function bookingOpen(b) { return !b.paid && b.kind !== 'free'; }
+function bookingSays(b) {
+  if (b.paid) return b.due > 0 ? 'Оплачено · ' + money(b.due) + ' ฿' : 'Оплачено';
+  if (b.kind === 'free') return 'Бесплатное — принимать нечего';
+  return b.kind === 'donation' ? 'Взнос добровольный' : 'Причитается ' + money(b.due) + ' ฿';
 }
 
 // Ответ сервера с текстом — текст дословно, с заглавной; иначе — код ответа.
@@ -792,8 +825,15 @@ function tillFind(code) {
   });
 }
 
-function tillOpen(kind) {
+function tillOpen(kind, book) {
   if (!TP.who) return;
+  if (kind === 'event') {
+    if (!book || !bookingOpen(book)) return;
+    TP.book = book; TP.kind = 'event';
+    TP.amount = ''; TP.err = ''; TP.deny = ''; TP.method = 'cash';
+    go('tillBooking');
+    return;
+  }
   TP.kind = kind === 'membership' ? 'membership' : 'topup';
   TP.months = ''; TP.amount = ''; TP.err = ''; TP.deny = '';
   TP.level = TP.who.level || 'member';
@@ -805,7 +845,11 @@ var PAY_HOW = { cash: 'наличными', card: 'картой', account: 'со
 
 function tillSend() {
   if (TP.busy || !TP.who) return;
-  var who = TP.who, kind = TP.kind, level = TP.level, method = TP.method, amt = topupAmount(TP.amount);
+  var who = TP.who, kind = TP.kind, level = TP.level, method = TP.method, book = TP.book;
+  if (kind === 'event' && (!book || !bookingOpen(book))) return;
+  // У платной записи сумму назначает мероприятие и сервер сверяет её до
+  // копейки: ввода нет, берётся amount_due как пришёл (кадр E35b).
+  var amt = kind === 'event' && book.kind === 'paid' ? book.due : topupAmount(TP.amount);
   var months = /^\d{1,2}$/.test(TP.months.trim()) ? Number(TP.months.trim()) : 0;
   TP.err = kind === 'membership' && (months < 1 || months > 24) ? 'Срок — целое число месяцев, от 1 до 24.'
          : amt === null ? 'Сумма — число больше нуля, например 500.' : '';
@@ -813,6 +857,7 @@ function tillSend() {
   if (TP.err) { render(); return; }
   var body = { kind: kind, amount: amt, method: method, member_id: who.id };
   if (kind === 'membership') { body.level = level; body.months = months; }
+  else if (kind === 'event') body.event_id = book.eid;
   else if (method === 'account') return;            // у пополнения этой кнопки нет
   TP.busy = true;
   render();
@@ -821,7 +866,8 @@ function tillSend() {
     if (gen !== TP.gen) return;
     var d = r.data, ms = d && d.membership;
     var ok = r.status === 201 && !!d && d.kind === kind && num(d.amount) === amt && d.member_id === who.id &&
-             (kind !== 'membership' || !!ms && ms.level === level && !!ruDate(ms.ends_at));
+             (kind !== 'membership' || !!ms && ms.level === level && !!ruDate(ms.ends_at)) &&
+             (kind !== 'event' || typeof d.booking_id === 'number');
     if (r.status !== 0 && r.status !== 201) {
       TP.busy = false; TP.deny = said(r); haptic('warn'); render(); return;
     }
@@ -836,8 +882,10 @@ function tillSend() {
         }
         TP.who = now;
         var grew = kind !== 'topup' || !rec || Math.abs(rec.balance - who.balance - amt) < 0.005;
-        TP.done = { kind: kind, text: 'Принято ' + money(amt) + ' ฿ ' + PAY_HOW[method],
-                    note: 'Строка ушла в книгу клуба. Исправить её задним числом нельзя — только отменить и внести заново.',
+        TP.done = { kind: kind, text: 'Принято ' + money(amt) + ' ฿ ' + PAY_HOW[method] + (kind === 'event' ? ' за «' + book.title + '»' : ''),
+                    // строку записи сервер не отменяет: «снимите запись — деньги вернутся вместе с ней»
+                    note: kind === 'event' ? 'Строка ушла в книгу клуба, запись отмечена оплаченной. Вернуть деньги можно, только сняв запись на мероприятие.'
+                                           : 'Строка ушла в книгу клуба. Исправить её задним числом нельзя — только отменить и внести заново.',
                     warn: grew ? '' : 'Остаток изменился не на эту сумму: было ' + money(who.balance) +
                                       ' ฿. Не вносите снова — сверьте с администратором клуба.' };
         haptic(grew ? 'ok' : 'warn');
@@ -855,19 +903,46 @@ function tillSend() {
   });
 }
 
+function tpSeg(act, list, on, lock) {
+  return list.map(function (x) {
+    return '<button type="button" data-action="' + act + ':' + x[0] + '"' + (on === x[0] ? ' aria-pressed="true"' : '') + lock + '>' + x[1] + '</button>';
+  }).join('');
+}
+
+/* Приём за запись — кадры E35b (платная) и E35v (донейшн), отказы E35d —
+   словами сервера, над кнопкой. «Со счёта» здесь есть: сервер списывает со
+   счёта любой вид, кроме пополнения. */
+function tillBookingForm() {
+  var w = TP.who, b = TP.book;
+  if (!w || TP.kind !== 'event' || !b) return '<div class="card quiet"><span class="small">Запись не выбрана.</span></div>' +
+    '<button type="button" class="btn" data-go="staff">К скану пропуска</button>';
+  var lock = TP.busy ? ' disabled' : '', paid = b.kind === 'paid';
+  return tillWho(w) +
+    '<div class="card quiet"><div class="row"><div class="col"><span class="small">За запись</span><b>' + esc(b.title) + '</b>' +
+      '<span class="small num">' + esc(b.date) + '</span></div></div></div>' +
+    (paid
+      ? '<div class="group"><span class="label">Причитается</span><div class="rows"><div><span class="small">К приёму</span>' +
+          '<b class="num">' + money(b.due) + ' ฿</b></div></div>' +
+          '<span class="small">Сумму назначает мероприятие. Частичную оплату сервер не принимает, поэтому изменить её здесь нечем.</span></div>'
+      : '<div class="field"><label for="tp-amount">Сумма взноса, ฿</label>' +
+          '<input id="tp-amount" type="text" inputmode="decimal" autocomplete="off" value="' + esc(TP.amount) + '"' + lock + '>' +
+          '<span class="small">Взнос добровольный: сумму называет человек. Сервер примет любую больше нуля.</span></div>') +
+    '<div class="group"><span class="label">Чем платят</span><div class="seg">' +
+      tpSeg('tp-method', [['cash', 'Наличные'], ['card', 'Карта'], ['account', 'Со счёта']], TP.method, lock) + '</div></div>' +
+    (TP.err ? '<span class="small" style="color:var(--clay)">' + esc(TP.err) + '</span>' : '') +
+    (TP.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TP.deny) + '</span></div>' : '') +
+    '<button type="button" class="btn" data-action="tp-send"' + lock + '>' +
+      (TP.busy ? 'Вносим…' : paid ? 'Принять ' + money(b.due) + ' ฿' : 'Принять') + '</button>';
+}
+
 function tillForm(kind) {
   var w = TP.who;
   if (!w || TP.kind !== kind) return '<div class="card quiet"><span class="small">Человек не выбран.</span></div>' +
     '<button type="button" class="btn" data-go="staff">К скану пропуска</button>';
   var lock = TP.busy ? ' disabled' : '', mem = kind === 'membership';
-  var seg = function (act, list, on) {
-    return list.map(function (x) {
-      return '<button type="button" data-action="' + act + ':' + x[0] + '"' + (on === x[0] ? ' aria-pressed="true"' : '') + lock + '>' + x[1] + '</button>';
-    }).join('');
-  };
+  var seg = function (act, list, on) { return tpSeg(act, list, on, lock); };
   var ways = [['cash', 'Наличные'], ['card', 'Карта']].concat(mem ? [['account', 'Со счёта']] : []);
-  return '<div class="card quiet"><div class="row"><div class="col"><span class="small">Кому</span><b>' + esc(w.name) + '</b></div>' +
-      '<span class="small num">' + esc(w.code) + '</span></div></div>' +
+  return tillWho(w) +
     (mem ? '<div class="group"><span class="label">Вид членства</span><div class="seg wrap">' +
              seg('tp-level', [['member', LEVEL.member], ['organizer', LEVEL.organizer], ['partner', LEVEL.partner]], TP.level) + '</div></div>' +
            '<div class="group"><span class="label">Срок</span><div class="field"><label for="tp-months">Месяцев</label>' +
@@ -881,6 +956,11 @@ function tillForm(kind) {
     (TP.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TP.deny) + '</span></div>' : '') +
     '<button type="button" class="btn" data-action="tp-send"' + lock + '>' + (TP.busy ? 'Вносим…' : 'Внести') + '</button>' +
     (mem ? '' : '<div class="note">' + svg(ICON.info) + '<span>Перевести со счёта на счёт нельзя — только наличные или карта.</span></div>');
+}
+
+function tillWho(w) {
+  return '<div class="card quiet"><div class="row"><div class="col"><span class="small">Кому</span><b>' + esc(w.name) + '</b></div>' +
+    '<span class="small num">' + esc(w.code) + '</span></div></div>';
 }
 
 function tillCard(w) {
@@ -3294,16 +3374,46 @@ var SCREENS = {
       (d ? '<button type="button" class="btn" data-action="tp-next">Следующий человек</button>' : '') +
       '<div class="group"><span class="label">' + (d ? 'Тому же человеку' : 'Что принимаем') + '</span>' +
         '<button type="button" class="btn' + again + '" data-action="tp-open:membership">Продать членство</button>' +
-        '<button type="button" class="btn ghost" data-action="tp-open:topup">Внести на счёт</button></div>' +
+        '<button type="button" class="btn ghost" data-action="tp-open:topup">Внести на счёт</button>' +
+        '<button type="button" class="btn ghost" data-go="tillBookings">Принять за запись</button></div>' +
       (d && d.kind === 'membership'
         ? '<div class="note">' + svg(ICON.info) + '<span>Отменить строку членства отсюда нельзя: «правки членства в приложении пока нет — нужен администратор клуба».</span></div>'
         : '') +
       (d ? '' : '<div class="note">' + svg(ICON.info) +
         '<span>По коду пропуска сервер отдаёт имя, членство и остаток — ни телефона, ни фотографии. Этого хватает, чтобы не внести деньги не тому, и это весь объём: ручка под ролями кассы, но данные ограничены задачей, а не ролью.</span></div>' +
         '<div class="note">' + svg(ICON.info) +
-        '<span>«Принять за запись» и «за услугу» появятся своим листом: по коду пропуска записи человека сервер пока не отдаёт, и мероприятие пришлось бы угадывать из афиши.</span></div>');
+        '<span>«Принять за услугу» здесь нет: списка услуг на сервере нет, и услугу пришлось бы угадывать.</span></div>');
   },
 
+  /* Записи человека — кадры E35 и E35g (designer-55). Нажимается строка,
+     за которую есть что принять; оплаченная и бесплатная приглушены и не
+     нажимаются, как в кадре. В разметке — номер строки, а не мероприятия. */
+  tillBookings: function () {
+    var w = TP.who;
+    if (!w) return '<div class="card quiet"><span class="small">Человек не выбран.</span></div>' +
+      '<button type="button" class="btn" data-go="staff">К скану пропуска</button>';
+    var bs = w.bookings;
+    if (!Array.isArray(bs)) return tillWho(w) +
+      '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' +
+        (bs === 'absent' ? 'Записей человека сервер пока не отдаёт. Это не «записей нет»: проверьте запись на экране мероприятия.'
+                         : 'Ответ сервера о записях не разобран. Это не «записей нет»: проверьте запись на экране мероприятия.') +
+      '</span></div>';
+    if (!bs.length) return tillWho(w) +
+      '<div class="card quiet"><div class="col"><b style="font-size:13px">Живых записей нет</b>' +
+        '<span class="small">Человек не записан ни на одно будущее мероприятие. Записывают на экране мероприятия, не здесь: касса принимает деньги за существующую запись.</span></div></div>';
+    return tillWho(w) +
+      '<div class="group"><span class="label">Живые записи</span>' +
+        bs.map(function (b, i) {
+          var row = '<span class="time"><b>' + esc(b.time) + '</b><span>' + esc(b.day) + '</span></span>' +
+            '<span class="grow"><b>' + esc(b.title) + '</b><span class="small">' + esc(bookingSays(b)) + '</span></span>';
+          return bookingOpen(b)
+            ? '<button type="button" class="listitem" data-action="tp-book:' + i + '">' + row + svg(ICON.chev, 'chev') + '</button>'
+            : '<div class="listitem" style="opacity:.62">' + row + '</div>';
+        }).join('') + '</div>' +
+      '<div class="note">' + svg(ICON.info) + '<span>Прошедших мероприятий в списке нет: ими уже не управляют. Записи приходят вместе с человеком — искать мероприятие в афише не нужно, и ошибиться записью не выйдет.</span></div>';
+  },
+
+  tillBooking: function () { return tillBookingForm(); },
   tillMembership: function () { return tillForm('membership'); },
   tillTopup: function () { return tillForm('topup'); },
 
@@ -4528,7 +4638,7 @@ var TITLES = {
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
   people: 'Люди', barCards: 'Карточки меню', barCard: 'Карточка',
-  tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт'
+  tillPerson: 'Карточка человека', tillBookings: 'За запись', tillBooking: 'За запись', tillMembership: 'Членство', tillTopup: 'На счёт'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -4561,7 +4671,7 @@ var BACK = {
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
   people: 'home',
-  tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson',
+  tillPerson: 'staff', tillBookings: 'tillPerson', tillBooking: 'tillBookings', tillMembership: 'tillPerson', tillTopup: 'tillPerson',
   barCards: function () { return homeOf(); }, barCard: 'barCards',
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
@@ -4774,7 +4884,8 @@ function doAction(a) {
     if (a === 'tp-next') { tillReset(); TP.code = ''; go('staff'); return; }
     if (a === 'tp-open') { TP.done = null; tillOpen(arg); return; }
     if (a === 'tp-level' && LEVEL[arg] && !TP.busy) { TP.level = arg; render(); return; }
-    if (a === 'tp-method' && PAY_HOW[arg] && !TP.busy && (arg !== 'account' || TP.kind === 'membership')) { TP.method = arg; render(); return; }
+    if (a === 'tp-method' && PAY_HOW[arg] && !TP.busy && (arg !== 'account' || TP.kind !== 'topup')) { TP.method = arg; render(); return; }
+    if (a === 'tp-book' && TP.who && Array.isArray(TP.who.bookings)) { TP.done = null; tillOpen('event', TP.who.bookings[Number(arg)]); return; }
     if (a === 'tp-send') { tillSend(); return; }
     if (a === 'tp-reload' && TP.who && !TP.busy) {
       TP.busy = true; render();

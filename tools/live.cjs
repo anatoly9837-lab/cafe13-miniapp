@@ -1373,6 +1373,7 @@ if (grantsSet.length !== 1) {
         const row = { id: 95, at: '2026-10-24T10:00:00+00:00', kind: x.kind, amount: Number(x.amount).toFixed(2), method: x.method,
                       member_id: x.member_id, note: '' };
         if (x.kind === 'membership') row.membership = { id: 7, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS };
+        if (x.kind === 'event') row.booking_id = 501;
         return json(201, row); } }, o);
     const st = { posted: false };
     return r => {
@@ -1490,6 +1491,152 @@ if (grantsSet.length !== 1) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (await at(s) !== 'staff') bad.push(`${name}: отказ открыл карточку`);
+    }
+    await s.ctx.close();
+  }
+  // Записи человека — кадры E35/E35g, поле bookings из by-pass (Cafe13KPG#275;
+  // форма — cafe13-api app/routers/till.py на стволе 427a94c, на бою fa2cebc
+  // поля ещё нет). Суммы приходят строкой. Три исхода не сливаются: список,
+  // пустой список («записей нет») и отсутствие поля («сервер не отдаёт») —
+  // пустой список вместо «не отдаёт» был бы неправдой о человеке.
+  const BOOKINGS = [
+    { event_id: 31, title: 'Звуковая практика', starts_at: '2026-12-05T12:00:00+00:00', kind: 'paid', amount_due: '300.00', paid: false },
+    { event_id: 32, title: 'Чайная церемония', starts_at: '2026-12-06T03:00:00+00:00', kind: 'donation', amount_due: '0.00', paid: false },
+    { event_id: 33, title: 'Разговорный круг', starts_at: '2026-12-07T11:30:00+00:00', kind: 'paid', amount_due: '1500.00', paid: true },
+    { event_id: 34, title: 'Утренняя практика', starts_at: '2026-12-09T05:00:00+00:00', kind: 'free', amount_due: '0.00', paid: false }];
+  for (const [name, extra, want, never] of [
+    ['till-bookings', { bookings: BOOKINGS }, null, ['Живых записей нет', 'не отдаёт', 'не разобран']],
+    ['till-bookings-none', { bookings: [] }, ['Живых записей нет'], ['Живые записи', 'не отдаёт', 'не разобран']],
+    ['till-bookings-absent', {}, ['Записей человека сервер пока не отдаёт'], ['Живых записей нет', 'Живые записи']],
+    ['till-bookings-bad', { bookings: [Object.assign({}, BOOKINGS[0], { paid: 'нет' })] },
+      ['Ответ сервера о записях не разобран'], ['Живых записей нет', 'Живые записи']],
+    ['till-bookings-kind', { bookings: [Object.assign({}, BOOKINGS[0], { kind: 'paid_later' })] },
+      ['Ответ сервера о записях не разобран'], ['Живых записей нет', 'Живые записи']]]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      cash({ find: () => json(200, Object.assign({}, PERSON, extra)) }));
+    if (await toPerson(s, name)) {
+      // карточка человека от записей не зависит: без них касса работает как прежде
+      if (await at(s) !== 'tillPerson') bad.push(`${name}: записи свалили карточку человека`);
+      else if (!(await s.p.$('[data-go="tillBookings"]'))) bad.push(`${name}: на карточке нет пути к записям`);
+      else {
+        await s.p.click('[data-go="tillBookings"]');
+        await s.p.waitForTimeout(100);
+        const t = await s.view();
+        if (await at(s) !== 'tillBookings') bad.push(`${name}: записи не на своём экране`);
+        else if (!t.includes('Пробный Гость') || !t.includes('XIII-0042')) bad.push(`${name}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — на экране записей нет «Кому»`);
+        else {
+          if (!(await s.p.evaluate(() => document.getElementById('title').textContent === 'За запись')))
+            bad.push(`${name}: в шапке нет «За запись»`);
+          if (await s.p.evaluate(() => backTo()) !== 'tillPerson') bad.push(`${name}: «назад» с записей ведёт не к карточке`);
+          for (const w of want || []) if (!t.includes(w)) bad.push(`${name}: нет «${w}»`);
+          for (const w of never) if (t.includes(w)) bad.push(`${name}: лишнее «${w}»`);
+          if (name === 'till-bookings') {
+            // строки по порядку сервера; время и дата — по острову
+            const rows = await s.p.$$eval('#view .listitem', l => l.map(e =>
+              e.innerText.replace(/\s+/g, ' ').trim() + (getComputedStyle(e).opacity < 1 ? ' [тихо]' : '')));
+            const ok = ['19:00 5 дек Звуковая практика Причитается 300 ฿', '10:00 6 дек Чайная церемония Взнос добровольный',
+                        '18:30 7 дек Разговорный круг Оплачено · 1 500 ฿ [тихо]', '12:00 9 дек Утренняя практика Бесплатное — принимать нечего [тихо]'];
+            if (JSON.stringify(rows.map(r => r.toLowerCase())) !== JSON.stringify(ok.map(r => r.toLowerCase())))
+              bad.push(`${name}: строки ${JSON.stringify(rows)}, ждали ${JSON.stringify(ok)}`);
+            // нажимаются ровно те, за которые есть что принять: оплаченная и
+            // бесплатная вели бы к верному отказу сервера
+            const live = await s.p.$$eval('#view .listitem', l => l.map((e, i) =>
+              e.matches('button, a, [data-action], [data-go]') || e.querySelector('button, a, [data-action], [data-go]') ? i : -1).filter(i => i >= 0));
+            if (JSON.stringify(live) !== '[0,1]') bad.push(`${name}: нажимаются строки ${JSON.stringify(live)}, ждали [0,1]`);
+            await s.p.screenshot({ path: `${OUT}/live-till-bookings.png`, fullPage: true });
+          }
+          if (await leak(s)) bad.push(`${name}: номер человека попал в разметку или хранилище`);
+        }
+      }
+    }
+    if (s.errs.length) bad.push(`${name}: ошибки страницы ` + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Приём за запись — кадры E35b (платная: суммы не ввести), E35v (донейшн:
+  // сумма вводится), отказы E35d — словами сервера. POST /till kind=event на
+  // боевом fa2cebc отвечает строкой книги с booking_id.
+  async function toTillBook(s, name, i) {
+    if (!(await toPerson(s, name))) return false;
+    if (!(await s.p.$('[data-go="tillBookings"]'))) { bad.push(`${name}: на карточке нет «Принять за запись»`); return false; }
+    await s.p.click('[data-go="tillBookings"]');
+    await s.p.waitForTimeout(100);
+    if (!(await s.p.$(`[data-action="tp-book:${i}"]`))) { bad.push(`${name}: строка записи ${i} не нажимается`); return false; }
+    await s.p.click(`[data-action="tp-book:${i}"]`);
+    await s.p.waitForTimeout(100);
+    if (await at(s) !== 'tillBooking') { bad.push(`${name}: приём за запись не на своём экране`); return false; }
+    return true;
+  }
+  const BOOKED = () => json(200, Object.assign({}, PERSON, { bookings: BOOKINGS }));
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      cash({ find: BOOKED, after: { bookings: [Object.assign({}, BOOKINGS[0], { paid: true })].concat(BOOKINGS.slice(1)) } }));
+    if (await toTillBook(s, 'till-book-paid', 0)) {
+      let t = await s.view();
+      if (await s.p.evaluate(() => backTo()) !== 'tillBookings') bad.push('till-book-paid: «назад» с приёма ведёт не к записям');
+      if (!(await s.p.evaluate(() => document.getElementById('title').textContent === 'За запись'))) bad.push('till-book-paid: в шапке нет «За запись»');
+      if (await s.p.$('#tp-amount')) bad.push('till-book-paid: у платной записи поле суммы — сервер не примет частичную');
+      for (const w of ['Звуковая практика', '5 декабря, 19:00', 'К приёму', '300 ฿', 'Частичную оплату сервер не принимает', 'Принять 300 ฿', 'Со счёта'])
+        if (!t.includes(w)) bad.push(`till-book-paid: нет «${w}»`);
+      await s.p.click('[data-action="tp-method:card"]');
+      await s.p.screenshot({ path: `${OUT}/live-till-book.png`, fullPage: true });
+      await s.p.click('[data-action="tp-send"]');
+      await s.p.waitForTimeout(400);
+      const tp = tillPosts(s);
+      if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'event', amount: 300, method: 'card', member_id: PID, event_id: 31 }))
+        bad.push('till-book-paid: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
+      t = await s.view();
+      if (await at(s) !== 'tillPerson') bad.push('till-book-paid: итог не на карточке человека');
+      for (const w of ['Принято 300 ฿ картой за «Звуковая практика»', 'запись отмечена оплаченной'])
+        if (!t.includes(w)) bad.push(`till-book-paid: на итоге нет «${w}»`);
+      if (t.includes('Неизвестно')) bad.push('till-book-paid: принятое названо неизвестным');
+      if (finds(s).length !== 2) bad.push(`till-book-paid: карточка после приёма не перечитана (запросов by-pass: ${finds(s).length})`);
+      await s.p.click('[data-go="tillBookings"]');
+      await s.p.waitForTimeout(100);
+      if (!(await s.view()).includes('Оплачено · 300 ฿')) bad.push('till-book-paid: в перечитанных записях оплата не видна');
+      if (await leak(s)) bad.push('till-book-paid: номер человека попал в разметку или хранилище');
+    }
+    if (s.errs.length) bad.push('till-book-paid: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  {
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: BOOKED }));
+    if (await toTillBook(s, 'till-book-gift', 1)) {
+      const t = await s.view();
+      for (const w of ['Чайная церемония', 'Сумма взноса', 'Взнос добровольный']) if (!t.includes(w)) bad.push(`till-book-gift: нет «${w}»`);
+      if (await s.p.$eval('#tp-amount', e => e.value + e.placeholder) !== '') bad.push('till-book-gift: в поле взноса что-то стоит до ввода');
+      await s.p.click('[data-action="tp-send"]');
+      await s.p.waitForTimeout(100);
+      if (tillPosts(s).length) bad.push('till-book-gift: пустой взнос ушёл на сервер');
+      await s.p.fill('#tp-amount', '250');
+      await s.p.click('[data-action="tp-method:account"]');
+      await s.p.click('[data-action="tp-send"]');
+      await s.p.waitForTimeout(400);
+      const tp = tillPosts(s);
+      if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'event', amount: 250, method: 'account', member_id: PID, event_id: 32 }))
+        bad.push('till-book-gift: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
+      if (!(await s.view()).includes('Принято 250 ฿ со счёта за «Чайная церемония»')) bad.push('till-book-gift: нет итога');
+    }
+    await s.ctx.close();
+  }
+  // Отказы — дословно с сервера (fa2cebc, till.py), над кнопкой, человек остаётся на приёме.
+  for (const [name, post, want] of [
+    ['till-book-409', () => json(409, { detail: 'за эту запись причитается 300.00, принесено 300: частичную оплату мы пока не умеем' }),
+     'За эту запись причитается 300.00, принесено 300: частичную оплату мы пока не умеем'],
+    ['till-book-gone', () => json(409, { detail: 'у человека нет живой записи на это мероприятие: запишите его и повторите приём' }),
+     'У человека нет живой записи на это мероприятие: запишите его и повторите приём'],
+    ['till-book-noid', q => { const x = JSON.parse(q.postData());
+       return json(201, { id: 96, at: '2026-10-24T10:00:00+00:00', kind: 'event', amount: Number(x.amount).toFixed(2), method: x.method, member_id: x.member_id, note: '' }); },
+     'Неизвестно, принято ли']]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: BOOKED, post }));
+    if (await toTillBook(s, name, 0)) {
+      await s.p.click('[data-action="tp-send"]');
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+      if (name !== 'till-book-noid') {
+        if (await at(s) !== 'tillBooking') bad.push(`${name}: отказ увёл с приёма`);
+        if (t.includes('Принято')) bad.push(`${name}: отказ назван приёмом`);
+      }
     }
     await s.ctx.close();
   }
