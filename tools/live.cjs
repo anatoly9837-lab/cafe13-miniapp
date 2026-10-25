@@ -1588,6 +1588,10 @@ if (grantsSet.length !== 1) {
       if (await at(s) !== 'tillPerson') bad.push('till-book-paid: итог не на карточке человека');
       for (const w of ['Принято 300 ฿ картой за «Звуковая практика»', 'запись отмечена оплаченной'])
         if (!t.includes(w)) bad.push(`till-book-paid: на итоге нет «${w}»`);
+      // возврата за запись на бою нет: снятие записи книгу не трогает, строка
+      // кассы после снятия по-прежнему не отменяется (fa2cebc) — обещать нечего
+      if (t.includes('запись отмечена оплаченной') && /верн[уё]\S* деньги|деньги верн/i.test(t))
+        bad.push('till-book-paid: итог обещает возврат денег, которого сервер не делает');
       if (t.includes('Неизвестно')) bad.push('till-book-paid: принятое названо неизвестным');
       if (finds(s).length !== 2) bad.push(`till-book-paid: карточка после приёма не перечитана (запросов by-pass: ${finds(s).length})`);
       await s.p.click('[data-go="tillBookings"]');
@@ -1626,13 +1630,15 @@ if (grantsSet.length !== 1) {
      'У человека нет живой записи на это мероприятие: запишите его и повторите приём'],
     ['till-book-noid', q => { const x = JSON.parse(q.postData());
        return json(201, { id: 96, at: '2026-10-24T10:00:00+00:00', kind: 'event', amount: Number(x.amount).toFixed(2), method: x.method, member_id: x.member_id, note: '' }); },
-     'Неизвестно, принято ли']]) {
+     'Второй раз не принимайте']]) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: BOOKED, post }));
     if (await toTillBook(s, name, 0)) {
       await s.p.click('[data-action="tp-send"]');
       await s.p.waitForTimeout(400);
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+      // 201 — деньги уже в книге: «неизвестно, принято ли» звало бы принять второй раз
+      if (name === 'till-book-noid' && t.includes('Неизвестно')) bad.push(`${name}: проведённый платёж назван неизвестным`);
       if (name !== 'till-book-noid') {
         if (await at(s) !== 'tillBooking') bad.push(`${name}: отказ увёл с приёма`);
         if (t.includes('Принято')) bad.push(`${name}: отказ назван приёмом`);
