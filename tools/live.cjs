@@ -2362,6 +2362,72 @@ if (grantsSet.length !== 1) {
     return s;
   };
 
+  /* Кнопка, которая не делает НИЧЕГО, — дефект (Cafe13KPG#338), и ловиться он
+     обязан прибором: «Отменить запись» на экране записей нашлась у меня попутно,
+     когда я искал другое, и лежала там не один день.
+
+     Приговор выносит ОТРИСОВАННЫЙ экран, а не поиск по исходнику, и причина не
+     в строгости: делегирование читает `closest(…)`, то есть атрибут бывает на
+     ОБЁРТКЕ. Поиск по тексту ошибается в обе стороны — называет живые (атрибут
+     на обёртке; `#back` со своим слушателем) и молчит о тех, кого на экране нет
+     вовсе (пункт услуг рисуется из `DATA.services`, а они пусты с #69).
+
+     Селектор берётся ИЗ САМОГО обработчика: тринадцать атрибутов, переписанные
+     сюда руками, разойдутся с кодом молча — и разойдутся в сторону зелёного.
+
+     Экран кассы не моя зона: его четыре кнопки перечислены и переданы владельцу
+     зоны, поэтому стоят ИМЕНОВАННЫМ исключением. Исключение по ИМЕНИ, а не по
+     экрану: новая мёртвая кнопка на кассе покраснеет. И оно обязано истечь —
+     если названной кнопки больше нет, случай требует убрать строку. */
+  {
+    const m = src.match(/closest\('(\[data-[^']+)'\)/);
+    if (!m) bad.push('knopki-bez-dela: селектор делегирования в app.js не найден — признак строить не из чего');
+    else {
+      const SEL = m[1];
+      const IZVESTNYE = new Map([
+        ['staff | Членство', 'Cafe13KPG#338, зона кассы'],
+        ['staff | На баланс', 'Cafe13KPG#338, зона кассы'],
+        ['staff | Событие', 'Cafe13KPG#338, зона кассы'],
+        ['staff | Отменить', 'Cafe13KPG#338, зона кассы']
+      ]);
+      const s = await open(false, true, json(200, OWNER), null, null, null, null, null, NOWFIX);
+      const imena = await s.p.evaluate(() => Object.keys(window.SCREENS || {}));
+      if (imena.length < 20)
+        bad.push(`knopki-bez-dela: реестр экранов дал ${imena.length} имён — прибор смотрит не туда`);
+      const vidal = new Set();
+      for (const rol of ['guest', 'member', 'organizer', 'partner', 'staff', 'curator']) {
+        for (const im of imena) {
+          await s.p.evaluate(([r, n]) => { DATA.role = r; go(n); }, [rol, im]);
+          await s.p.waitForTimeout(20);
+          const tek = await s.p.evaluate(() => current);
+          const mert = await s.p.evaluate((sel) => {
+            const out = [];
+            document.querySelectorAll('#view button, #tabs button').forEach(b => {
+              if (b.closest(sel) || b.onclick || b.disabled || b.id) return;
+              out.push((b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40));
+            });
+            return out;
+          }, SEL);
+          mert.forEach(t => vidal.add(tek + ' | ' + t));
+        }
+      }
+      vidal.forEach(k => {
+        if (IZVESTNYE.has(k)) return;
+        const [ekran, tekst] = k.split(' | ');
+        bad.push(`knopki-bez-dela: кнопка «${tekst}» на экране «${ekran}» не делает НИЧЕГО — ни атрибута делегирования на ней или обёртке, ни своего слушателя (Cafe13KPG#338)`);
+      });
+      // Положительный контроль и срок годности исключения разом: названная
+      // кнопка обязана находиться. Не находится — либо она починена (убрать
+      // строку), либо прибор ослеп, и тогда зелёное ничего не значит.
+      IZVESTNYE.forEach((pochemu, k) => {
+        if (!vidal.has(k))
+          bad.push(`knopki-bez-dela: исключение «${k}» (${pochemu}) БОЛЬШЕ НЕ НАХОДИТСЯ — либо кнопка ожила и строку надо убрать, либо прибор перестал видеть`);
+      });
+      if (s.errs.length) bad.push('knopki-bez-dela: ошибки страницы ' + s.errs.join('; '));
+      await s.ctx.close();
+    }
+  }
+
   /* Текст принят командой ДОСЛОВНО, поэтому и сторожится целиком, а не по
      словам: «почти тот же смысл» здесь не годится — редакция уже менялась за
      один день, и прежняя успела уехать в опись. И вторая половина случая —
