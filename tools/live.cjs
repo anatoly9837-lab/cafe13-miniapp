@@ -522,19 +522,13 @@ if (grantsSet.length !== 1) {
     const m = src.match(/байк|массаж|Доставка воды|Помощь на дороге/i);
     if (m) bad.push(`demo-services: в клиенте выдуманная услуга «${m[0]}»`);
   }
-  // Демо кассы: каждая кнопка что-то делает (Cafe13KPG#338). Селектор берётся
-  // из делегата кликов в app.js; кнопка без его атрибута нажимается впустую.
+  // Демо кассы не советует отменить строку: кнопки отмены в приложении нет
+  // (Cafe13KPG#340). Мёртвые кнопки демо судит knopki-bez-dela.
   {
-    const q = (fs.readFileSync(`${ROOT}/app.js`, 'utf8').match(/ev\.target\.closest\('([^']+)'\)/) || [])[1];
     const s = await open(true, false, json(200, OWNER), null, null, null);
-    const d = !q ? null : await s.p.evaluate(q => {
-      const w = document.createElement('div'); w.innerHTML = SCREENS.staff();
-      return { t: w.textContent, dead: [...w.querySelectorAll('button')].filter(x => !x.closest(q)).map(x => x.textContent.trim()) };
-    }, q);
-    if (!q) bad.push('demo-staff: ПРОВЕРКА НЕ ВЫПОЛНЕНА — в app.js не найден селектор делегата кликов');
-    else if (!d.t.includes('Внесено за смену')) bad.push('demo-staff: ПРОВЕРКА НЕ ВЫПОЛНЕНА — демонстрация кассы не отрисована, судить кнопки не о чем');
-    else if (d.dead.length) bad.push(`demo-staff: на кассе кнопки без действия: ${JSON.stringify(d.dead)}`);
-    if (d && /только отменить/.test(d.t)) bad.push('demo-staff: демонстрация советует отменить строку — кнопки отмены в приложении нет (Cafe13KPG#340)');
+    const t = await s.p.evaluate(() => { const w = document.createElement('div'); w.innerHTML = SCREENS.staff(); return w.textContent; });
+    if (!t.includes('Внесено за смену')) bad.push('demo-staff: ПРОВЕРКА НЕ ВЫПОЛНЕНА — демонстрация кассы не отрисована, судить текст не о чем');
+    else if (/только отменить/.test(t)) bad.push('demo-staff: демонстрация советует отменить строку — кнопки отмены в приложении нет (Cafe13KPG#340)');
     await s.ctx.close();
   }
   // /pass без даты и без lifelong — не пропуск (пустая дата законна только при lifelong: true).
@@ -2397,18 +2391,31 @@ if (grantsSet.length !== 1) {
      Экран кассы не моя зона: его четыре кнопки перечислены и переданы владельцу
      зоны, поэтому стоят ИМЕНОВАННЫМ исключением. Исключение по ИМЕНИ, а не по
      экрану: новая мёртвая кнопка на кассе покраснеет. И оно обязано истечь —
-     если названной кнопки больше нет, случай требует убрать строку. */
+     если названной кнопки больше нет, случай требует убрать строку.
+
+     Кнопки кассы ожили (#77), список исключений пуст — и положительного
+     контроля он больше не держит. Его держит ЗОНД: на экране ZOND_EKRAN,
+     внутри того же шага обхода (после роли и go(), перед съёмом), в #view
+     кладётся кнопка без атрибутов и слушателя, и ТОТ ЖЕ вызов детектора
+     обязан назвать её ровно один раз. Не найдена — значит не сработал обход,
+     роль, реестр или детектор, и зелёное ничего не значит. Зонд снимается в
+     том же шаге и в отказы не попадает. */
   {
     const m = src.match(/closest\('(\[data-[^']+)'\)/);
     if (!m) bad.push('knopki-bez-dela: селектор делегирования в app.js не найден — признак строить не из чего');
     else {
       const SEL = m[1];
-      const IZVESTNYE = new Map([
-        ['staff | Членство', 'Cafe13KPG#338, зона кассы'],
-        ['staff | На баланс', 'Cafe13KPG#338, зона кассы'],
-        ['staff | Событие', 'Cafe13KPG#338, зона кассы'],
-        ['staff | Отменить', 'Cafe13KPG#338, зона кассы']
-      ]);
+      const IZVESTNYE = new Map([]);
+      const ZOND = 'zond-338-knopka', ZOND_ROL = 'member', ZOND_EKRAN = 'home';
+      const mertvye = (sel) => s.p.evaluate((sel) => {
+        const out = [];
+        document.querySelectorAll('#view button, #tabs button').forEach(b => {
+          if (b.closest(sel) || b.onclick || b.disabled || b.id) return;
+          out.push((b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40));
+        });
+        return out;
+      }, sel);
+      let zond = null;
       const s = await open(false, true, json(200, OWNER), null, null, null, null, null, NOWFIX);
       const imena = await s.p.evaluate(() => Object.keys(window.SCREENS || {}));
       if (imena.length < 20)
@@ -2419,15 +2426,17 @@ if (grantsSet.length !== 1) {
           await s.p.evaluate(([r, n]) => { DATA.role = r; go(n); }, [rol, im]);
           await s.p.waitForTimeout(20);
           const tek = await s.p.evaluate(() => current);
-          const mert = await s.p.evaluate((sel) => {
-            const out = [];
-            document.querySelectorAll('#view button, #tabs button').forEach(b => {
-              if (b.closest(sel) || b.onclick || b.disabled || b.id) return;
-              out.push((b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40));
-            });
-            return out;
-          }, SEL);
-          mert.forEach(t => vidal.add(tek + ' | ' + t));
+          const zdes = rol === ZOND_ROL && im === ZOND_EKRAN && tek === ZOND_EKRAN;
+          if (zdes) await s.p.evaluate((z) => {
+            const b = document.createElement('button'); b.type = 'button'; b.textContent = z;
+            document.getElementById('view').appendChild(b);
+          }, ZOND);
+          const mert = await mertvye(SEL);
+          if (zdes) {
+            zond = mert.filter(t => t === ZOND).length;
+            await s.p.evaluate((z) => document.querySelectorAll('#view button').forEach(b => { if (b.textContent === z) b.remove(); }), ZOND);
+          }
+          mert.filter(t => t !== ZOND).forEach(t => vidal.add(tek + ' | ' + t));
         }
       }
       vidal.forEach(k => {
@@ -2442,6 +2451,8 @@ if (grantsSet.length !== 1) {
         if (!vidal.has(k))
           bad.push(`knopki-bez-dela: исключение «${k}» (${pochemu}) БОЛЬШЕ НЕ НАХОДИТСЯ — либо кнопка ожила и строку надо убрать, либо прибор перестал видеть`);
       });
+      if (zond !== 1)
+        bad.push(`knopki-bez-dela: ПРОВЕРКА НЕ ВЫПОЛНЕНА — зонд на «${ZOND_EKRAN}» (${ZOND_ROL}) назван ${zond === null ? 'не был: обход до экрана не дошёл' : zond + ' раз(а), ждали 1'} — обход, роль, реестр или детектор ослепли, зелёное ничего не значит`);
       if (s.errs.length) bad.push('knopki-bez-dela: ошибки страницы ' + s.errs.join('; '));
       await s.ctx.close();
     }
