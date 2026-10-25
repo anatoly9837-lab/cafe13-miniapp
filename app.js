@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v44 · 24.10.2026';
+var VERSION = 'v45 · 25.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -334,7 +334,7 @@ function untilText(m) {
 // `membership` нет нарочно: экран обещал суммы-заглушки в скобках, кнопки
 // без действия и путь через кассу, который новичку сегодня не пройти
 // (Cafe13KPG#301). Вернётся кадром E38 после слова владельца.
-var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1,
+var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
               staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1,
@@ -2954,7 +2954,11 @@ var ICON = {
   bell: '<path d="M18.5 16.5h-13L7 14.1V10a5 5 0 0110 0v4.1z"/><path d="M10 19.5a2 2 0 004 0"/>',
   chart:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
   coin: '<ellipse cx="12" cy="7" rx="8" ry="3.2"/><path d="M4 7v10c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V7"/><path d="M4 12.2c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2"/>',
-  chev: '<path d="M9 6l6 6-6 6"/>'
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  // Та же стрелка, что у кнопки «Назад» в шапке (`index.html`): у подписи
+  // «Назад» стрелка вперёд читается как «дальше», и увидеть это можно только
+  // ОТРИСОВАННЫМ — в исходнике `ICON.chev` ничем себя не выдаёт.
+  chevBack: '<path d="M15 6l-6 6 6 6"/>'
 };
 function svg(paths, cls) { return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + paths + '</svg>'; }
 
@@ -2978,6 +2982,65 @@ function pattern(seed) {
 }
 
 /* ── экраны ──────────────────────────────────────────── */
+
+/* Кабинет мастера в ЖИВОМ режиме (Cafe13KPG#98). Кормится из той же
+   афиши, что и обзор: отбора «только мои» на сервере нет, и «своё» считается
+   по `organizer_id` против своего tg id (`isMyEvent`). Второго запроса нет
+   нарочно: два источника одного списка расходятся молча.
+
+   Что здесь ЕСТЬ и чего НЕТ — сказано строками на экране, а не умолчанием:
+   - правки мероприятия на сервере НЕТ вовсе (замер: `^@router\.(patch|put)`
+     в `app/routers/events.py` на блобе боевого `fa2cebc` → 0 при контроле
+     `^@router\.post` → 4), поэтому кнопки «править» нет и не будет, пока нет ручки;
+   - прошедшие свои сюда НЕ идут: это архив, карточка #265, и владелец её
+     не открывал. Афиша прошедшего не отдаёт ни при каких параметрах;
+   - управление ОДНИМ мероприятием здесь НЕ дублируется: пункт ведёт на
+     живую карточку, где `manageBlock` уже даёт список записавшихся и отмену
+     со своим гардом. Демонстрационный `eventManage` в живой режим не
+     подключается именно поэтому.
+
+   ⚠ И про деньги: сумма по платным — СЧЁТ ПО ЗАПИСЯМ, а не собранное:
+   оплата идёт через кассу, и признака оплаты в строке афиши нет вовсе.
+   Подпись поэтому «Если все заплатят», а не «Соберёте»: второе читалось бы
+   как факт о деньгах, которых ещё нет. Кто заплатил поимённо — на карточке. */
+function organizerLive() {
+  var list = eventList();
+  if (!list) return eventsWait();
+  var mine = list.filter(isMyEvent);
+  var signed = 0, seats = 0, dueIfPaid = 0;
+  mine.forEach(function (e) {
+    var t = e.of - e.seats;
+    signed += t; seats += e.of;
+    if (e.kind === 'paid') dueIfPaid += t * e.price;
+  });
+  return (FLASH ? flash() : '') +
+    '<div class="group"><span class="label">Ваши мероприятия впереди</span>' +
+      '<div class="rows">' +
+        '<div><span class="small">Событий</span><b class="num">' + mine.length + '</b></div>' +
+        '<div><span class="small">Записалось</span><b class="num">' + signed + ' из ' + seats + '</b></div>' +
+        '<div><span class="small">Наполненность</span><b class="num">' +
+          (seats ? Math.round(signed / seats * 100) : 0) + ' %</b></div>' +
+        '<div><span class="small">Если все заплатят</span><b class="num">' + money(dueIfPaid) + ' ฿</b></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="group"><span class="label">Свои в афише</span>' +
+      (mine.length ? mine.map(function (e) {
+        return '<button type="button" class="listitem" data-event="' + esc(e.id) + '">' +
+          '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.day.split(',')[0]) + '</span></span>' +
+          '<span class="grow"><b>' + esc(e.title) + '</b>' +
+          '<span class="small">записалось ' + (e.of - e.seats) + ' из ' + e.of +
+            (e.part === 'идёт' ? ' · идёт' : '') + '</span></span>' +
+          svg(ICON.chev, 'chev') + '</button>';
+      }).join('')
+      : '<div class="card quiet"><span class="small">Своих мероприятий впереди нет.</span></div>') +
+    '</div>' +
+    (mayCreateEvent() ? '<button type="button" class="btn" data-go="eventNew">' +
+      svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' : '') +
+    '<button type="button" class="btn ghost" data-go="events">' + svg(ICON.chevBack) + 'Назад к афише</button>' +
+    '<div class="note">' + svg(ICON.info) +
+      '<span>Список записавшихся и отмена — внутри мероприятия. Изменить назначенное нельзя: сервер правки не умеет, можно только снять.</span>' +
+    '</div>';
+}
 
 var SCREENS = {
 
@@ -3151,7 +3214,15 @@ var SCREENS = {
       // Вход в форму стоит у того, кто имеет право завести: гостю кнопка не
       // показывается вовсе, а не отказывает по нажатию.
       (mayCreateEvent() ? '<button type="button" class="btn" data-go="eventNew">' +
-        svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' : '');
+        svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' : '') +
+      /* Переключатель в режим управления стоит ЗДЕСЬ, а не отдельной
+         вкладкой: решение владельца 21.10.2026 — вкладка становится «двойной»,
+         из обзора переход в администрирование (`_docs/STAGE.md` в стволе
+         Cafe13KPG, со слов координатора — первоисточник в шлюзе не поднимается).
+         Право то же, что у формы: кто не может завести, тому и управлять нечем,
+         и кнопки он не видит вовсе, а не получает отказ по нажатию. */
+      (mayCreateEvent() ? '<button type="button" class="btn ghost" data-go="organizer">' +
+        svg(ICON.star) + 'Управление своими</button>' : '');
   },
 
   event: function (id) {
@@ -3308,6 +3379,7 @@ var SCREENS = {
   tillTopup: function () { return tillForm('topup'); },
 
   organizer: function () {
+    if (LIVE) return organizerLive();
     var signed = DATA.myEvents.reduce(function (a, e) { return a + e.signed; }, 0);
     var seats = DATA.myEvents.reduce(function (a, e) { return a + e.of; }, 0);
     var due = DATA.myEvents.reduce(function (a, e) {

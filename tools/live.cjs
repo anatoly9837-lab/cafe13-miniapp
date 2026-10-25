@@ -3637,6 +3637,99 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  /* ── кабинет мастера в ЖИВОМ режиме (Cafe13KPG#98) ──
+     До этого PR экран `organizer` в `WIRED` не входил и на бою не открывался
+     вовсе; теперь он кормится из той же афиши, что и обзор. Фикстура даёт ТРИ
+     строки: две свои (платная с двумя записями и бесплатная с одной) и одну
+     ЧУЖУЮ — без чужой строки проверка «только свои» была бы зелёной при
+     любом отборе, и это условие случая, а не украшение. */
+  {
+    const org = clone(OWNER); org.roles = []; org.membership.level = 'organizer';
+    const MOI = [
+      EV({ id: 21, title: 'Своё платное', organizer_id: 1, starts_at: atBkk(1, 19),
+           kind: 'paid', price: '400.00', seats: 10, taken: 2, seats_left: 8 }),
+      EV({ id: 22, title: 'Своё бесплатное', organizer_id: 1, starts_at: atBkk(2, 11),
+           kind: 'free', price: '0.00', seats: 5, taken: 1, seats_left: 4 }),
+      EV({ id: 23, title: 'Чужое вечером', organizer_id: 500, starts_at: atBkk(1, 20) })
+    ];
+    const openKab = async (me, reply) => {
+      const s = await open(true, true, me, null, null, null,
+                           chainQ(evReply(reply || json(200, MOI)), placesReply()), null, NOWFIX);
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(150);
+      return s;
+    };
+
+    // Кнопка перехода есть у того, кто вправе завести, и она ведёт в кабинет.
+    {
+      const s = await openKab(json(200, org));
+      if (!(await s.p.$('[data-go="organizer"]'))) {
+        bad.push('kabinet-vhod: кнопки «Управление своими» нет у того, кто вправе завести — кабинет открывать нечем');
+      } else {
+        await s.p.click('[data-go="organizer"]');
+        await s.p.waitForTimeout(150);
+        const t = await s.view();
+        if (t.includes('ещё не подключено'))
+          bad.push('kabinet-vhod: кабинет в живом режиме говорит «ещё не подключено» — экрана нет в WIRED');
+        else if (!t.includes('Ваши мероприятия впереди'))
+          bad.push(`kabinet-vhod: кабинет не открылся: «${t.slice(0, 140)}»`);
+        else {
+          // Картинка здесь не украшение: кабинет живого режима в опись не
+          // попадает (она снимается вне Telegram), и посмотреть на него
+          // отрисованным больше негде. Стрелку «Назад», смотревшую вперёд,
+          // нашли именно так.
+          await s.p.screenshot({ path: `${OUT}/live-kabinet.png`, fullPage: true });
+          // ТОЛЬКО СВОИ: чужое мероприятие в кабинет не попадает.
+          ['Своё платное', 'Своё бесплатное'].forEach(x => {
+            if (!t.includes(x)) bad.push(`kabinet-svoi: своего мероприятия «${x}» в кабинете нет`); });
+          if (t.includes('Чужое вечером'))
+            bad.push('kabinet-svoi: в кабинете ЧУЖОЕ мероприятие — «своё» считается не по organizer_id');
+          // ЧИСЛА из живых строк, а не из демонстрации: 2 события, 3 из 15, 20 %.
+          ['3 из 15', '20 %'].forEach(x => {
+            if (!t.includes(x)) bad.push(`kabinet-chisla: нет «${x}» — числа считаются не из живых строк: «${t.slice(0, 200)}»`); });
+          // Деньги — СЧЁТ ПО ЗАПИСЯМ: 2 записи × 400 = 800, и подпись не о собранном.
+          if (!t.includes('Если все заплатят'))
+            bad.push('kabinet-dengi: сумма по платным не названа предположением');
+          if (/Соберёте/.test(t))
+            bad.push('kabinet-dengi: «Соберёте» читается как факт о деньгах, а признака оплаты в строке афиши нет вовсе');
+          if (!t.includes('800'))
+            bad.push(`kabinet-dengi: нет суммы 800 (2 записи × 400): «${t.slice(0, 200)}»`);
+          // Правки нет — сказано СТРОКОЙ, а не умолчанием.
+          if (!t.includes('сервер правки не умеет'))
+            bad.push('kabinet-pravka: отсутствие правки не названо — человек будет искать кнопку');
+          if (/Править|Изменить мероприятие/.test(t))
+            bad.push('kabinet-pravka: на экране обещана правка, а ручки её нет на сервере');
+          // Архив сюда не крадётся: #265 владельцем не открыта.
+          if (/Прошедшие|Архив/.test(t))
+            bad.push('kabinet-arhiv: кабинет обещает прошедшие — это #265, афиша прошедшего не отдаёт ни при каких параметрах');
+          // Пункт ведёт на ЖИВУЮ карточку, где управление уже живёт.
+          if (await s.p.$('[data-manage]'))
+            bad.push('kabinet-put: пункт ведёт на демонстрационный eventManage (data-manage) — два пути к одному делу');
+          else if (!(await s.p.$('[data-event="21"]')))
+            bad.push('kabinet-put: пункта своего мероприятия нет вовсе — открывать нечего');
+          else {
+            await s.p.click('[data-event="21"]');
+            await s.p.waitForTimeout(200);
+            const c = await s.view();
+            if (!c.includes('Управление'))
+              bad.push(`kabinet-put: карточка своего без блока «Управление»: «${c.slice(0, 140)}»`);
+          }
+        }
+      }
+      if (s.errs.length) bad.push('kabinet-vhod: ошибки страницы ' + s.errs.join('; '));
+      await s.ctx.close();
+    }
+
+    // У того, кто завести не вправе, кнопки нет ВОВСЕ — обратная половина.
+    {
+      const chlen = clone(OWNER); chlen.roles = [];
+      const s = await openKab(json(200, chlen));
+      if (await s.p.$('[data-go="organizer"]'))
+        bad.push('kabinet-prava: кнопка «Управление своими» есть у того, кто не вправе завести мероприятие');
+      await s.ctx.close();
+    }
+  }
+
   // ── кто записался (#178, вторая половина) ──
   // Список спрашивается только на СВОЁМ мероприятии: на чужое запроса нет
   // вовсе. Обратная проверка обязательна — иначе доказана половина.
