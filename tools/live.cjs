@@ -2326,6 +2326,11 @@ if (grantsSet.length !== 1) {
     return true;
   };
 
+  // Принятый текст Cafe13KPG#271, дословно. Держится ОДНОЙ константой: его
+  // сторожат два случая, и разъехаться им нельзя — прежняя редакция уже
+  // успела уехать в опись и там смержиться (#323), пока ездила письмами.
+  const FRAZA_271 = 'Место закрепляется за вами сразу. Оплата — на месте; снять запись может работник клуба.';
+
   const openCard = async (handler) => {
     const s = await open(true, true, json(200, OWNER), null, null, null, handler, null, NOWFIX);
     await s.p.evaluate(() => go('events'));
@@ -2334,6 +2339,43 @@ if (grantsSet.length !== 1) {
     await s.p.waitForTimeout(120);
     return s;
   };
+
+  /* Текст принят командой ДОСЛОВНО, поэтому и сторожится целиком, а не по
+     словам: «почти тот же смысл» здесь не годится — редакция уже менялась за
+     один день, и прежняя успела уехать в опись. И вторая половина случая —
+     КОМУ фраза не даётся: «Оплата — на месте» у бесплатного обещает платёж,
+     которого нет, а у донейшна своя строка точнее. Без этой половины случай
+     подтверждал бы наличие и молчал бы о лишнем. */
+  {
+    const ROWS = [
+      EV({ id: 4 }),
+      EV({ id: 10, title: 'Утро без денег', kind: 'free', price: '0.00',
+           seats: 8, taken: 1, seats_left: 7 }),
+      EV({ id: 11, title: 'Круг по желанию', kind: 'donation', price: '0.00',
+           seats: 9, taken: 2, seats_left: 7 })
+    ];
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+                         evReply(json(200, ROWS)), null, NOWFIX);
+    for (const [id, kind, zhdyom] of [[4, 'paid', true], [10, 'free', false], [11, 'donation', false]]) {
+      await s.p.evaluate(() => go('events'));
+      await s.p.waitForTimeout(120);
+      await s.p.click(`[data-event="${id}"]`);
+      await s.p.waitForTimeout(120);
+      const t = await s.view();
+      const est = t.includes(FRAZA_271);
+      if (zhdyom && !est)
+        bad.push(`mesto-srazu: у платного нет принятой строки целиком: «${t.slice(0, 220)}»`);
+      if (!zhdyom && est)
+        bad.push(`mesto-srazu: строка про оплату на месте дана виду «${kind}» — платежа там нет вовсе`);
+      // Про деньги при снятии не сказано НИЧЕГО, и это решение, а не недоделка:
+      // ответа про возврат нет ни на сервере, ни у владельца (Cafe13KPG#290).
+      if (/верн[её]м|возврат|перенесём|компенсац/i.test(t))
+        bad.push(`mesto-dengi: экран вида «${kind}» обещает что-то про деньги при снятии — механизма такого нет`);
+    }
+    if (s.errs.length) bad.push('mesto-srazu: ошибки страницы ' + s.errs.join('; '));
+    await s.p.screenshot({ path: `${OUT}/live-mesto-srazu.png`, fullPage: true });
+    await s.ctx.close();
+  }
 
   {
     let booked = false;
@@ -2348,7 +2390,8 @@ if (grantsSet.length !== 1) {
     });
     const card = await s.view();
     if (!card.includes('Записаться')) bad.push('book: на свободном событии не предлагают записаться');
-    if (!card.includes('К оплате 400 ฿ на месте')) bad.push('book: у платного не сказано, что деньги берут на месте');
+    if (!card.includes('К оплате 400 ฿')) bad.push('book: у платного не названа сумма');
+    if (!card.includes('Оплата — на месте')) bad.push('book: у платного не сказано, что деньги берут на месте');
     if (await s.p.evaluate(() => window.__main === null)) bad.push('book: на свободном событии нет главной кнопки');
 
     // Внутри Telegram экранная кнопка скрыта (body.has-main .dup-main), работает главная.
@@ -2564,7 +2607,7 @@ if (grantsSet.length !== 1) {
       // экран (тот же дефект архитектор нашёл у меня на #50).
       bad.push(`demo-oplata: демонстрационное событие «sound» имеет вид «${kind}», а случай судит ПЛАТНОЕ — ветка не та, вердикт не выносится`);
     } else {
-      ['Записаться', 'К оплате', 'на месте'].forEach(x => {
+      ['Записаться', 'К оплате', 'на месте', FRAZA_271].forEach(x => {
         if (!t.includes(x)) bad.push(`demo-oplata: в демонстрации нет «${x}» — она должна говорить то же, что живой экран`); });
       ['15 минут', 'возвращается в афишу', 'Оплатить 400'].forEach(x => {
         if (t.includes(x)) bad.push(`demo-oplata: демонстрация обещает «${x}» — механизма с таким поведением в системе нет`); });
