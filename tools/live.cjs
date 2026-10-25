@@ -1748,12 +1748,21 @@ if (grantsSet.length !== 1) {
   // Приём: отказ сервера, потерянный ответ, чужая строка, карточка не перечиталась.
   for (const [name, kind, o, want, nowant] of [
     ['till-409', 'membership', { post: () => json(409, { detail: 'на счёте 0, не хватает 3000' }) }, ['На счёте 0, не хватает 3000'], ['Принято']],
-    ['till-lost', 'membership', { post: 'abort' }, ['Неизвестно, принято ли', 'Сверьте, прежде чем принимать снова'], ['Принято']],
+    // Ответа не было (E34zh): «неизвестно» верно, совет — перечитать, подождать, позвать.
+    ['till-lost', 'membership', { post: 'abort' }, ['Неизвестно, принято ли', 'Ответ сервера не дошёл.',
+      'Перед приёмом: членства нет, остаток 0 ฿'], ['Принято', 'Деньги проведены', 'Ниже — перечитанная карточка']],
+    // 201 — деньги в книге (E34z): «неизвестно» звало бы ко второму приёму (Cafe13KPG#333).
     ['till-alien', 'topup', { post: q => json(201, { id: 95, kind: 'topup', amount: '500.00', method: 'cash', member_id: 200000004, note: '' }) },
-      ['Неизвестно, принято ли'], ['Принято']],
+      ['Деньги проведены', 'Второй раз не принимайте', 'Если они не изменились, это вопрос к администратору клуба', 'Перед приёмом: членства нет, остаток 0 ฿'], ['Принято', 'Неизвестно']],
+    ['till-201-raw', 'topup', { post: () => ({ status: 201, contentType: 'text/html', body: '<html>ok</html>' }) },
+      ['Деньги проведены', 'Если они не изменились, это вопрос к администратору клуба'], ['Принято', 'Неизвестно', 'не разобран']],
+    // 201, а карточка не перечиталась (E34i): сверять не с чем — открыть заново по коду.
+    ['till-201-noreread', 'membership', { post: () => ({ status: 201, contentType: 'text/html', body: '<html>ok</html>' }),
+      refind: (() => { let n = 0; return () => n++ ? json(200, Object.assign({}, PERSON, { balance: 500 })) : json(500, { detail: 'x' }); })() },
+      ['Деньги проведены', 'Откройте её заново по коду пропуска', 'Это данные ДО приёма: карточка не перечиталась'], ['Если они не изменились, это вопрос к администратору клуба', 'Неизвестно', 'Перед приёмом']],
     // сумма и номер верные: иначе их несовпадение перекрыло бы проверку вида
     ['till-level', 'membership', { post: q => json(201, { id: 95, kind: 'membership', amount: '3000.00', method: 'cash', member_id: PID, note: '',
-      membership: { id: 7, level: 'member', starts_at: ENDS, ends_at: ENDS } }) }, ['Неизвестно, принято ли'], ['Принято']],
+      membership: { id: 7, level: 'member', starts_at: ENDS, ends_at: ENDS } }) }, ['Деньги проведены', 'Если они не изменились, это вопрос к администратору клуба'], ['Принято', 'Неизвестно']],
     ['till-noreread', 'topup', { refind: () => json(500, { detail: 'x' }) }, ['Принято 500', 'Остаток не перечитан — обновите карточку', 'Перечитать карточку'], []],
     ['till-nogrow', 'topup', { after: { balance: 0 } }, ['Остаток изменился не на эту сумму', 'Не вносите снова'], []]]) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash(o));
@@ -1765,18 +1774,42 @@ if (grantsSet.length !== 1) {
       const t = await s.view();
       for (const w of want) if (!t.includes(w)) bad.push(`${name}: нет «${w}»`);
       for (const w of nowant) if (t.includes(w)) bad.push(`${name}: есть «${w}»`);
+      // Экран, а не файл: в прозе прежняя редакция с доводом храниться может.
+      if (/внесите заново|внести заново/i.test(t)) bad.push(`${name}: экран велит внести заново — если платёж прошёл, это второй платёж (Cafe13KPG#333)`);
+      if (name === 'till-201-noreread') {
+        if (await s.p.$eval('#view .rows > div:last-child b', e => e.textContent) !== 'не перечитан')
+          bad.push('till-201-noreread: остаток прежним числом, а не «не перечитан»');
+        await s.p.click('[data-action="tp-reload"]');
+        await s.p.waitForTimeout(250);
+        const t2 = await s.view();
+        if (!t2.includes('Если они не изменились, это вопрос к администратору клуба') || !t2.includes('Перед приёмом: членства нет, остаток 0 ฿'))
+          bad.push('till-201-noreread: после перечитывания плашка и строка «перед приёмом» не сменились на сверку (E34z)');
+        if (t2.includes('Это данные ДО приёма')) bad.push('till-201-noreread: после перечитывания карточка всё ещё названа данными ДО приёма');
+      }
       // остаток — только перечитанный: прежний после приёма был бы ложью
       if (name === 'till-noreread' && await s.p.$eval('#view .rows > div:last-child b', e => e.textContent) !== 'не перечитан')
         bad.push('till-noreread: в строке «На счёте» прежний остаток вместо «не перечитан»');
       // вес, а не только слова: неизвестный исход глиной и с громким «Перечитать» (кадр E34zh)
+      // Совет E34zh (кадр на dev a47fd3c, Cafe13KPG#356) — ЧЕТЫРЕ ступени, по
+      // порядку: последняя однажды потерялась при переносе, и три от четырёх
+      // отличаются только тем, чего нет. Считаются числом, не словами.
       if (name === 'till-lost') {
+        const note = await s.p.evaluate(() => { const n = document.querySelector('#view .note'); return n ? n.textContent : ''; });
+        const STEPS = ['Нажмите «Перечитать карточку» и сверьте со строкой «Перед приёмом».', 'Изменилось — платёж прошёл, больше ничего не нужно.',
+          'Не изменилось — подождите минуту и перечитайте:', 'Если и тогда не изменилось — позовите администратора клуба, а не вносите заново.'];
+        const at_ = STEPS.map(x => note.indexOf(x));
+        const found = at_.filter(i => i >= 0).length;
+        if (found !== 4 || at_.some((i, k) => k && i < at_[k - 1]))
+          bad.push(`till-lost: ступеней совета ${found} из 4 или не по порядку (${JSON.stringify(at_)}) — кадр E34zh`);
+      }
+      if (name === 'till-lost' || name === 'till-201-raw') {
         const g = await s.p.evaluate(() => ({
           warm: !!document.querySelector('#view .card.warm'),
           loud: [...document.querySelectorAll('#view .btn')].filter(b => !/\b(quiet|ghost)\b/.test(b.className)).map(b => b.textContent),
           sell: !!document.querySelector('[data-action="tp-open:membership"]') }));
-        if (!g.warm) bad.push('till-lost: неизвестный исход не глиной — тот же вес, что у «Принято»');
-        if (g.loud.join('|') !== 'Перечитать карточку') bad.push('till-lost: громкая кнопка не «Перечитать карточку»: ' + JSON.stringify(g.loud));
-        if (g.sell) bad.push('till-lost: при неизвестном исходе предложено принять снова');
+        if (!g.warm) bad.push(`${name}: неизвестный исход не глиной — тот же вес, что у «Принято»`);
+        if (g.loud.join('|') !== 'Перечитать карточку') bad.push(`${name}: громкая кнопка не «Перечитать карточку»: ` + JSON.stringify(g.loud));
+        if (g.sell) bad.push(`${name}: при неизвестном исходе предложено принять снова`);
       }
       if (name === 'till-nogrow' && !(await s.p.evaluate(() => [...document.querySelectorAll('#view .deny')].some(e => e.textContent.includes('Не вносите снова')))))
         bad.push('till-nogrow: «Не вносите снова» не плашкой, а тихой подписью');
