@@ -337,7 +337,7 @@ function untilText(m) {
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
-              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1,
+              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -892,6 +892,112 @@ function tillCard(w) {
     '<div class="rows"><div><span class="small">Членство</span><b class="num">' + esc(ms) + '</b></div>' +
       '<div><span class="small">На счёте</span><b class="num">' +
         (w.balance === null ? 'не перечитан' : money(w.balance) + ' ฿') + '</b></div></div></div>';
+}
+
+/* ── касса: день (кадры E36/E36b/E36v, Cafe13KPG#340) ──────
+   GET /till/day — книга суток клуба без затрат; POST /till/{id}/cancel —
+   отмена строки, она встаёт НОВОЙ строкой, отменённая остаётся видимой.
+   Кнопка стоит у КАЖДОЙ живой строки, и чужой тоже: у строки с хозяином
+   (заказ бара, членство, запись) сервер отвечает 409 и называет путь
+   исправления, и этот отказ стоит ПЕРЕД отказом «принял другой». Спрятав
+   кнопку по by_staff_id, экран спрятал бы путь именно там, где он есть
+   (слово designer-55). by_staff_id и member_id — tg_user_id; из разбора
+   они не выходят вовсе. */
+var TD = { gen: 0, data: null, fail: '', ask: -1, busy: -1, deny: null };
+var TD_KIND = { membership: 'Членство', topup: 'На счёт', event: 'За запись', service: 'За услугу' };
+var TD_HOW = { cash: 'наличные', card: 'карта', account: 'со счёта' };
+
+/* ⚠ ДОЛГ, снимается после выкладки api (Cafe13KPG#340, решение координатора).
+   Боевой сервер (`fa2cebc`) у строки ЗАПИСИ отказывает словами «снимите
+   запись на мероприятие — деньги вернутся вместе с ней», а возврата нет:
+   снятие записи в книгу не пишет (api#70). Ствол api (`4c42fa2`) говорит
+   правду — она и показывается, ДОСЛОВНО его редакцией. Подмена узкая: только
+   этот текст целиком; прочие отказы — словами сервера как есть. Батарея
+   краснеет, когда боевой текст сменится, — тогда подмену убрать. */
+var TD_BOOKING_OLD = /^строка принадлежит запись (\S+): снимите запись на мероприятие — деньги вернутся вместе с ней$/;
+var TD_BOOKING_NEW = 'возврата за запись в приложении пока нет — нужен администратор клуба. ' +
+  'Снимать запись ради возврата НЕ нужно: встречной строки в книге от этого не появится, ' +
+  'а запись станет снятой при принятых деньгах';
+function tillCancelSaid(r) {
+  var m = r.status === 409 && r.data && typeof r.data.detail === 'string' ? TD_BOOKING_OLD.exec(r.data.detail) : null;
+  return m ? said({ status: 409, data: { detail: 'строка принадлежит запись ' + m[1] + ': ' + TD_BOOKING_NEW } }) : said(r);
+}
+
+// Строка без чего-нибудь нужного — отказ целиком: день с выпавшей строкой
+// выглядит полным. Итог, не сходящийся со строками, снимает только ЧИСЛА
+// (итог и суммы по способу — производные), а строки остаются: они печатаются
+// из ответа дословно (кадр E36g, designer-55).
+function fromTillDay(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.rows) || typeof d.count_live !== 'number') return null;
+  var total = num(d.total_live), rows = [], sum = 0, live = 0, by = { cash: 0, card: 0, account: 0 };
+  if (!isFinite(total)) return null;
+  for (var i = 0; i < d.rows.length; i++) {
+    var r = d.rows[i], amt = r && num(r.amount);
+    if (!r || typeof r.id !== 'number' || !TD_KIND[r.kind] || !TD_HOW[r.method] || !(amt >= 0) || !hm(r.at)) return null;
+    if ((r.cancels_id !== null && typeof r.cancels_id !== 'number') ||
+        (r.cancelled_by !== null && typeof r.cancelled_by !== 'number') ||
+        (r.note !== null && typeof r.note !== 'string')) return null;
+    // заметка строки — дословно и только у услуги: «заказ бара N» там
+    // соглашение, а не схема, его может набрать и кассир (designer-55)
+    var row = { id: r.id, kind: r.kind, amount: amt, time: hm(r.at), how: TD_HOW[r.method],
+                note: r.kind === 'service' && r.note ? r.note : '',
+                undo: r.cancels_id !== null, gone: r.cancelled_by !== null };
+    if (!row.undo && !row.gone) { live++; sum += amt; by[r.method] = Math.round((by[r.method] + amt) * 100) / 100; }
+    rows.push(row);
+  }
+  return { rows: rows, total: total, count: live, by: by,
+           odd: live !== d.count_live || Math.abs(sum - total) > 0.005 };
+}
+
+function tillDayLoad() {
+  var gen = ++TD.gen;
+  TD.fail = '';
+  api('GET', '/till/day').then(function (r) {
+    if (gen !== TD.gen) return;
+    var d = r.status === 200 ? fromTillDay(r.data) : null;
+    if (d) TD.data = d;
+    else TD.fail = r.status === 200 ? 'Ответ сервера не разобран.' : said(r);
+    if (current === 'tillDay') render();
+  });
+}
+
+function tillCancel(i) {
+  var row = TD.data && TD.data.rows[i];
+  if (!row || row.undo || row.gone || TD.busy !== -1) return;
+  TD.busy = i; TD.ask = -1; TD.deny = null;
+  render();
+  var gen = TD.gen;
+  api('POST', '/till/' + row.id + '/cancel').then(function (r) {
+    if (gen !== TD.gen) return;
+    TD.busy = -1;
+    var ok = r.status === 201 && !!r.data && r.data.cancels_id === row.id;
+    // Отказ — словами сервера, над той строкой, у которой нажали.
+    if (r.status !== 0 && r.status !== 201) { TD.deny = { i: i, text: tillCancelSaid(r) }; haptic('warn'); render(); return; }
+    // Отменено или неизвестно — день перечитывается в обоих случаях: что
+    // строка отменена, говорит перечитанная книга, а не ответ на нажатие.
+    if (ok) haptic('ok');
+    else TD.deny = { i: i, text: (r.status === 0 ? 'Ответ сервера не дошёл. ' : 'Ответ сервера не разобран. ') +
+                                 'Смотрите строку после перечитывания: «Отменено» стоит — отмена прошла.' };
+    tillDayLoad();
+    render();
+  });
+}
+
+function tillDayRow(r, i) {
+  var label = (r.undo ? 'Отмена · ' : '') + TD_KIND[r.kind];
+  var when = r.time + ' · ' + r.how;
+  var note = r.note ? '<span class="verbatim">' + esc(r.note) + '</span>' : '';
+  var deny = TD.deny && TD.deny.i === i ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TD.deny.text) + '</span></div>' : '';
+  if (r.gone) return deny + '<div class="card cancelled"><div class="row"><div class="col"><b class="strike">' + esc(label) + '</b>' +
+    '<span class="small num">' + esc(when) + '</span></div><span class="pill gold">Отменено</span></div></div>';
+  if (r.undo) return deny + '<div class="card quiet"><div class="row"><div class="col"><b>' + esc(label) + '</b>' +
+    '<span class="small num">' + esc(when) + '</span></div><b class="num">−' + money(r.amount) + ' ฿</b></div></div>';
+  var btn = TD.busy === i ? '<button type="button" class="btn quiet" disabled>…</button>'
+    : TD.ask === i ? '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="td-keep">Не отменять</button>' +
+                     '<button type="button" class="btn quiet" data-action="td-cancel:' + i + '">Точно отменить</button></span>'
+    : '<button type="button" class="btn quiet" data-action="td-ask:' + i + '"' + (TD.busy !== -1 ? ' disabled' : '') + '>Отменить</button>';
+  return deny + '<div class="card"><div class="row"><div class="col"><b>' + esc(label) + '</b><span class="small num">' + esc(when) + '</span>' + note + '</div>' +
+    '<div style="display:flex;align-items:center;gap:10px"><b class="num">' + money(r.amount) + ' ฿</b>' + btn + '</div></div></div>';
 }
 
 function shiftBlock() {
@@ -3339,6 +3445,7 @@ var SCREENS = {
               '<input id="tp-code" type="text" inputmode="numeric" autocomplete="off" value="' + esc(TP.code) + '" placeholder="0000"' + lock + '></div></div>' +
             '<button type="button" class="btn mini" data-action="tp-find"' + lock + '>' + (TP.busy ? 'Ищем…' : 'Найти') + '</button></div>' +
           '<span class="small">Четыре цифры. Можно с «XIII-» или без — касса читает оба вида.</span></div>' +
+        '<button type="button" class="btn ghost" data-go="tillDay">День кассы</button>' +
         '<div class="note">' + svg(ICON.info) +
           '<span>Деньги вносятся только тому, кого нашли по пропуску: сервер принимает приём по номеру человека, а у кассира на руках только код. Карточка человека — это и есть проверка, что деньги уйдут не чужому.</span></div>';
     }
@@ -3366,6 +3473,31 @@ var SCREENS = {
       '<div class="note">' + svg(ICON.info) +
         '<span>Каждая строка попадает в книгу событий клуба. По ней считается прибыль направления — поэтому задним числом её не меняют.</span>' +
       '</div>';
+  },
+
+  tillDay: function () {
+    if (LIVE && !canTopup()) return '<div class="card quiet"><span class="small">Касса — для работников с правом кассы.</span></div>';
+    if (!LIVE) return '<div class="card quiet"><span class="small">День кассы читается с сервера клуба.</span></div>' +
+      '<button type="button" class="btn" data-go="staff">К кассе</button>';
+    var d = TD.data;
+    if (!d) return TD.fail
+      ? '<div class="card quiet"><span class="small">' + esc(TD.fail) + '</span></div>' +
+        '<button type="button" class="btn ghost" data-action="td-reload">Повторить</button>'
+      : '<div class="card quiet"><span class="small">Загружаем день кассы…</span></div>';
+    // «Через книгу», а не «внесено»: в итоге сервера и заказы бара, и
+    // списания со счёта. В ящике — только строка «наличными» (designer-55).
+    return (d.odd ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Итог дня не сходится со строками — показывать его нельзя. Сообщите администратору клуба.</span></div>' :
+      '<div class="rows"><div><span class="small">Через книгу за день</span><b class="num">' + money(d.total) + ' ฿</b></div>' +
+        '<div><span class="small">наличными <b class="num">' + money(d.by.cash) + '</b></span>' +
+          '<span class="small">картой <b class="num">' + money(d.by.card) + '</b></span>' +
+          '<span class="small">со счёта <b class="num">' + money(d.by.account) + '</b></span></div>' +
+        '<div><span class="small">Живых строк</span><b class="num">' + d.count + '</b></div></div>') +
+      (TD.fail ? '<span class="small">Не перечитался: ' + esc(TD.fail) + '</span>' : '') +
+      (d.rows.length
+        ? '<div class="group"><span class="label">Строки за сегодня</span>' + d.rows.map(tillDayRow).join('') + '</div>' +
+          '<div class="note">' + svg(ICON.info) + '<span>Исправить строку нельзя — только отменить и внести заново: книга клуба дописывается, а не правится. Поэтому отмена стоит отдельной строкой, а отменённая остаётся видимой.</span></div>'
+        : '<div class="card quiet"><b>Сегодня через кассу ничего не прошло</b>' +
+          '<span class="small">Сутки считаются по часам клуба, от полуночи до полуночи по Пхангану: вечерняя выручка не уезжает во вчера.</span></div>');
   },
 
   tillPerson: function () {
@@ -4627,7 +4759,8 @@ var TITLES = {
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
   people: 'Люди', barCards: 'Карточки меню', barCard: 'Карточка',
-  tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт'
+  tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
+  tillDay: 'День кассы'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -4660,7 +4793,7 @@ var BACK = {
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
   people: 'home',
-  tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson',
+  tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   barCards: function () { return homeOf(); }, barCard: 'barCards',
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
@@ -4741,6 +4874,7 @@ function go(screen, p) {
   param = p || null;
   if (screen === 'barMoney' && LIVE && !BAR) bookLoad();
   if (screen === 'barDay' && LIVE) loadDay();
+  if (screen === 'tillDay' && LIVE && canTopup()) { TD.ask = -1; TD.deny = null; tillDayLoad(); }
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
   if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
@@ -4875,6 +5009,10 @@ function doAction(a) {
     if (a === 'tp-level' && LEVEL[arg] && !TP.busy) { TP.level = arg; render(); return; }
     if (a === 'tp-method' && PAY_HOW[arg] && !TP.busy && (arg !== 'account' || TP.kind === 'membership')) { TP.method = arg; render(); return; }
     if (a === 'tp-send') { tillSend(); return; }
+    if (a === 'td-ask' && TD.busy === -1) { TD.ask = Number(arg); TD.deny = null; render(); return; }
+    if (a === 'td-keep') { TD.ask = -1; render(); return; }
+    if (a === 'td-cancel') { tillCancel(Number(arg)); return; }
+    if (a === 'td-reload') { tillDayLoad(); render(); return; }
     if (a === 'tp-reload' && TP.who && !TP.busy) {
       TP.busy = true; render();
       tillLookup(TP.who.code, function (rec, r) {

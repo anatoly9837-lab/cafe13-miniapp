@@ -1449,6 +1449,198 @@ if (grantsSet.length !== 1) {
   }
   const at = s => s.p.evaluate(() => current);
 
+  // ── касса: день и отмена строки (Cafe13KPG#340, кадры E36/E36b/E36v) ──
+  // Формы — cafe13-api app/routers/till.py на боевом fa2cebc, по коду (снимка
+  // ручек /till/day и /till/{id}/cancel в api-keys.json нет): день — строки
+  // суток без затрат, total_live и count_live; отмена — новая строка с
+  // cancels_id. by_staff_id — tg_user_id: выдуманные номера, и в разметку
+  // они попасть не должны.
+  const STAFF = clone(OWNER); STAFF.roles = [{ role: 'staff', direction_id: null }];
+  const OTHER = 200000007, GUEST = 200000009;
+  const DROW = (o) => Object.assign({ id: 10, at: '2026-10-25T02:40:00+00:00', kind: 'membership', amount: '3000.00', method: 'card',
+    member_id: PID, note: null, cancels_id: null, by_staff_id: 1, cancelled_by: null }, o);
+  const DAY_ROWS = [
+    DROW({}),
+    DROW({ id: 11, at: '2026-10-25T05:05:00+00:00', kind: 'topup', amount: '500.00', method: 'cash', by_staff_id: OTHER }),
+    DROW({ id: 12, at: '2026-10-25T07:20:00+00:00', kind: 'event', amount: '400.00', method: 'cash', cancelled_by: 13 }),
+    DROW({ id: 13, at: '2026-10-25T07:21:00+00:00', kind: 'event', amount: '400.00', method: 'cash', cancels_id: 12, note: 'отмена строки 12' }),
+    DROW({ id: 14, at: '2026-10-25T11:02:00+00:00', kind: 'service', amount: '250.00', method: 'account', member_id: GUEST, by_staff_id: GUEST, note: 'заказ бара 41' })
+  ];
+  const DAY_OK = { day_start: '2026-10-24T17:00:00+00:00', day_end: '2026-10-25T17:00:00+00:00', rows: DAY_ROWS, total_live: '3750.00', count_live: 3 };
+  function tday(o) {
+    o = Object.assign({ day: () => json(200, DAY_OK), again: null,
+      cancel: (id) => json(201, DROW({ id: 15, at: '2026-10-25T12:00:00+00:00', cancels_id: id, note: 'отмена строки ' + id })) }, o);
+    const st = { cancelled: false };
+    return r => {
+      const u = r.url();
+      if (r.method() === 'GET' && u.endsWith('/till/day')) return st.cancelled && o.again ? o.again(r) : o.day(r);
+      const m = /\/till\/(\d+)\/cancel$/.exec(u);
+      if (r.method() === 'POST' && m) { st.cancelled = true; return o.cancel === 'abort' ? 'abort' : o.cancel(Number(m[1])); }
+      return undefined;
+    };
+  }
+  const days = s => s.calls.filter(c => c.method === 'GET' && c.url.endsWith('/till/day'));
+  const cancels = s => s.calls.filter(c => c.method === 'POST' && /\/till\/\d+\/cancel$/.test(c.url));
+  async function toTillDay(s, name) {
+    if (!(await s.p.$('#tabs [data-go="staff"]'))) { bad.push(`${name}: у кассира нет вкладки «Касса»`); return false; }
+    await s.p.click('#tabs [data-go="staff"]');
+    await s.p.waitForTimeout(100);
+    if (!(await s.p.$('[data-go="tillDay"]'))) { bad.push(`${name}: на кассе нет входа «День кассы»`); return false; }
+    await s.p.click('[data-go="tillDay"]');
+    await s.p.waitForTimeout(250);
+    if (await at(s) !== 'tillDay') { bad.push(`${name}: день кассы не на своём экране`); return false; }
+    return true;
+  }
+  // Строки дня: подпись, время и способ, сумма и пометка «тихо/отменено».
+  // Текст по текстовым узлам через пробел: textContent склеил бы «Членство09:40».
+  const TXT = 'el => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), o = []; ' +
+              'while (w.nextNode()) { const t = w.currentNode.textContent.replace(/\\s+/g, " ").trim(); if (t) o.push(t); } return o.join(" "); }';
+  const dayRows = s => s.p.evaluate(T => { const txt = eval(T); return [...document.querySelectorAll('#view .group .card')].map(c =>
+    txt(c) + (c.classList.contains('cancelled') ? ' [отменено]' : c.classList.contains('quiet') ? ' [тихо]' : '')); }, TXT);
+  // «Отменить» у строки 0 → обязан встать вопрос; нет его — сказать словами, а не упасть на клике.
+  async function askFirst(s, name) {
+    await s.p.click('[data-action="td-ask:0"]');
+    if (await s.p.$('[data-action="td-cancel:0"]') && await s.p.$('[data-action="td-keep"]')) return true;
+    bad.push(`${name}: после «Отменить» нет вопроса «Точно отменить / Не отменять»`);
+    return false;
+  }
+  const asks = s => s.p.evaluate(() => [...document.querySelectorAll('[data-action^="td-ask:"]')].map(b => Number(b.dataset.action.split(':')[1])));
+
+  // День кассы (E36): у каждой живой строки «Отменить» — и у чужой: у строки
+  // с хозяином сервер назовёт путь исправления (designer-55); отменённая и её
+  // отмена видны без кнопки, итог — числом сервера, по способам — из строк.
+  {
+    const s = await open(true, true, json(200, STAFF), null, null, null, tday({}));
+    if (await toTillDay(s, 'till-day')) {
+      const t = await s.view();
+      if (!(await s.p.evaluate(() => document.getElementById('title').textContent === 'День кассы'))) bad.push('till-day: в шапке нет «День кассы»');
+      if (await s.p.evaluate(() => backTo()) !== 'staff') bad.push('till-day: «назад» ведёт не к кассе');
+      for (const w of ['Через книгу за день', '3 750 ฿', 'Живых строк', 'Строки за сегодня', 'книга клуба дописывается'])
+        if (!t.includes(w)) bad.push(`till-day: нет «${w}»`);
+      // итог по способам: ящик — это строка «наличными», а не итог книги
+      const tot = await s.p.evaluate(T => { const txt = eval(T); return [...document.querySelectorAll('#view .rows > div')].map(txt); }, TXT);
+      const wantTot = ['Через книгу за день 3 750 ฿', 'наличными 500 картой 3 000 со счёта 250', 'Живых строк 3'];
+      if (JSON.stringify(tot) !== JSON.stringify(wantTot)) bad.push(`till-day: итоги ${JSON.stringify(tot)}, ждали ${JSON.stringify(wantTot)}`);
+      for (const w of ['Внесено за день', 'принял другой'])
+        if (t.includes(w)) bad.push(`till-day: лишнее «${w}» (designer-55: подпись врёт / кнопку не прятать)`);
+      const rows = await dayRows(s);
+      const want = ['Членство 09:40 · карта 3 000 ฿ Отменить', 'На счёт 12:05 · наличные 500 ฿ Отменить',
+        'За запись 14:20 · наличные Отменено [отменено]', 'Отмена · За запись 14:21 · наличные −400 ฿ [тихо]',
+        'За услугу 18:02 · со счёта заказ бара 41 250 ฿ Отменить'];
+      if (JSON.stringify(rows) !== JSON.stringify(want)) bad.push(`till-day: строки ${JSON.stringify(rows)}, ждали ${JSON.stringify(want)}`);
+      // заметка — слово сервера, тушью (.verbatim), а не служебной строкой
+      const vb = await s.p.evaluate(() => [...document.querySelectorAll('#view .verbatim')].map(e => e.textContent));
+      if (JSON.stringify(vb) !== '["заказ бара 41"]') bad.push(`till-day: заметка строки ${JSON.stringify(vb)}, ждали дословно ["заказ бара 41"] классом verbatim`);
+      if (JSON.stringify(await asks(s)) !== '[0,1,4]') bad.push(`till-day: «Отменить» у строк ${JSON.stringify(await asks(s))}, ждали у каждой живой [0,1,4]`);
+      const html = await s.p.evaluate(() => document.documentElement.outerHTML);
+      [OTHER, GUEST, PID].forEach(id => { if (html.includes(String(id))) bad.push(`till-day: номер человека ${id} попал в разметку`); });
+      if (days(s).length !== 1) bad.push(`till-day: день спрошен ${days(s).length} раз, ждали 1`);
+    }
+    await s.ctx.close();
+  }
+  // Отмена: спрос → «Не отменять» ничего не шлёт → «Точно отменить» → POST → день перечитан.
+  {
+    const after = clone(DAY_OK);
+    after.rows[0].cancelled_by = 15;
+    after.rows.push(DROW({ id: 15, at: '2026-10-25T12:00:00+00:00', cancels_id: 10, note: 'отмена строки 10' }));
+    after.total_live = '750.00'; after.count_live = 2;
+    const s = await open(true, true, json(200, STAFF), null, null, null, tday({ again: () => json(200, after) }));
+    if (await toTillDay(s, 'till-cancel')) {
+      if (await askFirst(s, 'till-cancel')) {
+        await s.p.click('[data-action="td-keep"]');
+        if (cancels(s).length) bad.push('till-cancel: «Не отменять» отправило отмену');
+        if (await s.p.$('[data-action="td-cancel:0"]')) bad.push('till-cancel: «Не отменять» не убрало вопрос');
+        await s.p.click('[data-action="td-ask:0"]');
+        await s.p.click('[data-action="td-cancel:0"]');
+        await s.p.waitForTimeout(300);
+        const c = cancels(s);
+        if (c.length !== 1 || !c[0].url.endsWith('/till/10/cancel')) bad.push('till-cancel: ушло не то: ' + JSON.stringify(c.map(x => x.url)));
+        if (days(s).length !== 2) bad.push(`till-cancel: день после отмены не перечитан (запросов дня ${days(s).length})`);
+        const rows = await dayRows(s), t = await s.view();
+        if (rows[0] !== 'Членство 09:40 · карта Отменено [отменено]') bad.push('till-cancel: отменённая строка не помечена: ' + rows[0]);
+        if (rows[5] !== 'Отмена · Членство 19:00 · карта −3 000 ฿ [тихо]') bad.push('till-cancel: нет строки отмены: ' + rows[5]);
+        if (!t.includes('750 ฿')) bad.push('till-cancel: итог не перечитан');
+        if (await s.p.$('.deny')) bad.push('till-cancel: после удачной отмены висит отказ');
+      }
+    }
+    await s.ctx.close();
+  }
+  // Отказы (E36v) — над той строкой, словами сервера; день не перечитывается.
+  // У ЗАПИСИ на бою старый текст с обещанием возврата — он подменяется
+  // дословной редакцией ствола api (4c42fa2), прочие идут как есть.
+  for (const [name, code, detail, want, never] of [
+    ['till-cancel-403', 403, 'эту строку принял другой человек: отменяет он сам или администратор клуба',
+     'Эту строку принял другой человек: отменяет он сам или администратор клуба', null],
+    // обещание у ЗАКАЗА — правда (встречная строка, BALANCE_SQL), не подменяется
+    ['till-cancel-zakaz', 409, 'строка принадлежит заказ 41: отмените сам заказ — деньги вернутся вместе с ним',
+     'Строка принадлежит заказ 41: отмените сам заказ — деньги вернутся вместе с ним', null],
+    ['till-cancel-409', 409, 'строка принадлежит членство 7: правки членства в приложении пока нет — нужен администратор клуба',
+     'Строка принадлежит членство 7: правки членства в приложении пока нет — нужен администратор клуба', null],
+    ['till-cancel-zapis', 409, 'строка принадлежит запись 17: снимите запись на мероприятие — деньги вернутся вместе с ней',
+     'Строка принадлежит запись 17: возврата за запись в приложении пока нет — нужен администратор клуба. Снимать запись ради возврата НЕ нужно: встречной строки в книге от этого не появится, а запись станет снятой при принятых деньгах',
+     /деньги вернутся|верн[уё]т/i]
+  ]) {
+    const s = await open(true, true, json(200, STAFF), null, null, null, tday({ cancel: () => json(code, { detail }) }));
+    if (await toTillDay(s, name)) {
+      if (await askFirst(s, name)) await s.p.click('[data-action="td-cancel:0"]');
+      await s.p.waitForTimeout(250);
+      const d = await s.p.evaluate(() => { const x = document.querySelector('#view .deny'); return x ? x.textContent.trim() : null; });
+      if (d !== want) bad.push(`${name}: отказ «${d}», ждали «${want}»`);
+      if (never && d && never.test(d)) bad.push(`${name}: кассиру обещан возврат за запись, которого нет (api#70)`);
+      if (await at(s) !== 'tillDay') bad.push(`${name}: после отказа ушли с дня кассы`);
+      if (days(s).length !== 1) bad.push(`${name}: после отказа день перечитан — отказ бы исчез`);
+      const next = await s.p.evaluate(T => { const txt = eval(T), x = document.querySelector('#view .deny'); return x && x.nextElementSibling ? txt(x.nextElementSibling) : ''; }, TXT);
+      if (!next.startsWith('Членство 09:40')) bad.push(`${name}: отказ стоит не над нажатой строкой: «${next.slice(0, 40)}»`);
+    }
+    await s.ctx.close();
+  }
+  // Ответ не дошёл: день перечитывается, человек не остаётся с «неизвестно».
+  {
+    const s = await open(true, true, json(200, STAFF), null, null, null, tday({ cancel: 'abort' }));
+    if (await toTillDay(s, 'till-cancel-lost')) {
+      if (await askFirst(s, 'till-cancel-lost')) await s.p.click('[data-action="td-cancel:0"]');
+      await s.p.waitForTimeout(300);
+      const t = await s.view();
+      if (!t.includes('Ответ сервера не дошёл')) bad.push('till-cancel-lost: нет «Ответ сервера не дошёл»');
+      if (!t.includes('«Отменено» стоит')) bad.push('till-cancel-lost: не сказано, как узнать, прошла ли отмена');
+      if (days(s).length !== 2) bad.push('till-cancel-lost: день не перечитан');
+    }
+    await s.ctx.close();
+  }
+  // Пустой день (E36b), неразобранный и не сходящийся — каждый своими словами.
+  for (const [name, reply, want, never] of [
+    ['till-day-empty', json(200, Object.assign({}, DAY_OK, { rows: [], total_live: '0.00', count_live: 0 })), 'Сегодня через кассу ничего не прошло', 'Строки за сегодня'],
+    ['till-day-bad', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 'expense' })] })), 'Ответ сервера не разобран', 'Через книгу за день'],
+    // E36g: расхождение снимает числа, а строки (дословно из ответа) остаются
+    ['till-day-sum', json(200, Object.assign({}, DAY_OK, { total_live: '9999.00' })), 'Итог дня не сходится со строками', 'Через книгу за день'],
+    ['till-day-403', json(403, { detail: 'нужна роль кассы' }), 'Нужна роль кассы', 'Через книгу за день']
+  ]) {
+    const s = await open(true, true, json(200, STAFF), null, null, null, tday({ day: () => reply }));
+    if (await toTillDay(s, name)) {
+      const t = await s.view();
+      if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
+      if (t.includes(never)) bad.push(`${name}: лишнее «${never}»`);
+      if (name === 'till-day-sum') {
+        if ((await dayRows(s)).length !== 5) bad.push('till-day-sum: при расхождении итога сняты и строки — они из ответа дословно (E36g)');
+        if (/наличными|картой/.test(t)) bad.push('till-day-sum: при расхождении итога показаны суммы по способу — они из того же разбора');
+      }
+    }
+    await s.ctx.close();
+  }
+  /* ДОЛГ подмены отказа у записи (Cafe13KPG#340): она законна, пока бой api
+     — fa2cebc, где текст ещё старый. Сменился боевой sha — значит выложили, и
+     подмену надо снять (или, если текст на новом бою всё ещё старый,
+     передвинуть эту отметку, сверив текст по блобу нового sha). Без сети
+     признак не выносится: строка уходит в «НЕ СВЕРЕНО», а не в зелёное. */
+  let TILL_DOLG = '';
+  if (/var TD_BOOKING_OLD/.test(fs.readFileSync(`${ROOT}/app.js`, 'utf8'))) {
+    const BOY = 'fa2cebc';
+    const h = await fetch('https://api.cafe13.club/health').then(r => r.json(), () => null).catch(() => null);
+    if (!h || typeof h.build_sha !== 'string') TILL_DOLG = 'till-cancel-dolg: не сверено — /health боевого api не ответил, долг подмены отказа записи не проверен';
+    else if (!h.build_sha.startsWith(BOY))
+      bad.push(`till-cancel-dolg: бой api сменился (${h.build_sha.slice(0, 7)}, подмена отказа записи ставилась на ${BOY}) — сверьте текст 409 у записи на новом бою и снимите TD_BOOKING_OLD в app.js (Cafe13KPG#340)`);
+  }
+
   // Продать членство: скан → карточка → форма → итог по ответу и перечитанной карточке.
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({ after: { balance: 0 } }));
@@ -5250,7 +5442,7 @@ if (grantsSet.length !== 1) {
     }
     return out;
   }
-  const notes = [];
+  const notes = TILL_DOLG ? [TILL_DOLG] : [];
   /* Чей непустой список доказывает форму элемента там, где в своём снимке
      он пуст. Ключ — путь, значение — имя снимка ТОЙ ЖЕ ручки. */
   const ELEM_FROM = { 'me-member.roles': 'me-curator' };
