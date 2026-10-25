@@ -2954,7 +2954,11 @@ var ICON = {
   bell: '<path d="M18.5 16.5h-13L7 14.1V10a5 5 0 0110 0v4.1z"/><path d="M10 19.5a2 2 0 004 0"/>',
   chart:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
   coin: '<ellipse cx="12" cy="7" rx="8" ry="3.2"/><path d="M4 7v10c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V7"/><path d="M4 12.2c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2"/>',
-  chev: '<path d="M9 6l6 6-6 6"/>'
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  // Та же стрелка, что у кнопки «Назад» в шапке (`index.html`): у подписи
+  // «Назад» стрелка вперёд читается как «дальше», и увидеть это можно только
+  // ОТРИСОВАННЫМ — в исходнике `ICON.chev` ничем себя не выдаёт.
+  chevBack: '<path d="M15 6l-6 6 6 6"/>'
 };
 function svg(paths, cls) { return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + paths + '</svg>'; }
 
@@ -3032,7 +3036,7 @@ function organizerLive() {
     '</div>' +
     (mayCreateEvent() ? '<button type="button" class="btn" data-go="eventNew">' +
       svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' : '') +
-    '<button type="button" class="btn ghost" data-go="events">' + svg(ICON.chev) + 'Назад к афише</button>' +
+    '<button type="button" class="btn ghost" data-go="events">' + svg(ICON.chevBack) + 'Назад к афише</button>' +
     '<div class="note">' + svg(ICON.info) +
       '<span>Список записавшихся и отмена — внутри мероприятия. Изменить назначенное нельзя: сервер правки не умеет, можно только снять.</span>' +
     '</div>';
