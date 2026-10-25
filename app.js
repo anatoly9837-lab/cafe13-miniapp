@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v46 · 25.10.2026';
+var VERSION = 'v47 · 25.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3279,13 +3279,17 @@ var SCREENS = {
       foot = '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
              '<span class="small" style="text-align:center">Если передумали — отмените запись, чтобы место досталось другому.</span>';
     } else {
+      /* Прежняя редакция показывала здесь выбор суммы взноса: три кнопки
+         (200/400/600 ฿) и поле «Своя сумма». Ни одна из них не делала НИЧЕГО —
+         ни атрибута делегирования, ни слушателя, — и механизма за ними нет
+         нигде: живой экран говорит «взнос по желанию, передать можно мастеру
+         на месте», а сервер при записи на донейшн суммы не принимает вовсе.
+         То есть демонстрация обещала платёж в приложении, которого не
+         существует, — тот же класс, что снятое «место держится 15 минут»
+         (Cafe13KPG#271), и видит это владелец и всякий, кто читает опись.
+         Снято по Cafe13KPG#338; вернуть, когда появится ручка взноса. */
       foot = '<div class="card" style="border-color:var(--clay)">' +
           '<div class="col"><b>Взнос — по желанию</b><span class="small">Сколько считаете нужным, и можно нисколько. На запись это не влияет.</span></div>' +
-          '<div class="seg">' + [200, 400, 600].map(function (s) {
-            return '<button type="button" aria-pressed="false" class="num">' + s + ' ฿</button>';
-          }).join('') + '</div>' +
-          '<div class="field"><label for="own">Своя сумма, можно оставить пустым</label>' +
-          '<input id="own" type="text" inputmode="numeric" placeholder="— ฿"></div>' +
         '</div>' +
         '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
         '<span class="small" style="text-align:center">Взнос можно передать мастеру на месте или оставить в кассе после практики.</span>';
@@ -3311,7 +3315,6 @@ var SCREENS = {
           '<div class="row top"><div class="col"><h2>' + esc(b.title) + '</h2>' +
           '<span class="small">' + esc(b.when) + '</span></div>' +
           '<span class="pill' + (b.tone === 'on' ? ' on' : '') + '">' + esc(b.state) + '</span></div>' +
-          '<button type="button" class="btn quiet">Отменить запись</button>' +
         '</div>';
       }).join('') + '</div>' +
       '<div class="group"><span class="label">Прошедшие</span>' +
