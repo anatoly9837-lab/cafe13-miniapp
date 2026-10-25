@@ -522,6 +522,21 @@ if (grantsSet.length !== 1) {
     const m = src.match(/байк|массаж|Доставка воды|Помощь на дороге/i);
     if (m) bad.push(`demo-services: в клиенте выдуманная услуга «${m[0]}»`);
   }
+  // Демо кассы: каждая кнопка что-то делает (Cafe13KPG#338). Селектор берётся
+  // из делегата кликов в app.js; кнопка без его атрибута нажимается впустую.
+  {
+    const q = (fs.readFileSync(`${ROOT}/app.js`, 'utf8').match(/ev\.target\.closest\('([^']+)'\)/) || [])[1];
+    const s = await open(true, false, json(200, OWNER), null, null, null);
+    const d = !q ? null : await s.p.evaluate(q => {
+      const w = document.createElement('div'); w.innerHTML = SCREENS.staff();
+      return { t: w.textContent, dead: [...w.querySelectorAll('button')].filter(x => !x.closest(q)).map(x => x.textContent.trim()) };
+    }, q);
+    if (!q) bad.push('demo-staff: ПРОВЕРКА НЕ ВЫПОЛНЕНА — в app.js не найден селектор делегата кликов');
+    else if (!d.t.includes('Внесено за смену')) bad.push('demo-staff: ПРОВЕРКА НЕ ВЫПОЛНЕНА — демонстрация кассы не отрисована, судить кнопки не о чем');
+    else if (d.dead.length) bad.push(`demo-staff: на кассе кнопки без действия: ${JSON.stringify(d.dead)}`);
+    if (d && /только отменить/.test(d.t)) bad.push('demo-staff: демонстрация советует отменить строку — кнопки отмены в приложении нет (Cafe13KPG#340)');
+    await s.ctx.close();
+  }
   // /pass без даты и без lifelong — не пропуск (пустая дата законна только при lifelong: true).
   {
     const s = await open(true, true, json(200, OWNER), null,
@@ -1495,6 +1510,10 @@ if (grantsSet.length !== 1) {
       const t = await s.view();
       if (!t.includes('Принято 500 ฿ наличными') || !t.includes('500 ฿')) bad.push('till-topup: нет итога с остатком');
       if (t.includes('правки членства')) bad.push('till-topup: плашка про членство у пополнения');
+      // Отмену строки приложение делать не умеет (Cafe13KPG#340): совет «отменить
+      // и внести заново» посылал кассира по пути, которого у него нет.
+      if (!t.includes('отмена строки в приложении пока не сделана')) bad.push('till-topup: итог не говорит, что отменить строку в приложении нечем');
+      if (/только отменить/.test(t)) bad.push('till-topup: итог советует отменить строку — кнопки отмены в приложении нет');
       if (await leak(s)) bad.push('till-topup: номер человека попал в разметку или хранилище');
     }
     await s.ctx.close();
