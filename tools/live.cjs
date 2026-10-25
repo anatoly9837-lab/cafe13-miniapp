@@ -2390,8 +2390,15 @@ if (grantsSet.length !== 1) {
     });
     const card = await s.view();
     if (!card.includes('Записаться')) bad.push('book: на свободном событии не предлагают записаться');
-    if (!card.includes('К оплате 400 ฿')) bad.push('book: у платного не названа сумма');
     if (!card.includes('Оплата — на месте')) bad.push('book: у платного не сказано, что деньги берут на месте');
+    if (!card.includes('При записи со счёта не списывается')) bad.push('book: не сказано, что со счёта при записи не спишут');
+    // Цена названа строкой «Участие», а не подписью: дубль цены на одном экране
+    // читается как два разных платежа.
+    if (!card.includes('Участие')) bad.push('book: цена не названа строкой «Участие»');
+    const cen = (card.match(/400 ฿/g) || []).length;
+    // Форма отказа без согласования числа: «2 раз» читается как опечатка и
+    // отвлекает от предмета, а отказ читают один раз — в минуту покраснения.
+    if (cen !== 1) bad.push(`book: цена «400 ฿» встречается на экране ${cen} — ждали 1`);
     if (await s.p.evaluate(() => window.__main === null)) bad.push('book: на свободном событии нет главной кнопки');
 
     // Внутри Telegram экранная кнопка скрыта (body.has-main .dup-main), работает главная.
@@ -2607,7 +2614,7 @@ if (grantsSet.length !== 1) {
       // экран (тот же дефект архитектор нашёл у меня на #50).
       bad.push(`demo-oplata: демонстрационное событие «sound» имеет вид «${kind}», а случай судит ПЛАТНОЕ — ветка не та, вердикт не выносится`);
     } else {
-      ['Записаться', 'К оплате', 'на месте', FRAZA_271].forEach(x => {
+      ['Записаться', 'Участие', 'на месте', FRAZA_271].forEach(x => {
         if (!t.includes(x)) bad.push(`demo-oplata: в демонстрации нет «${x}» — она должна говорить то же, что живой экран`); });
       ['15 минут', 'возвращается в афишу', 'Оплатить 400'].forEach(x => {
         if (t.includes(x)) bad.push(`demo-oplata: демонстрация обещает «${x}» — механизма с таким поведением в системе нет`); });
@@ -2735,9 +2742,9 @@ if (grantsSet.length !== 1) {
   for (const [name, row, has, hasnt] of [
     ['book-konchilos', EV({ id: 4, title: 'Уже закончился', starts_at: new Date(NOWFIX - 9000e3).toISOString(),
                             duration_min: 60, seats_left: 9, taken: 1 }),
-      ['завершилось'], ['Записаться', 'К оплате']],
+      ['завершилось'], ['Записаться', FRAZA_271]],
     ['book-mest-net', EV({ id: 4, taken: 12, seats_left: 0 }),
-      ['Мест нет'], ['Записаться', 'К оплате']]]) {
+      ['Мест нет'], ['Записаться', FRAZA_271]]]) {
     const s = await openCard(q => q.url().endsWith('/events') ? json(200, [row]) : undefined);
     const t = await s.view();
     has.forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
