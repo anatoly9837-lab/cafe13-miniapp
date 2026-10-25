@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v47 · 25.10.2026';
+var VERSION = 'v48 · 26.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -837,7 +837,8 @@ function tillSend() {
         TP.who = now;
         var grew = kind !== 'topup' || !rec || Math.abs(rec.balance - who.balance - amt) < 0.005;
         TP.done = { kind: kind, text: 'Принято ' + money(amt) + ' ฿ ' + PAY_HOW[method],
-                    note: 'Строка ушла в книгу клуба. Исправить её задним числом нельзя — только отменить и внести заново.',
+                    note: 'Строка ушла в книгу клуба. Исправить её задним числом нельзя, а отмена строки в приложении пока не сделана.',
+                    // Отмена на сервере есть (POST /till/{id}/cancel), кнопки в клиенте нет — Cafe13KPG#340.
                     warn: grew ? '' : 'Остаток изменился не на эту сумму: было ' + money(who.balance) +
                                       ' ฿. Не вносите снова — сверьте с администратором клуба.' };
         haptic(grew ? 'ok' : 'warn');
@@ -3343,12 +3344,10 @@ var SCREENS = {
     }
     var total = DATA.shift.reduce(function (a, r) { return r.cancelled ? a : a + r.sum; }, 0);
     return (FLASH ? flash() : '') +
+      // Вид приёма выбирается на карточке найденного человека, как в живой
+      // кассе, а не здесь: ряд «Членство / На баланс / Событие» и «Отменить»
+      // у строк смены нажимались и не делали ничего (Cafe13KPG#338).
       '<button type="button" class="btn" data-action="scan">' + svg(ICON.till) + 'Сканировать пропуск</button>' +
-      '<div class="group"><span class="label">Принять деньги</span>' +
-        '<div class="seg">' +
-          '<button type="button">Членство</button><button type="button">На баланс</button><button type="button">Событие</button>' +
-        '</div>' +
-      '</div>' +
       '<div class="group">' +
         '<div class="row"><span class="label">Внесено за смену</span><b class="num">' + money(total) + ' ฿</b></div>' +
         DATA.shift.map(function (r) {
@@ -3356,15 +3355,12 @@ var SCREENS = {
             return '<div class="card cancelled">' +
               '<div class="row"><b class="strike">' + esc(r.what) + ' · ' + r.sum + ' ฿</b>' +
               '<span class="pill gold">Отменено</span></div>' +
-              '<span class="small">' + esc(r.when) + '. Запись остаётся видимой: исправить внесённое нельзя, только отменить и внести заново.</span>' +
+              '<span class="small">' + esc(r.when) + '. Запись остаётся видимой: исправить внесённое нельзя, а отмена строки в приложении пока не сделана.</span>' +
             '</div>';
           }
           return '<div class="card"><div class="row">' +
             '<div class="col"><b>' + esc(r.what) + '</b><span class="small num">' + esc(r.when) + '</span></div>' +
-            '<div style="display:flex;align-items:center;gap:10px">' +
-              '<b class="num">' + money(r.sum) + ' ฿</b>' +
-              '<button type="button" class="btn quiet">Отменить</button>' +
-            '</div></div></div>';
+            '<b class="num">' + money(r.sum) + ' ฿</b></div></div>';
         }).join('') +
       '</div>' +
       '<div class="note">' + svg(ICON.info) +
