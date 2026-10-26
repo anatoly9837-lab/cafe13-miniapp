@@ -1639,15 +1639,20 @@ if (grantsSet.length !== 1) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (t.includes(never)) bad.push(`${name}: лишнее «${never}»`);
-      // Заголовок пустого дня и его подпись — одна пара, зазор .col (3 px), а не .card (10):
-      // без обёртки объяснение про сутки отрывается от заголовка (Cafe13KPG#386, форма 14 мест).
+      // Заголовок пустого дня и его подпись — одна пара в .col: зазор равен row-gap этого .col
+      // (3 px), а не .card (10) — без обёртки объяснение про сутки отрывается от заголовка
+      // (Cafe13KPG#386, форма 14 мест). Сравнение с row-gap, а не с порогом: правка styles.css
+      // не сделает проверку тихо неверной. Число печатается и при зелёном.
       if (name === 'till-day-empty') {
-        const gap = await s.p.evaluate(() => {
+        const g = await s.p.evaluate(() => {
           const b = [...document.querySelectorAll('#view .card.quiet b')].find(e => e.textContent === 'Сегодня через кассу ничего не прошло');
-          const n = b && b.nextElementSibling;
-          return n ? Math.round(n.getBoundingClientRect().top - b.getBoundingClientRect().bottom) : null;
+          const n = b && b.nextElementSibling, col = b && b.parentElement;
+          return { gap: n ? Math.round(n.getBoundingClientRect().top - b.getBoundingClientRect().bottom) : null,
+                   inCol: !!col && col.classList.contains('col'), want: col ? Math.round(parseFloat(getComputedStyle(col).rowGap)) : null };
         });
-        if (gap === null || gap > 5) bad.push(`till-day-empty: подпись пустого дня оторвана от заголовка — зазор ${gap} px, у пары в .col 3 (Cafe13KPG#386)`);
+        console.log(`till-day-empty: зазор заголовок→подпись ${g.gap} px, row-gap .col ${g.inCol ? g.want : '— пара не в .col'}`);
+        if (g.gap === null || !g.inCol || g.gap !== g.want)
+          bad.push(`till-day-empty: подпись пустого дня оторвана от заголовка — зазор ${g.gap} px, пара ${g.inCol ? 'в .col с row-gap ' + g.want : 'не в .col'} (Cafe13KPG#386)`);
       }
       if (name === 'till-day-sum') {
         if ((await dayRows(s)).length !== 5) bad.push('till-day-sum: при расхождении итога сняты и строки — они из ответа дословно (E36g)');
