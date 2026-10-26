@@ -1848,6 +1848,8 @@ if (grantsSet.length !== 1) {
       ['till-351-noend', 'membership', r => { r.membership.ends_at = 'когда-нибудь'; }, 'E34z'],
       // членство, всё совпало, а объекта membership в ответе нет — печатать нечего
       ['till-351-noms', 'membership', r => { delete r.membership; }, 'E34z'],
+      // уровень, которого нет в LEVEL, — печатать нечем
+      ['till-351-nolevel', 'membership', r => { r.membership.level = 'gold'; }, 'E34z'],
       ['till-351-nokind', 'topup', r => { r.kind = 'gift'; }, 'E34z'],
       ['till-351-nosum', 'topup', r => { r.amount = 'пятьсот'; }, 'E34z']]) {
       const s = await open(true, true, json(200, OWNER), null, null, null, cash(Object.assign({ post: bent(f) }, more)));
