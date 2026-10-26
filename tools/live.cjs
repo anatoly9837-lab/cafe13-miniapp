@@ -1828,8 +1828,8 @@ if (grantsSet.length !== 1) {
       if (x.kind === 'membership') row.membership = { id: 7, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS };
       f(row); return json(201, row); };
     const SAY2 = 'по ответу подтвердить нечем';
-    // [имя, вид, подмена ответа, кадр, что ввели, что ответил сервер, номер строки]
-    for (const [name, kind, f, frame, mine, theirs, id] of [
+    // [имя, вид, подмена ответа, кадр, что ввели, что ответил сервер, номер строки, прочее для cash()]
+    for (const [name, kind, f, frame, mine, theirs, id, more] of [
       ['till-351-sum', 'topup', r => { r.amount = '300.00'; }, 'E34k', '500 ฿', '300 ฿', '№ 95'],
       ['till-351-kind', 'topup', r => { r.kind = 'service'; }, 'E34k', 'На счёт', 'За услугу', '№ 95'],
       // вид разошёлся вместе с суммой — на экран пара вида, а не суммы
@@ -1840,13 +1840,17 @@ if (grantsSet.length !== 1) {
       ['till-351-who', 'topup', r => { r.member_id = ALIEN; }, 'E34l'],
       // сравнение строгое: тот же номер строкой расходится так же
       ['till-351-who-str', 'topup', r => { r.member_id = String(r.member_id); }, 'E34l'],
+      // карточка не перечиталась — «Перед приёмом» стоит всё равно: совету E34l иначе не с чем сравнивать (возврат архитектора)
+      ['till-351-who-noreread', 'topup', r => { r.member_id = ALIEN; }, 'E34l', null, null, null, { refind: () => json(500, { detail: 'x' }) }],
       // человека в ответе НЕТ — это не «другой человек»: E34l солгал бы кассиру (возврат архитектора на #82)
       ['till-351-noperson', 'topup', r => { delete r.member_id; }, 'E34z'],
       ['till-351-nullperson', 'topup', r => { r.member_id = null; }, 'E34z'],
       ['till-351-noend', 'membership', r => { r.membership.ends_at = 'когда-нибудь'; }, 'E34z'],
+      // членство, всё совпало, а объекта membership в ответе нет — печатать нечего
+      ['till-351-noms', 'membership', r => { delete r.membership; }, 'E34z'],
       ['till-351-nokind', 'topup', r => { r.kind = 'gift'; }, 'E34z'],
       ['till-351-nosum', 'topup', r => { r.amount = 'пятьсот'; }, 'E34z']]) {
-      const s = await open(true, true, json(200, OWNER), null, null, null, cash({ post: bent(f) }));
+      const s = await open(true, true, json(200, OWNER), null, null, null, cash(Object.assign({ post: bent(f) }, more)));
       if (await toPerson(s, name) && await toForm(s, name, kind)) {
         if (kind === 'membership') { await s.p.fill('#tp-months', '1'); await s.p.click('[data-action="tp-level:organizer"]'); }
         await s.p.fill('#tp-amount', kind === 'membership' ? '3000' : '500');
@@ -1890,6 +1894,7 @@ if (grantsSet.length !== 1) {
           // асимметрия совета — часть кадра: без второй половины «не изменилось» читается «не прошло»
           if (!t.includes('Не изменилось — вывода нет, и «не прошло» это тоже не значит')) bad.push(`${name}: нет второй половины совета E34l`);
           if (!g.reload || !t.includes('Перед приёмом: членства нет, остаток 0 ฿')) bad.push(`${name}: на E34l нет «Перечитать карточку» или «Перед приёмом»`);
+          if (t.includes('Это данные ДО приёма')) bad.push(`${name}: на E34l «Это данные ДО приёма» вместо строки «Перед приёмом» — кадр держит её всегда`);
         } else {
           if (!w.includes(SAY2) || !w.includes('Деньги проведены')) bad.push(`${name}: неразобранный ответ назван расхождением — признак третьего состояния шире предмета`);
           if ('Вы вводили' in g.rows) bad.push(`${name}: печатать нечего, а пара на экране`);
