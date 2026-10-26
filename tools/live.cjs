@@ -3291,6 +3291,35 @@ if (grantsSet.length !== 1) {
           bad.push(`manage-otmena-tekst: ${pochemu}; части «${chast}» на экране нет (кадр E37d, Cafe13KPG#359)`);
       if (ok && ask.includes('сможет только каждый сам'))
         bad.push('manage-otmena-tekst: на экране прежняя ложь «вернуть их сможет только каждый сам» — вернуть не может НИКТО (Cafe13KPG#359)');
+      /* ВЕС плашки — РЕШЕНИЕ кадра E37d, а не косметика: белая
+         карточка читается четвёртой строкой списка, поэтому вопрос стоит
+         глиной, а кнопки — ВНЕ неё. Судится СТРУКТУРНО: `classList` той
+         карточки, что держит вопрос, а не регулярка по исходнику — регулярка
+         описывает предмет той формой записи, которую вспомнил автор.
+         Прецедент того же класса в этой же батарее — «неизвестный исход глиной»
+         (кадр E34zh). Возврат архитектора по miniapp#84, Cafe13KPG#359. */
+      if (ok) {
+        const ves = await s.p.evaluate(() => {
+          const c = [...document.querySelectorAll('#view .card')]
+            .find(x => /Отменить мероприятие\?/.test(x.textContent));
+          if (!c) return { est: false };
+          const da = document.querySelector('#view [data-action^="event-cancel-yes"]');
+          const net = document.querySelector('#view [data-action="event-cancel-no"]');
+          return { est: true, warm: c.classList.contains('warm'),
+                   strong: c.classList.contains('strong'),
+                   vnutri: !!(da && c.contains(da)) || !!(net && c.contains(net)) };
+        });
+        if (!ves.est)
+          bad.push('manage-otmena-ves: карточки с вопросом на экране нет — вес судить нечем (Cafe13KPG#359)');
+        else {
+          if (!ves.warm)
+            bad.push('manage-otmena-ves: плашка вопроса не глиняная (`card warm`) — тот же вес, что у обычной карточки, и вопрос читается строкой списка (кадр E37d, Cafe13KPG#359)');
+          if (ves.strong)
+            bad.push('manage-otmena-ves: плашка вопроса белым весом (`card strong`) — кадр E37d держит её глиной нарочно (Cafe13KPG#359)');
+          if (ves.vnutri)
+            bad.push('manage-otmena-ves: кнопки «Да, отменить»/«Оставить» стоят ВНУТРИ плашки — в кадре E37d они под ней (Cafe13KPG#359)');
+        }
+      }
       if (posts.length) bad.push('manage-otmena: запрос ушёл на сервер ДО подтверждения');
       if (ok) {
         await s.p.click('[data-action="event-cancel-yes:4"]');
