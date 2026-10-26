@@ -2278,7 +2278,13 @@ function loadEvents() {
     var list = r.status === 200 ? fromEvents(r.data) : null;
     if (list) { EVENTS = list; EVENTS_STATE = 'ok'; }
     else EVENTS_STATE = failText(r);
-    if (current === 'home' || current === 'events' || current === 'event') render();
+    /* Перерисовать надо и «Записи»: экран строится из этого же ответа, и
+       без него человек, вошедший сюда сразу после записи, остаётся в
+       «Загружаем афишу…» навсегда — данные пришли, а экран их не показал.
+       Поймал случай `bookings-gost`: запустить загрузку и перерисовать по
+       ответу — ДВА разных перечня экранов, и добавить надо в оба. */
+    if (current === 'home' || current === 'events' || current === 'event'
+        || current === 'bookings') render();
   });
 }
 
