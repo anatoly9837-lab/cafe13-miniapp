@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v56 · 27.10.2026';
+var VERSION = 'v57 · 27.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -336,7 +336,7 @@ function untilText(m) {
 // (Cafe13KPG#301). Вернётся кадром E38 после слова владельца.
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
-              events: 1, event: 1, eventNew: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
+              events: 1, event: 1, eventNew: 1, bookings: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
               staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
@@ -2293,7 +2293,13 @@ function loadEvents() {
     var list = r.status === 200 ? fromEvents(r.data) : null;
     if (list) { EVENTS = list; EVENTS_STATE = 'ok'; }
     else EVENTS_STATE = failText(r);
-    if (current === 'home' || current === 'events' || current === 'event') render();
+    /* Перерисовать надо и «Записи»: экран строится из этого же ответа, и
+       без него человек, вошедший сюда сразу после записи, остаётся в
+       «Загружаем афишу…» навсегда — данные пришли, а экран их не показал.
+       Поймал случай `bookings-gost`: запустить загрузку и перерисовать по
+       ответу — ДВА разных перечня экранов, и добавить надо в оба. */
+    if (current === 'home' || current === 'events' || current === 'event'
+        || current === 'bookings') render();
   });
 }
 
@@ -3513,6 +3519,53 @@ var SCREENS = {
   },
 
   bookings: function () {
+    /* Живой экран «Записи» (Cafe13KPG#360). Тексты лежат АДРЕСОМ — кадры
+       `E40-bookings-mine.dc.html` и `E40b-bookings-none.dc.html` в `Cafe13KPG`,
+       ствол `dev` `b4f2704` (#377, ветка автора смержена); здесь они стоят
+       дословно.
+
+       ПРЕДСТОЯЩИЕ собираются из ответа афиши по `booked` (`booked_by_me`
+       сервера), а не отдельной ручкой: «моих записей» на сервере нет как
+       понятия. Строка — та же `eventRow`, что на афише, и ведёт в карточку
+       мероприятия. ВТОРОГО пути к отмене здесь НЕТ нарочно: отмена живёт в
+       карточке (`bookBlock`, `data-action="book-cancel"`), и два места
+       расходились бы молча.
+
+       СОСТОЯНИЯ «не пришло» и «отказ» берутся у афиши (`eventsWait`), а не
+       сочиняются: пустой список при непришедшем ответе сказал бы «вы никуда
+       не записаны» тому, кто только что записался. Слово «афишу» в том тексте
+       верно — экран строится из её ответа.
+
+       ПРОШЕДШИЕ — фраза, а не пустое место: `/events/history` отбирает
+       `e.organizer_id`, то есть мастеру отдаёт ЕГО мероприятия, а члену клуба
+       пустой список; «моей прошедшей записи» сервер не знает вовсе. Пустота
+       читалась бы как «я никуда не ходил», и это неправда. Архив — #265.
+
+       Метки «оплачено» нет нарочно: `my_booking_paid` и `my_amount_due` на
+       бою отсутствуют, и клиент их не читает. Пилюля называет условие
+       участия — свойство мероприятия, верное всегда, — а не мой долг.
+
+       Имя ведущего стоит без обёртки `.who`: в кадре это слот-пометка живого
+       имени, а в клиентских стилях `.who` существует только как `.pass .who`,
+       flex-контейнер экрана пропуска. Афиша рисует имя так же. */
+    if (LIVE) {
+      var list = eventList();
+      if (!list) return eventsWait();
+      var mine = list.filter(function (e) { return e.booked && !e.done; });
+      return '<div class="group"><span class="label">Предстоящие</span>' +
+        (mine.length
+          ? mine.map(function (e) { return eventRow(e, { day: true }); }).join('')
+          : '<div class="card quiet"><div class="col"><b>Вы никуда не записаны</b>' +
+            '<span class="small">Записывают на экране мероприятия. Место закрепляется сразу.</span></div></div>' +
+            // Кнопка, а не адрес: вкладка «Записи» есть у четырёх ролей с РАЗНЫМИ
+            // наборами, и «откройте „Клуб“» верно члену и ложно гостю, а вкладки
+            // «Афиша» нет ни у кого. Громкая нарочно — единственное действие здесь.
+            '<button type="button" class="btn" data-go="events">Вся афиша</button>') +
+        '</div>' +
+        '<div class="group"><span class="label">Прошедшие</span>' +
+        '<div class="card quiet"><span class="small">Прошедших записей приложение не показывает' +
+        ' — их не отдаёт сервер. Пустое место здесь не значит, что вы никуда не ходили.</span></div></div>';
+    }
     return '<div class="group"><span class="label">Предстоящие</span>' +
       DATA.upcoming.map(function (b) {
         return '<div class="card' + (b.tone === 'on' ? ' accent' : '') + '">' +
@@ -4734,14 +4787,45 @@ function flash() {
   '</div></div>';
 }
 
-function eventRow(e) {
+function eventRow(e, o) {
   var k = KIND[e.kind];
+  /* Подстрочник строки зависит от ЭКРАНА, а разметка одна. На афише день
+     даёт заголовок группы, поэтому в строке стоит «ведёт <имя> · <статус>»;
+     на экране «Записи» групп по дням нет вовсе, и день переезжает в строку —
+     так в кадре E40 (`Cafe13KPG` ствол `dev` `b4f2704`).
+
+     ⚠ Слова берутся у `dayLabel` — того же помощника, что у афиши, — ради
+     единства: в двух местах один день писался бы по-разному. Живой вывод
+     ПОЛНЫЙ: «6 декабря, воскресенье» (`MONTHS` родительным падежом целиком
+     плюс `weekday: 'long'`). Образец в кадре короче — «6 дек, вс», — и
+     короче именно ОБРАЗЕЦ, а не вывод; развилка «починить кадр или завести
+     короткую форму в помощнике» решается в Cafe13KPG#380, и короткая форма
+     задела бы ещё список записей в кассе — `dayLabel` зовут два живых
+     места. Выбор там на форму СЛОВ, а не на место дня в строке.
+     Второй разметки для этого не завожу: два места расходятся молча.
+
+     ⚠ Второй аргумент читается ТОЛЬКО как объект, потому что три места
+     зовут строку через `.map(eventRow)`, а `map` передаёт вторым параметром
+     ИНДЕКС. Сам по себе индекс здесь безвреден: `o && o.day` при `o = 1`
+     даёт `undefined`, у числа нет такого поля, — проверено node: 0→0,
+     1→undefined, 2→undefined, {day:true}→true. Прежняя редакция этого
+     комментария утверждала, что без проверки строки афиши сменили бы
+     подстрочник; это была НЕПРАВДА, нашёл её arhitector-47 на ревью #87.
+
+     Проверка стоит не против индекса, а против УПРОЩЕНИЯ этой строки:
+     перепишет кто-нибудь условие на `!!o` или `o !== undefined` — и индекс
+     станет истинным (у `!!o` с единицы, у второго даже при нуле), то есть
+     день появится там, где его не просили. Опасность в ФОРМЕ проверки, а
+     не в `map`. */
+  var day = o && typeof o === 'object' && o.day;
   return '<button type="button" class="listitem' + (e.kind === 'paid' ? ' accent' : '') + '" data-event="' + esc(e.id) + '">' +
     '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.part) + '</span></span>' +
     '<span class="grow"><b>' + esc(e.title) + '</b>' +
-    '<span class="small">ведёт ' + esc(e.master) + ' · ' + (e.done ? 'завершилось'
-      : e.booked ? 'вы записаны'
-      : e.seats === 0 ? 'мест нет' : e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats) + '</span></span>' +
+    '<span class="small">' + (day
+      ? esc(e.day) + ' · ведёт ' + esc(e.master)
+      : 'ведёт ' + esc(e.master) + ' · ' + (e.done ? 'завершилось'
+        : e.booked ? 'вы записаны'
+        : e.seats === 0 ? 'мест нет' : e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats)) + '</span></span>' +
     '<span class="pill ' + k.pill + '">' + k.label(e) + '</span>' +
   '</button>';
 }
@@ -5002,7 +5086,11 @@ function go(screen, p) {
   if (screen === 'tillDay' && LIVE && canTopup()) { TD.ask = -1; TD.deny = null; tillDayLoad(); }
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
-  if ((screen === 'home' || screen === 'events') && LIVE && EVENTS_STATE === '') loadEvents();
+  /* «Записи» строятся из ответа афиши, поэтому грузить её надо и при входе
+     сюда: человек попадает на этот экран сразу после записи (`go('bookings')`),
+     минуя афишу, и без этой строки `EVENTS` остался бы `null` навсегда —
+     экран сказал бы «вы никуда не записаны» тому, кто только что записался. */
+  if ((screen === 'home' || screen === 'events' || screen === 'bookings') && LIVE && EVENTS_STATE === '') loadEvents();
   // Места спрашиваются ЗАНОВО, если прошлый ответ списка не принёс: иначе
   // отказ, случившийся однажды, лежит на форме навсегда — человек читает
   // «места не пришли» уже после того, как сервер выздоровел. Пустой
