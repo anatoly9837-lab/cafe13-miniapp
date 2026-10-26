@@ -2634,7 +2634,14 @@ if (grantsSet.length !== 1) {
   {
     const GOST = clone(OWNER);
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false;
-    const s = await open(true, true, json(200, GOST), null, null, null, evReply(json(200, AFISHA)), null, NOWFIX);
+    /* Фикстура своя, БЕЗ записей: общая `AFISHA` несёт уже записанное
+       событие (id 4, `booked_by_me: true`), и на ней экран показал бы строку,
+       а не пустое состояние — судить пустоту на фикстуре с записью значит
+       проверять не то. Поймано пробой, воспроизводившей условия батареи. */
+    const NET_ZAPISEJ = [EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10),
+                              duration_min: 60, kind: 'free', price: '0.00', seats: 6,
+                              taken: 0, seats_left: 6, booked_by_me: false })];
+    const s = await open(true, true, json(200, GOST), null, null, null, evReply(json(200, NET_ZAPISEJ)), null, NOWFIX);
     const start = await s.view();
     if (start.includes('Баланс'))
       bad.push('bookings-gost: гость начинает с «Клуба» — предусловие случая снято, и он больше не доказывает, что афиша грузится при входе на «Записи» (Cafe13KPG#360)');
