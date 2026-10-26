@@ -1840,6 +1840,9 @@ if (grantsSet.length !== 1) {
       ['till-351-who', 'topup', r => { r.member_id = ALIEN; }, 'E34l'],
       // сравнение строгое: тот же номер строкой расходится так же
       ['till-351-who-str', 'topup', r => { r.member_id = String(r.member_id); }, 'E34l'],
+      // человека в ответе НЕТ — это не «другой человек»: E34l солгал бы кассиру (возврат архитектора на #82)
+      ['till-351-noperson', 'topup', r => { delete r.member_id; }, 'E34z'],
+      ['till-351-nullperson', 'topup', r => { r.member_id = null; }, 'E34z'],
       ['till-351-noend', 'membership', r => { r.membership.ends_at = 'когда-нибудь'; }, 'E34z'],
       ['till-351-nokind', 'topup', r => { r.kind = 'gift'; }, 'E34z'],
       ['till-351-nosum', 'topup', r => { r.amount = 'пятьсот'; }, 'E34z']]) {
@@ -1890,6 +1893,7 @@ if (grantsSet.length !== 1) {
         } else {
           if (!w.includes(SAY2) || !w.includes('Деньги проведены')) bad.push(`${name}: неразобранный ответ назван расхождением — признак третьего состояния шире предмета`);
           if ('Вы вводили' in g.rows) bad.push(`${name}: печатать нечего, а пара на экране`);
+          if (w.includes('человек в ответе не тот')) bad.push(`${name}: человека в ответе нет, а экран говорит «не тот» — E34l вместо E34z`);
         }
         if (await s.p.evaluate(id => document.documentElement.outerHTML.includes(id), String(ALIEN)))
           bad.push(`${name}: номер чужого человека из ответа попал в разметку`);
