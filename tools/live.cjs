@@ -1639,6 +1639,16 @@ if (grantsSet.length !== 1) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (t.includes(never)) bad.push(`${name}: лишнее «${never}»`);
+      // Заголовок пустого дня и его подпись — одна пара, зазор .col (3 px), а не .card (10):
+      // без обёртки объяснение про сутки отрывается от заголовка (Cafe13KPG#386, форма 14 мест).
+      if (name === 'till-day-empty') {
+        const gap = await s.p.evaluate(() => {
+          const b = [...document.querySelectorAll('#view .card.quiet b')].find(e => e.textContent === 'Сегодня через кассу ничего не прошло');
+          const n = b && b.nextElementSibling;
+          return n ? Math.round(n.getBoundingClientRect().top - b.getBoundingClientRect().bottom) : null;
+        });
+        if (gap === null || gap > 5) bad.push(`till-day-empty: подпись пустого дня оторвана от заголовка — зазор ${gap} px, у пары в .col 3 (Cafe13KPG#386)`);
+      }
       if (name === 'till-day-sum') {
         if ((await dayRows(s)).length !== 5) bad.push('till-day-sum: при расхождении итога сняты и строки — они из ответа дословно (E36g)');
         if (/наличными|картой/.test(t)) bad.push('till-day-sum: при расхождении итога показаны суммы по способу — они из того же разбора');
