@@ -3276,6 +3276,50 @@ if (grantsSet.length !== 1) {
       const ask = await s.view();
       if (ok && !ask.includes('Отменить мероприятие?')) bad.push('manage-otmena: спрос есть, а вопроса на экране нет');
       if (ok && !ask.includes('Записи всех, кто записался, будут сняты')) bad.push('manage-otmena: не сказано, чем отмена кончится для людей');
+      /* Текст подтверждения принят командой и лежит АДРЕСОМ — кадр
+         `E37d-event-cancel-ask.dc.html` на `Cafe13KPG` dev `8f4dc54`
+         (Cafe13KPG#359). Каждая часть судится своим признаком и своим
+         отказом: мутация, снимающая две разом, доказала бы только первую. */
+      if (ok) for (const [chast, pochemu] of [
+        ['и мероприятие уйдёт из афиши',
+         'не сказано, что мероприятие пропадёт из афиши'],
+        ['Вернуть его нельзя — только завести новое',
+         'не сказано, что отмена необратима: вернуть не может ни мастер, ни гость'],
+        ['Перепишите, кто записался: после отмены список не вернуть, а приложение гостей не предупредит',
+         'нет порядка действий ДО нажатия — а после отмены список недостижим обоими путями и гостей никто не известит']])
+        if (!ask.includes(chast))
+          bad.push(`manage-otmena-tekst: ${pochemu}; части «${chast}» на экране нет (кадр E37d, Cafe13KPG#359)`);
+      if (ok && ask.includes('сможет только каждый сам'))
+        bad.push('manage-otmena-tekst: на экране прежняя ложь «вернуть их сможет только каждый сам» — вернуть не может НИКТО (Cafe13KPG#359)');
+      /* ВЕС плашки — РЕШЕНИЕ кадра E37d, а не косметика: белая
+         карточка читается четвёртой строкой списка, поэтому вопрос стоит
+         глиной, а кнопки — ВНЕ неё. Судится СТРУКТУРНО: `classList` той
+         карточки, что держит вопрос, а не регулярка по исходнику — регулярка
+         описывает предмет той формой записи, которую вспомнил автор.
+         Прецедент того же класса в этой же батарее — «неизвестный исход глиной»
+         (кадр E34zh). Возврат архитектора по miniapp#84, Cafe13KPG#359. */
+      if (ok) {
+        const ves = await s.p.evaluate(() => {
+          const c = [...document.querySelectorAll('#view .card')]
+            .find(x => /Отменить мероприятие\?/.test(x.textContent));
+          if (!c) return { est: false };
+          const da = document.querySelector('#view [data-action^="event-cancel-yes"]');
+          const net = document.querySelector('#view [data-action="event-cancel-no"]');
+          return { est: true, warm: c.classList.contains('warm'),
+                   strong: c.classList.contains('strong'),
+                   vnutri: !!(da && c.contains(da)) || !!(net && c.contains(net)) };
+        });
+        if (!ves.est)
+          bad.push('manage-otmena-ves: карточки с вопросом на экране нет — вес судить нечем (Cafe13KPG#359)');
+        else {
+          if (!ves.warm)
+            bad.push('manage-otmena-ves: плашка вопроса не глиняная (`card warm`) — тот же вес, что у обычной карточки, и вопрос читается строкой списка (кадр E37d, Cafe13KPG#359)');
+          if (ves.strong)
+            bad.push('manage-otmena-ves: плашка вопроса белым весом (`card strong`) — кадр E37d держит её глиной нарочно (Cafe13KPG#359)');
+          if (ves.vnutri)
+            bad.push('manage-otmena-ves: кнопки «Да, отменить»/«Оставить» стоят ВНУТРИ плашки — в кадре E37d они под ней (Cafe13KPG#359)');
+        }
+      }
       if (posts.length) bad.push('manage-otmena: запрос ушёл на сервер ДО подтверждения');
       if (ok) {
         await s.p.click('[data-action="event-cancel-yes:4"]');
