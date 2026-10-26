@@ -1773,9 +1773,11 @@ if (grantsSet.length !== 1) {
       // Экран, а не файл: в прозе прежняя редакция с доводом храниться может.
       if (/внесите заново|внести заново/i.test(t)) bad.push(`${name}: экран велит внести заново — если платёж прошёл, это второй платёж (Cafe13KPG#333)`);
       if (name === 'till-201-noreread') {
-        if (await s.p.$eval('#view .rows > div:last-child b', e => e.textContent) !== 'не перечитан')
+        // Итог не отрисован (клиент упал в разборе ответа) — красное своим текстом, а не обрыв батареи на $eval.
+        if (await s.p.evaluate(() => { const e = document.querySelector('#view .rows > div:last-child b'); return e ? e.textContent : null; }) !== 'не перечитан')
           bad.push('till-201-noreread: остаток прежним числом, а не «не перечитан»');
-        await s.p.click('[data-action="tp-reload"]');
+        if (!(await s.p.$('[data-action="tp-reload"]'))) bad.push('till-201-noreread: на итоге нет «Перечитать карточку»');
+        else await s.p.click('[data-action="tp-reload"]');
         await s.p.waitForTimeout(250);
         const t2 = await s.view();
         if (!t2.includes('Если они не изменились, это вопрос к администратору клуба') || !t2.includes('Перед приёмом: членства нет, остаток 0 ฿'))
@@ -1783,7 +1785,7 @@ if (grantsSet.length !== 1) {
         if (t2.includes('Это данные ДО приёма')) bad.push('till-201-noreread: после перечитывания карточка всё ещё названа данными ДО приёма');
       }
       // остаток — только перечитанный: прежний после приёма был бы ложью
-      if (name === 'till-noreread' && await s.p.$eval('#view .rows > div:last-child b', e => e.textContent) !== 'не перечитан')
+      if (name === 'till-noreread' && await s.p.evaluate(() => { const e = document.querySelector('#view .rows > div:last-child b'); return e ? e.textContent : null; }) !== 'не перечитан')
         bad.push('till-noreread: в строке «На счёте» прежний остаток вместо «не перечитан»');
       // вес, а не только слова: неизвестный исход глиной и с громким «Перечитать» (кадр E34zh)
       // Совет E34zh (кадр на dev a47fd3c, Cafe13KPG#356) — ЧЕТЫРЕ ступени, по
