@@ -528,7 +528,14 @@ if (grantsSet.length !== 1) {
     const s = await open(true, false, json(200, OWNER), null, null, null);
     const t = await s.p.evaluate(() => { const w = document.createElement('div'); w.innerHTML = SCREENS.staff(); return w.textContent; });
     if (!t.includes('Внесено за смену')) bad.push('demo-staff: ПРОВЕРКА НЕ ВЫПОЛНЕНА — демонстрация кассы не отрисована, судить текст не о чем');
-    else if (/только отменить/.test(t)) bad.push('demo-staff: демонстрация советует отменить строку — кнопки отмены в приложении нет (Cafe13KPG#340)');
+    else {
+      if (/только отменить/.test(t)) bad.push('demo-staff: демонстрация советует отменить строку — в демо отмены нет (Cafe13KPG#340)');
+      // Отмену принесла v50 («День кассы»): «пока не сделана» пережило свою правду (Cafe13KPG#373).
+      if (/пока не сделана/.test(t)) bad.push('demo-staff: демонстрация говорит, что отмены в приложении нет, — её принесла v50 (Cafe13KPG#373)');
+      // Положительная половина: без неё запрет зелёный и тогда, когда строки не стало вовсе.
+      if (!t.includes('Запись остаётся видимой: книга клуба дописывается, а не правится.'))
+        bad.push('demo-staff: у отменённой строки нет «Запись остаётся видимой: книга клуба дописывается, а не правится.» (кадр E36)');
+    }
     await s.ctx.close();
   }
   // /pass без даты и без lifelong — не пропуск (пустая дата законна только при lifelong: true).

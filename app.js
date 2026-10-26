@@ -3544,7 +3544,7 @@ var SCREENS = {
             return '<div class="card cancelled">' +
               '<div class="row"><b class="strike">' + esc(r.what) + ' · ' + r.sum + ' ฿</b>' +
               '<span class="pill gold">Отменено</span></div>' +
-              '<span class="small">' + esc(r.when) + '. Запись остаётся видимой: исправить внесённое нельзя, а отмена строки в приложении пока не сделана.</span>' +
+              '<span class="small">' + esc(r.when) + '. Запись остаётся видимой: книга клуба дописывается, а не правится.</span>' +
             '</div>';
           }
           return '<div class="card"><div class="row">' +
