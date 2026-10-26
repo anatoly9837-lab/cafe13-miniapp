@@ -1818,6 +1818,52 @@ if (grantsSet.length !== 1) {
     }
     await s.ctx.close();
   }
+  // 201 с РАЗОБРАННЫМ, но не совпавшим телом — третье состояние (Cafe13KPG#351).
+  // Сервер записал не то, что вводил кассир: экран обязан назвать ОБЕ величины
+  // рядом, а не говорить «по ответу подтвердить нечем» — подтвердить есть чем,
+  // и подтверждается расхождение. Неразборчивый срок — второе состояние: какой
+  // срок ждать, клиент сам не считает, и сравнивать его не с чем.
+  // Человека значениями не называют: member_id — это tg_user_id, в разметку нельзя.
+  {
+    const ALIEN = 200000004;
+    const bent = f => q => { const x = JSON.parse(q.postData());
+      const row = { id: 95, at: '2026-10-24T10:00:00+00:00', kind: x.kind, amount: Number(x.amount).toFixed(2), method: x.method,
+                    member_id: x.member_id, note: '' };
+      if (x.kind === 'membership') row.membership = { id: 7, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS };
+      f(row); return json(201, row); };
+    const SAY2 = 'по ответу подтвердить нечем';
+    // [имя, вид, подмена ответа, третье ли, что ввели, что ответил сервер]
+    for (const [name, kind, f, third, mine, theirs] of [
+      ['till-351-sum', 'topup', r => { r.amount = '300.00'; }, true, '500 ฿', '300 ฿'],
+      ['till-351-kind', 'topup', r => { r.kind = 'service'; }, true, 'На счёт', 'За услугу'],
+      ['till-351-level', 'membership', r => { r.membership.level = 'member'; }, true, 'Мастер', 'Член клуба'],
+      ['till-351-who', 'topup', r => { r.member_id = ALIEN; }, true, null, null],
+      ['till-351-noend', 'membership', r => { r.membership.ends_at = 'когда-нибудь'; }, false, null, null]]) {
+      const s = await open(true, true, json(200, OWNER), null, null, null, cash({ post: bent(f) }));
+      if (await toPerson(s, name) && await toForm(s, name, kind)) {
+        if (kind === 'membership') { await s.p.fill('#tp-months', '1'); await s.p.click('[data-action="tp-level:organizer"]'); }
+        await s.p.fill('#tp-amount', kind === 'membership' ? '3000' : '500');
+        await s.p.click('[data-action="tp-send"]');
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        const w = await s.p.evaluate(() => { const c = document.querySelector('#view .card.warm');
+          if (!c) return null; const tw = document.createTreeWalker(c, NodeFilter.SHOW_TEXT), out = [];
+          while (tw.nextNode()) out.push(tw.currentNode.nodeValue); return out.join(' '); });
+        if (w === null) { bad.push(`${name}: итог не глиной — 201 с чужим телом показан как обычный приём`); await s.ctx.close(); continue; }
+        if (/Принято|Неизвестно/.test(t)) bad.push(`${name}: проведённый платёж назван принятым как ввели или неизвестным`);
+        if (/внесите заново|внести заново/i.test(t)) bad.push(`${name}: экран велит внести заново (Cafe13KPG#333)`);
+        if (third) {
+          if (w.includes(SAY2)) bad.push(`${name}: расхождение названо вторым состоянием — «${SAY2}», хотя ответ разобран (Cafe13KPG#351)`);
+          if (mine && !(w.includes(mine) && w.includes(theirs)))
+            bad.push(`${name}: на итоге нет обеих величин рядом — введено «${mine}», ответ «${theirs}» (Cafe13KPG#351)`);
+        } else if (!w.includes(SAY2)) bad.push(`${name}: неразобранный ответ назван расхождением — признак третьего состояния шире предмета`);
+        if (await s.p.evaluate(id => document.documentElement.outerHTML.includes(id), String(ALIEN)))
+          bad.push(`${name}: номер чужого человека из ответа попал в разметку`);
+        if (await leak(s)) bad.push(`${name}: номер человека попал в разметку или хранилище`);
+      }
+      await s.ctx.close();
+    }
+  }
   // Без права кассы — вкладки нет.
   {
     const plain = clone(OWNER); plain.roles = [];
