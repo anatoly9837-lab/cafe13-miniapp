@@ -1752,17 +1752,13 @@ if (grantsSet.length !== 1) {
     ['till-lost', 'membership', { post: 'abort' }, ['Неизвестно, принято ли', 'Ответ сервера не дошёл.',
       'Перед приёмом: членства нет, остаток 0 ฿'], ['Принято', 'Деньги проведены', 'Ниже — перечитанная карточка']],
     // 201 — деньги в книге (E34z): «неизвестно» звало бы ко второму приёму (Cafe13KPG#333).
-    ['till-alien', 'topup', { post: q => json(201, { id: 95, kind: 'topup', amount: '500.00', method: 'cash', member_id: 200000004, note: '' }) },
-      ['Деньги проведены', 'Второй раз не принимайте', 'Если они не изменились, это вопрос к администратору клуба', 'Перед приёмом: членства нет, остаток 0 ฿'], ['Принято', 'Неизвестно']],
+    // Разобранное, но не совпавшее тело — E34k/E34l, случаи till-351-* ниже.
     ['till-201-raw', 'topup', { post: () => ({ status: 201, contentType: 'text/html', body: '<html>ok</html>' }) },
       ['Деньги проведены', 'Если они не изменились, это вопрос к администратору клуба'], ['Принято', 'Неизвестно', 'не разобран']],
     // 201, а карточка не перечиталась (E34i): сверять не с чем — открыть заново по коду.
     ['till-201-noreread', 'membership', { post: () => ({ status: 201, contentType: 'text/html', body: '<html>ok</html>' }),
       refind: (() => { let n = 0; return () => n++ ? json(200, Object.assign({}, PERSON, { balance: 500 })) : json(500, { detail: 'x' }); })() },
       ['Деньги проведены', 'Откройте её заново по коду пропуска', 'Это данные ДО приёма: карточка не перечиталась'], ['Если они не изменились, это вопрос к администратору клуба', 'Неизвестно', 'Перед приёмом']],
-    // сумма и номер верные: иначе их несовпадение перекрыло бы проверку вида
-    ['till-level', 'membership', { post: q => json(201, { id: 95, kind: 'membership', amount: '3000.00', method: 'cash', member_id: PID, note: '',
-      membership: { id: 7, level: 'member', starts_at: ENDS, ends_at: ENDS } }) }, ['Деньги проведены', 'Если они не изменились, это вопрос к администратору клуба'], ['Принято', 'Неизвестно']],
     ['till-noreread', 'topup', { refind: () => json(500, { detail: 'x' }) }, ['Принято 500', 'Остаток не перечитан — обновите карточку', 'Перечитать карточку'], []],
     ['till-nogrow', 'topup', { after: { balance: 0 } }, ['Остаток изменился не на эту сумму', 'Не вносите снова'], []]]) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash(o));
@@ -1818,12 +1814,12 @@ if (grantsSet.length !== 1) {
     }
     await s.ctx.close();
   }
-  // 201 с РАЗОБРАННЫМ, но не совпавшим телом — третье состояние (Cafe13KPG#351).
-  // Сервер записал не то, что вводил кассир: экран обязан назвать ОБЕ величины
-  // рядом, а не говорить «по ответу подтвердить нечем» — подтвердить есть чем,
-  // и подтверждается расхождение. Неразборчивый срок — второе состояние: какой
-  // срок ждать, клиент сам не считает, и сравнивать его не с чем.
-  // Человека значениями не называют: member_id — это tg_user_id, в разметку нельзя.
+  // 201 с РАЗОБРАННЫМ, но не совпавшим телом — третье состояние (Cafe13KPG#351,
+  // кадры E34k/E34l). Развилка — есть ли что поставить РЯДОМ с введённым:
+  // вид, сумма, уровень → E34k, пара «Вы вводили / Сервер ответил»; человек →
+  // E34l, словом, без значений (member_id — это tg_user_id); печатать нечего
+  // (срок не дата, вид незнаком) → E34z как есть. Прежде till-alien и
+  // till-level ждали здесь текст E34z — то самое слияние состояний из #351.
   {
     const ALIEN = 200000004;
     const bent = f => q => { const x = JSON.parse(q.postData());
@@ -1832,13 +1828,21 @@ if (grantsSet.length !== 1) {
       if (x.kind === 'membership') row.membership = { id: 7, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS };
       f(row); return json(201, row); };
     const SAY2 = 'по ответу подтвердить нечем';
-    // [имя, вид, подмена ответа, третье ли, что ввели, что ответил сервер]
-    for (const [name, kind, f, third, mine, theirs] of [
-      ['till-351-sum', 'topup', r => { r.amount = '300.00'; }, true, '500 ฿', '300 ฿'],
-      ['till-351-kind', 'topup', r => { r.kind = 'service'; }, true, 'На счёт', 'За услугу'],
-      ['till-351-level', 'membership', r => { r.membership.level = 'member'; }, true, 'Мастер', 'Член клуба'],
-      ['till-351-who', 'topup', r => { r.member_id = ALIEN; }, true, null, null],
-      ['till-351-noend', 'membership', r => { r.membership.ends_at = 'когда-нибудь'; }, false, null, null]]) {
+    // [имя, вид, подмена ответа, кадр, что ввели, что ответил сервер, номер строки]
+    for (const [name, kind, f, frame, mine, theirs, id] of [
+      ['till-351-sum', 'topup', r => { r.amount = '300.00'; }, 'E34k', '500 ฿', '300 ฿', '№ 95'],
+      ['till-351-kind', 'topup', r => { r.kind = 'service'; }, 'E34k', 'На счёт', 'За услугу', '№ 95'],
+      // вид разошёлся вместе с суммой — на экран пара вида, а не суммы
+      ['till-351-two', 'membership', r => { r.kind = 'topup'; r.amount = '300.00'; delete r.membership; }, 'E34k', 'Членство', 'На счёт', '№ 95'],
+      ['till-351-level', 'membership', r => { r.membership.level = 'member'; }, 'E34k', 'Мастер', 'Член клуба', '№ 95'],
+      // номера в теле нет — строки «Строка в книге» нет, остальной кадр тот же
+      ['till-351-noid', 'topup', r => { r.amount = '300.00'; delete r.id; }, 'E34k', '500 ฿', '300 ฿', null],
+      ['till-351-who', 'topup', r => { r.member_id = ALIEN; }, 'E34l'],
+      // сравнение строгое: тот же номер строкой расходится так же
+      ['till-351-who-str', 'topup', r => { r.member_id = String(r.member_id); }, 'E34l'],
+      ['till-351-noend', 'membership', r => { r.membership.ends_at = 'когда-нибудь'; }, 'E34z'],
+      ['till-351-nokind', 'topup', r => { r.kind = 'gift'; }, 'E34z'],
+      ['till-351-nosum', 'topup', r => { r.amount = 'пятьсот'; }, 'E34z']]) {
       const s = await open(true, true, json(200, OWNER), null, null, null, cash({ post: bent(f) }));
       if (await toPerson(s, name) && await toForm(s, name, kind)) {
         if (kind === 'membership') { await s.p.fill('#tp-months', '1'); await s.p.click('[data-action="tp-level:organizer"]'); }
@@ -1846,17 +1850,47 @@ if (grantsSet.length !== 1) {
         await s.p.click('[data-action="tp-send"]');
         await s.p.waitForTimeout(400);
         const t = await s.view();
-        const w = await s.p.evaluate(() => { const c = document.querySelector('#view .card.warm');
-          if (!c) return null; const tw = document.createTreeWalker(c, NodeFilter.SHOW_TEXT), out = [];
-          while (tw.nextNode()) out.push(tw.currentNode.nodeValue); return out.join(' '); });
+        const g = await s.p.evaluate(() => {
+          const words = el => { if (!el) return null; const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), out = [];
+            while (tw.nextNode()) out.push(tw.currentNode.nodeValue); return out.join(' '); };
+          const rows = {};
+          for (const r of document.querySelectorAll('#view .rows > div')) {
+            const k = r.querySelector('.small'), v = r.querySelector('b');
+            if (k && v) rows[k.textContent] = v.textContent;
+          }
+          return { warm: words(document.querySelector('#view .card.warm')), rows,
+                   reload: !!document.querySelector('[data-action="tp-reload"]') };
+        });
+        const w = g.warm;
         if (w === null) { bad.push(`${name}: итог не глиной — 201 с чужим телом показан как обычный приём`); await s.ctx.close(); continue; }
         if (/Принято|Неизвестно/.test(t)) bad.push(`${name}: проведённый платёж назван принятым как ввели или неизвестным`);
         if (/внесите заново|внести заново/i.test(t)) bad.push(`${name}: экран велит внести заново (Cafe13KPG#333)`);
-        if (third) {
+        if (frame === 'E34k') {
           if (w.includes(SAY2)) bad.push(`${name}: расхождение названо вторым состоянием — «${SAY2}», хотя ответ разобран (Cafe13KPG#351)`);
-          if (mine && !(w.includes(mine) && w.includes(theirs)))
-            bad.push(`${name}: на итоге нет обеих величин рядом — введено «${mine}», ответ «${theirs}» (Cafe13KPG#351)`);
-        } else if (!w.includes(SAY2)) bad.push(`${name}: неразобранный ответ назван расхождением — признак третьего состояния шире предмета`);
+          if (!w.includes('Проведено не то, что вводили')) bad.push(`${name}: шапка не E34k`);
+          // подзаголовок предмета не называет — его называют две строки ниже (кадр E34k на b4eeba3)
+          if (!w.includes('Сервер ответил «принято» — строка в книге клуба уже есть. Второй раз не принимайте: повтор дал бы в книге вторую строку.'))
+            bad.push(`${name}: подзаголовок не дословно E34k: ${JSON.stringify(w)}`);
+          // пара по МЕСТАМ, а не просто оба слова на экране: перепутанные строки читались бы наоборот
+          if (g.rows['Вы вводили'] !== mine || g.rows['Сервер ответил'] !== theirs)
+            bad.push(`${name}: на итоге нет обеих величин рядом — ждали «Вы вводили ${mine}» / «Сервер ответил ${theirs}», есть ${JSON.stringify(g.rows)} (Cafe13KPG#351)`);
+          if ((g.rows['Строка в книге'] || null) !== id) bad.push(`${name}: «Строка в книге» ${JSON.stringify(g.rows['Строка в книге'])}, ждали ${JSON.stringify(id)}`);
+          // так на кадре: с кнопкой и «Перед приёмом» E34k не влезает (−1 px при 712)
+          if (g.reload || t.includes('Перед приёмом')) bad.push(`${name}: на E34k «Перечитать карточку» или «Перед приёмом» — кадр их не несёт`);
+          if (!t.includes('Назовите администратору клуба номер строки и что с чем разошлось')) bad.push(`${name}: нет совета E34k`);
+        } else if (frame === 'E34l') {
+          if (!w.includes('Но человек в ответе не тот, кого вы открыли, и чья это строка — по ответу не сказать. Второй раз не принимайте: повтор дал бы вторую строку.'))
+            bad.push(`${name}: подзаголовок не дословно E34l`);
+          if (!w.includes('Проведено, а человек в ответе не тот')) bad.push(`${name}: разошедшийся человек не E34l — шапка ${JSON.stringify(w.slice(0, 60))}`);
+          if (w.includes(SAY2)) bad.push(`${name}: расхождение названо вторым состоянием — «${SAY2}», хотя ответ разобран (Cafe13KPG#351)`);
+          if (Object.keys(g.rows).some(k => k === 'Вы вводили' || k === 'Сервер ответил')) bad.push(`${name}: у человека пара значений — номер человека на экран нельзя`);
+          // асимметрия совета — часть кадра: без второй половины «не изменилось» читается «не прошло»
+          if (!t.includes('Не изменилось — вывода нет, и «не прошло» это тоже не значит')) bad.push(`${name}: нет второй половины совета E34l`);
+          if (!g.reload || !t.includes('Перед приёмом: членства нет, остаток 0 ฿')) bad.push(`${name}: на E34l нет «Перечитать карточку» или «Перед приёмом»`);
+        } else {
+          if (!w.includes(SAY2) || !w.includes('Деньги проведены')) bad.push(`${name}: неразобранный ответ назван расхождением — признак третьего состояния шире предмета`);
+          if ('Вы вводили' in g.rows) bad.push(`${name}: печатать нечего, а пара на экране`);
+        }
         if (await s.p.evaluate(id => document.documentElement.outerHTML.includes(id), String(ALIEN)))
           bad.push(`${name}: номер чужого человека из ответа попал в разметку`);
         if (await leak(s)) bad.push(`${name}: номер человека попал в разметку или хранилище`);
