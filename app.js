@@ -2185,7 +2185,7 @@ function fromEvents(d) {
       about: typeof e.about === 'string' ? e.about : '',
       filmed: !!e.filmed,
       booked: !!e.booked_by_me,
-      // номер своей записи — им отменяют; читать его будет следующий шаг
+      // номер своей записи — им отменяют; его читает `bookBlock`: нет номера — нет и кнопки
       bookingId: typeof e.my_booking_id === 'number' ? e.my_booking_id : null,
       place: pname, placeId: pid
     });
@@ -2938,8 +2938,10 @@ function afishaHome() {
     EVENTS.slice(0, 2).map(eventRow).join('') + '</div>';
 }
 
-/* Карточка события на живых данных. Кнопки записи здесь пока нет: запись —
-   следующим шагом, а кнопка, которая ничего не делает, хуже её отсутствия. */
+/* Карточка события на живых данных. Запись и отмена здесь ЕСТЬ: обе живут в
+   `bookBlock`, который эта функция и зовёт последним. Прежняя редакция шапки
+   говорила «кнопки записи здесь пока нет» и пережила тот PR, которым запись
+   появилась, — следующий читатель завёл бы второй путь к записи. */
 function eventLive(e) {
   return '<div class="col"><h1>' + esc(e.title) + '</h1>' +
       '<span class="small">' + esc(e.day) + ' · ' + esc(e.time) + '–' + esc(e.until) +
@@ -3174,7 +3176,11 @@ function organizerLive() {
           '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.day.split(',')[0]) + '</span></span>' +
           '<span class="grow"><b>' + esc(e.title) + '</b>' +
           '<span class="small">записалось ' + (e.of - e.seats) + ' из ' + e.of +
-            (e.part === 'идёт' ? ' · идёт' : '') + '</span></span>' +
+            // Слово берётся из афиши (`eventRow`), а не сочиняется второй
+            // раз: кончившееся попадает сюда в зазор между ответом сервера
+            // и взглядом человека, и без пометки строка неотличима от
+            // завтрашней (Cafe13KPG#361).
+            (e.done ? ' · завершилось' : e.part === 'идёт' ? ' · идёт' : '') + '</span></span>' +
           svg(ICON.chev, 'chev') + '</button>';
       }).join('')
       : '<div class="card quiet"><span class="small">Своих мероприятий впереди нет.</span></div>') +

@@ -4124,6 +4124,43 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  /* ── кончившееся в кабинете метится (Cafe13KPG#361) ──
+     Сервер прошедшего в афише не отдаёт, но ответ лежит у клиента в памяти, и
+     между ним и взглядом человека проходит время: без пометки строка
+     кончившегося неотличима от завтрашней, а числа кабинета считают его
+     «впереди». Слово берётся из афиши, второй раз не сочиняется.
+
+     Случай судит ОБЕ стороны — есть у кончившегося и НЕТ у будущего: иначе
+     пометка, прибитая ко всем строкам, прошла бы за верную. */
+  {
+    const org = clone(OWNER); org.roles = []; org.membership.level = 'organizer';
+    const ROWS = [
+      EV({ id: 41, title: 'Своё завтра', organizer_id: 1, starts_at: atBkk(1, 19),
+           kind: 'paid', price: '400.00', seats: 10, taken: 2, seats_left: 8 }),
+      EV({ id: 42, title: 'Своё кончившееся', organizer_id: 1,
+           starts_at: new Date(NOWFIX - 9000e3).toISOString(), duration_min: 60,
+           kind: 'paid', price: '400.00', seats: 10, taken: 3, seats_left: 7 })
+    ];
+    const s = await open(true, true, json(200, org), null, null, null,
+                         chainQ(evReply(json(200, ROWS)), placesReply()), null, NOWFIX);
+    await s.p.evaluate(() => go('organizer'));
+    await s.p.waitForTimeout(200);
+    const rows = await s.p.evaluate(() =>
+      [...document.querySelectorAll('#view .listitem')].map(e => e.textContent));
+    const konch = rows.filter(t => t.includes('Своё кончившееся'));
+    const zavtra = rows.filter(t => t.includes('Своё завтра'));
+    if (konch.length !== 1 || zavtra.length !== 1) {
+      bad.push(`kabinet-zavershilos: строк в кабинете ${rows.length}, своих ждали две — кончившуюся и завтрашнюю; судить пометку не на чем`);
+    } else {
+      if (!konch[0].includes('завершилось'))
+        bad.push(`kabinet-zavershilos: кончившееся мероприятие стоит под «впереди» БЕЗ пометки «завершилось» — от завтрашнего его не отличить: «${konch[0].trim()}» (Cafe13KPG#361)`);
+      if (zavtra[0].includes('завершилось'))
+        bad.push(`kabinet-zavershilos: пометка «завершилось» стоит у БУДУЩЕГО мероприятия — метка прибита ко всем строкам, а не считается по событию: «${zavtra[0].trim()}»`);
+    }
+    if (s.errs.length) bad.push('kabinet-zavershilos: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
   // ── кто записался (#178, вторая половина) ──
   // Список спрашивается только на СВОЁМ мероприятии: на чужое запроса нет
   // вовсе. Обратная проверка обязательна — иначе доказана половина.
