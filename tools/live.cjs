@@ -2619,6 +2619,35 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  /* Вход на «Записи» МИНУЯ «Клуб»: гостя после входа уводит `go(homeOf())` на
+     экран «Услуги», а загрузчик афиши в ствольном условии знал только `home`
+     и `events`. Значит для него клик по вкладке «Записи» — единственное, что
+     грузит афишу, и без этой строки экран остаётся в «Загружаем афишу…»
+     навсегда (Cafe13KPG#360).
+
+     ⚠ ПРЕДУСЛОВИЕ ПРОВЕРЯЕТСЯ ПРИБОРОМ, А НЕ КОММЕНТАРИЕМ. Случай доказывает
+     строку, пока гость НЕ начинает с `home`: перенесут его старт туда или
+     добавят загрузку афиши на старт — она окажется в памяти до входа на
+     экран, и случай перестанет доказывать что-либо МОЛЧА, оставшись зелёным.
+     Поэтому «гость начинает не с „Клуба“» стоит здесь отдельным отказом.
+     Условие назвал координатор, Cafe13KPG#360. */
+  {
+    const GOST = clone(OWNER);
+    GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false;
+    const s = await open(true, true, json(200, GOST), null, null, null, evReply(json(200, AFISHA)), null, NOWFIX);
+    const start = await s.view();
+    if (start.includes('Баланс'))
+      bad.push('bookings-gost: гость начинает с «Клуба» — предусловие случая снято, и он больше не доказывает, что афиша грузится при входе на «Записи» (Cafe13KPG#360)');
+    await s.p.click('#tabs [data-go="bookings"]');
+    await s.p.waitForTimeout(200);
+    const t = await s.view();
+    if (t.includes('Загружаем афишу'))
+      bad.push('bookings-gost: экран записей застрял на «Загружаем афишу…» — афиша не грузится при входе сюда, а гость попадает на этот экран, минуя «Клуб» (Cafe13KPG#360)');
+    if (!t.includes('Вы никуда не записаны'))
+      bad.push('bookings-gost: у гостя без записей нет честного пустого состояния — вместо него осталось что-то третье (кадр E40b, Cafe13KPG#360)');
+    await s.ctx.close();
+  }
+
 
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, AFISHA)), null, NOWFIX);
