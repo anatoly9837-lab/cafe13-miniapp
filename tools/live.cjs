@@ -6382,6 +6382,7 @@ if (grantsSet.length !== 1) {
     // Перебор нажатий (Cafe13KPG#444): каждая ОТРИСОВАННАЯ кнопка-действие девяти экранов в
     // демонстрации нажимается, и ни одна не уходит на сервер и не роняет страницу. Список
     // DEMO_SENDS здесь не читается нарочно: проверка, собранная из него, сверяла бы список сам с собой.
+    // Три признака на каждое нажатие: не ушло на сервер, не уронило страницу, не промолчало.
     // ⚠ Предел: перебор видит только кнопки, до которых доходят нажатия на этих девяти экранах
     // (пустые поля заполняются цифрой «7»). Действие, которое рисуется от данных сервера или
     // живёт на экране вне перечня, мимо него — зелёное здесь НЕ значит «все действия покрыты».
@@ -6398,6 +6399,11 @@ if (grantsSet.length !== 1) {
           await s.p.evaluate(() => document.querySelectorAll('#view input:not([type]), #view input[type=text], #view textarea').forEach(i => {
             if (!i.value && !i.disabled) { i.value = '7'; i.dispatchEvent(new Event('input', { bubbles: true })); } }));
           const c0 = s.calls.length, e0 = s.errs.length;
+          // слово «Это демонстрация» от прошлого нажатия снимается: иначе следующая защищённая
+          // отправка оставила бы экран тем же, и немую кнопку от защищённой было бы не отличить
+          await s.p.evaluate(() => { if (FLASH) { FLASH = null; render(); } });
+          const h0 = await s.p.evaluate(() => document.getElementById('view').innerHTML);
+          const on = await s.p.evaluate(() => [...document.querySelectorAll('#view button[data-action][aria-pressed="true"]')].map(x => x.dataset.action));
           const now = await s.p.evaluate(() => [...document.querySelectorAll('#view button[data-action]')].map(x => x.dataset.action));
           const a = await s.p.evaluate(([done, before]) => {
             const n = x => done[x.dataset.action] || 0;
@@ -6412,8 +6418,15 @@ if (grantsSet.length !== 1) {
           }, [Object.fromEntries(seen), before]);
           before = now;
           if (a === null) break;
+          const first = !seen.has(a);
           seen.set(a, (seen.get(a) || 0) + 1); pressed++;
           await s.p.waitForTimeout(80);
+          // Немая кнопка (Cafe13KPG#338): первое нажатие НЕвыбранной кнопки обязано изменить экран.
+          // Без этого отправка, выпавшая из DEMO_SENDS и упёршаяся в ранний `return` (`!BAR` у
+          // «Сохранить», `!canBook()` у «Записать»), не шлёт и не падает — и проходила зелёной.
+          if (first && !on.includes(a) && await s.p.evaluate(x => current === x, scr) &&
+              await s.p.evaluate(() => document.getElementById('view').innerHTML) === h0)
+            bad.push(`demo-press ${scr}: нажатие «${a}» в демонстрации ничего не изменило на экране — немая кнопка (Cafe13KPG#338)`);
           if (s.calls.length !== c0) bad.push(`demo-press ${scr}: нажатие «${a}» в демонстрации ушло на сервер`);
           if (s.errs.length !== e0) bad.push(`demo-press ${scr}: нажатие «${a}» в демонстрации уронило страницу: ${s.errs.slice(e0).join(' | ')}`);
         }
