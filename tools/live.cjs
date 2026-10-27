@@ -5532,6 +5532,25 @@ if (grantsSet.length !== 1) {
       if (await s.p.evaluate(() => window.__main !== null)) bad.push('cards-member: главная кнопка без права');
       await s.ctx.close();
     }
+    // Строка входа в «Клубе» у работника с членством — эталон для второй двери на «Заказах»:
+    // один источник, и расхождение двух входов краснеет само (возврат архитектора по #90).
+    // Сличаются разметка строки и подпись её группы — вход в «Клубе» стоит рядом с другими
+    // рабочими строками, поэтому группа целиком не сравнима.
+    const rowOf = () => {
+      const b = document.querySelector('#view [data-go="barCards"]');
+      const g = b && b.closest('.group'), l = g && g.querySelector(':scope > .label');
+      return b ? { html: b.outerHTML, text: b.textContent, label: l ? l.textContent : null } : null;
+    };
+    let homeRow = null;
+    // работник с членством входит из «Клуба» — и «назад» ведёт в «Клуб», а не в «Заказы»
+    {
+      const s = await cardsCase(WORKER, {});
+      homeRow = await s.p.evaluate(rowOf);
+      if (await toCards(s)) {
+        if (await s.p.evaluate(() => backTo()) !== 'home') bad.push('cards-home-back: вошли из «Клуба», а «назад» ведёт не туда (Cafe13KPG#403)');
+      } else bad.push('cards-home-back: у работника с членством нет входа в «Клубе»');
+      await s.ctx.close();
+    }
     // Бармен без членства (Сой): «Клуб» вкладкой не приходит, вход в карточки — на «Заказах»
     // под сменой и над счётчиками (кадр E41, Cafe13KPG#396), и «назад» ведёт обратно
     // в «Заказы», а не на услуги гостя (Cafe13KPG#403).
@@ -5556,6 +5575,15 @@ if (grantsSet.length !== 1) {
         else if (at.shift < 0 || at.rows < 0 || !(at.shift < at.i && at.i < at.rows))
           bad.push(`${n}: вход «Карточки меню» не между сменой и счётчиками: вход ${at.i}, смена ${at.shift}, счётчики ${at.rows} (кадр E41)`);
         if (at.i >= 0) {
+          const qRow = await s.p.evaluate(rowOf);
+          // кадр E41: те же слова, что в «Клубе», вплоть до подстрочника
+          for (const w of ['Карточки меню', 'Новые позиции и утверждение'])
+            if (!qRow.text.includes(w)) bad.push(`${n}: в строке входа на «Заказах» нет «${w}» (кадр E41)`);
+          if (!homeRow) bad.push(`${n}: НЕ ВЫПОЛНЕНО — эталона нет, в «Клубе» у работника с членством строки входа не нашлось`);
+          else {
+            if (qRow.html !== homeRow.html) bad.push(`${n}: строка входа на «Заказах» разошлась со строкой в «Клубе»: «${qRow.text}» против «${homeRow.text}» (кадр E41)`);
+            if (qRow.label !== homeRow.label) bad.push(`${n}: группа входа на «Заказах» подписана «${qRow.label}», в «Клубе» — «${homeRow.label}» (кадр E41)`);
+          }
           await s.p.click('#view [data-go="barCards"]'); await s.p.waitForTimeout(300);
           if (await s.p.evaluate(() => current) !== 'barCards') bad.push(`${n}: вход не открыл «Карточки меню»`);
           else {
@@ -5572,14 +5600,6 @@ if (grantsSet.length !== 1) {
           }
         }
       }
-      await s.ctx.close();
-    }
-    // работник с членством входит из «Клуба» — и «назад» ведёт в «Клуб», а не в «Заказы»
-    {
-      const s = await cardsCase(WORKER, {});
-      if (await toCards(s)) {
-        if (await s.p.evaluate(() => backTo()) !== 'home') bad.push('cards-home-back: вошли из «Клуба», а «назад» ведёт не туда (Cafe13KPG#403)');
-      } else bad.push('cards-home-back: у работника с членством нет входа в «Клубе»');
       await s.ctx.close();
     }
     // новая карточка: предупреждение до сохранения; группа сводится к существующей без регистра
