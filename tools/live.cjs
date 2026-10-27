@@ -1994,9 +1994,9 @@ if (grantsSet.length !== 1) {
     await e.click(); return true;
   }
   const bookPosts = s => s.calls.filter(c => c.method === 'POST' && /\/bar\/(expenses|income)$/.test(c.url));
-  // Саша — куратор Бара без членства: путь только через вкладку «Заказы»
-  const SASHA = clone(OWNER); SASHA.roles = [{ role: 'curator', direction_id: 7 }];
-  SASHA.membership_active = false; SASHA.membership = null; SASHA.memberships = [];
+  // Куратор Бара без членства: путь только через вкладку «Заказы»
+  const CURATOR = clone(OWNER); CURATOR.roles = [{ role: 'curator', direction_id: 7 }];
+  CURATOR.membership_active = false; CURATOR.membership = null; CURATOR.memberships = [];
   async function toBook(s, name) {
     for (const sel of ['#tabs [data-go="barQueue"]', '#view [data-go="barQueue"]']) {
       if (await s.p.$(sel)) { await tap(s, sel); await s.p.waitForTimeout(250); break; }
@@ -2029,7 +2029,7 @@ if (grantsSet.length !== 1) {
   }
   // Расход: без выбора не уходит; подтверждение; одно тело; итог из ответа.
   {
-    const s = await open(true, true, json(200, SASHA), null, null, null, book()); s.name = 'book-sasha';
+    const s = await open(true, true, json(200, CURATOR), null, null, null, book()); s.name = 'book-curator';
     if (await toBook(s, 'book-expense') && await fillExpense(s, 'book-expense', '240', [])) {
       // признак «не подставлено молча»: ни одна категория/вид/оплата не нажата
       if (await s.p.$('[data-action^="b-cat"][aria-pressed="true"], [data-action^="b-kind"][aria-pressed="true"], [data-action^="b-paid"][aria-pressed="true"]'))
@@ -2097,7 +2097,7 @@ if (grantsSet.length !== 1) {
   }
   // Подсказка — только при закупе и расходниках, не при ремонте: иначе она шум.
   {
-    const s = await open(true, true, json(200, SASHA), null, null, null, book()); s.name = 'book-hint';
+    const s = await open(true, true, json(200, CURATOR), null, null, null, book()); s.name = 'book-hint';
     if (await toBook(s, 'book-hint') && await fillExpense(s, 'book-hint', '240', ['b-cat:ремонт'])) {
       if ((await s.view()).includes('обычно текущая трата')) bad.push('book-hint: подсказка «обычно текущая» при ремонте');
       await tap(s, '[data-action="b-cat:расходники"]');
@@ -2123,7 +2123,7 @@ if (grantsSet.length !== 1) {
     const w = `(${M.tag})`;
     // не тронута
     {
-      const s = await open(true, true, json(200, SASHA), null, null, null, book(), null, NOW); s.name = 'book-date-default';
+      const s = await open(true, true, json(200, CURATOR), null, null, null, book(), null, NOW); s.name = 'book-date-default';
       if (await toBook(s, 'book-date-default') && await fillExpense(s, 'book-date-default', '240', ALL_PICKS)) {
         if (!(await s.p.$('#b-date'))) bad.push(`book-date-default ${w}: нет поля даты`);
         else {
@@ -2140,7 +2140,7 @@ if (grantsSet.length !== 1) {
     }
     // сменена
     {
-      const s = await open(true, true, json(200, SASHA), null, null, null, book({ exp: echoAt(x => x.at || M.today) }), null, NOW); s.name = 'book-date-back';
+      const s = await open(true, true, json(200, CURATOR), null, null, null, book({ exp: echoAt(x => x.at || M.today) }), null, NOW); s.name = 'book-date-back';
       if (await toBook(s, 'book-date-back') && await fillExpense(s, 'book-date-back', '240', ALL_PICKS) && await s.p.$('#b-date')) {
         await s.p.fill('#b-date', M.back);
         await s.p.waitForTimeout(100);
@@ -2167,7 +2167,7 @@ if (grantsSet.length !== 1) {
     for (const [name, exp, want] of [
       ['book-date-otherday', echoAt(() => '2026-11-27'), 'Ответ сервера не разобран'],
       ['book-date-422', () => json(422, { detail: 'дата 2026-12-05 — из будущего; сегодня в клубе 2026-12-02' }), 'Дата 2026-12-05 — из будущего']]) {
-      const s = await open(true, true, json(200, SASHA), null, null, null, book({ exp }), null, NOW); s.name = name;
+      const s = await open(true, true, json(200, CURATOR), null, null, null, book({ exp }), null, NOW); s.name = name;
       if (await toBook(s, name) && await fillExpense(s, name, '240', ALL_PICKS) && await s.p.$('#b-date')) {
         await s.p.fill('#b-date', M.back);
         await askSend(s, name);
@@ -2179,7 +2179,7 @@ if (grantsSet.length !== 1) {
   }
   // Не сумма — не уходит.
   for (const v of ['0', 'abc', '1.234']) {
-    const s = await open(true, true, json(200, SASHA), null, null, null, book()); s.name = 'book-sasha';
+    const s = await open(true, true, json(200, CURATOR), null, null, null, book()); s.name = 'book-curator';
     if (await toBook(s, 'book-amount') && await fillExpense(s, 'book-amount', v, ALL_PICKS)) {
       await tap(s, '[data-action="b-ask"]');
       if (!(await s.view()).includes('Сумма — число больше нуля') || (await s.p.$('[data-action="b-send"]'))) bad.push(`book-amount: «${v}» принято как сумма`);
@@ -2198,7 +2198,7 @@ if (grantsSet.length !== 1) {
     ['book-noid', { exp: alt(EXP_ROW, 'id', null) }, 'Ответ сервера не разобран'],
     ['book-inc-method', { inc: alt(INC_ROW, 'method', 'cash') }, 'Ответ сервера не разобран', true],
     ['book-403', { exp: () => json(403, { detail: 'нужна роль curator' }) }, 'Нужна роль curator']]) {
-    const s = await open(true, true, json(200, SASHA), null, null, null, book(o)); s.name = name;
+    const s = await open(true, true, json(200, CURATOR), null, null, null, book(o)); s.name = name;
     let ready = false;
     if (inc) {
       if (await toBook(s, name) && await s.p.$('[data-action="b-new:income"]')) {
@@ -2230,7 +2230,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   {
-    const tea = clone(SASHA); tea.roles = [{ role: 'curator', direction_id: 2 }];
+    const tea = clone(CURATOR); tea.roles = [{ role: 'curator', direction_id: 2 }];
     const s = await open(true, true, json(200, tea), null, null, null, book()); s.name = 'book-tea';
     await s.p.evaluate(() => go('barMoney'));
     await s.p.waitForTimeout(250);
@@ -2268,7 +2268,7 @@ if (grantsSet.length !== 1) {
     return true;
   }
   {
-    const s = await open(true, true, json(200, SASHA), null, null, null, dayApi()); s.name = 'day';
+    const s = await open(true, true, json(200, CURATOR), null, null, null, dayApi()); s.name = 'day';
     if (await toDay(s)) {
       const t = await s.view();
       ['Сегодня, 20 октября', 'Смена открыта с 16:30', '1 780 ฿', '1 570 ฿', '210 ฿', 'выручка вечера', 'наличные · 19:00',
@@ -2297,7 +2297,7 @@ if (grantsSet.length !== 1) {
     ['day-row', dayWith({ income: [Object.assign({}, DAY_ROW.income[0], { method: 'account' }), DAY_ROW.income[1]] }), 'Ответ сервера не разобран', 'выручка вечера'],
     ['day-noshift', dayWith({ open_shift: null }), 'Смена не открыта', 'Смена открыта с'],
     ['day-403', json(403, { detail: 'деньги направления смотрит куратор' }), 'Отчёт за день видит куратор направления', 'Доход']]) {
-    const s = await open(true, true, json(200, SASHA), null, null, null, dayApi(reply)); s.name = name;
+    const s = await open(true, true, json(200, CURATOR), null, null, null, dayApi(reply)); s.name = name;
     if (await toDay(s)) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»: ` + t.slice(0, 160));
@@ -2315,7 +2315,7 @@ if (grantsSet.length !== 1) {
       income: [Object.assign({}, DAY_ROW.income[0], { amount: '1400.00', note: 'qzx-срез-qzx' }), DAY_ROW.income[1]],
       income_total: '1470.00' });
     const slow = () => new Promise(r => setTimeout(() => { landed = true; r(json(200, OLD)); }, 1500));
-    const s = await open(true, true, json(200, SASHA), null, null, null, dayApi(() => ++n === 1 ? slow() : json(200, DAY_ROW))); s.name = 'day-late';
+    const s = await open(true, true, json(200, CURATOR), null, null, null, dayApi(() => ++n === 1 ? slow() : json(200, DAY_ROW))); s.name = 'day-late';
     if (await toDay(s)) {
       // пока отчёт грузится, на экране дня кнопок нет — уход вкладкой «Заказы»
       await tap(s, '#tabs [data-go="barQueue"]'); await s.p.waitForTimeout(250);
@@ -2332,7 +2332,7 @@ if (grantsSet.length !== 1) {
   // Сбой обновления не стирает отчёт, а помечает.
   {
     let n = 0;
-    const s = await open(true, true, json(200, SASHA), null, null, null, dayApi(() => ++n === 1 ? json(200, DAY_ROW) : json(500, { detail: 'x' }))); s.name = 'day-stale';
+    const s = await open(true, true, json(200, CURATOR), null, null, null, dayApi(() => ++n === 1 ? json(200, DAY_ROW) : json(500, { detail: 'x' }))); s.name = 'day-stale';
     if (await toDay(s) && await tap(s, '[data-action="day-reload"]')) {
       await s.p.waitForTimeout(300);
       const t = await s.view();
@@ -2353,12 +2353,12 @@ if (grantsSet.length !== 1) {
   // Сервер (cafe13-api deps.caller): X-Test-Mode: 1 — тестовая база, X-Act-As —
   // чужие глаза, только вместе с тестовым режимом. Заглушка ведёт себя так же:
   // без X-Test-Mode список людей — 403, чужой /me — только с обоими.
-  const TEST_SASHA = clone(SASHA); TEST_SASHA.member.tg_user_id = 501; TEST_SASHA.member.first_name = 'Александра';
+  const TEST_CURATOR = clone(CURATOR); TEST_CURATOR.member.tg_user_id = 501; TEST_CURATOR.member.first_name = 'Образец';
   const PEOPLE = { base: 'test', people: [
-    { tg_user_id: 501, first_name: 'Александра', last_name: '', roles: [{ role: 'curator', direction_id: 7, direction: 'Бар' }] },
-    { tg_user_id: 502, first_name: 'Юра', last_name: '', roles: [{ role: 'curator', direction_id: 2, direction: 'Чай' }] }] };
+    { tg_user_id: 501, first_name: 'Образец', last_name: '', roles: [{ role: 'curator', direction_id: 7, direction: 'Бар' }] },
+    { tg_user_id: 502, first_name: 'Второй', last_name: '', roles: [{ role: 'curator', direction_id: 2, direction: 'Чай' }] }] };
   function testApi(o) {
-    o = Object.assign({ health: 'configured', people: () => json(200, PEOPLE), as: { '501': TEST_SASHA } }, o);
+    o = Object.assign({ health: 'configured', people: () => json(200, PEOPLE), as: { '501': TEST_CURATOR } }, o);
     const b = book();
     return q => {
       const u = q.url(), h = q.headers(), t = h['x-test-mode'] === '1', as = h['x-act-as'];
@@ -2386,7 +2386,7 @@ if (grantsSet.length !== 1) {
     if (s.calls.some(c => c.test || c.as)) bad.push('test-unset: тестовые заголовки ушли без входа в режим');
     await s.ctx.close();
   }
-  // Полный путь: войти → список → глазами Александры → запись → выйти из просмотра → выйти из теста.
+  // Полный путь: войти → список → глазами куратора → запись → выйти из просмотра → выйти из теста.
   {
     const saved = { code: 'XIII-0001', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 };
     const s = await open(true, true, json(200, OWNER), null, null, saved, testApi()); s.name = 'test-path';
@@ -2400,22 +2400,22 @@ if (grantsSet.length !== 1) {
       if (!((await strip(s)) || '').includes('Вы сами')) bad.push('test-path: после входа нет полосы «Тестовая база · Вы сами»');
       await s.p.click('#demo-btn'); await s.p.waitForTimeout(200);
       const t = await s.view();
-      if (!t.includes('Александра') || !t.includes('Куратор направления · Бар') || !t.includes('Юра') || !t.includes('Куратор направления · Чай'))
+      if (!t.includes('Образец') || !t.includes('Куратор направления · Бар') || !t.includes('Второй') || !t.includes('Куратор направления · Чай'))
         bad.push('test-path: в списке нет людей словами: ' + t.slice(0, 300));
       await s.p.screenshot({ path: `${OUT}/live-test-people.png`, fullPage: true });
       if (await tap(s, '[data-action="test-as:501"]')) {
         await s.p.waitForTimeout(400);
         const me = s.calls.filter(c => c.url.endsWith('/me')).pop();
-        if (!me || me.test !== '1' || me.as !== '501') bad.push('test-path: /me Александры запрошен без обоих заголовков');
+        if (!me || me.test !== '1' || me.as !== '501') bad.push('test-path: /me выбранного человека запрошен без обоих заголовков');
         const st = (await strip(s)) || '';
-        if (!st.includes('Тестовая база') || !st.includes('Смотрите как Александра') || !st.includes('ненастоящие')) bad.push('test-path: полоса не говорит, чьими глазами и что база тестовая: ' + st);
+        if (!st.includes('Тестовая база') || !st.includes('Смотрите как Образец') || !st.includes('ненастоящие')) bad.push('test-path: полоса не говорит, чьими глазами и что база тестовая: ' + st);
         if (!(await s.p.isVisible('#demo-btn'))) bad.push('test-path: в просмотре пропало солнышко — к панели не вернуться');
-        // Саша без членства: путь к записи через «Заказы»; запись идёт с обоими заголовками
+        // Куратор без членства: путь к записи через «Заказы»; запись идёт с обоими заголовками
         const before = s.calls.length;
         if (await toBook(s, 'test-path') && await fillExpense(s, 'test-path', '240', ALL_PICKS) && await askSend(s, 'test-path')) {
           const w = s.calls.slice(before).filter(c => c.method === 'POST');
-          if (w.length !== 1 || w[0].test !== '1' || w[0].as !== '501') bad.push('test-path: запись ушла не в тестовую базу глазами Александры: ' + JSON.stringify(w.map(c => [c.url, c.test, c.as])));
-          if (!((await strip(s)) || '').includes('Смотрите как Александра')) bad.push('test-path: на экране записи нет полосы');
+          if (w.length !== 1 || w[0].test !== '1' || w[0].as !== '501') bad.push('test-path: запись ушла не в тестовую базу глазами выбранного человека: ' + JSON.stringify(w.map(c => [c.url, c.test, c.as])));
+          if (!((await strip(s)) || '').includes('Смотрите как Образец')) bad.push('test-path: на экране записи нет полосы');
           await s.p.screenshot({ path: `${OUT}/live-test-as.png` });
         }
         const after = s.calls.slice(before);
@@ -2462,11 +2462,11 @@ if (grantsSet.length !== 1) {
   // Гонка: меню, запрошенное под прежним человеком, вернулось после смены —
   // оно не должно лечь на экран нового.
   {
-    const SASHA_MENU = [Object.assign({}, MENU[0], { id: 31, title: 'Матча' })];
+    const CURATOR_MENU = [Object.assign({}, MENU[0], { id: 31, title: 'Матча' })];
     const t0 = testApi();
     const s = await open(true, true, json(200, OWNER), null, null, null, q => {
       if (q.url().includes('/bar/menu'))
-        return q.headers()['x-act-as'] === '501' ? json(200, SASHA_MENU)
+        return q.headers()['x-act-as'] === '501' ? json(200, CURATOR_MENU)
              : new Promise(res => setTimeout(() => res(json(200, MENU)), 1500));
       return t0(q);
     }); s.name = 'test-race';
@@ -2485,7 +2485,7 @@ if (grantsSet.length !== 1) {
   }
   // Не бог: никаких тестовых заголовков, даже вызовом действия из консоли.
   {
-    const s = await open(true, true, json(200, SASHA), null, null, null, testApi()); s.name = 'test-nogod';
+    const s = await open(true, true, json(200, CURATOR), null, null, null, testApi()); s.name = 'test-nogod';
     await s.p.evaluate(() => { doAction('test-on'); doAction('test-as:501'); });
     await s.p.waitForTimeout(300);
     if (s.calls.some(c => c.test || c.as)) bad.push('test-nogod: не бог включил тестовый режим');
@@ -5611,12 +5611,12 @@ if (grantsSet.length !== 1) {
       } else bad.push('cards-home-back: у работника с членством нет входа в «Клубе»');
       await s.ctx.close();
     }
-    // Бармен без членства (Сой): «Клуб» вкладкой не приходит, вход в карточки — на «Заказах»
+    // Бармен без членства: «Клуб» вкладкой не приходит, вход в карточки — на «Заказах»
     // под сменой и над счётчиками (кадр E41, Cafe13KPG#396), и «назад» ведёт обратно
     // в «Заказы», а не на услуги гостя (Cafe13KPG#403).
     {
-      const SOI = clone(WORKER); SOI.membership_active = false; SOI.membership = null; SOI.memberships = [];
-      const s = await cardsCase(SOI, {});
+      const BARMAN_NOMEMBER = clone(WORKER); BARMAN_NOMEMBER.membership_active = false; BARMAN_NOMEMBER.membership = null; BARMAN_NOMEMBER.memberships = [];
+      const s = await cardsCase(BARMAN_NOMEMBER, {});
       const n = 'cards-queue';
       if (await s.p.$('#tabs [data-go="home"]')) bad.push(`${n}: у работника без членства есть вкладка «Клуб» — фикстура не та`);
       if (!(await s.p.$('#tabs [data-go="barQueue"]'))) bad.push(`${n}: у работника бара нет вкладки «Заказы»`);
