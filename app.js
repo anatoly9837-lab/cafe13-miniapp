@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v62 · 27.10.2026';
+var VERSION = 'v63 · 27.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -923,12 +923,15 @@ function tillFind(code) {
   });
 }
 
-function tillOpen(kind) {
-  if (!TP.who) return;
+function tillPrep(kind) {
   TP.kind = kind === 'membership' ? 'membership' : 'topup';
   TP.months = ''; TP.amount = ''; TP.err = ''; TP.deny = '';
   TP.level = TP.who.level || 'member';
   TP.method = 'cash';
+}
+function tillOpen(kind) {
+  if (!TP.who) return;
+  tillPrep(kind);
   go(TP.kind === 'membership' ? 'tillMembership' : 'tillTopup');
 }
 
@@ -1063,7 +1066,8 @@ function tillForm(kind) {
     }).join('');
   };
   var ways = [['cash', 'Наличные'], ['card', 'Карта']].concat(mem ? [['account', 'Со счёта']] : []);
-  return '<div class="card quiet"><div class="row"><div class="col"><span class="small">Кому</span><b>' + esc(w.name) + '</b></div>' +
+  return (!LIVE && FLASH ? flash() : '') +
+    '<div class="card quiet"><div class="row"><div class="col"><span class="small">Кому</span><b>' + esc(w.name) + '</b></div>' +
       '<span class="small num">' + esc(w.code) + '</span></div></div>' +
     (mem ? '<div class="group"><span class="label">Вид членства</span><div class="seg wrap">' +
              seg('tp-level', [['member', LEVEL.member], ['organizer', LEVEL.organizer], ['partner', LEVEL.partner]], TP.level) + '</div></div>' +
@@ -2036,6 +2040,11 @@ function cardSave(sure) {
 }
 function recipeLoad(id, lang) {
   if (CARD.body[lang] !== undefined) return;
+  if (!LIVE) {
+    CARD.body[lang] = (DATA.work.cardRecipes[id] || {})[lang] || '';
+    if (CARD.text[lang] === undefined && CARD.body[lang]) CARD.text[lang] = CARD.body[lang];
+    return;
+  }
   CARD.body[lang] = null;                     // в пути
   var gen = CARDS.gen;
   api('GET', '/bar/products/' + id + '/recipe?lang=' + lang).then(function (r) {
@@ -3946,8 +3955,6 @@ var SCREENS = {
 
   tillDay: function () {
     if (LIVE && !canTopup()) return '<div class="card quiet"><span class="small">Касса — для работников с правом кассы.</span></div>';
-    if (!LIVE) return '<div class="card quiet"><span class="small">День кассы читается с сервера клуба.</span></div>' +
-      '<button type="button" class="btn" data-go="staff">К кассе</button>';
     var d = TD.data;
     if (!d) return TD.fail
       ? '<div class="card quiet"><span class="small">' + esc(TD.fail) + '</span></div>' +
@@ -3955,7 +3962,8 @@ var SCREENS = {
       : '<div class="card quiet"><span class="small">Загружаем день кассы…</span></div>';
     // «Через книгу», а не «внесено»: в итоге сервера и заказы бара, и
     // списания со счёта. В ящике — только строка «наличными» (designer-55).
-    return (d.odd ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Итог дня не сходится со строками — показывать его нельзя. Сообщите администратору клуба.</span></div>' :
+    return (!LIVE && FLASH ? flash() : '') +
+      (d.odd ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Итог дня не сходится со строками — показывать его нельзя. Сообщите администратору клуба.</span></div>' :
       '<div class="rows"><div><span class="small">Через книгу за день</span><b class="num">' + money(d.total) + ' ฿</b></div>' +
         '<div><span class="small">наличными <b class="num">' + money(d.by.cash) + '</b></span>' +
           '<span class="small">картой <b class="num">' + money(d.by.card) + '</b></span>' +
@@ -4011,7 +4019,8 @@ var SCREENS = {
           : d.reread ? 'Кнопки «Внести ещё раз» здесь нет и быть не может: платёж уже прошёл. Строк книги в карточке нет. Членство и остаток перед приёмом — выше. Если они не изменились, это вопрос к администратору клуба, а не повод принять снова.'
           : 'Карточку перечитать не удалось, поэтому сверять сейчас не с чем. Откройте её заново по коду пропуска: у членства изменится срок, у пополнения — остаток. Не открывается — к администратору клуба, а не принимать снова. Строк книги карточка не показывает.') +
         '</span></div>';
-    return (d ? '<div class="card quiet"><div class="col"><b style="font-size:13px">' + esc(d.text) + '</b>' +
+    return (!LIVE && FLASH ? flash() : '') +
+      (d ? '<div class="card quiet"><div class="col"><b style="font-size:13px">' + esc(d.text) + '</b>' +
                 '<span class="small">' + esc(d.note) + '</span></div></div>' : '') +
       tillCard(w) +
       (d && d.warn ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(d.warn) + '</span></div>' : '') +
@@ -4412,11 +4421,12 @@ var SCREENS = {
      cancelled, а отмена — это деньги гостя, и называется она отменой. */
   barRecipe: function (id) {
     var d = findDrink(id);
-    if (!mayRecipe()) return '<div class="card quiet"><div class="col">' +
+    if (LIVE && !mayRecipe()) return '<div class="card quiet"><div class="col">' +
       '<b style="font-size:13px">Рецепт — рабочая запись бара</b>' +
       '<span class="small">Его показывают бару и куратору направления: гостю сервер его не отдаёт вовсе.</span>' +
       '</div></div>';
-    return '<div class="col"><h1>' + esc(d ? d.title : 'Позиция ' + id) + '</h1>' +
+    return (!LIVE && FLASH ? flash() : '') +
+      '<div class="col"><h1>' + esc(d ? d.title : 'Позиция ' + id) + '</h1>' +
         (d ? '<span class="small">' + esc(d.full || d.about || '') + '</span>' : '') +
       '</div>' +
       recipeBlock('Рецепт · สูตร', 'me', '') +
@@ -4565,11 +4575,11 @@ var SCREENS = {
   },
 
   barMoney: function () {
-    if (!BAR) return (FLASH ? flash() : '') +
+    if (LIVE && !BAR) return (FLASH ? flash() : '') +
       (BOOK_FAIL ? '<div class="card quiet"><span class="small">' + esc(BOOK_FAIL) + '</span></div>' +
                    '<button type="button" class="btn ghost" data-action="book-retry">Повторить</button>'
                  : '<div class="card quiet"><span class="small">Загружаем направление…</span></div>');
-    if (!canBook()) return '<div class="card quiet"><span class="small">Доход и расход Бара вносит куратор направления.</span></div>';
+    if (LIVE && !canBook()) return '<div class="card quiet"><span class="small">Доход и расход Бара вносит куратор направления.</span></div>';
     var inc = BOOK.kind === 'income', lock = BOOK.ask || BOOK.busy ? ' disabled' : '';
     var seg = function (label, list, cur, act) {
       return '<div class="group"><span class="label">' + label + '</span><div class="seg wrap">' +
@@ -4850,7 +4860,7 @@ var SCREENS = {
   },
 
   barCards: function () {
-    if (!mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар или куратор направления.</span></div>';
+    if (LIVE && !mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар или куратор направления.</span></div>';
     if (!CARDS.list) return CARDS.fail
       ? '<div class="card quiet"><span class="small">' + esc(CARDS.fail) + '</span></div>' +
         '<button type="button" class="btn ghost" data-action="c-reload">Повторить</button>'
@@ -4867,7 +4877,8 @@ var SCREENS = {
     // «Новая карточка» — под списком: работа здесь — очередь утверждения,
     // а заведение карточки случается реже (designer-55, 22.10.2026). В Telegram
     // её место — главная кнопка (mainFor), доступная при любой длине списка.
-    return '<div class="card quiet"><span class="small">Направление «Бар»</span></div>' +
+    return (!LIVE && FLASH ? flash() : '') +
+      '<div class="card quiet"><span class="small">Направление «Бар»</span></div>' +
       parts.filter(function (x) { return x[1].length; }).map(function (x) {
         return '<div class="group" data-cards="' + esc(x[0]) + '"><span class="label">' + esc(x[0]) + ' · ' + x[1].length + '</span>' +
           x[1].map(cardRow).join('') + '</div>';
@@ -4877,14 +4888,15 @@ var SCREENS = {
   },
 
   barCard: function (id) {
-    if (!mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар или куратор направления.</span></div>';
+    if (LIVE && !mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар или куратор направления.</span></div>';
     var lock = CARD.busy ? ' disabled' : '';
     var deny = CARD.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.deny) + '</span></div>' : '';
     var note = CARD.note ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(CARD.note) + '</span></div>' : '';
     if (id === 'new') {
       var v = function (k) { return esc(CARD.v[k] || ''); };
       var groups = groupsOf();
-      return '<div class="card">' +
+      return (!LIVE && FLASH ? flash() : '') +
+        '<div class="card">' +
         '<div class="field"><label for="c-title">Название</label><input id="c-title" type="text" maxlength="200" value="' + v('c-title') + '" placeholder="Например: раф на овсяном"' + lock + '>' +
           '<span class="small">До 200 знаков.</span></div>' +
         '<div class="field"><label for="c-group">Группа меню</label><input id="c-group" type="text" maxlength="80" value="' + v('c-group') + '" placeholder="Например: кофе"' + lock + '>' +
@@ -4947,7 +4959,8 @@ var SCREENS = {
           '<button type="button" class="btn quiet" data-action="c-hide:' + c.id + '"' + lock + '>Точно снять</button></div>'
         : '<button type="button" class="btn quiet" data-action="c-hide-ask">Снять с меню</button>';
     if (!acts && c.state === 'review') acts = '<span class="small">Ждёт решения куратора направления.</span>';
-    return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(c.title) + '</h2>' +
+    return (!LIVE && FLASH ? flash() : '') +
+      '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(c.title) + '</h2>' +
         '<span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' + (c.mins ? ' · ' + c.mins + ' мин' : '') + (c.alcohol ? ' · алкоголь' : '') + '</span></div>' +
         '<span class="pill' + (c.state === 'active' ? ' on' : back ? ' warm' : '') + '">' + esc(STATE_WORDS[c.state]) + '</span></div>' +
         (c.about ? '<span class="small">' + esc(c.about) + '</span>' : '') +
@@ -4965,12 +4978,13 @@ var SCREENS = {
   },
 
   people: function () {
-    if (!mayPeople()) return '<div class="card quiet"><span class="small">Выдавать и снимать ответственность может глава клуба.</span></div>';
+    if (LIVE && !mayPeople()) return '<div class="card quiet"><span class="small">Выдавать и снимать ответственность может глава клуба.</span></div>';
     if (!PEOPLE.list) return PEOPLE.fail
       ? '<div class="card quiet"><span class="small">' + esc(PEOPLE.fail) + '</span></div>' +
         '<button type="button" class="btn ghost" data-action="p-reload">Повторить</button>'
       : '<div class="card quiet"><span class="small">Загружаем людей…</span></div>';
-    return '<div class="field"><label for="p-find">Найти по имени</label>' +
+    return (!LIVE && FLASH ? flash() : '') +
+      '<div class="field"><label for="p-find">Найти по имени</label>' +
         '<input id="p-find" type="search" value="' + esc(PEOPLE.find) + '" placeholder="Имя"></div>' +
       (PEOPLE.list.length ? PEOPLE.list.map(personCard).join('')
                           : '<div class="card quiet"><span class="small">Сервер не вернул ни одного человека.</span></div>');
@@ -5396,6 +5410,96 @@ function render() {
   window.scrollTo(0, 0);
 }
 
+/* ── рабочие экраны в демонстрации (Cafe13KPG#409) ─────
+   Вне Telegram девять экранов бара, кассы и «Людей» рисовали отказ по праву:
+   все права начинаются с LIVE, а опись снимает вне Telegram. Права НЕ
+   ослаблены — у самих экранов гард стал `LIVE && !право()`. Данные ниже — в
+   ФОРМЕ ОТВЕТА СЕРВЕРА и проходят те же разборщики, что живой ответ:
+   демонстрация не может показать то, чего живой экран не разобрал бы.
+
+   Входов на эти экраны в демонстрации нет — главная гостя и члена клуба не
+   меняется, руками до них не дойти; их показывает опись (решение
+   координатора по #409, вариант A). Люди — роли в скобках, как во всей
+   демонстрации; номера — выдуманные из общей фикстуры (tools/ids-clean.cjs).
+   Где смысл экрана в различии (наличные, карта, со счёта; доход и расход;
+   остаток и платёж), числа нарочно разные: равные числа такую ошибку прячут. */
+DATA.work = {
+  dirs: [{ id: 1, title: 'Бар', is_active: true }],
+  people: { people: [
+    { tg_user_id: 200000001, first_name: '[глава клуба]', roles: [{ id: 11, role: 'head' }], memberships: ['partner'] },
+    { tg_user_id: 200000002, first_name: '[куратор бара]', roles: [{ id: 12, role: 'curator', direction_id: 1, direction: 'Бар' }], memberships: ['member'] },
+    { tg_user_id: 200000003, first_name: '[исполнитель на баре]', roles: [{ id: 13, role: 'bar', direction_id: 1, direction: 'Бар' }], memberships: ['member'] },
+    { tg_user_id: 200000004, first_name: '[кассир]', roles: [{ id: 14, role: 'staff' }], memberships: [] },
+    { tg_user_id: 200000005, first_name: '[имя члена]', roles: [], memberships: ['member'] }
+  ] },
+  cards: [
+    { id: 301, title: 'Тыквенный латте', group: 'Кофе', price: '135.00', mins: 4, about: 'Тыква, корица, двойной эспрессо', is_alcohol: false,
+      state: 'review', recipes: ['ru'], decision_note: null, photo_id: null, last_photo_id: 91, last_photo_state: 'pending' },
+    { id: 302, title: 'Манго-ласси', group: 'Авторские', price: '160.00', mins: 3, about: 'Манго, йогурт, кардамон', is_alcohol: false,
+      state: 'review', recipes: [], decision_note: null, photo_id: null, last_photo_id: null, last_photo_state: null },
+    { id: 303, title: 'Матча-тоник', group: 'Авторские', price: '150.00', mins: 2, about: 'Матча, тоник, лёд', is_alcohol: false,
+      state: 'draft', recipes: ['ru'], decision_note: 'Нет фото, цена выше соседних', photo_id: null, last_photo_id: null, last_photo_state: null },
+    { id: 304, title: 'Какао на кокосовом', group: 'Кофе', price: '125.00', mins: null, about: '', is_alcohol: false,
+      state: 'draft', recipes: [], decision_note: null, photo_id: null, last_photo_id: null, last_photo_state: null },
+    { id: 305, title: 'Флэт-уайт', group: 'Кофе', price: '110.00', mins: 4, about: 'Молоко обычное или кокосовое', is_alcohol: false,
+      state: 'active', recipes: ['ru', 'en'], decision_note: null, photo_id: 92, last_photo_id: 92, last_photo_state: 'approved' },
+    { id: 306, title: 'Эспрессо', group: 'Кофе', price: '70.00', mins: 2, about: 'Двойной, местная обжарка', is_alcohol: false,
+      state: 'active', recipes: ['ru'], decision_note: null, photo_id: 93, last_photo_id: 93, last_photo_state: 'approved' },
+    { id: 307, title: 'Габа', group: 'Чай', price: '140.00', mins: 5, about: 'Тайваньская, мягкая', is_alcohol: false,
+      state: 'hidden', recipes: ['ru'], decision_note: null, photo_id: null, last_photo_id: null, last_photo_state: null }
+  ],
+  cardRecipes: {
+    301: { ru: 'Тыквенное пюре 30 г, корица на кончике ножа, двойной эспрессо, молоко 150 мл.' },
+    303: { ru: 'Матча 2 г взбить в 40 мл воды, лёд доверху, тоник 120 мл.' },
+    305: { ru: 'Двойной ристретто, молоко 120 мл без пены, рисунок не обязателен.',
+           en: 'Double ristretto, 120 ml milk with no foam, latte art optional.' },
+    306: { ru: 'Двойной эспрессо, 36 г на выходе за 27 секунд.' },
+    307: { ru: 'Гайвань, 5 г, вода 85 °C, первый пролив слить.' }
+  },
+  // экран рецепта: русский есть, английского нет — сервер отдаёт русский с exact: false
+  recipe: {
+    me: { lang: 'ru', asked_lang: 'ru', exact: true, body: 'Двойной ристретто, молоко 120 мл без пены, рисунок не обязателен.' },
+    en: { lang: 'ru', asked_lang: 'en', exact: false, body: 'Двойной ристретто, молоко 120 мл без пены, рисунок не обязателен.' }
+  },
+  // «Записано сейчас» на экране дохода и расхода — уже разобранный вид, как его кладёт bookSend
+  book: [
+    { inc: true, amount: 2340, at: '21:05', note: 'выручка за вечер, 14 чеков', how: 'наличные' },
+    { inc: false, amount: 480, at: '16:20', note: 'молоко, 6 литров', how: 'закуп · текущая трата · наличные бара' }
+  ],
+  tillCode: 'XIII-0137',
+  tillWho: { member_id: 200000005, first_name: '[имя члена]', last_name: null, membership_active: true,
+             membership: { level: 'member', lifelong: false, ends_at: '2026-12-03T00:00:00+07:00' }, balance: '640.00' },
+  tillDay: { count_live: 3, total_live: '4475.00', rows: [
+    { id: 45, kind: 'service', method: 'account', amount: '175.00', at: '2026-10-27T19:24:00+07:00', note: 'заказ бара 14', cancels_id: null, cancelled_by: null },
+    { id: 44, kind: 'event', method: 'account', amount: '400.00', at: '2026-10-27T17:43:00+07:00', note: null, cancels_id: 43, cancelled_by: null },
+    { id: 43, kind: 'event', method: 'account', amount: '400.00', at: '2026-10-27T17:40:00+07:00', note: null, cancels_id: null, cancelled_by: 44 },
+    { id: 42, kind: 'topup', method: 'cash', amount: '1000.00', at: '2026-10-27T16:51:00+07:00', note: null, cancels_id: null, cancelled_by: null },
+    { id: 41, kind: 'membership', method: 'card', amount: '3300.00', at: '2026-10-27T16:12:00+07:00', note: null, cancels_id: null, cancelled_by: null }
+  ] }
+};
+
+// Кладёт данные демонстрации туда, где их ждёт экран, — один раз за вход
+// и только если места пусты: переходы внутри экрана их не сбрасывают.
+function demoWork(screen, p) {
+  var W = DATA.work;
+  if (screen === 'people' && !PEOPLE.list) { PEOPLE.list = fromRoster(W.people); PEOPLE.dirs = fromDirList(W.dirs); }
+  if ((screen === 'barCards' || screen === 'barCard') && !CARDS.list) CARDS.list = fromCards(W.cards);
+  if (screen === 'barRecipe' && RECIPE.pid !== p)
+    RECIPE = { pid: p, gen: RECIPE.gen, me: { state: 'ok', r: fromRecipe(W.recipe.me) }, en: { state: 'ok', r: fromRecipe(W.recipe.en) } };
+  if (screen === 'barMoney' && !BOOK.done.length) BOOK.done = W.book.slice();
+  if (/^till(Person|Membership|Topup)$/.test(screen) && !TP.who) TP.who = fromTillPerson(W.tillWho, W.tillCode);
+  if (screen === 'tillMembership' && TP.kind !== 'membership') tillPrep('membership');
+  if (screen === 'tillTopup' && TP.kind !== 'topup') tillPrep('topup');
+  if (screen === 'tillDay' && !TD.data) TD.data = fromTillDay(W.tillDay);
+}
+
+/* Отправки и перечитывания рабочих экранов. В демонстрации они не уходят:
+   сервера нет, а «ничего не случилось» на нажатие — дефект, уже бывший у нас
+   (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
+var DEMO_SENDS = ['p-grant', 'p-revoke', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
+                  'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
+                  'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
+
 function go(screen, p) {
   if (!SCREENS[screen]) return;
   if (screen === 'demo' && LIVE && !isGod()) return;
@@ -5426,6 +5530,7 @@ function go(screen, p) {
   }
   current = screen;
   param = p || null;
+  if (!LIVE) demoWork(screen, p);
   if (screen === 'barMoney' && LIVE && !BAR) bookLoad();
   if (screen === 'barDay' && LIVE) loadDay();
   if (screen === 'tillDay' && LIVE && canTopup()) { TD.ask = -1; TD.deny = null; tillDayLoad(); }
@@ -5515,6 +5620,11 @@ function doAction(a) {
      Разбор здесь, чтобы разметка оставалась одними атрибутами. */
   var arg = null, c = a.indexOf(':');
   if (c !== -1) { arg = a.slice(c + 1); a = a.slice(0, c); }
+  if (!LIVE && DEMO_SENDS.indexOf(a) !== -1) {
+    if (a.slice(0, 2) === 'c-') grabCard();     // набранное в карточке не теряется
+    FLASH = { text: 'Это демонстрация', note: 'В Telegram это ушло бы на сервер клуба. Здесь ничего не отправлено и не записано.' };
+    haptic('warn'); render(); return;
+  }
 
     if (a === 'buy') { buy(arg); return; }
     if (a === 'retry-menu') { loadMenu(); render(); return; }
