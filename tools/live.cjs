@@ -2571,6 +2571,22 @@ if (grantsSet.length !== 1) {
       EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
            price: '0.00', seats: 6, taken: 6, seats_left: 0, booked_by_me: false }),
       EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
+      /* ⚠ ТРИ СВОИ ПРЕДСТОЯЩИЕ, И ДВЕ ИЗ НИХ В ОДИН ДЕНЬ. На одной записи
+         раскладка по дням непроверяема: день один, и подлог «под каждым
+         заголовком выводить ВСЕ записи» равен верному коду. Нашёл
+         arhitector-47 своим подлогом (`mine` вместо фильтра по дню) — он
+         прошёл зелёным на прежней фикстуре. Данные обязаны не давать обеим
+         ветвям пройти (AGENTS §1, Cafe13KPG#384). */
+      EV({ id: 10, title: 'Утро у огня', starts_at: atBkk(1, 10), duration_min: 60,
+           kind: 'free', price: '0.00', seats: 8, taken: 1, seats_left: 7,
+           booked_by_me: true, my_booking_id: 7 }),
+      EV({ id: 11, title: 'Через три дня', starts_at: atBkk(3, 18), duration_min: 90,
+           kind: 'donation', price: '0.00', seats: 20, taken: 2, seats_left: 18,
+           booked_by_me: true, my_booking_id: 8 }),
+      // Чужая запись В МОЙ ЖЕ ДЕНЬ: иначе «в списке только свои» проверяется
+      // на дне, которого у меня нет, и ослабевает вместе с раскладкой.
+      EV({ id: 12, title: 'Чужое в мой день', starts_at: atBkk(1, 15), duration_min: 60,
+           kind: 'free', price: '0.00', seats: 9, taken: 0, seats_left: 9, booked_by_me: false }),
       EV({ id: 9, title: 'Своё, но прошло', starts_at: new Date(NOWFIX - 9000e3).toISOString(),
            duration_min: 60, kind: 'free', price: '0.00', seats: 10, taken: 3, seats_left: 7,
            booked_by_me: true, my_booking_id: 11 })
@@ -2581,6 +2597,8 @@ if (grantsSet.length !== 1) {
     const t = await s.view();
     if (!t.includes('Вечер ханга'))
       bad.push('bookings-svoi: своей предстоящей записи на экране нет — человек прочитает, что его не записали (Cafe13KPG#360)');
+    if (t.includes('Чужое в мой день'))
+      bad.push('bookings-svoi: в списке чужая запись, стоящая в ТОТ ЖЕ день, что своя — фильтр своей записи снят, а день его не прикрывает (Cafe13KPG#384)');
     if (t.includes('Утро у воды'))
       bad.push('bookings-svoi: в списке строка, на которую человек НЕ записан — чужое мероприятие выдано за свою запись (Cafe13KPG#360)');
     if (t.includes('Своё, но прошло'))
@@ -2604,6 +2622,33 @@ if (grantsSet.length !== 1) {
         заголовки: [...document.querySelectorAll('#view .group > .label')].map(x => x.textContent)
       };
     });
+    /* ⚠ РАСКЛАДКА: под каждым заголовком дня стоят РОВНО его строки. Это и
+       есть то, что делает правка, и на одной записи оно непроверяемо —
+       подлог «выводить под каждым днём все записи» был бы равен верному
+       коду. Фикстура даёт три свои предстоящие: две в один день (завтра) и
+       одну через три дня (Cafe13KPG#384, возврат архитектора). */
+    const раскладка = await s.p.evaluate(() => [...document.querySelectorAll('#view .group')].map(g => {
+      const метка = g.querySelector(':scope > .label');
+      return { метка: метка ? метка.textContent : null,
+               строки: [...g.querySelectorAll('.listitem .grow > b')].map(b => b.textContent) };
+    }));
+    const дни = раскладка.filter(g => g.метка !== 'Прошедшие записи');
+    if (дни.length !== 2)
+      bad.push(`bookings-svoi: групп дней ${дни.length}, а своих предстоящих дней два (${JSON.stringify(дни.map(g => g.метка))}) — записи не разложены по дням (Cafe13KPG#384)`);
+    const пара = дни.find(g => g.строки.indexOf('Вечер ханга') !== -1);
+    if (!пара) bad.push('bookings-svoi: записи «Вечер ханга» нет ни под одним заголовком дня (Cafe13KPG#384)');
+    else {
+      if (пара.строки.indexOf('Утро у огня') === -1)
+        bad.push(`bookings-svoi: две записи одного дня стоят под разными заголовками — под «${пара.метка}» только ${JSON.stringify(пара.строки)} (Cafe13KPG#384)`);
+      if (пара.строки.indexOf('Через три дня') !== -1)
+        bad.push(`bookings-svoi: под заголовком «${пара.метка}» стоит запись ДРУГОГО дня — раскладка по дням не работает, под каждым днём выводятся все записи (Cafe13KPG#384)`);
+    }
+    const все = дни.reduce((a, g) => a.concat(g.строки), []);
+    const повтор = все.find((x, i) => все.indexOf(x) !== i);
+    if (повтор)
+      bad.push(`bookings-svoi: запись «${повтор}» стоит под двумя заголовками дней — она попала в чужой день (Cafe13KPG#384)`);
+    if (дни.length === 2 && дни[0].строки.indexOf('Через три дня') !== -1)
+      bad.push('bookings-svoi: дальний день стоит ПЕРЕД ближним — заголовки не по времени (Cafe13KPG#384)');
     if (!где.вЗаголовках.length)
       bad.push('bookings-svoi: дня нет в заголовке группы — «когда» отвечено половиной, а группы по дням здесь и есть ответ (кадр E40, Cafe13KPG#384)');
     if (где.вПодстрочниках.length)
