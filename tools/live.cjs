@@ -6298,6 +6298,97 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
   }
+  // Рабочие экраны в демонстрации (Cafe13KPG#409, вариант A). Три свойства, каждое своим случаем:
+  // вне Telegram экран рисует СЕБЯ на демо-данных, а не отказ по праву (снимок отказа похож на
+  // экран — отсюда и карточка); в живом режиме без прав — по-прежнему отказ, и демо-данные туда
+  // не протекают; нажатие отправки в демонстрации не уходит на сервер и отвечает словами.
+  {
+    // [экран, параметр, признак экрана, признак отказа/пустоты]
+    const WORK = [
+      ['people', null, 'Выдать ответственность', 'может глава клуба'],
+      ['barCards', null, 'Ждут утверждения · 2', 'Карточки меню заводит'],
+      ['barCard', '305', 'Заменить рецепт (RU)', 'Карточки меню заводит'],
+      ['barRecipe', 'flat', 'Рецепта на английском нет — показан на русском', 'Рецепт — рабочая запись бара'],
+      ['barMoney', null, 'Записано сейчас', 'вносит куратор'],
+      ['tillPerson', null, 'Что принимаем', 'Человек не выбран'],
+      ['tillMembership', null, 'Цену называет касса', 'Человек не выбран'],
+      ['tillTopup', null, 'Сумму называет человек у стойки', 'Человек не выбран'],
+      ['tillDay', null, 'Строки за сегодня', 'Касса — для работников']
+    ];
+    // нажатие с охраной: подлог, снявший кнопку, обязан дать СВОЮ строку, а не оборвать батарею
+    const tapIf = async (s, sel, who) => {
+      if (await s.p.$(sel)) { await s.p.click(sel); return true; }
+      bad.push(`${who}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — нет кнопки ${sel}`); return false;
+    };
+    {
+      const s = await open(false, true, json(200, OWNER), null, null, null);
+      for (const [scr, q, mark, deny] of WORK) {
+        const before = s.calls.length;
+        await s.p.evaluate(([x, y]) => go(x, y), [scr, q]); await s.p.waitForTimeout(60);
+        const t = await s.view();
+        if (!t.includes(mark)) bad.push(`demo-work ${scr}: нет «${mark}» — демонстрация не рисует экран (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
+        if (t.includes(deny)) bad.push(`demo-work ${scr}: в демонстрации отказ «${deny}» вместо экрана`);
+        if (s.calls.length !== before) bad.push(`demo-work ${scr}: в демонстрации ушло запросов к серверу: ${s.calls.length - before}`);
+      }
+      // рецепт карточки — из данных демонстрации, а не пустое поле
+      await s.p.evaluate(() => go('barCard', '305'));
+      const rc = await s.p.evaluate(() => (document.getElementById('c-recipe') || {}).value);
+      if (!rc || !rc.startsWith('Двойной ристретто')) bad.push('demo-work barCard: поле рецепта не из данных демонстрации: ' + JSON.stringify(rc));
+      // номер человека не в разметке: карточка знает строку списка, а не tg_user_id
+      await s.p.evaluate(() => go('people'));
+      // номера берутся из памяти страницы, а не шаблоном: признак не зависит от вида номера
+      const leak = await s.p.evaluate(() => {
+        const html = document.getElementById('view').innerHTML, ids = (PEOPLE.list || []).map(x => String(x.uid));
+        return ids.length ? ids.filter(id => html.includes(id)) : null;
+      });
+      if (leak === null) bad.push('demo-work people: ПРОВЕРКА НЕ ВЫПОЛНЕНА — список людей пуст, номера искать не в чем');
+      else if (leak.length) bad.push('demo-work people: номер человека попал в разметку');
+      // день кассы сходится: итог и строки демонстрации согласованы, а способы оплаты различимы
+      await s.p.evaluate(() => go('tillDay'));
+      const td = await s.view();
+      if (td.includes('не сходится')) bad.push('demo-work tillDay: итог демонстрации не сходится со строками');
+      const by = await s.p.evaluate(() => TD.data && [TD.data.by.cash, TD.data.by.card, TD.data.by.account]);
+      if (!by || new Set(by).size !== 3) bad.push('demo-work tillDay: суммы по способам оплаты не различимы: ' + JSON.stringify(by));
+      // отправка: «Точно отменить» в дне кассы не уходит и отвечает словами
+      const n0 = s.calls.length;
+      if (await tapIf(s, '[data-action="td-ask:0"]', 'demo-send tillDay') && await tapIf(s, '[data-action="td-cancel:0"]', 'demo-send tillDay')) {
+        await s.p.waitForTimeout(100);
+        const ts = await s.view();
+        if (s.calls.length !== n0) bad.push('demo-send tillDay: «Точно отменить» в демонстрации ушло на сервер');
+        if (!ts.includes('Это демонстрация')) bad.push('demo-send tillDay: на «Точно отменить» в демонстрации нет слова «Это демонстрация»');
+      }
+      // и запись расхода: после подтверждения «Записать» не уходит, «Записано сейчас» не растёт
+      await s.p.evaluate(() => go('barMoney'));
+      const k0 = await s.p.evaluate(() => BOOK.done.length);
+      const W = 'demo-send barMoney';
+      if (await tapIf(s, '[data-action="b-new:income"]', W)) {
+        await s.p.fill('#b-amount', '700');
+        const n1 = s.calls.length;
+        if (await tapIf(s, '[data-action="b-method:cash"]', W) && await tapIf(s, '[data-action="b-ask"]', W) &&
+            await tapIf(s, '[data-action="b-send"]', W)) {
+          await s.p.waitForTimeout(100);
+          if (s.calls.length !== n1) bad.push(W + ': «Записать» в демонстрации ушло на сервер');
+          if (await s.p.evaluate(() => BOOK.done.length) !== k0) bad.push(W + ': «Записано сейчас» выросло без сервера');
+          if (!(await s.view()).includes('Это демонстрация')) bad.push(W + ': нет слова «Это демонстрация»');
+        }
+      }
+      if (s.errs.length) bad.push('demo-work: ошибки страницы: ' + s.errs.join(' | '));
+      await s.ctx.close();
+    }
+    // живой режим, член клуба без единой роли: каждый экран — отказ или пустое место, демо-данных нет
+    {
+      const nobody = clone(OWNER); nobody.roles = [];
+      const s = await open(true, true, json(200, nobody), null, null, null, book());
+      for (const [scr, q, mark, deny] of WORK) {
+        await s.p.evaluate(([x, y]) => go(x, y), [scr, q]); await s.p.waitForTimeout(250);
+        const t = await s.view();
+        if (!t.includes(deny)) bad.push(`live-norights ${scr}: в живом режиме без прав нет отказа «${deny}» (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
+        if (t.includes(mark)) bad.push(`live-norights ${scr}: в живом режиме без прав нарисован экран («${mark}»)`);
+        if (/\[(имя члена|глава клуба|кассир)\]/.test(t)) bad.push(`live-norights ${scr}: в живой режим протекли люди демонстрации`);
+      }
+      await s.ctx.close();
+    }
+  }
   // Номера людей: репозиторий публичный — разрешающий список, tools/ids-clean.cjs.
   bad.push(...require('./ids-clean.cjs').idsClean(ROOT));
 
