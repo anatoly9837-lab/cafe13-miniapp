@@ -6237,6 +6237,24 @@ if (grantsSet.length !== 1) {
       if (!(await s3.p.$('#view [data-go="barQueue"]'))) bad.push(`${n}: у бармена нет группы «Работа» — фикстура не та`);
       if (await s3.p.$('#view [data-go="memberRequests"]')) bad.push(`${n}: у бармена без права главы клуба есть строка «Заявки на членство»`);
       await s3.ctx.close();
+      // Свидетели КАЖДОЙ половины права (Cafe13KPG#434). OWNER держит и head, и admin, поэтому
+      // подлог, снявший одну половину `mayRequests`, на нём не виден. Свидетель годится только
+      // тот, кто держит ИМЕННО снимаемую половину: глава без админа — для `grant('head')`, админ
+      // без главы — для `grant('admin')`. Сервер пускает обоих (DECIDES = head, плюс is_admin).
+      for (const [who, roles] of [['глава клуба без админа', [{ role: 'head', direction_id: null }]],
+                                  ['админ без главы клуба', [{ role: 'admin', direction_id: null }]]]) {
+        const X = clone(OWNER); X.roles = roles;
+        const sx = await memCase(X);
+        await sx.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await sx.p.waitForTimeout(200);
+        if (!(await sx.p.$('#view [data-go="memberRequests"]'))) bad.push(`${n}: у «${who}» нет строки «Заявки на членство» — сервер его пускает`);
+        await wire(sx, 'memberRequests');
+        if ((await sx.view()).includes('смотрит и решает глава клуба')) bad.push(`${n}: «${who}» получил отказ на экране заявок — сервер его пускает`);
+        else {
+          await press(sx, n, '[data-action="mq-ok:11"]');
+          if (posts(sx, /\/membership-requests\/11\/decide$/).length !== 1) bad.push(`${n}: у «${who}» согласие не ушло на сервер`);
+        }
+        await sx.ctx.close();
+      }
     }
     // согласие — без слова; отказ — со словом, через «Точно отказать»; список перечитан (кадры E42, E42v)
     {
@@ -6359,6 +6377,49 @@ if (grantsSet.length !== 1) {
         }
       }
       if (s.errs.length) bad.push('demo-work: ошибки страницы: ' + s.errs.join(' | '));
+      await s.ctx.close();
+    }
+    // Перебор нажатий (Cafe13KPG#444): каждая ОТРИСОВАННАЯ кнопка-действие девяти экранов в
+    // демонстрации нажимается, и ни одна не уходит на сервер и не роняет страницу. Список
+    // DEMO_SENDS здесь не читается нарочно: проверка, собранная из него, сверяла бы список сам с собой.
+    // ⚠ Предел: перебор видит только кнопки, до которых доходят нажатия на этих девяти экранах
+    // (пустые поля заполняются цифрой «7»). Действие, которое рисуется от данных сервера или
+    // живёт на экране вне перечня, мимо него — зелёное здесь НЕ значит «все действия покрыты».
+    {
+      const s = await open(false, true, json(200, OWNER), null, null, null);
+      let pressed = 0;
+      // к перечню — две карточки, которых список сам не открывает: новая (форма) и возвращённая
+      for (const [scr, q] of WORK.concat([['barCard', 'new'], ['barCard', '303']])) {
+        const seen = new Map();             // действие → сколько раз нажато
+        let before = [];                      // кнопки, что были на экране ДО прошлого нажатия
+        await s.p.evaluate(([x, y]) => go(x, y), [scr, q]);
+        for (let step = 0; step < 80; step++) {
+          if (await s.p.evaluate(x => current !== x, scr)) await s.p.evaluate(([x, y]) => go(x, y), [scr, q]);
+          await s.p.evaluate(() => document.querySelectorAll('#view input:not([type]), #view input[type=text], #view textarea').forEach(i => {
+            if (!i.value && !i.disabled) { i.value = '7'; i.dispatchEvent(new Event('input', { bubbles: true })); } }));
+          const c0 = s.calls.length, e0 = s.errs.length;
+          const now = await s.p.evaluate(() => [...document.querySelectorAll('#view button[data-action]')].map(x => x.dataset.action));
+          const a = await s.p.evaluate(([done, before]) => {
+            const n = x => done[x.dataset.action] || 0;
+            const all = [...document.querySelectorAll('#view button[data-action]:not([disabled])')];
+            // сперва ПОСЛЕДНЯЯ из ненажатых, появившихся после прошлого нажатия: подтверждение
+            // («Записать», «Точно отменить») стоит за «Не записывать», и первая по порядку закрыла
+            // бы его; затем первая ненажатая; затем нажатая один раз — «Записать доход?» на пустой
+            // форме ничего не открывает, а на заполненной открывает подтверждение
+            const fresh = all.filter(x => !n(x) && !before.includes(x.dataset.action));
+            const b = fresh.length ? fresh[fresh.length - 1] : all.find(x => !n(x)) || all.find(x => n(x) === 1);
+            if (!b) return null; b.click(); return b.dataset.action;
+          }, [Object.fromEntries(seen), before]);
+          before = now;
+          if (a === null) break;
+          seen.set(a, (seen.get(a) || 0) + 1); pressed++;
+          await s.p.waitForTimeout(80);
+          if (s.calls.length !== c0) bad.push(`demo-press ${scr}: нажатие «${a}» в демонстрации ушло на сервер`);
+          if (s.errs.length !== e0) bad.push(`demo-press ${scr}: нажатие «${a}» в демонстрации уронило страницу: ${s.errs.slice(e0).join(' | ')}`);
+        }
+      }
+      // якорь присутствия: перебор, не нажавший почти ничего, о безопасности нажатий не говорит
+      if (pressed < 30) bad.push(`demo-press: ПРОВЕРКА НЕ ВЫПОЛНЕНА — нажато действий ${pressed}, перебор не дошёл до экранов`);
       await s.ctx.close();
     }
     // живой режим, член клуба без единой роли: каждый экран — отказ или пустое место, демо-данных нет
