@@ -1,9 +1,23 @@
 # -*- coding: utf-8 -*-
-"""Собирает каталог экранов из снимков, сделанных tools/shots.cjs.
+"""Собирает страницу «Экраны» из снимков, стадий и видимости (Cafe13KPG#407).
 
-На входе — manifest.json рядом со снимками, на выходе два файла:
-  screens.html — страница каталога (картинки берутся из screens/)
+На входе три файла рядом со снимками:
+  manifest.json  — снимки, сделанные tools/shots.cjs;
+  СТАДИИ.tsv     — стадия каждого экрана, ОДИН источник правды
+                   (словарь стадий — Cafe13KPG `_docs/screen-path.md`);
+  vidimost.json  — вкладки и права шести живых людей клуба,
+                   снятые самим клиентом (tools/vidimost.cjs).
+
+На выходе два файла:
+  screens.html — страница (картинки берутся из screens/)
   print.html   — та же опись под печать А4, один экран на страницу
+
+Страница показывает ТРИ вещи, а не одну: снимок, стадию (рамкой) и видимость.
+Экран без снимка не прячется, а печатается строкой: стадия и видимость у него
+есть, а снимка нет — и сказано, почему.
+
+⚠ Видимость — ВЫВОД ПО КОДУ клиента, а не наблюдение под человеком: ни под
+одним из шести экран не открывали. Это сказано и в самой странице.
 
 Пересборка:
   docker run --rm -v $PWD:/app:ro -v <каталог снимков>:/work -w /work \
@@ -26,6 +40,8 @@ GROUPS = {
     'Бизнес-партнёр': 'Член клуба со своим направлением внутри клуба и его отчётностью.',
     'Касса': 'Работник: сканировать пропуск, внести деньги.',
     'Служебное': 'Экран под солнышком. Кнопка солнышка есть только у god и god_mentor в Telegram; вне Telegram её нет ни у кого. Снимок — тот же экран в демонстрации.',
+    'Клуб · ответственность': 'Кто за что отвечает в клубе: выдать и снять роль.',
+    'Нарисовано, кода ещё нет': 'Кадры базы экранов есть, кода нет. Стадия 1 по пути экрана: сначала рисуем, потом разрабатываем.',
     'Ночная тема': 'Тему задаёт Telegram, а не приложение. Ночные цвета сняты с вечернего света места.',
 }
 
@@ -40,6 +56,179 @@ ABSENT = [
     ('Бар — только со счёта', 'в первой версии на баре платят со счёта в клубе, деньги списываются при заказе; пополняют счёт у хостес. Работнику бара цена не показывается.'),
     ('Имена и суммы — демонстрационные', 'в квадратных скобках то, что подставит сервер; числа дня и месяца сходятся между собой, но взяты для примера.'),
 ]
+# ── стадия экрана ────────────────────────────────────────────────────────
+# Словарь и правило — Cafe13KPG `_docs/screen-path.md` (решение владельца
+# 27.10.2026). Цвет рамки берётся ОТСЮДА и только отсюда: руками он разъехался
+# бы с кодом молча. Пятая стадия, «анонсирован», рамкой не отличается от
+# «рабочий»: человеку она говорит то же самое, разница — в письме людям.
+СТАДИИ_ЦВЕТ = {
+    'нарисован':   ('#9AA0A3', 'нарисован — кадр есть, кода нет'),
+    'не готов':    ('#8E3324', 'не готов — код есть, человеку не показывается'),
+    'в тесте':     ('#AF984D', 'в тесте — показывается, идёт проверка'),
+    'рабочий':     ('#485143', 'рабочий — тест принят владельцем'),
+    'анонсирован': ('#485143', 'анонсирован — людям сказано'),
+    '?':           ('#9AA0A3', 'стадия не поставлена'),
+}
+
+# ── чем управляется видимость экрана ─────────────────────────────────────
+# Слева — экран, справа — условие, при котором человек до него доходит.
+# `право:X` считает сам клиент (tools/vidimost.cjs зовёт X()); `вкладка:X` —
+# вкладка из `tabList()`; `все` — виден всем; `никто` — кода нет в реестре
+# `WIRED`, то есть в живом приложении экран не показывается вовсе;
+# текст в кавычках — правило, которое прибором не считается (сказано словами).
+УСЛОВИЕ = {
+    'consent': 'все', 'consentFull': 'все',
+    'loading': 'все', 'noSign': 'все', 'noAccess': 'все', 'apiDown': 'все',
+    'home': 'вкладка:Клуб', 'pass': 'вкладка:Клуб', 'events': 'вкладка:Клуб',
+    'event': 'вкладка:Клуб', 'eventNew': 'право:mayCreateEvent',
+    'guest': 'вкладка:Услуги', 'bar': 'вкладка:Услуги', 'drink': 'вкладка:Услуги',
+    'barCart': 'вкладка:Услуги', 'barOrder': 'вкладка:Услуги',
+    'bookings': 'вкладка:Записи',
+    'barQueue': 'вкладка:Заказы',
+    'staff': 'вкладка:Касса', 'tillPerson': 'вкладка:Касса',
+    'tillMembership': 'вкладка:Касса', 'tillTopup': 'вкладка:Касса',
+    'tillDay': 'вкладка:Касса',
+    'topup': 'право:canTopup',
+    # ⚠ Право БЕЗ двери — не видимость. Вход в «Карточки меню» и в «Людей» в
+    # приложении ровно один: строка группы «Работа» на экране «Клуб»
+    # (`SCREENS.home`, замер по app.js?v=59: `data-go="barCards"` — одно
+    # вхождение, `data-go="home"` — ноль). Значит человек с правом, но без
+    # вкладки «Клуб», до них не доходит — Cafe13KPG#396. Вторая дверь с
+    # «Заказов» нарисована кадрами E41/E41b и ждёт клиента; когда она будет,
+    # здесь останется одно право.
+    'barCards': ['право:mayCards', 'вкладка:Клуб'],
+    'barCard': ['право:mayCards', 'вкладка:Клуб'],
+    'people': ['право:mayPeople', 'вкладка:Клуб'],
+    'barMoney': 'право:mayBook', 'barDay': 'право:mayBook',
+    'barRecipe': '"админ, а бар и куратор — на своём направлении (mayRecipe; '
+                 'направление приходит с сервера, прибором здесь не считается)"',
+    'demo': '"кнопка солнышка — только у god и god_mentor и только в Telegram"',
+    'organizer': 'вкладка:События', 'partner': 'вкладка:Моё дело',
+    'membership': 'никто', 'eventManage': 'никто', 'serviceNew': 'никто',
+    'barShot': 'никто', 'barExpense': 'никто', 'curator': 'никто',
+    'занятость суток': 'никто', 'архив мероприятий': 'никто',
+    'касса · оплата записи': 'никто',
+}
+
+# Группа страницы для экранов, которых нет в описи снимков.
+ГРУППА_БЕЗ_СНИМКА = {
+    'barCards': 'Бар · исполнитель', 'barCard': 'Бар · исполнитель',
+    'barMoney': 'Бар · куратор',
+    'barRecipe': 'Бар · исполнитель',
+    'topup': 'Член клуба',
+    'people': 'Клуб · ответственность',
+    'tillPerson': 'Касса', 'tillMembership': 'Касса', 'tillTopup': 'Касса', 'tillDay': 'Касса',
+    'loading': 'Служебное', 'noSign': 'Служебное', 'noAccess': 'Служебное', 'apiDown': 'Служебное',
+    'занятость суток': 'Нарисовано, кода ещё нет',
+    'архив мероприятий': 'Нарисовано, кода ещё нет',
+    'касса · оплата записи': 'Нарисовано, кода ещё нет',
+}
+
+ПОДПИСЬ_БЕЗ_СНИМКА = {
+    'barCards': 'Список карточек меню у того, кто их заводит: ждут утверждения, возвращены, черновики, в меню, сняты.',
+    'barCard': 'Карточка напитка: название, группа, цена, минуты, описание, алкоголь; рецепт на двух языках.',
+    'barMoney': 'Доход и расход направления руками: вид, сумма, категория, чем платили.',
+    'barRecipe': 'Рецепт напитка: как готовить, на русском и тайском. Его видят бар и куратор направления.',
+    'topup': 'Пополнение своего счёта: сумма, чем платили. Деньги принимает кассир.',
+    'people': 'Кто за что отвечает в клубе: выдать и снять ответственность.',
+    'tillPerson': 'Карточка человека у кассира: членство, баланс, что ему продать.',
+    'tillMembership': 'Продажа членства в кассе.',
+    'tillTopup': 'Пополнение счёта в кассе.',
+    'tillDay': 'День кассы: что принято за сутки и чем, с отменой строки.',
+    'loading': 'Пока идёт первый ответ сервера.',
+    'noSign': 'Подпись Telegram не дошла — войти нечем.',
+    'noAccess': 'Человека нет в списке клуба.',
+    'apiDown': 'Сервер клуба не отвечает.',
+    'занятость суток': 'Занятость места по суткам: накладки, скрытые события, переход через полночь.',
+    'архив мероприятий': 'Архив прошедших мероприятий — у работника клуба и у организатора.',
+    'касса · оплата записи': 'Оплата записи на мероприятие через кассу: что оплачиваем, взнос, отказы.',
+}
+
+ПРЕДЕЛ_ВИДИМОСТИ = (
+    'Стадия каждого экрана — рамкой, и берётся она из одного файла (СТАДИИ.tsv), '
+    'а не ставится руками. «Видят» — это ВЫВОД ПО КОДУ приложения: права и вкладки '
+    'посчитал сам клиент для шести живых людей клуба. Под каждым человеком экран '
+    'никто не открывал, наблюдение — отдельный шаг. Состав ролей и членств взят '
+    'из тестовой базы (замер devops5, 27.10.2026, только чтение), а в бою он другой: '
+    'у владельца там бессрочное членство, и вкладка «Клуб» у него есть.'
+)
+
+ПОЧЕМУ_НЕТ_СНИМКА = ('снимок делается вне Telegram, где прав нет ни у кого: '
+                     'экран живёт только при сервере клуба')
+ПОЧЕМУ_НЕТ_СНИМКА_КОД = 'кода ещё нет — есть только кадры базы экранов'
+
+
+def стадии(каталог):
+    """Строки СТАДИИ.tsv: экран → (кадр, стадия, карточка, дата).
+
+    Страница без стадий не собирается: стадия — не украшение, а то, ради чего
+    страницу и читают. Отсутствие файла — «НЕ ВЫПОЛНЕНО», а не «стадий нет»."""
+    путь = os.path.join(каталог, 'СТАДИИ.tsv')
+    if not os.path.isfile(путь):
+        sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: нет файла стадий %s — '
+                 'страница без стадий не собирается' % путь)
+    из = {}
+    for н, строка in enumerate(io.open(путь, encoding='utf-8').read().splitlines(), 1):
+        if not строка.strip() or строка.lstrip().startswith('#'):
+            continue
+        поля = [п.strip() for п in строка.split('\t')]
+        if len(поля) != 5:
+            sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: %s:%d: полей %d, а должно быть 5'
+                     % (путь, н, len(поля)))
+        из[поля[0]] = tuple(поля[1:])
+    if not из:
+        sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: %s: ни одной строки стадии' % путь)
+    нет_условия = [э for э in из if э not in УСЛОВИЕ]
+    if нет_условия:
+        sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: у экранов нет условия видимости в '
+                 'tools/catalog.py (УСЛОВИЕ): %s — страница соврала бы молча, '
+                 'показав их всем' % ', '.join(sorted(нет_условия)))
+    чужая_стадия = sorted({с[1] for с in из.values()} - set(СТАДИИ_ЦВЕТ))
+    if чужая_стадия:
+        sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: в %s стадии вне словаря: %s'
+                 % (путь, ', '.join(чужая_стадия)))
+    return из
+
+
+def видимость(каталог):
+    """vidimost.json: кто какие вкладки и права имеет. Нет файла — страница
+    собирается БЕЗ колонки видимости и говорит об этом вслух."""
+    путь = os.path.join(каталог, 'vidimost.json')
+    if not os.path.isfile(путь):
+        return None
+    return json.load(io.open(путь, encoding='utf-8'))
+
+
+def кто_видит(экран, люди):
+    """Имена тех, кто доходит до экрана, и текст условия — по одному правилу.
+
+    Возвращает (список имён или None, текст условия словами). None — значит
+    условие прибором не считается, и вместо имён печатается само правило."""
+    усл = УСЛОВИЕ.get(экран, '')
+    if isinstance(усл, str):
+        if усл.startswith('"'):
+            return None, усл.strip('"')
+        if усл == 'все':
+            return [ч['имя'] for ч in люди], 'виден всем'
+        if усл == 'никто':
+            return [], 'в живом приложении не показывается'
+    части = [усл] if isinstance(усл, str) else усл
+
+    def держит(в, часть):
+        вид, имя = часть.split(':', 1)
+        return (имя in в['вкладки']) if вид == 'вкладка' else bool(в['права'].get(имя))
+
+    нашлись = []
+    for ч in люди:
+        попал = any(all(держит(в, ч_усл) for ч_усл in части) for в in ч['виды'])
+        всегда = all(all(держит(в, ч_усл) for ч_усл in части) for в in ч['виды'])
+        if попал:
+            нашлись.append(ч['имя'] + ('' if всегда else ' (не всегда)'))
+    словами = [('вкладка «%s»' % ч.split(':', 1)[1]) if ч.startswith('вкладка')
+               else ('право %s()' % ч.split(':', 1)[1]) for ч in части]
+    return нашлись, ' и '.join(словами)
+
+
 
 CSS = """
 :root {
@@ -90,8 +279,22 @@ figure { margin:0; display:flex; flex-direction:column; gap:11px; }
 }
 .shot img { display:block; width:100%; height:auto; }
 figcaption { font-size:13px; color:var(--muted); }
+.shot { border-width:3px; }                      /* рамка стадии — цвет ставит СТАДИИ.tsv */
+.nosh {
+  border:3px dashed var(--line); border-radius:20px; background:var(--surface);
+  min-height:190px; display:flex; align-items:center; justify-content:center;
+  padding:18px; text-align:center; font-size:12px; color:var(--muted);
+}
+.stage { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.4px;
+         border-radius:999px; padding:2px 9px; border:1px solid currentColor; }
+.who { display:block; margin-top:5px; font-size:12px; }
+.who b { display:inline; font-weight:600; color:var(--ink); }
+.legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:20px; font-size:12px; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:7px; }
+.legend i { width:22px; height:14px; border:3px solid currentColor; border-radius:5px; }
 figcaption b { display:block; color:var(--ink); font-size:13px; font-weight:700; margin-bottom:3px; }
 figcaption b span { color:var(--gold-ink); font-variant-numeric:tabular-nums; }
+figcaption b em { font-style:normal; font-weight:500; color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
 footer { border-top:1px solid var(--line); padding-top:22px; font-size:13px; color:var(--muted); }
 footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:var(--ink); }
 """
@@ -146,15 +349,80 @@ def ordered_groups(items):
     return out
 
 
+def строки_страницы(items, ст, вид):
+    """Строки страницы: сперва снимки в порядке описи, затем экраны без снимка.
+
+    Экран без снимка не выбрасывается: у него есть стадия и видимость, а это
+    и есть то, ради чего страницу читают. Молчание о работающем экране —
+    ровно та беда, из-за которой заведён Cafe13KPG#405."""
+    люди = (вид or {}).get('люди', [])
+
+    def общее(э):
+        кадр, стадия, карточка, дата = ст.get(э, ('—', '?', '—', ''))
+        видят, правило = кто_видит(э, люди)
+        return {'стадия': стадия, 'кадр': кадр, 'карточка': карточка,
+                'видят': видят, 'правило': правило}
+
+    вышло, снятые = [], set()
+    for it in items:
+        снятые.add(it['screen'])
+        вышло.append(dict(it, **общее(it['screen'])))
+    for э in ст:
+        if э in снятые:
+            continue
+        о = общее(э)
+        вышло.append(dict(о, file=None, screen=э,
+                          group=ГРУППА_БЕЗ_СНИМКА.get(э, 'Без снимка'),
+                          caption=ПОДПИСЬ_БЕЗ_СНИМКА.get(э, ''),
+                          почему=(ПОЧЕМУ_НЕТ_СНИМКА_КОД if о['стадия'] == 'нарисован'
+                                  else ПОЧЕМУ_НЕТ_СНИМКА)))
+    return вышло
+
+
+def подпись_стадии(it):
+    цвет, словами = СТАДИИ_ЦВЕТ.get(it['стадия'], СТАДИИ_ЦВЕТ['?'])
+    кадр = (' &middot; кадры %s' % esc(it['кадр'])) if it['кадр'] not in ('—', '') else ''
+    return ('<span class="stage" style="color:%s">%s</span>%s'
+            % (цвет, esc(it['стадия']), кадр))
+
+
+def подпись_видимости(it):
+    if it['видят'] is None:
+        return '<span class="who">видимость: %s</span>' % esc(it['правило'])
+    если = ', '.join(it['видят']) if it['видят'] else 'сегодня никто'
+    return ('<span class="who">видят: <b>%s</b> &middot; %s</span>'
+            % (esc(если), esc(it['правило'])))
+
+
+def картинка(it, prefix):
+    if it.get('file'):
+        цвет = СТАДИИ_ЦВЕТ.get(it['стадия'], СТАДИИ_ЦВЕТ['?'])[0]
+        return ('<div class="shot" style="border-color:%s"><img loading="lazy" src="%s%s" '
+                'alt="%s" width="780" height="1688"></div>'
+                % (цвет, prefix, it['file'], esc(it['caption'][:80])))
+    return '<div class="nosh">снимка нет: %s</div>' % esc(it.get('почему', ''))
+
+
 def web(items, prefix):
     gs = ordered_groups(items)
     o = [HEAD % ('Экраны Café XIII', CSS)]
     o.append('<div class="wrap"><header>')
     o.append('<div class="wordmark">Caf&eacute; XIII</div>')
     o.append('<h1>Экраны мини-приложения</h1>')
-    o.append('<div class="meta">%s &middot; %d %s &middot; снято с живой страницы, 390&nbsp;&times;&nbsp;844 &middot; '
-             '<a href="%s">открыть приложение</a></div>' % (VERSION, len(items), plural(len(items)), LIVE))
+    экранов = len({i['screen'] for i in items})
+    со_снимком = len([i for i in items if i.get('file')])
+    o.append('<div class="meta">%s &middot; %d %s, снимков %d &middot; '
+             'снимок — с живой страницы, 390&nbsp;&times;&nbsp;844 &middot; '
+             '<a href="%s">открыть приложение</a></div>'
+             % (VERSION, экранов, plural(экранов), со_снимком, LIVE))
     o.append('<p class="lead">%s</p>' % esc(INTRO))
+    o.append('<p class="lead">%s</p>' % esc(ПРЕДЕЛ_ВИДИМОСТИ))
+    o.append('<div class="legend">')
+    for стадия, (цвет, словами) in СТАДИИ_ЦВЕТ.items():
+        if стадия == '?':
+            continue
+        o.append('<span style="color:%s"><i></i>%s</span>' % (цвет, esc(словами)))
+    o.append('</div>')
     o.append('<div class="absent">')
     for b, t in ABSENT:
         o.append('<div><b>%s</b> <span>&mdash; %s</span></div>' % (esc(b), esc(t)))
@@ -172,10 +440,11 @@ def web(items, prefix):
         o.append('<p>%s</p></div><div class="grid">' % esc(GROUPS.get(g, '')))
         for it in mine:
             n += 1
-            o.append('<figure><div class="shot"><img loading="lazy" src="%s%s" alt="%s" width="780" height="1688"></div>'
-                     % (prefix, it['file'], esc(it['caption'][:80])))
-            o.append('<figcaption><b><span>%02d</span> &nbsp;%s</b>%s</figcaption></figure>'
-                     % (n, esc(it['screen']), esc(it['caption'])))
+            o.append('<figure>' + картинка(it, prefix))
+            o.append('<figcaption><b><span>%02d</span> &nbsp;%s <em>%s</em></b>%s%s%s</figcaption></figure>'
+                     % (n, esc(title_of(it)), esc(it['screen']), подпись_стадии(it),
+                        '<span class="who">' + esc(it['caption']) + '</span>',
+                        подпись_видимости(it)))
         o.append('</div></section>')
 
     o.append('<footer>Снимки пересобираются командой <code>tools/shots.cjs</code> '
@@ -211,9 +480,18 @@ def printable(items, prefix):
     for it in items:
         n += 1
         o.append('<div class="page screen">')
-        o.append('<div class="img"><img src="%s%s" alt=""></div>' % (prefix, it['file']))
+        o.append('<div class="img">%s</div>'
+                 % ('<img src="%s%s" alt="">' % (prefix, it['file']) if it.get('file')
+                    else '<div style="padding:12mm;color:#6B7276;font-size:9.5pt">снимка нет: %s</div>'
+                         % esc(it.get('почему', ''))))
         o.append('<div class="text"><div class="eyebrow">%02d &middot; %s</div>' % (n, esc(it['group'])))
         o.append('<h2>%s</h2><p>%s</p>' % (esc(title_of(it)), esc(it['caption'])))
+        o.append('<p>Стадия: %s%s. %s</p>'
+                 % (esc(it['стадия']),
+                    (', кадры ' + esc(it['кадр'])) if it['кадр'] not in ('—', '') else '',
+                    ('Видимость: ' + esc(it['правило'])) if it['видят'] is None
+                    else ('Видят: ' + esc(', '.join(it['видят']) or 'сегодня никто')
+                          + ' (' + esc(it['правило']) + ')')))
         o.append('<div class="id">экран %s</div>' % esc(it['screen']))
         o.append('<div class="group">%s</div></div></div>' % esc(GROUPS.get(it['group'], '')))
     o.append('</body></html>')
@@ -229,6 +507,14 @@ TITLES = {
     'barExpense': 'Затраты направления', 'curator': 'Кабинет куратора',
     'organizer': 'Мои мероприятия', 'eventNew': 'Новое мероприятие', 'eventManage': 'Управление мероприятием',
     'partner': 'Моё направление', 'serviceNew': 'Новая услуга', 'staff': 'Касса', 'demo': 'Демо-режим',
+    'topup': 'Свой счёт', 'barRecipe': 'Рецепт напитка', 'barCards': 'Карточки меню',
+    'barCard': 'Карточка напитка', 'barMoney': 'Доход и расход бара', 'people': 'Люди и ответственность',
+    'tillPerson': 'Карточка человека', 'tillMembership': 'Продажа членства',
+    'tillTopup': 'Пополнение в кассе', 'tillDay': 'День кассы',
+    'loading': 'Загрузка', 'noSign': 'Подпись не дошла', 'noAccess': 'Нет доступа',
+    'apiDown': 'Сервер молчит',
+    'занятость суток': 'Занятость суток', 'архив мероприятий': 'Архив мероприятий',
+    'касса · оплата записи': 'Касса · оплата записи',
 }
 
 
@@ -238,9 +524,24 @@ def title_of(it):
 
 if __name__ == '__main__':
     d = sys.argv[1] if len(sys.argv) > 1 else '.'
-    items = json.load(io.open(os.path.join(d, 'manifest.json'), encoding='utf-8'))
+    снимки = json.load(io.open(os.path.join(d, 'manifest.json'), encoding='utf-8'))
+    ст = стадии(d)
+    вид = видимость(d)
+    if вид is None:
+        print('⚠ нет %s/vidimost.json — страница собрана БЕЗ имён в колонке '
+              '«видят»; снять: tools/vidimost.cjs' % d)
+    items = строки_страницы(снимки, ст, вид)
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     io.open(os.path.join(repo, 'screens.html'), 'w', encoding='utf-8').write(web(items, 'screens/'))
     io.open(os.path.join(d, 'print.html'), 'w', encoding='utf-8').write(printable(items, ''))
-    print('screens.html: %d экранов' % len(items))
+    по_стадиям = {}
+    for i in items:
+        по_стадиям[i['стадия']] = по_стадиям.get(i['стадия'], 0) + 1
+    print('screens.html: %d экранов, строк %d, снимков %d'
+          % (len({i['screen'] for i in items}), len(items),
+             len([i for i in items if i.get('file')])))
+    print('стадии: ' + ', '.join('%s — %d' % (к, в) for к, в in sorted(по_стадиям.items())))
+    без_имени = sorted({i['screen'] for i in items if i['screen'] not in TITLES})
+    if без_имени:
+        print('⚠ без человеческого имени (в TITLES каталога): ' + ', '.join(без_имени))
     print('print.html:   %s/print.html' % d)
