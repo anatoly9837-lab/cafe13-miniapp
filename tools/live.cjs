@@ -1642,7 +1642,7 @@ if (grantsSet.length !== 1) {
       // Заголовок пустого дня и его подпись — одна пара в .col: зазор равен row-gap этого .col
       // (3 px), а не .card (10) — без обёртки объяснение про сутки отрывается от заголовка
       // (Cafe13KPG#386, форма 14 мест). Эталон — row-gap ПРАВИЛА .col, снятый с чистого пробного
-      // .col в #view, а не с этого элемента: иначе местный style="gap:…" подвинул бы эталон вместе
+      // .col в той же карточке (контекст каскада совпадает по построению), а не с этого элемента: иначе местный style="gap:…" подвинул бы эталон вместе
       // с зазором и прошёл зелёным (возврат архитектора). Правка styles.css не делает проверку
       // тихо неверной: эталон едет вместе с правилом. Число печатается и при зелёном.
       if (name === 'till-day-empty') {
@@ -1651,7 +1651,7 @@ if (grantsSet.length !== 1) {
           const n = b && b.nextElementSibling, col = b && b.parentElement;
           return { gap: n ? Math.round(n.getBoundingClientRect().top - b.getBoundingClientRect().bottom) : null,
                    inCol: !!col && col.classList.contains('col'),
-                   want: (() => { const p = document.createElement('div'); p.className = 'col'; document.getElementById('view').appendChild(p);
+                   want: (() => { const p = document.createElement('div'); p.className = 'col'; ((b && b.closest('.card')) || document.getElementById('view')).appendChild(p);
                                   const v = Math.round(parseFloat(getComputedStyle(p).rowGap)); p.remove(); return v; })() };
         });
         console.log(`till-day-empty: зазор заголовок→подпись ${g.gap} px, row-gap правила .col ${g.want}${g.inCol ? '' : ', пара не в .col'}`);
