@@ -3358,7 +3358,7 @@ function membershipLive() {
   var lock = MREQ.busy ? ' disabled' : '';
   var pick = list && list.length ? (tierOf(MREQ.pick) ? MREQ.pick : list[0].code) : '';
   var tail = member
-    ? noteBox('Цены приходят с сервера клуба и могут измениться. Продление считается от конца действующего, а не со дня оплаты. Каждый вид продлевается отдельно, деньги принимает касса.') +
+    ? noteBox('Продление считается от конца действующего, а не со дня оплаты. Каждый вид продлевается отдельно; деньги принимает касса.') +
       '<div style="display:flex;flex-direction:column;gap:9px"><button type="button" class="btn" data-go="pass">Показать пропуск</button>' +
       '<span class="small" style="text-align:center">Код пропуска спросят в кассе: по нему вас и находят.</span></div>'
     : rq && rq.status === 'pending'
@@ -3554,8 +3554,11 @@ var SCREENS = {
 
       (LIVE ? myRoles() +
         (canTopup() ? '<button type="button" class="btn ghost" data-go="topup">Внести себе на счёт</button>' : '') +
-        (DATA.barSide ? '<div class="group"><span class="label">Работа</span>' +
-          '<button type="button" class="listitem accent" data-go="barQueue">' +
+        // Одна группа «Работа»: бар и управление клубом (кадр E42g, Cafe13KPG#428) —
+        // у «Заявок» и «Людей» одно право, и подпись у них одна; при барной роли
+        // строки главы клуба встают в ту же группу, а не во вторую «Работу».
+        (DATA.barSide || mayPeople() || mayRequests() && WIRED.memberRequests ? '<div class="group"><span class="label">Работа</span>' +
+          (DATA.barSide ? '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' +
           (mayCards() ? '<button type="button" class="listitem" data-go="barCards">' +
@@ -3563,16 +3566,15 @@ var SCREENS = {
             svg(ICON.chev, 'chev') + '</button>' : '') +
           (mayBook() ? '<button type="button" class="listitem" data-go="barMoney">' +
             '<span class="grow"><b>Доход и расход бара</b><span class="small">Выручка и затраты руками, с комментарием</span></span>' +
-            svg(ICON.chev, 'chev') + '</button>' : '') +
-          '</div>' : '') +
-        (mayPeople() ? '<div class="group"><span class="label">Клуб</span>' +
-          '<button type="button" class="listitem accent" data-go="people">' +
-            '<span class="grow"><b>Люди и ответственность</b><span class="small">Кто за что отвечает: выдать и снять</span></span>' +
-            svg(ICON.chev, 'chev') + '</button>' +
-          // строка — только когда экран включён: до выкладки api заявок она вела бы в заглушку
+            svg(ICON.chev, 'chev') + '</button>' : '') : '') +
+          // строка — только когда экран включён: до выкладки api заявок она вела бы в заглушку;
+          // счёт ждущих — словами в подстрочнике, пилюли внутри .listitem у клиента нет
           (mayRequests() && WIRED.memberRequests ? '<button type="button" class="listitem" data-go="memberRequests">' +
             '<span class="grow"><b>Заявки на членство</b><span class="small">' +
               (MREQS.pending !== null ? 'Ждут ответа: ' + MREQS.pending : 'Согласие или отказ, со словом заявителю') + '</span></span>' +
+            svg(ICON.chev, 'chev') + '</button>' : '') +
+          (mayPeople() ? '<button type="button" class="listitem" data-go="people">' +
+            '<span class="grow"><b>Люди и ответственность</b><span class="small">Кто за что отвечает: выдать и снять</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' : '') +
           '</div>' : '') +
         afishaHome() :
