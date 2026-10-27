@@ -2753,6 +2753,71 @@ if (grantsSet.length !== 1) {
       bad.push('bookings-gost: экран записей застрял на «Загружаем афишу…» — афиша не грузится при входе сюда, а гость попадает на этот экран, минуя «Клуб» (Cafe13KPG#360)');
     if (!t.includes('Вы никуда не записаны'))
       bad.push('bookings-gost: у гостя без записей нет честного пустого состояния — вместо него осталось что-то третье (кадр E40b, Cafe13KPG#360)');
+    /* Кнопка ищется ПО НАДПИСИ, а не по `data-go`: адрес — часть того, что
+       проверяется, и прибор, выбирающий элемент по адресу, на подложенном
+       адресе видит ноль кнопок и говорит «кнопки нет» вместо «ведёт не
+       туда». Вес судится отрисованным классом. */
+    const пустой = await s.p.$$eval('#view button',
+      bs => bs.filter(b => b.textContent.trim() === 'Вся афиша').map(b => b.className));
+    if (пустой.length !== 1)
+      bad.push(`bookings-gost: кнопок «Вся афиша» на пустом экране ${пустой.length}, ждали одну — других дверей отсюда у гостя нет (кадр E40b, Cafe13KPG#371)`);
+    else if (/\bquiet\b/.test(пустой[0]))
+      bad.push(`bookings-gost: кнопка афиши в пустом состоянии тихая («${пустой[0]}») — кадр E40b рисует сплошную, и делать здесь больше нечего (Cafe13KPG#371)`);
+    await s.ctx.close();
+  }
+
+  /* ГОСТЬ С ЗАПИСЬЮ — ЭКРАН НЕ ДОЛЖЕН БЫТЬ ТУПИКОМ. У `guest` вкладки «Клуб»
+     нет, а обе кнопки «Вся афиша» живут внутри `home`; пока вход сюда стоял
+     в ветке ПУСТОГО состояния, записавшийся гость терял афишу совсем —
+     записался и заперся. Нашёл обходом отрисованных входов designer-55,
+     перемерено мной на отрисованном экране (Cafe13KPG#371).
+
+     ⚠ ПРЕДУСЛОВИЯ СЛУЧАЯ — ОТКАЗЫ, А НЕ КОММЕНТАРИИ. Появится у гостя вкладка
+     «Клуб» — путь к афише будет и без этой кнопки, и случай перестанет
+     доказывать что-либо МОЛЧА, оставшись зелёным. Уйдут записи из фикстуры —
+     он начнёт судить пустое состояние, у которого свой случай выше. Поэтому
+     оба стоят отдельными отказами.
+
+     Фикстура своя: `MOI` объявлена в чужом блоке, а общая `AFISHA` несёт
+     вперемешку своё и чужое — здесь нужны ровно записи гостя, и их ДВЕ,
+     чтобы кнопка судилась под списком, а не под одной строкой. */
+  {
+    const GOST = clone(OWNER);
+    GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false;
+    const S_ZAPISYU = [
+      EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
+      EV({ id: 11, title: 'Через три дня', starts_at: atBkk(3, 18), duration_min: 90,
+           kind: 'donation', price: '0.00', seats: 20, taken: 2, seats_left: 18,
+           booked_by_me: true, my_booking_id: 8 }),
+      EV({ id: 12, title: 'Чужое мероприятие', starts_at: atBkk(1, 15), duration_min: 60,
+           kind: 'free', price: '0.00', seats: 9, taken: 0, seats_left: 9, booked_by_me: false })
+    ];
+    const s = await open(true, true, json(200, GOST), null, null, null, evReply(json(200, S_ZAPISYU)), null, NOWFIX);
+    const вкладки = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
+    if (вкладки.indexOf('home') !== -1)
+      bad.push(`bookings-gost-zapert: у гостя появилась вкладка «Клуб» (${JSON.stringify(вкладки)}) — предусловие случая снято, и он больше не доказывает, что кнопка здесь единственный выход к афише (Cafe13KPG#371)`);
+    await s.p.click('#tabs [data-go="bookings"]');
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    if (!t.includes('Вечер ханга'))
+      bad.push('bookings-gost-zapert: записей гостя на экране нет — предусловие случая снято, судится пустое состояние, а у него свой случай выше (Cafe13KPG#371)');
+    const двери = await s.p.$$eval('#view button',
+      bs => bs.filter(b => b.textContent.trim() === 'Вся афиша').map(b => b.className));
+    if (!двери.length)
+      bad.push('bookings-gost-zapert: гость с записью заперт — с экрана «Записи» в афишу не ведёт ничего, а вкладки «Клуб» у него нет: записался и потерял афишу (Cafe13KPG#371)');
+    else if (!/\bquiet\b/.test(двери[0]))
+      bad.push(`bookings-gost-zapert: кнопка афиши при живых записях сплошная («${двери[0]}») — посреди списка она забирает экран себе, а главное здесь сами записи (Cafe13KPG#371)`);
+    /* Дверь проверяется НАЖАТИЕМ: кнопка, никуда не ведущая, читается как
+       путь и потому хуже отсутствия кнопки. Невыполненный контроль — свой
+       отказ, а не тишина. */
+    if (двери.length) {
+      await s.p.locator('#view button', { hasText: 'Вся афиша' }).first().click();
+      await s.p.waitForTimeout(250);
+      if (!await s.p.$('#view [data-action="seg:все"]'))
+        bad.push('bookings-gost-zapert: «Вся афиша» ведёт не на афишу — сегментов дня на экране нет, а гостю этот экран открыт (Cafe13KPG#371)');
+    } else {
+      bad.push('bookings-gost-zapert-kontrol: НЕ ВЫПОЛНЕН — нажимать нечего, значит «дверь ведёт в афишу» не проверено ничем (Cafe13KPG#371)');
+    }
     await s.ctx.close();
   }
 
