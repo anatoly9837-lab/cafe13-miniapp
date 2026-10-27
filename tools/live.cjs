@@ -1639,6 +1639,27 @@ if (grantsSet.length !== 1) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (t.includes(never)) bad.push(`${name}: лишнее «${never}»`);
+      // Заголовок пустого дня и его подпись — одна пара в .col: зазор равен row-gap этого .col
+      // (3 px), а не .card (10) — без обёртки объяснение про сутки отрывается от заголовка
+      // (Cafe13KPG#386, форма 14 мест). Эталон — row-gap ПРАВИЛА .col, снятый с чистого пробного
+      // .col в той же карточке (контекст каскада совпадает по построению), а не с этого элемента: иначе местный style="gap:…" подвинул бы эталон вместе
+      // с зазором и прошёл зелёным (возврат архитектора). Правка styles.css не делает проверку
+      // тихо неверной: эталон едет вместе с правилом. Число печатается и при зелёном.
+      if (name === 'till-day-empty') {
+        const g = await s.p.evaluate(() => {
+          const b = [...document.querySelectorAll('#view .card.quiet b')].find(e => e.textContent === 'Сегодня через кассу ничего не прошло');
+          const n = b && b.nextElementSibling, col = b && b.parentElement;
+          return { gap: n ? Math.round(n.getBoundingClientRect().top - b.getBoundingClientRect().bottom) : null,
+                   inCol: !!col && col.classList.contains('col'),
+                   want: (() => { const p = document.createElement('div'); p.className = 'col'; ((b && b.closest('.card')) || document.getElementById('view')).appendChild(p);
+                                  const v = Math.round(parseFloat(getComputedStyle(p).rowGap)); p.remove(); return v; })() };
+        });
+        console.log(`till-day-empty: зазор заголовок→подпись ${g.gap} px, row-gap правила .col ${g.want}${g.inCol ? '' : ', пара не в .col'}`);
+        // Контроль прибора: правила .col нет (класс переименован) — проба даёт row-gap normal → NaN.
+        if (!Number.isFinite(g.want)) bad.push('till-day-empty: НЕ ВЫПОЛНЕНО — у пробного .col нет числового row-gap, правило .col не найдено (Cafe13KPG#386)');
+        else if (g.gap === null || !g.inCol || g.gap !== g.want)
+          bad.push(`till-day-empty: подпись пустого дня оторвана от заголовка — зазор ${g.gap} px, у правила .col ${g.want}${g.inCol ? '' : ', пара не в .col'} (Cafe13KPG#386)`);
+      }
       if (name === 'till-day-sum') {
         if ((await dayRows(s)).length !== 5) bad.push('till-day-sum: при расхождении итога сняты и строки — они из ответа дословно (E36g)');
         if (/наличными|картой/.test(t)) bad.push('till-day-sum: при расхождении итога показаны суммы по способу — они из того же разбора');
