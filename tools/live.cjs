@@ -1655,7 +1655,9 @@ if (grantsSet.length !== 1) {
                                   const v = Math.round(parseFloat(getComputedStyle(p).rowGap)); p.remove(); return v; })() };
         });
         console.log(`till-day-empty: зазор заголовок→подпись ${g.gap} px, row-gap правила .col ${g.want}${g.inCol ? '' : ', пара не в .col'}`);
-        if (g.gap === null || !g.inCol || g.gap !== g.want)
+        // Контроль прибора: правила .col нет (класс переименован) — проба даёт row-gap normal → NaN.
+        if (!Number.isFinite(g.want)) bad.push('till-day-empty: НЕ ВЫПОЛНЕНО — у пробного .col нет числового row-gap, правило .col не найдено (Cafe13KPG#386)');
+        else if (g.gap === null || !g.inCol || g.gap !== g.want)
           bad.push(`till-day-empty: подпись пустого дня оторвана от заголовка — зазор ${g.gap} px, у правила .col ${g.want}${g.inCol ? '' : ', пара не в .col'} (Cafe13KPG#386)`);
       }
       if (name === 'till-day-sum') {
