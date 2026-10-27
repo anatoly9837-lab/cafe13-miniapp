@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v61 · 27.10.2026';
+var VERSION = 'v62 · 27.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -361,7 +361,8 @@ function fromTiers(d) {
     if (!t || typeof t.code !== 'string' || !/^[a-z_]+$/.test(t.code) || typeof t.name !== 'string' || !t.name) return null;
     if (!isFinite(price) || price < 0) return null;
     if (typeof t.period_months !== 'number' || t.period_months < 1 || Math.floor(t.period_months) !== t.period_months) return null;
-    out.push({ code: t.code, name: t.name, price: price, months: t.period_months,
+    // описание вида — слова владельца с сервера (api f06d01c); в клиенте их нет, как и цен
+    out.push({ code: t.code, name: t.name, about: typeof t.about === 'string' ? t.about.trim() : '', price: price, months: t.period_months,
                trial: typeof t.trial_days === 'number' && t.trial_days > 0 ? t.trial_days : 0 });
   }
   return out;
@@ -3303,9 +3304,8 @@ function partOf(t) {
 function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
 
 /* Живой экран членства (Cafe13KPG#415), кадры E38* (Cafe13KPG#428).
-   Описания видов — слова кадра по коду вида; цена и срок — только с сервера. */
-var TIER_ABOUT = { member: 'Бесплатный вход в клуб.', organizer: 'То же и право проводить свои мероприятия.',
-                   partner: 'То же и право влиять на бизнес-команду, приводить новые бизнесы.' };
+   Имя, описание, цена и срок вида — только с сервера: текст в клиенте не
+   меняется без выкладки и не проверяется ничем. */
 function tierSum(t) { return money(t.price % 1 ? t.price.toFixed(2) : t.price) + ' ฿'; }
 function tierPeriod(t) { return t.months === 1 ? 'в месяц' : 'за ' + t.months + ' ' + plural(t.months, ['месяц', 'месяца', 'месяцев']); }
 function tierPrice(t) { return tierSum(t) + ' ' + tierPeriod(t); }
@@ -3345,7 +3345,7 @@ function membershipLive() {
   var rows = list ? (list.length
       ? '<div class="group"><span class="label">Виды членства</span><div class="rows">' + list.map(function (t) {
           return '<div><div class="col"><b>' + esc(t.name) + '</b>' +
-            (TIER_ABOUT[t.code] ? '<span class="small">' + TIER_ABOUT[t.code] + '</span>' : '') + '</div>' +
+            (t.about ? '<span class="small">' + esc(t.about) + '</span>' : '') + '</div>' +
             '<div class="col" style="align-items:flex-end;gap:2px;flex:0 0 auto">' +
               (mine(t.code) ? '<span class="pill on">У ВАС ЕСТЬ</span>' : '') +
               '<b class="num" style="white-space:nowrap">' + esc(tierSum(t)) + '</b>' +

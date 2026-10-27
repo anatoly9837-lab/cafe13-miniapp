@@ -6092,9 +6092,10 @@ if (grantsSet.length !== 1) {
     const withReq = (who, st, said) => { const m = clone(who); m.membership_request = { id: 7, status: st, created_at: '2026-10-27T11:00:00+00:00',
       decided_at: st === 'pending' ? null : '2026-10-27T12:00:00+00:00', decision_note: said || '', tier_code: 'member', tier_name: 'Член клуба' }; return m; };
     const TIERS_ = { currency: 'THB', tiers: [
-      { code: 'member', name: 'Член клуба', price_thb: '1234.00', period_months: 1, trial_days: 0 },
-      { code: 'organizer', name: 'Мастер', price_thb: '2345.50', period_months: 3, trial_days: 0 },
-      { code: 'partner', name: 'Бизнес-партнёр', price_thb: '4321.00', period_months: 1, trial_days: 0 }] };
+      // описания тоже выдуманы: слова кадра в клиенте значили бы, что текст вшит
+      { code: 'member', name: 'Член клуба', about: 'Вход по пропуску.', price_thb: '1234.00', period_months: 1, trial_days: 0 },
+      { code: 'organizer', name: 'Мастер', about: 'Свои вечера.', price_thb: '2345.50', period_months: 3, trial_days: 0 },
+      { code: 'partner', name: 'Бизнес-партнёр', about: 'Своё дело.', price_thb: '4321.00', period_months: 1, trial_days: 0 }] };
     const REQS_ = { pending: 1, requests: [
       { id: 11, status: 'pending', note: 'хочу на вечера', decision_note: '', created_at: '2026-10-27T10:00:00+00:00', decided_at: null,
         member_id: 501, first_name: 'Вера', last_name: 'Заявкина', username: null, tier_code: 'member', tier_name: 'Член клуба', has_pass: false },
@@ -6125,6 +6126,9 @@ if (grantsSet.length !== 1) {
       for (const w of ['Членства нет', 'Член клуба', '1 234 ฿', '2 345.50 ฿', 'за 3 месяца', '4 321 ฿', 'в месяц'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}» — цена не с сервера (Cafe13KPG#415)`);
       if (/3 ?316|6 ?633|9 ?950/.test(t)) bad.push(`${n}: на экране настоящая цена, а фикстура её не давала — цена вшита в клиент`);
+      for (const w of ['Вход по пропуску.', 'Свои вечера.', 'Своё дело.'])
+        if (!t.includes(w)) bad.push(`${n}: нет описания вида «${w}» с сервера`);
+      if (/Бесплатный вход в клуб|право проводить свои мероприятия/.test(t)) bad.push(`${n}: на экране описание, которого фикстура не давала — текст вшит в клиент`);
       let b = await sends(s);
       if (b.length !== 1 || b[0] !== 'Подать заявку') bad.push(`${n}: кнопки подачи ${JSON.stringify(b)}, ждали одну «Подать заявку»`);
       await s.p.evaluate(() => document.querySelector('[data-action="mr-pick:organizer"]').click()); await s.p.waitForTimeout(100);
