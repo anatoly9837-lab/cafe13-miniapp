@@ -69,7 +69,7 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 <div class="wrap"><header>
 <div class="wordmark">Caf&eacute; XIII</div>
 <h1>Экраны мини-приложения</h1>
-<div class="meta">v61 · 27.10.2026 &middot; 42 экрана, снимков 33 &middot; снимок — с живой страницы, 390&nbsp;&times;&nbsp;844 &middot; <a href="https://anatoly9837-lab.github.io/cafe13-miniapp/">открыть приложение</a></div>
+<div class="meta">v62 · 27.10.2026 &middot; 43 экрана, снимков 33 &middot; снимок — с живой страницы, 390&nbsp;&times;&nbsp;844 &middot; <a href="https://anatoly9837-lab.github.io/cafe13-miniapp/">открыть приложение</a></div>
 <p class="lead">Полная опись экранов мини-приложения клуба. Каждый снимок сделан с живой страницы на экране телефона 390 × 844 — это не макет и не рисунок поверх идеи: то же самое открывается по ссылке ниже.</p>
 <p class="lead">Стадия каждого экрана — рамкой, и берётся она из одного файла (СТАДИИ.tsv), а не ставится руками. «Видят» — это ВЫВОД ПО КОДУ приложения: от вкладок человека прибор идёт по входам на отрисованных экранах, пока находятся новые. Право без входа видимостью не считается. Где вход рисуется строкой данных сервера или туда уходит сам код, это сказано словами: «никто» у такого экрана значило бы не «пути нет», а «нечем измерить». Под каждым человеком экран никто не открывал, наблюдение — отдельный шаг. Состав ролей и членств взят из тестовой базы (замер devops5, 27.10.2026, только чтение), а в бою он другой: у владельца там бессрочное членство, и вкладка «Клуб» у него есть.</p>
 <div class="legend">
@@ -96,8 +96,9 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 <a href="#g8">Касса</a>
 <a href="#g9">Служебное</a>
 <a href="#g10">Ночная тема</a>
-<a href="#g11">Клуб · ответственность</a>
-<a href="#g12">Нарисовано, кода ещё нет</a>
+<a href="#g11">Без снимка</a>
+<a href="#g12">Клуб · ответственность</a>
+<a href="#g13">Нарисовано, кода ещё нет</a>
 </nav></header>
 <section id="g0"><div class="head">
 <span class="count">2 экрана</span>
@@ -246,20 +247,27 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 </div></section>
 <section id="g11"><div class="head">
 <span class="count">1 экран</span>
+<h2>Без снимка</h2>
+<p></p></div><div class="grid">
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>46</span> &nbsp;Заявки на членство <em>memberRequests</em></b><span class="stage" style="color:#8E3324">не готов</span> &middot; кадры E42<span class="who"></span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+</div></section>
+<section id="g12"><div class="head">
+<span class="count">1 экран</span>
 <h2>Клуб · ответственность</h2>
 <p>Кто за что отвечает в клубе: выдать и снять роль.</p></div><div class="grid">
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>46</span> &nbsp;Люди и ответственность <em>people</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Кто за что отвечает в клубе: выдать и снять ответственность.</span><span class="who">видят: <b>сегодня никто</b> &middot; право mayPeople() и за экраном «Клуб» (вход — строка группы «Клуб» на экране «Клуб» — обходом не подтверждено)</span></figcaption></figure>
+<figcaption><b><span>47</span> &nbsp;Люди и ответственность <em>people</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Кто за что отвечает в клубе: выдать и снять ответственность.</span><span class="who">видят: <b>сегодня никто</b> &middot; право mayPeople() и за экраном «Клуб» (вход — строка группы «Клуб» на экране «Клуб» — обходом не подтверждено)</span></figcaption></figure>
 </div></section>
-<section id="g12"><div class="head">
+<section id="g13"><div class="head">
 <span class="count">3 экрана</span>
 <h2>Нарисовано, кода ещё нет</h2>
 <p>Кадры базы экранов есть, кода нет. Стадия 1 по пути экрана: сначала рисуем, потом разрабатываем.</p></div><div class="grid">
 <figure><div class="nosh">снимка нет: кода ещё нет — есть только кадры базы экранов</div>
-<figcaption><b><span>47</span> &nbsp;Занятость суток <em>занятость суток</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E31<span class="who">Занятость места по суткам: накладки, скрытые события, переход через полночь.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figcaption><b><span>48</span> &nbsp;Занятость суток <em>занятость суток</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E31<span class="who">Занятость места по суткам: накладки, скрытые события, переход через полночь.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: кода ещё нет — есть только кадры базы экранов</div>
-<figcaption><b><span>48</span> &nbsp;Архив мероприятий <em>архив мероприятий</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E32<span class="who">Архив прошедших мероприятий — у работника клуба и у организатора.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figcaption><b><span>49</span> &nbsp;Архив мероприятий <em>архив мероприятий</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E32<span class="who">Архив прошедших мероприятий — у работника клуба и у организатора.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: кода ещё нет — есть только кадры базы экранов</div>
-<figcaption><b><span>49</span> &nbsp;Касса · оплата записи <em>касса · оплата записи</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E35<span class="who">Оплата записи на мероприятие через кассу: что оплачиваем, взнос, отказы.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figcaption><b><span>50</span> &nbsp;Касса · оплата записи <em>касса · оплата записи</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E35<span class="who">Оплата записи на мероприятие через кассу: что оплачиваем, взнос, отказы.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
 </div></section>
 <footer>Снимки пересобираются командой <code>tools/shots.cjs</code> (она же проверяет поведение: заказ, принятие заказа, запись затраты), страница — <code>tools/catalog.py</code>. Опись обновляется вместе с приложением: версия вверху должна совпадать с версией в демо-режиме приложения.</footer></div></body></html>

@@ -115,6 +115,12 @@ if (grantsSet.length !== 1) {
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
   const bad = [];
+  // Исключение посреди батареи не глотает уже найденное: без этого обрыв печатал
+  // только стек, и красные строки всех пройденных случаев терялись (Cafe13KPG#415).
+  process.on('unhandledRejection', e => {
+    console.log('КРАСНОЕ:\n' + bad.concat('БАТАРЕЯ ОБОРВАЛАСЬ исключением: ' + String(e && e.message || e).split('\n')[0]).join('\n'));
+    process.exit(1);
+  });
   // Счёт прогонов считается, а не вписывается: каждый случай открывает свой
   // экран через open(), поэтому здесь он и растёт. Прежняя строка складывала
   // длину таблицы с числом 180 — императивные случаи (их большинство) в неё
@@ -488,9 +494,12 @@ if (grantsSet.length !== 1) {
     if (!t.includes('ещё не подключено')) bad.push('membership-off: экран членства включён в живом режиме до решения #301');
     const m = t.match(MONEY);
     if (m) bad.push(`membership-off: на экране членства сумма «${m[0]}»`);
-    // сам экран (тот же, что в демо и каталоге): ни сумм, ни кнопок без действия
+    // сам экран (тот же, что в демо и каталоге): ни сумм, ни кнопок без действия.
+    // Ветка демонстрации — явно: у живой ветки цены с сервера (Cafe13KPG#415),
+    // её держат случаи mreq-*.
     const [mine, drawn, dead, phone] = await s.p.evaluate(() => {
-      const d = document.createElement('div'); d.innerHTML = SCREENS.membership();
+      const d = document.createElement('div');
+      LIVE = false; try { d.innerHTML = SCREENS.membership(); } finally { LIVE = true; }
       return [[...d.querySelectorAll('.card')].filter(c => c.querySelector('h2'))
         .map(c => c.querySelector('h2').textContent + (c.querySelector('.pill.on') ? ':мой' : '')),
         d.textContent, [...d.querySelectorAll('button')].filter(x => !x.dataset.action && !x.dataset.go).length,
@@ -6079,6 +6088,215 @@ if (grantsSet.length !== 1) {
     const twice = Object.keys(seen).filter(k => seen[k] > 1);
     if (!Object.keys(seen).length) bad.push('app.js: имена верхнего уровня не найдены — проверка дублей слепа');
     if (twice.length) bad.push('app.js: имя объявлено на верхнем уровне больше одного раза, второе молча перекрывает первое: ' + twice.join(', '));
+  }
+  // ── членство: виды с ценой от сервера и заявки (Cafe13KPG#415) ──
+  // Экраны ещё не в WIRED (сервер впереди клиента): случай включает их внутри
+  // страницы. Цены в фикстуре ВЫДУМАНЫ и не совпадают с настоящими: экран с
+  // ценой, вшитой в клиент, на них краснеет.
+  {
+    const GUEST = clone(OWNER); GUEST.membership_active = false; GUEST.membership = null; GUEST.memberships = []; GUEST.roles = [];
+    const withReq = (who, st, said) => { const m = clone(who); m.membership_request = { id: 7, status: st, created_at: '2026-10-27T11:00:00+00:00',
+      decided_at: st === 'pending' ? null : '2026-10-27T12:00:00+00:00', decision_note: said || '', tier_code: 'member', tier_name: 'Член клуба' }; return m; };
+    const TIERS_ = { currency: 'THB', tiers: [
+      // описания тоже выдуманы: слова кадра в клиенте значили бы, что текст вшит
+      { code: 'member', name: 'Член клуба', about: 'Вход по пропуску.', price_thb: '1234.00', period_months: 1, trial_days: 0 },
+      { code: 'organizer', name: 'Мастер', about: 'Свои вечера.', price_thb: '2345.50', period_months: 3, trial_days: 0 },
+      { code: 'partner', name: 'Бизнес-партнёр', about: 'Своё дело.', price_thb: '4321.00', period_months: 1, trial_days: 0 }] };
+    const REQS_ = { pending: 1, requests: [
+      { id: 11, status: 'pending', note: 'хочу на вечера', decision_note: '', created_at: '2026-10-27T10:00:00+00:00', decided_at: null,
+        member_id: 501, first_name: 'Вера', last_name: 'Заявкина', username: null, tier_code: 'member', tier_name: 'Член клуба', has_pass: false },
+      { id: 9, status: 'approved', note: '', decision_note: 'ждём в кассе', created_at: '2026-10-26T10:00:00+00:00', decided_at: '2026-10-26T12:00:00+00:00',
+        member_id: 502, first_name: 'Лев', last_name: '', username: null, tier_code: 'organizer', tier_name: 'Мастер', has_pass: true }] };
+    const memCase = (me, r = {}) => {
+      let meN = 0;
+      return open(true, true, json(200, me), null, null, null, q => {
+        const u = q.url(), m = q.method();
+        if (u.endsWith('/me') && m === 'GET') { meN += 1; return meN > 1 && r.me2 ? json(200, r.me2) : json(200, me); }
+        if (u.endsWith('/membership-tiers')) return r.tiers || json(200, TIERS_);
+        if (/\/membership-requests\/\d+\/decide$/.test(u)) return r.decide || json(200, { id: 11, status: JSON.parse(q.postData()).decision, decided_at: '2026-10-27T13:00:00+00:00' });
+        if (/\/membership-requests$/.test(u) && m === 'POST') return r.post || json(201, { id: 12, status: 'pending', created_at: '2026-10-27T13:00:00+00:00', tier: 'Мастер' });
+        if (/\/membership-requests$/.test(u)) return r.list || json(200, REQS_);
+        return undefined;
+      });
+    };
+    const wire = (s, screen) => s.p.evaluate(sc => { WIRED.membership = 1; WIRED.memberRequests = 1; go(sc); }, screen).then(() => s.p.waitForTimeout(300));
+    const sends = s => s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="mr-send:"]')].map(b => b.textContent));
+    // нажатие с охраной: кнопки нет — своя строка, а не исключение, обрывающее батарею
+    const press = async (s, n, sel) => {
+      const ok = await s.p.evaluate(q => { const x = document.querySelector(q); if (x) x.click(); return !!x; }, sel);
+      if (!ok) bad.push(`${n}: нет кнопки ${sel}`);
+      await s.p.waitForTimeout(sel.includes('mr-send') || /mq-(ok|no)/.test(sel) ? 400 : 150);
+      return ok;
+    };
+    const posts = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
+    const gets = (s, re) => s.calls.filter(c => c.method === 'GET' && re.test(c.url));
+
+    // гость без заявки: виды и цены — сервера, вид выбирается, подача одним нажатием (кадр E38)
+    {
+      const s = await memCase(GUEST), n = 'mreq-tiers';
+      await wire(s, 'membership');
+      let t = await s.view();
+      for (const w of ['Членства нет', 'Член клуба', '1 234 ฿', '2 345.50 ฿', 'за 3 месяца', '4 321 ฿', 'в месяц'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}» — цена не с сервера (Cafe13KPG#415)`);
+      if (/3 ?316|6 ?633|9 ?950/.test(t)) bad.push(`${n}: на экране настоящая цена, а фикстура её не давала — цена вшита в клиент`);
+      for (const w of ['Вход по пропуску.', 'Свои вечера.', 'Своё дело.'])
+        if (!t.includes(w)) bad.push(`${n}: нет описания вида «${w}» с сервера`);
+      if (/Бесплатный вход в клуб|право проводить свои мероприятия/.test(t)) bad.push(`${n}: на экране описание, которого фикстура не давала — текст вшит в клиент`);
+      let b = await sends(s);
+      if (b.length !== 1 || b[0] !== 'Подать заявку') bad.push(`${n}: кнопки подачи ${JSON.stringify(b)}, ждали одну «Подать заявку»`);
+      await press(s, n, '[data-action="mr-pick:organizer"]');
+      const on = await s.p.evaluate(() => [...document.querySelectorAll('#view [aria-pressed="true"]')].map(x => x.textContent));
+      if (on.join() !== 'Мастер') bad.push(`${n}: выбран ${JSON.stringify(on)}, а нажат «Мастер»`);
+      await press(s, n, '[data-action^="mr-send:"]');
+      const pp = posts(s, /\/membership-requests$/);
+      if (pp.length !== 1 || JSON.parse(pp[0].body).tier_code !== 'organizer') bad.push(`${n}: заявка ушла не так: ${JSON.stringify(pp.map(c => c.body))}`);
+      t = await s.view();
+      if (!t.includes('Заявка отправлена') || !t.includes('Мастер · отправлена')) bad.push(`${n}: после подачи нет «Заявка отправлена» на «Мастер»`);
+      if ((await sends(s)).length) bad.push(`${n}: после подачи кнопка подачи осталась — вторая заявка уйдёт 409`);
+      await s.ctx.close();
+    }
+    // состояния своей заявки из /me (кадры E38d, E38e, E38zh; прошлые — как «заявки нет»)
+    for (const [st, said, want, nowant, btn] of [
+      ['pending', '', ['Заявка отправлена', 'ЖДЁТ ОТВЕТА', 'Глава клуба ответит в приложении'], ['Глава клуба согласен', 'Заявка отклонена'], []],
+      // ⚠ согласие — не членство: «оформлено» здесь — ложь человеку
+      ['approved', 'ждём в кассе', ['Глава клуба согласен', 'СОГЛАСОВАНО', 'Членство создаст касса', '1 234 ฿ в месяц'], ['оформлен', 'Оформлен', 'Заявка отправлена'], []],
+      ['rejected', 'приходите в пятницу', ['Заявка отклонена', 'ОТКАЗАНО', '«приходите в пятницу»'], ['Глава клуба согласен'], ['Подать снова']],
+      ['rejected', '', ['Заявка отклонена'], ['«»'], ['Подать снова']],
+      ['completed', '', ['Членства нет'], ['Заявка отправлена', 'Глава клуба согласен', 'Заявка отклонена'], ['Подать заявку']],
+      ['cancelled', '', ['Членства нет'], ['Заявка отправлена', 'Глава клуба согласен', 'Заявка отклонена'], ['Подать заявку']]]) {
+      const n = `mreq-${st}${said ? '' : '-bare'}`;
+      const s = await memCase(withReq(GUEST, st, said));
+      await wire(s, 'membership');
+      const t = await s.view();
+      want.forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
+      nowant.forEach(w => { if (t.includes(w)) bad.push(`${n}: есть «${w}»${st === 'approved' ? ' — согласие выдано за членство (Cafe13KPG#415)' : ''}`); });
+      const b = await sends(s);
+      if (JSON.stringify(b) !== JSON.stringify(btn)) bad.push(`${n}: кнопки подачи ${JSON.stringify(b)}, ждали ${JSON.stringify(btn)}`);
+      if (posts(s, /\/membership-requests/).length) bad.push(`${n}: заявка ушла без нажатия`);
+      if (st === 'rejected' && b.length) {
+        await press(s, n, '[data-action^="mr-send:"]');
+        const pp = posts(s, /\/membership-requests$/);
+        if (pp.length !== 1 || JSON.parse(pp[0].body).tier_code !== 'member') bad.push(`${n}: «Подать снова» ушла не на прежний вид: ${JSON.stringify(pp.map(c => c.body))}`);
+      }
+      await s.ctx.close();
+    }
+    // отказ сервера — его словами, и состояние перечитано: сервер знает новее нас
+    {
+      const n = 'mreq-409';
+      const s = await memCase(GUEST, { post: json(409, { detail: 'ваша заявка уже отправлена и ждёт ответа' }), me2: withReq(GUEST, 'pending') });
+      await wire(s, 'membership');
+      await press(s, n, '[data-action^="mr-send:"]');
+      const t = await s.view();
+      if (!t.includes('Ваша заявка уже отправлена и ждёт ответа.')) bad.push(`${n}: отказ сервера не показан его словами`);
+      if (gets(s, /\/me$/).length < 2) bad.push(`${n}: после 409 /me не перечитан`);
+      if (!t.includes('ЖДЁТ ОТВЕТА')) bad.push(`${n}: перечитанная заявка не показана`);
+      await s.ctx.close();
+    }
+    // член клуба: свой вид отмечен, подавать нечего (кадр E38b)
+    {
+      const n = 'mreq-member';
+      const s = await memCase(OWNER);
+      await wire(s, 'membership');
+      const mine = await s.p.evaluate(() => [...document.querySelectorAll('#view .card.strong h2')].map(e => e.textContent));
+      if (mine.join() !== 'Член клуба') bad.push(`${n}: активное членство ${JSON.stringify(mine)}, ждали «Член клуба»`);
+      const has = await s.p.evaluate(() => [...document.querySelectorAll('#view .rows > div')].filter(r => r.textContent.includes('У ВАС ЕСТЬ')).map(r => r.querySelector('b').textContent));
+      if (has.join() !== 'Член клуба') bad.push(`${n}: «У ВАС ЕСТЬ» у ${JSON.stringify(has)}`);
+      if ((await sends(s)).length) bad.push(`${n}: у члена клуба есть кнопка подачи`);
+      await s.ctx.close();
+    }
+    // /me без поля — сервер до выкладки заявок: приложение живёт; поле кривое — /me не разобран
+    {
+      const s = await memCase(GUEST);
+      if (await s.p.evaluate(() => current) === 'apiDown') bad.push('mreq-oldsrv: /me без membership_request уронил приложение — до выкладки api так у всех');
+      await s.ctx.close();
+      const badReq = clone(GUEST); badReq.membership_request = { id: 7, status: 'paid' };
+      const s2 = await memCase(badReq);
+      if (await s2.p.evaluate(() => current) !== 'apiDown') bad.push('mreq-badreq: заявка с чужим статусом принята — /me должен считаться неразобранным');
+      await s2.ctx.close();
+    }
+    // вход у главы клуба: только с правом и только когда экран включён; подпись — счёт с сервера (кадр E42g)
+    {
+      const n = 'mq-entry';
+      const s = await memCase(OWNER);
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
+      if (await s.p.$('#view [data-go="memberRequests"]')) bad.push(`${n}: строка «Заявки на членство» есть, хотя экран не включён — вела бы в заглушку`);
+      await s.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s.p.waitForTimeout(300);
+      if (!(await s.p.$('#view [data-go="memberRequests"]'))) bad.push(`${n}: у главы клуба нет строки «Заявки на членство»`);
+      else if (!(await s.view()).includes('Ждут ответа: 1')) bad.push(`${n}: в строке входа нет счёта ждущих с сервера (кадр E42g)`);
+      // кадр E42g: одна группа «Работа», «Заявки» перед «Людьми»; второй группы «Клуб» нет
+      const g = await s.p.evaluate(() => {
+        const labels = [...document.querySelectorAll('#view .group > .label')].map(l => l.textContent);
+        const r = document.querySelector('#view [data-go="memberRequests"]'), p = document.querySelector('#view [data-go="people"]');
+        return { work: labels.filter(l => l === 'Работа').length, club: labels.filter(l => l === 'Клуб').length,
+                 same: !!r && !!p && r.closest('.group') === p.closest('.group'),
+                 order: !!r && !!p && !!(r.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING),
+                 label: r && r.closest('.group') ? r.closest('.group').querySelector(':scope > .label').textContent : null };
+      });
+      if (g.work !== 1 || g.club !== 0) bad.push(`${n}: групп «Работа» ${g.work}, «Клуб» ${g.club} — ждали одну «Работа» (кадр E42g)`);
+      if (!g.same || g.label !== 'Работа') bad.push(`${n}: «Заявки» и «Люди» не в одной группе «Работа»: ${JSON.stringify(g)} (кадр E42g)`);
+      else if (!g.order) bad.push(`${n}: «Люди» стоят выше «Заявок» (кадр E42g)`);
+      await s.ctx.close();
+      const MEM = clone(OWNER); MEM.roles = [];
+      const s2 = await memCase(MEM);
+      await s2.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s2.p.waitForTimeout(200);
+      if (await s2.p.$('#view [data-go="memberRequests"]')) bad.push(`${n}: у члена клуба без роли есть строка «Заявки на членство»`);
+      await s2.p.evaluate(() => go('memberRequests')); await s2.p.waitForTimeout(200);
+      if (!(await s2.view()).includes('смотрит и решает глава клуба')) bad.push(`${n}: экран заявок без права не сказал, кто решает`);
+      if (gets(s2, /\/membership-requests$/).length) bad.push(`${n}: заявки спрошены без права`);
+      await s2.ctx.close();
+      // бармен: группа «Работа» у него есть (barSide), а права на заявки нет — внутренняя охрана строки
+      const BAR_ = clone(OWNER); BAR_.roles = [{ role: 'bar', direction_id: 7 }];
+      const s3 = await memCase(BAR_);
+      await s3.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s3.p.waitForTimeout(200);
+      if (!(await s3.p.$('#view [data-go="barQueue"]'))) bad.push(`${n}: у бармена нет группы «Работа» — фикстура не та`);
+      if (await s3.p.$('#view [data-go="memberRequests"]')) bad.push(`${n}: у бармена без права главы клуба есть строка «Заявки на членство»`);
+      await s3.ctx.close();
+    }
+    // согласие — без слова; отказ — со словом, через «Точно отказать»; список перечитан (кадры E42, E42v)
+    {
+      const n = 'mq-decide';
+      const s = await memCase(OWNER);
+      await wire(s, 'memberRequests');
+      let t = await s.view();
+      for (const w of ['Ждут ответа · 1', 'Вера Заявкина', '1 234 ฿', 'пропуска нет', '«хочу на вечера»', 'Лев', 'СОГЛАСОВАНА', '«ждём в кассе»'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      if (/оформлен|ОФОРМЛЕН/.test(t)) bad.push(`${n}: согласованная заявка названа оформленной`);
+      await press(s, n, '[data-action="mq-ok:11"]');
+      let pp = posts(s, /\/membership-requests\/11\/decide$/);
+      let body = pp.length === 1 ? JSON.parse(pp[0].body) : null;
+      if (!body || body.decision !== 'approved' || body.note !== '') bad.push(`${n}: согласие ушло так: ${JSON.stringify(pp.map(c => c.body))}`);
+      if (gets(s, /\/membership-requests$/).length !== 2) bad.push(`${n}: после решения список не перечитан`);
+      // отказ: сначала слово, «Не отказывать» ничего не шлёт
+      await press(s, n, '[data-action="mq-ask:11"]');
+      if (!(await s.p.$('#d-note'))) bad.push(`${n}: «Отказать» не открыло поле слова (кадр E42v)`);
+      else {
+        await press(s, n, '[data-action="mq-keep"]');
+        if (await s.p.$('#d-note')) bad.push(`${n}: «Не отказывать» не закрыло поле`);
+        await press(s, n, '[data-action="mq-ask:11"]');
+        await s.p.fill('#d-note', 'приходите в четверг');
+        await press(s, n, '[data-action="mq-no:11"]');
+        pp = posts(s, /\/membership-requests\/11\/decide$/);
+        body = pp.length === 2 ? JSON.parse(pp[1].body) : null;
+        if (!body || body.decision !== 'rejected' || body.note !== 'приходите в четверг') bad.push(`${n}: отказ ушёл так: ${JSON.stringify(pp.map(c => c.body))}`);
+      }
+      await s.ctx.close();
+    }
+    {
+      const n = 'mq-deny';
+      const s = await memCase(OWNER, { decide: json(409, { detail: 'заявка уже отклонена' }) });
+      await wire(s, 'memberRequests');
+      await press(s, n, '[data-action="mq-ask:11"]');
+      await press(s, n, '[data-action="mq-no:11"]');
+      if (!(await s.view()).includes('Заявка уже отклонена.')) bad.push(`${n}: отказ сервера не показан его словами`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'mq-empty';
+      const s = await memCase(OWNER, { list: json(200, { requests: [], pending: 0 }) });
+      await wire(s, 'memberRequests');
+      if (!(await s.view()).includes('Заявок нет')) bad.push(`${n}: пустой список не сказал «Заявок нет» (кадр E42b)`);
+      await s.ctx.close();
+    }
   }
   // Номера людей: репозиторий публичный — разрешающий список, tools/ids-clean.cjs.
   bad.push(...require('./ids-clean.cjs').idsClean(ROOT));

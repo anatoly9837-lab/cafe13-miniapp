@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v61 · 27.10.2026';
+var VERSION = 'v62 · 27.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -301,8 +301,13 @@ function fromMe(d) {
     if (!m.lifelong && !mu) return null;
     all.push({ level: m.level, until: mu, lifelong: m.lifelong });
   }
+  // Своя заявка на членство (Cafe13KPG#415). Поля нет — сервер до выкладки
+  // заявок, это «не знаем», а не отказ: остальной /me от него не зависит.
+  var req = d.membership_request === undefined ? null : fromRequest(d.membership_request);
+  if (req === undefined) return null;
   var p = d.member;
   return {
+    request: req,
     role: d.membership_active ? ms.level : 'guest',
     roles: d.roles.map(function (r) { return r && r.role; }).filter(Boolean),
     barSide: d.roles.some(function (r) { return r && (r.role === 'admin' || r.role === 'bar' || r.role === 'curator'); }),
@@ -326,6 +331,132 @@ function fromMe(d) {
 
 function untilText(m) {
   return m.lifelong ? 'Пожизненно' : 'Действует до ' + m.until;
+}
+
+/* ── членство: виды и заявки (Cafe13KPG#415) ──────────
+   Виды с ценой — с сервера: вшитые в клиент цены уже снимались по слову
+   владельца (Cafe13KPG#102), а цену на экране не проверить ничем.
+   ⚠ `approved` — согласие главы клуба, а не членство. Членство создаёт
+   касса, приняв деньги, и она же переводит заявку в `completed`. Экран,
+   написавший после `approved` «оформлено», соврал бы человеку. */
+var REQ_STATES = { pending: 1, approved: 1, rejected: 1, cancelled: 1, completed: 1 };
+// null — заявки нет; undefined — ответ не разобран
+function fromRequest(r) {
+  if (r === null) return null;
+  if (!r || typeof r !== 'object' || typeof r.id !== 'number' || !REQ_STATES[r.status]) return undefined;
+  return { id: r.id, status: r.status,
+           tier: typeof r.tier_name === 'string' ? r.tier_name : '',
+           code: typeof r.tier_code === 'string' ? r.tier_code : '',
+           said: typeof r.decision_note === 'string' ? r.decision_note.trim() : '',
+           at: r.created_at ? ruDate(r.created_at) : null,
+           decided: r.decided_at ? ruDate(r.decided_at) : null };
+}
+
+var TIERS = { list: null, fail: '', gen: 0 };
+function fromTiers(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.tiers) || d.currency !== 'THB') return null;
+  var out = [];
+  for (var i = 0; i < d.tiers.length; i++) {
+    var t = d.tiers[i], price = t && num(t.price_thb);
+    if (!t || typeof t.code !== 'string' || !/^[a-z_]+$/.test(t.code) || typeof t.name !== 'string' || !t.name) return null;
+    if (!isFinite(price) || price < 0) return null;
+    if (typeof t.period_months !== 'number' || t.period_months < 1 || Math.floor(t.period_months) !== t.period_months) return null;
+    // описание вида — слова владельца с сервера (api f06d01c); в клиенте их нет, как и цен
+    out.push({ code: t.code, name: t.name, about: typeof t.about === 'string' ? t.about.trim() : '', price: price, months: t.period_months,
+               trial: typeof t.trial_days === 'number' && t.trial_days > 0 ? t.trial_days : 0 });
+  }
+  return out;
+}
+function loadTiers() {
+  var gen = ++TIERS.gen, who = WHO;
+  TIERS.fail = '';
+  api('GET', '/membership-tiers').then(function (r) {
+    if (gen !== TIERS.gen || who !== WHO) return;
+    var list = r.status === 200 ? fromTiers(r.data) : null;
+    if (list) TIERS.list = list;
+    else { TIERS.list = null; TIERS.fail = r.status === 403 ? denyText(r) : failText(r); }
+    if (current === 'membership' || current === 'memberRequests') render();
+  });
+}
+
+// Подача: busy — запрос в пути, err — отказ сервера его словами
+var MREQ = { busy: false, err: '', pick: '' };
+function sendRequest(code) {
+  if (MREQ.busy) return;
+  MREQ.busy = true; MREQ.err = ''; render();
+  var who = WHO;
+  api('POST', '/membership-requests', { tier_code: code }).then(function (r) {
+    if (who !== WHO) return;
+    MREQ.busy = false;
+    var d = r.data;
+    if (r.status === 201 && d && typeof d.id === 'number' && d.status === 'pending') {
+      DATA.request = { id: d.id, status: 'pending', tier: typeof d.tier === 'string' ? d.tier : '', code: code,
+                       said: '', at: d.created_at ? ruDate(d.created_at) : null };
+    } else {
+      MREQ.err = denyText(r);
+      // «уже отправлена» и «уже есть» — состояние у сервера новее нашего: перечитать
+      if (r.status === 409) rereadRequest();
+    }
+    if (current === 'membership') render();
+  });
+}
+function rereadRequest() {
+  var who = WHO;
+  api('GET', '/me').then(function (r) {
+    if (who !== WHO) return;
+    var me = r.status === 200 ? fromMe(r.data) : null;
+    if (!me) return;
+    DATA.request = me.request;
+    if (current === 'membership') render();
+  });
+}
+
+/* Заявки для главы клуба. Право то же, что у «Людей и ответственности»:
+   глава клуба или администратор (сервер: DECIDES = head, плюс is_admin). */
+function mayRequests() { return LIVE && (grant('head') || grant('admin')); }
+var MREQS = { list: null, pending: null, fail: '', gen: 0, busy: 0, err: '', note: '', ask: 0 };
+function fromRequests(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.requests) || typeof d.pending !== 'number') return null;
+  var out = [];
+  for (var i = 0; i < d.requests.length; i++) {
+    var q = d.requests[i];
+    if (!q || typeof q.id !== 'number' || !REQ_STATES[q.status]) return null;
+    out.push({ id: q.id, status: q.status,
+               name: [q.first_name, q.last_name].filter(Boolean).join(' ') || (q.username ? '@' + q.username : 'Без имени'),
+               tier: typeof q.tier_name === 'string' ? q.tier_name : '',
+               note: typeof q.note === 'string' ? q.note.trim() : '',
+               said: typeof q.decision_note === 'string' ? q.decision_note.trim() : '',
+               code: typeof q.tier_code === 'string' ? q.tier_code : '',
+               iso: typeof q.created_at === 'string' ? q.created_at : '',
+               done: typeof q.decided_at === 'string' ? q.decided_at : '',
+               pass: q.has_pass === true });
+  }
+  return { list: out, pending: d.pending };
+}
+function loadRequests() {
+  var gen = ++MREQS.gen, who = WHO;
+  MREQS.fail = '';
+  api('GET', '/membership-requests').then(function (r) {
+    if (gen !== MREQS.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromRequests(r.data) : null;
+    if (got) { MREQS.list = got.list; MREQS.pending = got.pending; }
+    else { MREQS.list = null; MREQS.fail = r.status === 403 ? denyText(r) : failText(r); }
+    if (current === 'memberRequests' || current === 'home') render();
+  });
+}
+function decideRequest(id, decision) {
+  if (MREQS.busy) return;
+  MREQS.busy = id; MREQS.err = ''; render();
+  var who = WHO;
+  api('POST', '/membership-requests/' + id + '/decide', { decision: decision, note: decision === 'rejected' ? MREQS.note.trim() : '' }).then(function (r) {
+    if (who !== WHO) return;
+    MREQS.busy = 0;
+    if (r.status === 200 && r.data && r.data.status === decision) { MREQS.note = ''; MREQS.ask = 0; }
+    else MREQS.err = denyText(r);
+    // и после отказа: «уже не ждёт ответа» значит, что список устарел
+    loadRequests();
+    if (current === 'memberRequests') render();
+  });
 }
 
 /* Экраны, которые уже стоят на данных сервера. Остальные в живом режиме
@@ -2008,6 +2139,7 @@ function applyMe(me) {
   DATA.grants = me.grants;
   DATA.consent = me.consent;
   DATA.member = me.member;
+  DATA.request = me.request;
   // запас пропуска — только свой и только боевой: чужой код на своём телефоне — чужое платёжное средство
   if (!TEST.on) syncPass(me);
 }
@@ -3170,6 +3302,121 @@ function partOf(t) {
   return h < 12 ? 'утро' : h < 16 ? 'день' : 'вечер';
 }
 function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
+/* Живой экран членства (Cafe13KPG#415), кадры E38* (Cafe13KPG#428).
+   Имя, описание, цена и срок вида — только с сервера: текст в клиенте не
+   меняется без выкладки и не проверяется ничем. */
+function tierSum(t) { return money(t.price % 1 ? t.price.toFixed(2) : t.price) + ' ฿'; }
+function tierPeriod(t) { return t.months === 1 ? 'в месяц' : 'за ' + t.months + ' ' + plural(t.months, ['месяц', 'месяца', 'месяцев']); }
+function tierPrice(t) { return tierSum(t) + ' ' + tierPeriod(t); }
+function tierOf(code) { return (TIERS.list || []).filter(function (t) { return t.code === code; })[0] || null; }
+function stateCard(title, small, pill, warm) {
+  var ink = warm ? ' style="color:var(--clay-ink)"' : '';
+  return '<div class="card' + (warm ? ' warm' : '') + '"><div class="row top"><div class="col"><b' + ink + '>' + title + '</b>' +
+    '<span class="small">' + small + '</span></div><span class="pill"' + ink + '>' + pill + '</span></div></div>';
+}
+var PRICE_NOTE = 'Цены приходят с сервера клуба и могут измениться — в приложении они не зашиты. Деньги принимает касса: приложение платежей не принимает вовсе.';
+function noteBox(t) { return '<div class="note">' + svg(ICON.info) + '<span>' + t + '</span></div>'; }
+function membershipLive() {
+  var have = (DATA.member && DATA.member.memberships) || [];
+  var mine = function (code) { return have.some(function (m) { return m.level === code; }); };
+  // completed и cancelled — прошлое: /me отдаёт заявку только тому, у кого членства нет,
+  // значит прежнее закончилось, и подать можно заново
+  var rq = DATA.request && (DATA.request.status === 'pending' || DATA.request.status === 'approved' ||
+                            DATA.request.status === 'rejected') ? DATA.request : null;
+  var member = isMember();
+  var tierName = function (r) { return esc(r.tier || 'Членство'); };
+  var top = member
+    ? have.map(function (m) {
+        return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(LEVEL[m.level]) + '</h2>' +
+          '<span class="small">' + esc(untilText(m)) + '</span></div><span class="pill on">АКТИВНО</span></div></div>';
+      }).join('')
+    : !rq ? '<div class="card quiet"><div class="col"><b>Членства нет</b>' +
+        '<span class="small">Услугами острова можно пользоваться и так; пропуск в клуб выдаётся по членству.</span></div></div>'
+    : rq.status === 'pending'
+      ? stateCard('Заявка отправлена', tierName(rq) + (rq.at ? ' · отправлена ' + esc(rq.at) : '') + '. Глава клуба ответит в приложении.', 'ЖДЁТ ОТВЕТА')
+    : rq.status === 'approved'
+      // ⚠ согласие — не членство: его создаёт касса, приняв деньги
+      ? stateCard('Глава клуба согласен', tierName(rq) + (tierOf(rq.code) ? ' · ' + esc(tierPrice(tierOf(rq.code))) : '') +
+          '. Членство создаст касса, когда примет деньги: наличными или картой.', 'СОГЛАСОВАНО')
+      : stateCard('Заявка отклонена', tierName(rq) + (rq.decided ? ' · решение от ' + esc(rq.decided) : ''), 'ОТКАЗАНО', true) +
+        (rq.said ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>«' + esc(rq.said) + '»</span></div>' : '');
+  var list = TIERS.list;
+  var rows = list ? (list.length
+      ? '<div class="group"><span class="label">Виды членства</span><div class="rows">' + list.map(function (t) {
+          return '<div><div class="col"><b>' + esc(t.name) + '</b>' +
+            (t.about ? '<span class="small">' + esc(t.about) + '</span>' : '') + '</div>' +
+            '<div class="col" style="align-items:flex-end;gap:2px;flex:0 0 auto">' +
+              (mine(t.code) ? '<span class="pill on">У ВАС ЕСТЬ</span>' : '') +
+              '<b class="num" style="white-space:nowrap">' + esc(tierSum(t)) + '</b>' +
+              '<span class="small" style="white-space:nowrap">' + esc(tierPeriod(t)) + '</span></div></div>';
+        }).join('') + '</div></div>'
+      : '<div class="card quiet"><span class="small">Видов членства сервер не назвал.</span></div>')
+    : TIERS.fail ? '<div class="card quiet"><div class="col"><span class="small">' + esc(TIERS.fail) + '</span>' +
+        '<button type="button" class="btn ghost" data-action="mr-retry">Попробовать снова</button></div></div>'
+    : '<div class="card quiet"><span class="small">Загружаем виды членства…</span></div>';
+  var lock = MREQ.busy ? ' disabled' : '';
+  var pick = list && list.length ? (tierOf(MREQ.pick) ? MREQ.pick : list[0].code) : '';
+  var tail = member
+    ? noteBox('Продление считается от конца действующего, а не со дня оплаты. Каждый вид продлевается отдельно; деньги принимает касса.') +
+      '<div style="display:flex;flex-direction:column;gap:9px"><button type="button" class="btn" data-go="pass">Показать пропуск</button>' +
+      '<span class="small" style="text-align:center">Код пропуска спросят в кассе: по нему вас и находят.</span></div>'
+    : rq && rq.status === 'pending'
+      ? noteBox(PRICE_NOTE) +
+        noteBox('Пока заявка ждёт ответа, второй раз её не подать: сервер отвечает «ваша заявка уже отправлена и ждёт ответа». Отозвать её из приложения нельзя — скажите главе клуба.')
+    : rq && rq.status === 'approved'
+      ? noteBox('Пропуска пока нет: он выдаётся по живому членству, а членство создаёт касса. Как только деньги приняты, этот экран покажет членство сам.') +
+        '<div class="card quiet"><div class="col"><b style="font-size:13px">Что дальше</b>' +
+        '<span class="small">Подойдите в кассу клуба и скажите, что заявка согласована. Срок членства считается от дня оплаты; какой он у вашего вида — скажет касса.</span></div></div>'
+    : rq && rq.status === 'rejected'
+      ? noteBox(PRICE_NOTE) + (tierOf(rq.code)
+        ? '<div style="display:flex;flex-direction:column;gap:9px"><button type="button" class="btn" data-action="mr-send:' + esc(rq.code) + '"' + lock + '>Подать снова</button>' +
+          '<span class="small" style="text-align:center">Отклонённая заявка закрыта: новую подать можно.</span></div>' : '')
+    : noteBox(PRICE_NOTE) + (pick
+        ? '<div class="group"><span class="label">На какой вид</span><div class="seg wrap">' + list.map(function (t) {
+            return '<button type="button" data-action="mr-pick:' + esc(t.code) + '" aria-pressed="' + (t.code === pick) + '">' + esc(t.name) + '</button>';
+          }).join('') + '</div></div>' +
+          '<div style="display:flex;flex-direction:column;gap:9px"><button type="button" class="btn" data-action="mr-send:' + esc(pick) + '"' + lock + '>Подать заявку</button>' +
+          '<span class="small" style="text-align:center">Глава клуба ответит в приложении. Деньги примет касса — после согласия.</span></div>' : '');
+  return (FLASH ? flash() : '') + top +
+    (MREQ.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MREQ.err) + '</span></div>' : '') +
+    rows + tail;
+}
+
+/* Заявки главы клуба — кадры E42* (Cafe13KPG#428). */
+var REQ_PILL = { pending: 'ЖДЁТ', approved: 'СОГЛАСОВАНА', rejected: 'ОТКАЗАНО', cancelled: 'ОТМЕНЕНА', completed: 'ОФОРМЛЕНА' };
+// «сегодня, 14:20» / «вчера, 19:05» / «26 октября» — по часам клуба
+function askedWhen(iso, withTime) {
+  var d = new Date(iso); if (!iso || isNaN(d.getTime())) return '';
+  var p = bkk(d), now = new Date();
+  if (p.ymd === bkk(now).ymd) return withTime ? 'сегодня, ' + p.hm : 'сегодня';
+  if (p.ymd === bkk(new Date(now.getTime() - 86400000)).ymd) return withTime ? 'вчера, ' + p.hm : 'вчера';
+  var x = p.ymd.split('-');
+  return Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '');
+}
+function requestCard(q) {
+  var busy = MREQS.busy ? ' disabled' : '', t = tierOf(q.code), asking = MREQS.ask === q.id;
+  return '<div class="card"><div class="row top"><div class="col"><b>' + esc(q.name) + '</b>' +
+      '<span class="small">' + esc([q.tier, t ? tierSum(t) : '', askedWhen(q.iso, true), q.pass ? '' : 'пропуска нет'].filter(Boolean).join(' · ')) + '</span></div>' +
+      '<span class="pill">' + REQ_PILL.pending + '</span></div>' +
+    (q.note ? '<span class="small">«' + esc(q.note) + '»</span>' : '') +
+    (asking
+      ? '<div class="field"><label for="d-note">Слово отказа — его увидит человек</label>' +
+          '<textarea id="d-note" rows="3" maxlength="500">' + esc(MREQS.note) + '</textarea></div>' +
+        '<div class="row" style="justify-content:flex-start;gap:8px">' +
+          '<button type="button" class="btn quiet" data-action="mq-keep"' + busy + '>Не отказывать</button>' +
+          '<button type="button" class="btn quiet" data-action="mq-no:' + q.id + '"' + busy + '>Точно отказать</button></div>'
+      : '<div class="row" style="justify-content:flex-start;gap:8px">' +
+          '<button type="button" class="btn quiet" data-action="mq-ok:' + q.id + '"' + busy + '>Согласиться</button>' +
+          '<button type="button" class="btn quiet" data-action="mq-ask:' + q.id + '"' + busy + '>Отказать</button></div>') +
+  '</div>';
+}
+function requestRow(q) {
+  return '<div class="card quiet"><div class="row top"><div class="col"><b>' + esc(q.name) + '</b>' +
+      '<span class="small">' + esc([q.tier, askedWhen(q.done || q.iso, false)].filter(Boolean).join(' · ')) + '</span></div>' +
+      '<span class="pill' + (q.status === 'rejected' ? ' warm' : '') + '">' + REQ_PILL[q.status] + '</span></div>' +
+    (q.said ? '<span class="small">«' + esc(q.said) + '»</span>' : '') + '</div>';
+}
 function byId(id) { return DATA.events.filter(function (e) { return e.id === id; })[0]; }
 function isMember() { return ['member', 'organizer', 'partner'].indexOf(DATA.role) !== -1; }
 
@@ -3307,8 +3554,11 @@ var SCREENS = {
 
       (LIVE ? myRoles() +
         (canTopup() ? '<button type="button" class="btn ghost" data-go="topup">Внести себе на счёт</button>' : '') +
-        (DATA.barSide ? '<div class="group"><span class="label">Работа</span>' +
-          '<button type="button" class="listitem accent" data-go="barQueue">' +
+        // Одна группа «Работа»: бар и управление клубом (кадр E42g, Cafe13KPG#428) —
+        // у «Заявок» и «Людей» одно право, и подпись у них одна; при барной роли
+        // строки главы клуба встают в ту же группу, а не во вторую «Работу».
+        (DATA.barSide || mayPeople() || mayRequests() && WIRED.memberRequests ? '<div class="group"><span class="label">Работа</span>' +
+          (DATA.barSide ? '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' +
           (mayCards() ? '<button type="button" class="listitem" data-go="barCards">' +
@@ -3316,12 +3566,17 @@ var SCREENS = {
             svg(ICON.chev, 'chev') + '</button>' : '') +
           (mayBook() ? '<button type="button" class="listitem" data-go="barMoney">' +
             '<span class="grow"><b>Доход и расход бара</b><span class="small">Выручка и затраты руками, с комментарием</span></span>' +
+            svg(ICON.chev, 'chev') + '</button>' : '') : '') +
+          // строка — только когда экран включён: до выкладки api заявок она вела бы в заглушку;
+          // счёт ждущих — словами в подстрочнике, пилюли внутри .listitem у клиента нет
+          (mayRequests() && WIRED.memberRequests ? '<button type="button" class="listitem" data-go="memberRequests">' +
+            '<span class="grow"><b>Заявки на членство</b><span class="small">' +
+              (MREQS.pending !== null ? 'Ждут ответа: ' + MREQS.pending : 'Согласие или отказ, со словом заявителю') + '</span></span>' +
+            svg(ICON.chev, 'chev') + '</button>' : '') +
+          (mayPeople() ? '<button type="button" class="listitem" data-go="people">' +
+            '<span class="grow"><b>Люди и ответственность</b><span class="small">Кто за что отвечает: выдать и снять</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' : '') +
           '</div>' : '') +
-        (mayPeople() ? '<div class="group"><span class="label">Клуб</span>' +
-          '<button type="button" class="listitem accent" data-go="people">' +
-            '<span class="grow"><b>Люди и ответственность</b><span class="small">Кто за что отвечает: выдать и снять</span></span>' +
-            svg(ICON.chev, 'chev') + '</button></div>' : '') +
         afishaHome() :
       '<div class="group">' +
         '<div class="row"><span class="label">На этой неделе</span>' +
@@ -3403,6 +3658,7 @@ var SCREENS = {
   },
 
   membership: function () {
+    if (LIVE) return membershipLive();
     // уровень — из оплаченных членств (/me), а не из роли; в демо их нет
     var have = DATA.member && DATA.member.memberships;
     var mine = function (k) { return have ? have.some(function (m) { return m.level === k; }) : DATA.role === k; };
@@ -3427,6 +3683,22 @@ var SCREENS = {
     '<div class="note">' + svg(ICON.info) +
       '<span>Оплата — в кассе, наличными или картой: работник отметит её, и уровень обновится здесь.</span>' +
     '</div>';
+  },
+
+  memberRequests: function () {
+    if (!mayRequests()) return '<div class="card quiet"><span class="small">Заявки на членство смотрит и решает глава клуба.</span></div>';
+    if (!MREQS.list) return MREQS.fail
+      ? '<div class="card strong"><h2>Заявки не загрузились</h2><p>' + esc(MREQS.fail) + '</p>' +
+        '<button type="button" class="btn" data-action="mq-retry">Попробовать снова</button></div>'
+      : '<div class="card quiet"><span class="small">Загружаем заявки…</span></div>';
+    var wait = MREQS.list.filter(function (q) { return q.status === 'pending'; });
+    var past = MREQS.list.filter(function (q) { return q.status !== 'pending'; });
+    if (!wait.length && !past.length) return '<div class="card quiet"><div class="col"><b>Заявок нет</b>' +
+      '<span class="small">Здесь появятся просьбы о членстве — из приложения, с экрана «Членство». Решение принимает глава клуба, деньги принимает касса.</span></div></div>';
+    return (MREQS.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MREQS.err) + '</span></div>' : '') +
+      (wait.length ? '<div class="group"><span class="label">Ждут ответа · ' + wait.length + '</span>' + wait.map(requestCard).join('') + '</div>' : '') +
+      (past.length ? '<div class="group"><span class="label">Решённые</span>' + past.map(requestRow).join('') + '</div>' : '') +
+      (MREQS.ask ? noteBox('Отказ не закрывает дорогу: отклонённая заявка закрыта, и человек может подать новую. Согласие членства не создаёт — его создаёт касса, приняв деньги.') : '');
   },
 
   events: function () {
@@ -5024,7 +5296,7 @@ var TABS = {
               ['barExpense', 'Затраты', ICON.coin], ['home', 'Клуб', ICON.home]]
 };
 var TITLES = {
-  pass: 'Пропуск', membership: 'Членство', events: 'Афиша',
+  pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно',
   bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
@@ -5066,7 +5338,7 @@ var BACK = {
   // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
-  people: 'home',
+  people: 'home', memberRequests: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -5140,6 +5412,9 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
+  if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
+  if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
+  if (screen === 'home' && current !== 'home' && mayRequests() && WIRED.memberRequests) loadRequests();
   // с самой карточки в список возвращаются — это не новый вход, «откуда» не трогать
   if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard')
     CARDS.from = current === 'barQueue' ? 'barQueue' : homeOf();
@@ -5499,6 +5774,14 @@ function doAction(a) {
     if (a === 'reset-consent') { if (LIVE) return; dropConsent(); go('consent'); return; }
     if (a === 'retry') { boot(); return; }
     if (a === 'retry-pass') { loadPass(); render(); return; }
+    if (a === 'mr-send' && LIVE) { sendRequest(arg); return; }
+    if (a === 'mr-retry' && LIVE) { loadTiers(); render(); return; }
+    if (a === 'mr-pick' && LIVE) { MREQ.pick = arg; render(); return; }
+    if (a === 'mq-ok' && mayRequests()) { decideRequest(Number(arg), 'approved'); return; }
+    if (a === 'mq-ask' && mayRequests()) { MREQS.ask = Number(arg); MREQS.note = ''; render(); return; }
+    if (a === 'mq-keep') { MREQS.ask = 0; MREQS.note = ''; render(); return; }
+    if (a === 'mq-no' && mayRequests()) { decideRequest(Number(arg), 'rejected'); return; }
+    if (a === 'mq-retry' && mayRequests()) { loadRequests(); render(); return; }
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'book' && LIVE) { bookEvent(arg); return; }
@@ -5516,6 +5799,7 @@ function doAction(a) {
    честный ответ лучше вида работающей отправки. */
 document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'p-find') { PEOPLE.find = ev.target.value; peopleFilter(); }
+  if (ev.target && ev.target.id === 'd-note') MREQS.note = ev.target.value;
 });
 
 // Касса: набранное сразу в память формы — перерисовка от выбора способа или
