@@ -301,8 +301,13 @@ function fromMe(d) {
     if (!m.lifelong && !mu) return null;
     all.push({ level: m.level, until: mu, lifelong: m.lifelong });
   }
+  // Своя заявка на членство (Cafe13KPG#415). Поля нет — сервер до выкладки
+  // заявок, это «не знаем», а не отказ: остальной /me от него не зависит.
+  var req = d.membership_request === undefined ? null : fromRequest(d.membership_request);
+  if (req === undefined) return null;
   var p = d.member;
   return {
+    request: req,
     role: d.membership_active ? ms.level : 'guest',
     roles: d.roles.map(function (r) { return r && r.role; }).filter(Boolean),
     barSide: d.roles.some(function (r) { return r && (r.role === 'admin' || r.role === 'bar' || r.role === 'curator'); }),
@@ -326,6 +331,128 @@ function fromMe(d) {
 
 function untilText(m) {
   return m.lifelong ? 'Пожизненно' : 'Действует до ' + m.until;
+}
+
+/* ── членство: виды и заявки (Cafe13KPG#415) ──────────
+   Виды с ценой — с сервера: вшитые в клиент цены уже снимались по слову
+   владельца (Cafe13KPG#102), а цену на экране не проверить ничем.
+   ⚠ `approved` — согласие главы клуба, а не членство. Членство создаёт
+   касса, приняв деньги, и она же переводит заявку в `completed`. Экран,
+   написавший после `approved` «оформлено», соврал бы человеку. */
+var REQ_STATES = { pending: 1, approved: 1, rejected: 1, cancelled: 1, completed: 1 };
+// null — заявки нет; undefined — ответ не разобран
+function fromRequest(r) {
+  if (r === null) return null;
+  if (!r || typeof r !== 'object' || typeof r.id !== 'number' || !REQ_STATES[r.status]) return undefined;
+  return { id: r.id, status: r.status,
+           tier: typeof r.tier_name === 'string' ? r.tier_name : '',
+           code: typeof r.tier_code === 'string' ? r.tier_code : '',
+           said: typeof r.decision_note === 'string' ? r.decision_note.trim() : '',
+           at: r.created_at ? ruDate(r.created_at) : null };
+}
+
+var TIERS = { list: null, fail: '', gen: 0 };
+function fromTiers(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.tiers) || d.currency !== 'THB') return null;
+  var out = [];
+  for (var i = 0; i < d.tiers.length; i++) {
+    var t = d.tiers[i], price = t && num(t.price_thb);
+    if (!t || typeof t.code !== 'string' || !/^[a-z_]+$/.test(t.code) || typeof t.name !== 'string' || !t.name) return null;
+    if (!isFinite(price) || price < 0) return null;
+    if (typeof t.period_months !== 'number' || t.period_months < 1 || Math.floor(t.period_months) !== t.period_months) return null;
+    out.push({ code: t.code, name: t.name, price: price, months: t.period_months,
+               trial: typeof t.trial_days === 'number' && t.trial_days > 0 ? t.trial_days : 0 });
+  }
+  return out;
+}
+function loadTiers() {
+  var gen = ++TIERS.gen, who = WHO;
+  TIERS.fail = '';
+  api('GET', '/membership-tiers').then(function (r) {
+    if (gen !== TIERS.gen || who !== WHO) return;
+    var list = r.status === 200 ? fromTiers(r.data) : null;
+    if (list) TIERS.list = list;
+    else { TIERS.list = null; TIERS.fail = r.status === 403 ? denyText(r) : failText(r); }
+    if (current === 'membership') render();
+  });
+}
+
+// Подача: busy — запрос в пути, err — отказ сервера его словами
+var MREQ = { busy: false, err: '' };
+function sendRequest(code) {
+  if (MREQ.busy) return;
+  MREQ.busy = true; MREQ.err = ''; render();
+  var who = WHO;
+  api('POST', '/membership-requests', { tier_code: code }).then(function (r) {
+    if (who !== WHO) return;
+    MREQ.busy = false;
+    var d = r.data;
+    if (r.status === 201 && d && typeof d.id === 'number' && d.status === 'pending') {
+      DATA.request = { id: d.id, status: 'pending', tier: typeof d.tier === 'string' ? d.tier : '', code: code,
+                       said: '', at: d.created_at ? ruDate(d.created_at) : null };
+    } else {
+      MREQ.err = denyText(r);
+      // «уже отправлена» и «уже есть» — состояние у сервера новее нашего: перечитать
+      if (r.status === 409) rereadRequest();
+    }
+    if (current === 'membership') render();
+  });
+}
+function rereadRequest() {
+  var who = WHO;
+  api('GET', '/me').then(function (r) {
+    if (who !== WHO) return;
+    var me = r.status === 200 ? fromMe(r.data) : null;
+    if (!me) return;
+    DATA.request = me.request;
+    if (current === 'membership') render();
+  });
+}
+
+/* Заявки для главы клуба. Право то же, что у «Людей и ответственности»:
+   глава клуба или администратор (сервер: DECIDES = head, плюс is_admin). */
+function mayRequests() { return LIVE && (grant('head') || grant('admin')); }
+var MREQS = { list: null, pending: 0, fail: '', gen: 0, busy: 0, err: '', note: '' };
+function fromRequests(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.requests) || typeof d.pending !== 'number') return null;
+  var out = [];
+  for (var i = 0; i < d.requests.length; i++) {
+    var q = d.requests[i];
+    if (!q || typeof q.id !== 'number' || !REQ_STATES[q.status]) return null;
+    out.push({ id: q.id, status: q.status,
+               name: [q.first_name, q.last_name].filter(Boolean).join(' ') || (q.username ? '@' + q.username : 'Без имени'),
+               tier: typeof q.tier_name === 'string' ? q.tier_name : '',
+               note: typeof q.note === 'string' ? q.note.trim() : '',
+               said: typeof q.decision_note === 'string' ? q.decision_note.trim() : '',
+               at: q.created_at ? ruDate(q.created_at) : null,
+               pass: q.has_pass === true });
+  }
+  return { list: out, pending: d.pending };
+}
+function loadRequests() {
+  var gen = ++MREQS.gen, who = WHO;
+  MREQS.fail = '';
+  api('GET', '/membership-requests').then(function (r) {
+    if (gen !== MREQS.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromRequests(r.data) : null;
+    if (got) { MREQS.list = got.list; MREQS.pending = got.pending; }
+    else { MREQS.list = null; MREQS.fail = r.status === 403 ? denyText(r) : failText(r); }
+    if (current === 'memberRequests' || current === 'home') render();
+  });
+}
+function decideRequest(id, decision) {
+  if (MREQS.busy) return;
+  MREQS.busy = id; MREQS.err = ''; render();
+  var who = WHO;
+  api('POST', '/membership-requests/' + id + '/decide', { decision: decision, note: MREQS.note.trim() }).then(function (r) {
+    if (who !== WHO) return;
+    MREQS.busy = 0;
+    if (r.status === 200 && r.data && r.data.status === decision) MREQS.note = '';
+    else MREQS.err = denyText(r);
+    // и после отказа: «уже не ждёт ответа» значит, что список устарел
+    loadRequests();
+    if (current === 'memberRequests') render();
+  });
 }
 
 /* Экраны, которые уже стоят на данных сервера. Остальные в живом режиме
@@ -2008,6 +2135,7 @@ function applyMe(me) {
   DATA.grants = me.grants;
   DATA.consent = me.consent;
   DATA.member = me.member;
+  DATA.request = me.request;
   // запас пропуска — только свой и только боевой: чужой код на своём телефоне — чужое платёжное средство
   if (!TEST.on) syncPass(me);
 }
@@ -3170,6 +3298,75 @@ function partOf(t) {
   return h < 12 ? 'утро' : h < 16 ? 'день' : 'вечер';
 }
 function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
+/* Живой экран членства (Cafe13KPG#415). Облик — по принятым формам клиента
+   (`card strong` для вида, `card quiet` для пояснения): кадра на момент
+   сборки не было. Слова состояний — из договора ручек координатора. */
+function tierPrice(t) {
+  var p = money(t.price % 1 ? t.price.toFixed(2) : t.price) + ' ฿';
+  return t.months === 1 ? p + ' в месяц' : p + ' за ' + t.months + ' ' + plural(t.months, ['месяц', 'месяца', 'месяцев']);
+}
+function membershipLive() {
+  var have = (DATA.member && DATA.member.memberships) || [];
+  var mine = function (code) { return have.some(function (m) { return m.level === code; }); };
+  // completed и cancelled — прошлое: /me отдаёт заявку только тому, у кого членства нет,
+  // значит прежнее закончилось, и подать можно заново
+  var rq = DATA.request && (DATA.request.status === 'pending' || DATA.request.status === 'approved' ||
+                            DATA.request.status === 'rejected') ? DATA.request : null;
+  var canAsk = !isMember() && (!rq || rq.status === 'rejected');
+  var tierName = function (r) { return r.tier ? '«' + esc(r.tier) + '»' : 'членство'; };
+  var state = !rq ? ''
+    : rq.status === 'pending'
+      ? '<div class="card strong"><h2>Заявка отправлена</h2>' +
+          '<p>На ' + tierName(rq) + (rq.at ? ', от ' + esc(rq.at) : '') + '. Ждём ответа главы клуба.</p></div>'
+    : rq.status === 'approved'
+      // ⚠ согласие — не членство: его создаёт касса, приняв деньги
+      ? '<div class="card strong"><h2>Глава клуба согласен</h2>' +
+          '<p>Деньги принимает касса — наличными или картой. Членство ' + tierName(rq) +
+          ' появится здесь, когда касса отметит оплату.</p></div>'
+      : '<div class="card strong"><h2>Заявку отклонили</h2>' +
+          (rq.said ? '<p>' + esc(rq.said) + '</p>' : '<p>Пояснения глава клуба не оставил.</p>') +
+          '<span class="small">Подать снова можно ниже.</span></div>';
+  var list = TIERS.list;
+  var tiers = list ? (list.length ? list.map(function (t) {
+      var my = mine(t.code);
+      return '<div class="card' + (my ? ' strong' : '') + '">' +
+        '<div class="row"><h2>' + esc(t.name) + '</h2></div>' +
+        '<p style="font-size:13px">' + esc(tierPrice(t)) + '</p>' +
+        (my ? '<span class="pill on" style="align-self:flex-start">Ваш уровень</span>' : '') +
+        (canAsk ? '<button type="button" class="btn" data-action="mr-send:' + esc(t.code) + '"' +
+          (MREQ.busy ? ' disabled' : '') + '>' + (rq ? 'Подать снова' : 'Подать заявку') + '</button>' : '') +
+      '</div>';
+    }).join('') : '<div class="card quiet"><span class="small">Видов членства сервер не назвал.</span></div>')
+    : TIERS.fail ? '<div class="card quiet"><div class="col"><span class="small">' + esc(TIERS.fail) + '</span>' +
+        '<button type="button" class="btn ghost" data-action="mr-retry">Попробовать снова</button></div></div>'
+    : '<div class="card quiet"><span class="small">Загружаем виды членства…</span></div>';
+  return (FLASH ? flash() : '') + state +
+    (MREQ.err ? '<div class="card quiet"><span class="small">' + esc(MREQ.err) + '</span></div>' : '') +
+    tiers +
+    '<div class="note">' + svg(ICON.info) +
+      '<span>Заявку решает глава клуба. После согласия оплата — в кассе, наличными или картой: работник отметит её, и уровень обновится здесь.</span>' +
+    '</div>';
+}
+
+var REQ_WORD = { pending: 'ждёт ответа', approved: 'согласована — оплата в кассе', rejected: 'отклонена',
+                 cancelled: 'отменена', completed: 'оформлена' };
+function requestCard(q) {
+  var busy = MREQS.busy ? ' disabled' : '';
+  return '<div class="card">' +
+    '<div class="col"><b>' + esc(q.name) + '</b>' +
+      '<span class="small">' + esc([q.tier, q.at, q.pass ? '' : 'пропуска ещё нет'].filter(Boolean).join(' · ')) + '</span></div>' +
+    (q.note ? '<p style="font-size:13px">«' + esc(q.note) + '»</p>' : '') +
+    '<div class="row" style="gap:8px">' +
+      '<button type="button" class="btn ghost" data-action="mq-no:' + q.id + '"' + busy + '>Отказать</button>' +
+      '<button type="button" class="btn" data-action="mq-ok:' + q.id + '"' + busy + '>Согласиться</button>' +
+    '</div></div>';
+}
+function requestRow(q) {
+  return '<div class="listitem"><span class="grow"><b>' + esc(q.name) + '</b>' +
+    '<span class="small">' + esc([q.tier, REQ_WORD[q.status]].filter(Boolean).join(' · ')) + '</span>' +
+    (q.said ? '<span class="small">«' + esc(q.said) + '»</span>' : '') + '</span></div>';
+}
 function byId(id) { return DATA.events.filter(function (e) { return e.id === id; })[0]; }
 function isMember() { return ['member', 'organizer', 'partner'].indexOf(DATA.role) !== -1; }
 
@@ -3321,7 +3518,13 @@ var SCREENS = {
         (mayPeople() ? '<div class="group"><span class="label">Клуб</span>' +
           '<button type="button" class="listitem accent" data-go="people">' +
             '<span class="grow"><b>Люди и ответственность</b><span class="small">Кто за что отвечает: выдать и снять</span></span>' +
-            svg(ICON.chev, 'chev') + '</button></div>' : '') +
+            svg(ICON.chev, 'chev') + '</button>' +
+          // строка — только когда экран включён: до выкладки api заявок она вела бы в заглушку
+          (mayRequests() && WIRED.memberRequests ? '<button type="button" class="listitem" data-go="memberRequests">' +
+            '<span class="grow"><b>Заявки на членство</b><span class="small">' +
+              (MREQS.pending ? 'Ждут ответа: ' + MREQS.pending : 'Согласие или отказ, со словом заявителю') + '</span></span>' +
+            svg(ICON.chev, 'chev') + '</button>' : '') +
+          '</div>' : '') +
         afishaHome() :
       '<div class="group">' +
         '<div class="row"><span class="label">На этой неделе</span>' +
@@ -3403,6 +3606,7 @@ var SCREENS = {
   },
 
   membership: function () {
+    if (LIVE) return membershipLive();
     // уровень — из оплаченных членств (/me), а не из роли; в демо их нет
     var have = DATA.member && DATA.member.memberships;
     var mine = function (k) { return have ? have.some(function (m) { return m.level === k; }) : DATA.role === k; };
@@ -3427,6 +3631,27 @@ var SCREENS = {
     '<div class="note">' + svg(ICON.info) +
       '<span>Оплата — в кассе, наличными или картой: работник отметит её, и уровень обновится здесь.</span>' +
     '</div>';
+  },
+
+  memberRequests: function () {
+    if (!mayRequests()) return '<div class="card quiet"><span class="small">Заявки на членство смотрит и решает глава клуба.</span></div>';
+    if (!MREQS.list) return MREQS.fail
+      ? '<div class="card strong"><h2>Заявки не загрузились</h2><p>' + esc(MREQS.fail) + '</p>' +
+        '<button type="button" class="btn" data-action="mq-retry">Попробовать снова</button></div>'
+      : '<div class="card quiet"><span class="small">Загружаем заявки…</span></div>';
+    var wait = MREQS.list.filter(function (q) { return q.status === 'pending'; });
+    var past = MREQS.list.filter(function (q) { return q.status !== 'pending'; });
+    return (MREQS.err ? '<div class="card quiet"><span class="small">' + esc(MREQS.err) + '</span></div>' : '') +
+      '<div class="group"><span class="label">Ждут ответа</span>' +
+        (wait.length
+          ? '<input id="mq-note" type="text" maxlength="500" placeholder="Слово к решению — увидит заявитель" value="' + esc(MREQS.note) + '">' +
+            wait.map(requestCard).join('')
+          : '<div class="card quiet"><span class="small">Новых заявок нет.</span></div>') +
+      '</div>' +
+      (past.length ? '<div class="group"><span class="label">Решённые</span>' + past.map(requestRow).join('') + '</div>' : '') +
+      '<div class="note">' + svg(ICON.info) +
+        '<span>Согласие — ещё не членство: его создаёт касса, когда примет оплату.</span>' +
+      '</div>';
   },
 
   events: function () {
@@ -5024,7 +5249,7 @@ var TABS = {
               ['barExpense', 'Затраты', ICON.coin], ['home', 'Клуб', ICON.home]]
 };
 var TITLES = {
-  pass: 'Пропуск', membership: 'Членство', events: 'Афиша',
+  pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно',
   bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
@@ -5066,7 +5291,7 @@ var BACK = {
   // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
-  people: 'home',
+  people: 'home', memberRequests: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -5140,6 +5365,8 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
+  if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
+  if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; loadRequests(); }
   // с самой карточки в список возвращаются — это не новый вход, «откуда» не трогать
   if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard')
     CARDS.from = current === 'barQueue' ? 'barQueue' : homeOf();
@@ -5499,6 +5726,11 @@ function doAction(a) {
     if (a === 'reset-consent') { if (LIVE) return; dropConsent(); go('consent'); return; }
     if (a === 'retry') { boot(); return; }
     if (a === 'retry-pass') { loadPass(); render(); return; }
+    if (a === 'mr-send' && LIVE) { sendRequest(arg); return; }
+    if (a === 'mr-retry' && LIVE) { loadTiers(); render(); return; }
+    if (a === 'mq-ok' && mayRequests()) { decideRequest(Number(arg), 'approved'); return; }
+    if (a === 'mq-no' && mayRequests()) { decideRequest(Number(arg), 'rejected'); return; }
+    if (a === 'mq-retry' && mayRequests()) { loadRequests(); render(); return; }
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'book' && LIVE) { bookEvent(arg); return; }
@@ -5516,6 +5748,7 @@ function doAction(a) {
    честный ответ лучше вида работающей отправки. */
 document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'p-find') { PEOPLE.find = ev.target.value; peopleFilter(); }
+  if (ev.target && ev.target.id === 'mq-note') MREQS.note = ev.target.value;
 });
 
 // Касса: набранное сразу в память формы — перерисовка от выбора способа или
