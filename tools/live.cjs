@@ -115,6 +115,12 @@ if (grantsSet.length !== 1) {
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
   const bad = [];
+  // Исключение посреди батареи не глотает уже найденное: без этого обрыв печатал
+  // только стек, и красные строки всех пройденных случаев терялись (Cafe13KPG#415).
+  process.on('unhandledRejection', e => {
+    console.log('КРАСНОЕ:\n' + bad.concat('БАТАРЕЯ ОБОРВАЛАСЬ исключением: ' + String(e && e.message || e).split('\n')[0]).join('\n'));
+    process.exit(1);
+  });
   // Счёт прогонов считается, а не вписывается: каждый случай открывает свой
   // экран через open(), поэтому здесь он и растёт. Прежняя строка складывала
   // длину таблицы с числом 180 — императивные случаи (их большинство) в неё
@@ -6115,6 +6121,13 @@ if (grantsSet.length !== 1) {
     };
     const wire = (s, screen) => s.p.evaluate(sc => { WIRED.membership = 1; WIRED.memberRequests = 1; go(sc); }, screen).then(() => s.p.waitForTimeout(300));
     const sends = s => s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="mr-send:"]')].map(b => b.textContent));
+    // нажатие с охраной: кнопки нет — своя строка, а не исключение, обрывающее батарею
+    const press = async (s, n, sel) => {
+      const ok = await s.p.evaluate(q => { const x = document.querySelector(q); if (x) x.click(); return !!x; }, sel);
+      if (!ok) bad.push(`${n}: нет кнопки ${sel}`);
+      await s.p.waitForTimeout(sel.includes('mr-send') || /mq-(ok|no)/.test(sel) ? 400 : 150);
+      return ok;
+    };
     const posts = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
     const gets = (s, re) => s.calls.filter(c => c.method === 'GET' && re.test(c.url));
 
@@ -6131,10 +6144,10 @@ if (grantsSet.length !== 1) {
       if (/Бесплатный вход в клуб|право проводить свои мероприятия/.test(t)) bad.push(`${n}: на экране описание, которого фикстура не давала — текст вшит в клиент`);
       let b = await sends(s);
       if (b.length !== 1 || b[0] !== 'Подать заявку') bad.push(`${n}: кнопки подачи ${JSON.stringify(b)}, ждали одну «Подать заявку»`);
-      await s.p.evaluate(() => document.querySelector('[data-action="mr-pick:organizer"]').click()); await s.p.waitForTimeout(100);
+      await press(s, n, '[data-action="mr-pick:organizer"]');
       const on = await s.p.evaluate(() => [...document.querySelectorAll('#view [aria-pressed="true"]')].map(x => x.textContent));
       if (on.join() !== 'Мастер') bad.push(`${n}: выбран ${JSON.stringify(on)}, а нажат «Мастер»`);
-      await s.p.evaluate(() => document.querySelector('[data-action^="mr-send:"]').click()); await s.p.waitForTimeout(300);
+      await press(s, n, '[data-action^="mr-send:"]');
       const pp = posts(s, /\/membership-requests$/);
       if (pp.length !== 1 || JSON.parse(pp[0].body).tier_code !== 'organizer') bad.push(`${n}: заявка ушла не так: ${JSON.stringify(pp.map(c => c.body))}`);
       t = await s.view();
@@ -6161,7 +6174,7 @@ if (grantsSet.length !== 1) {
       if (JSON.stringify(b) !== JSON.stringify(btn)) bad.push(`${n}: кнопки подачи ${JSON.stringify(b)}, ждали ${JSON.stringify(btn)}`);
       if (posts(s, /\/membership-requests/).length) bad.push(`${n}: заявка ушла без нажатия`);
       if (st === 'rejected' && b.length) {
-        await s.p.evaluate(() => document.querySelector('[data-action^="mr-send:"]').click()); await s.p.waitForTimeout(300);
+        await press(s, n, '[data-action^="mr-send:"]');
         const pp = posts(s, /\/membership-requests$/);
         if (pp.length !== 1 || JSON.parse(pp[0].body).tier_code !== 'member') bad.push(`${n}: «Подать снова» ушла не на прежний вид: ${JSON.stringify(pp.map(c => c.body))}`);
       }
@@ -6172,7 +6185,7 @@ if (grantsSet.length !== 1) {
       const n = 'mreq-409';
       const s = await memCase(GUEST, { post: json(409, { detail: 'ваша заявка уже отправлена и ждёт ответа' }), me2: withReq(GUEST, 'pending') });
       await wire(s, 'membership');
-      await s.p.evaluate(() => document.querySelector('[data-action^="mr-send:"]').click()); await s.p.waitForTimeout(400);
+      await press(s, n, '[data-action^="mr-send:"]');
       const t = await s.view();
       if (!t.includes('Ваша заявка уже отправлена и ждёт ответа.')) bad.push(`${n}: отказ сервера не показан его словами`);
       if (gets(s, /\/me$/).length < 2) bad.push(`${n}: после 409 /me не перечитан`);
@@ -6231,6 +6244,13 @@ if (grantsSet.length !== 1) {
       if (!(await s2.view()).includes('смотрит и решает глава клуба')) bad.push(`${n}: экран заявок без права не сказал, кто решает`);
       if (gets(s2, /\/membership-requests$/).length) bad.push(`${n}: заявки спрошены без права`);
       await s2.ctx.close();
+      // бармен: группа «Работа» у него есть (barSide), а права на заявки нет — внутренняя охрана строки
+      const BAR_ = clone(OWNER); BAR_.roles = [{ role: 'bar', direction_id: 7 }];
+      const s3 = await memCase(BAR_);
+      await s3.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s3.p.waitForTimeout(200);
+      if (!(await s3.p.$('#view [data-go="barQueue"]'))) bad.push(`${n}: у бармена нет группы «Работа» — фикстура не та`);
+      if (await s3.p.$('#view [data-go="memberRequests"]')) bad.push(`${n}: у бармена без права главы клуба есть строка «Заявки на членство»`);
+      await s3.ctx.close();
     }
     // согласие — без слова; отказ — со словом, через «Точно отказать»; список перечитан (кадры E42, E42v)
     {
@@ -6241,20 +6261,20 @@ if (grantsSet.length !== 1) {
       for (const w of ['Ждут ответа · 1', 'Вера Заявкина', '1 234 ฿', 'пропуска нет', '«хочу на вечера»', 'Лев', 'СОГЛАСОВАНА', '«ждём в кассе»'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
       if (/оформлен|ОФОРМЛЕН/.test(t)) bad.push(`${n}: согласованная заявка названа оформленной`);
-      await s.p.evaluate(() => document.querySelector('[data-action="mq-ok:11"]').click()); await s.p.waitForTimeout(400);
+      await press(s, n, '[data-action="mq-ok:11"]');
       let pp = posts(s, /\/membership-requests\/11\/decide$/);
       let body = pp.length === 1 ? JSON.parse(pp[0].body) : null;
       if (!body || body.decision !== 'approved' || body.note !== '') bad.push(`${n}: согласие ушло так: ${JSON.stringify(pp.map(c => c.body))}`);
       if (gets(s, /\/membership-requests$/).length !== 2) bad.push(`${n}: после решения список не перечитан`);
       // отказ: сначала слово, «Не отказывать» ничего не шлёт
-      await s.p.evaluate(() => document.querySelector('[data-action="mq-ask:11"]').click()); await s.p.waitForTimeout(150);
+      await press(s, n, '[data-action="mq-ask:11"]');
       if (!(await s.p.$('#d-note'))) bad.push(`${n}: «Отказать» не открыло поле слова (кадр E42v)`);
       else {
-        await s.p.evaluate(() => document.querySelector('[data-action="mq-keep"]').click()); await s.p.waitForTimeout(150);
+        await press(s, n, '[data-action="mq-keep"]');
         if (await s.p.$('#d-note')) bad.push(`${n}: «Не отказывать» не закрыло поле`);
-        await s.p.evaluate(() => document.querySelector('[data-action="mq-ask:11"]').click()); await s.p.waitForTimeout(150);
+        await press(s, n, '[data-action="mq-ask:11"]');
         await s.p.fill('#d-note', 'приходите в четверг');
-        await s.p.evaluate(() => document.querySelector('[data-action="mq-no:11"]').click()); await s.p.waitForTimeout(400);
+        await press(s, n, '[data-action="mq-no:11"]');
         pp = posts(s, /\/membership-requests\/11\/decide$/);
         body = pp.length === 2 ? JSON.parse(pp[1].body) : null;
         if (!body || body.decision !== 'rejected' || body.note !== 'приходите в четверг') bad.push(`${n}: отказ ушёл так: ${JSON.stringify(pp.map(c => c.body))}`);
@@ -6265,8 +6285,8 @@ if (grantsSet.length !== 1) {
       const n = 'mq-deny';
       const s = await memCase(OWNER, { decide: json(409, { detail: 'заявка уже отклонена' }) });
       await wire(s, 'memberRequests');
-      await s.p.evaluate(() => document.querySelector('[data-action="mq-ask:11"]').click()); await s.p.waitForTimeout(150);
-      await s.p.evaluate(() => document.querySelector('[data-action="mq-no:11"]').click()); await s.p.waitForTimeout(400);
+      await press(s, n, '[data-action="mq-ask:11"]');
+      await press(s, n, '[data-action="mq-no:11"]');
       if (!(await s.view()).includes('Заявка уже отклонена.')) bad.push(`${n}: отказ сервера не показан его словами`);
       await s.ctx.close();
     }
