@@ -488,9 +488,12 @@ if (grantsSet.length !== 1) {
     if (!t.includes('ещё не подключено')) bad.push('membership-off: экран членства включён в живом режиме до решения #301');
     const m = t.match(MONEY);
     if (m) bad.push(`membership-off: на экране членства сумма «${m[0]}»`);
-    // сам экран (тот же, что в демо и каталоге): ни сумм, ни кнопок без действия
+    // сам экран (тот же, что в демо и каталоге): ни сумм, ни кнопок без действия.
+    // Ветка демонстрации — явно: у живой ветки цены с сервера (Cafe13KPG#415),
+    // её держат случаи mreq-*.
     const [mine, drawn, dead, phone] = await s.p.evaluate(() => {
-      const d = document.createElement('div'); d.innerHTML = SCREENS.membership();
+      const d = document.createElement('div');
+      LIVE = false; try { d.innerHTML = SCREENS.membership(); } finally { LIVE = true; }
       return [[...d.querySelectorAll('.card')].filter(c => c.querySelector('h2'))
         .map(c => c.querySelector('h2').textContent + (c.querySelector('.pill.on') ? ':мой' : '')),
         d.textContent, [...d.querySelectorAll('button')].filter(x => !x.dataset.action && !x.dataset.go).length,
@@ -6218,6 +6221,7 @@ if (grantsSet.length !== 1) {
       const body = pp.length === 1 ? JSON.parse(pp[0].body) : null;
       if (!body || body.decision !== 'approved' || body.note !== 'добро пожаловать') bad.push(`${n}: решение ушло так: ${JSON.stringify(pp.map(c => c.body))}`);
       if (gets(s, /\/membership-requests$/).length !== 2) bad.push(`${n}: после решения список не перечитан`);
+      if ((await s.p.inputValue('#mq-note').catch(() => null)) !== '') bad.push(`${n}: слово к решённой заявке осталось в поле — уйдёт со следующей`);
       await s.ctx.close();
     }
     {
