@@ -491,9 +491,10 @@ if (grantsSet.length !== 1) {
     const s = await open(true, true, json(200, two), null, null, null);
     await s.p.evaluate(() => go('membership'));
     const t = await s.view();
-    if (!t.includes('ещё не подключено')) bad.push('membership-off: экран членства включён в живом режиме до решения #301');
-    const m = t.match(MONEY);
-    if (m) bad.push(`membership-off: на экране членства сумма «${m[0]}»`);
+    // С v65 экран в реестре (Cafe13KPG#415): живая ветка рисует виды и цены С СЕРВЕРА — их держат
+    // случаи mreq-*; здесь только то, что экран не заглушка. Прежнее ожидание «ещё не подключено»
+    // снято вместе с причиной: api#74 на бою (02f0ac6).
+    if (t.includes('ещё не подключено')) bad.push('membership-on: экран членства в живом режиме — заглушка, хотя он в реестре (Cafe13KPG#415)');
     // сам экран (тот же, что в демо и каталоге): ни сумм, ни кнопок без действия.
     // Ветка демонстрации — явно: у живой ветки цены с сервера (Cafe13KPG#415),
     // её держат случаи mreq-*.
@@ -4401,10 +4402,10 @@ if (grantsSet.length !== 1) {
            клиента (`WIRED`), и потому он сам проверяется следующим условием:
            вернётся `membership` в WIRED — запрет надо перечитать, а не держать
            вечно на истёкшем доводе (Cafe13KPG#296). */
-        if (/на экране «Членство»/.test(t))
-          bad.push('sozdat-net-prava: отказ зовёт на экран «Членство», а в живом режиме там «ещё не подключено»');
-        if (await s.p.evaluate(() => !!(window.WIRED && WIRED.membership)))
-          bad.push('sozdat-net-prava: ДОВОД ЗАПРЕТА ИСТЁК — `membership` снова в WIRED, значит указатель на этот экран снова законен: перечитать отказ формы и этот случай');
+        /* Запрет «не звать на Членство» снят вместе с доводом: с v65 экран в реестре
+           (Cafe13KPG#415), и сторож истечения сработал ровно так, как был поставлен.
+           Указатель на экран теперь законен, но отказ формы его НЕ добавляет — новый
+           текст человеку идёт кадром, а не правкой батареи (вопрос к designer-55). */
       }
       if (await s.p.evaluate(() => !!window.__main)) bad.push('sozdat-net-prava: главная кнопка Telegram осталась');
       /* Поля подкладываются руками: формы на экране нет, и без них отправку
@@ -6204,7 +6205,10 @@ if (grantsSet.length !== 1) {
     {
       const n = 'mq-entry';
       const s = await memCase(OWNER);
-      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
+      // с v65 оба экрана в реестре по умолчанию; охрану строки «только когда экран включён» держим, выключая его руками
+      const reg = await s.p.evaluate(() => [WIRED.membership, WIRED.memberRequests]);
+      if (reg[0] !== 1 || reg[1] !== 1) bad.push(`${n}: экраны заявок не в реестре: ${JSON.stringify(reg)} (Cafe13KPG#415, v65)`);
+      await s.p.evaluate(() => { WIRED.memberRequests = 0; go('guest'); go('home'); }); await s.p.waitForTimeout(200);
       if (await s.p.$('#view [data-go="memberRequests"]')) bad.push(`${n}: строка «Заявки на членство» есть, хотя экран не включён — вела бы в заглушку`);
       await s.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s.p.waitForTimeout(300);
       if (!(await s.p.$('#view [data-go="memberRequests"]'))) bad.push(`${n}: у главы клуба нет строки «Заявки на членство»`);

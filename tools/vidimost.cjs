@@ -13,7 +13,7 @@
  *
  * ⚠ ОТКУДА ЧИСЛА. Права и вкладки считает САМ КЛИЕНТ: страница грузится,
  * в неё кладётся состояние человека, и дальше спрашиваются `tabList()`,
- * `mayCards()`, `mayBook()`, `mayPeople()`, `canTopup()` — то есть те же
+ * `mayCards()`, `mayBook()`, `mayPeople()`, `canTopup()`, `mayRequests()` — то есть те же
  * функции, по которым работает приложение. Второй реализации правил на
  * питоне нарочно нет: она разошлась бы с клиентом молча.
  *
@@ -62,7 +62,7 @@ const ЛЮДИ = [
   { имя: 'гость без ролей', роли: [], членство: null }
 ];
 
-const ПРАВА = ['mayCards', 'mayBook', 'mayPeople', 'canTopup'];
+const ПРАВА = ['mayCards', 'mayBook', 'mayPeople', 'canTopup', 'mayRequests'];
 
 function не_выполнено(текст) {
   console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + текст);
@@ -92,7 +92,7 @@ function не_выполнено(текст) {
     window.fetch = function () { return new Promise(function () {}); };
 
     const права = {};
-    ['mayCards', 'mayBook', 'mayPeople', 'canTopup'].forEach((и) => { права[и] = !!window[и](); });
+    ['mayCards', 'mayBook', 'mayPeople', 'canTopup', 'mayRequests'].forEach((и) => { права[и] = !!window[и](); });
 
     /* ── ОБХОД ДВЕРЕЙ. Видимость — не право, а путь: право без входа никуда
        не ведёт. Вход берётся с ОТРИСОВАННОГО экрана (`data-go` внутри

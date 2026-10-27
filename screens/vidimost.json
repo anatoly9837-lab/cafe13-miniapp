@@ -1,6 +1,6 @@
 {
- "снято": "2026-10-27T18:58:15.739Z",
- "клиент_sha256": "b1f32cbb45cd63185b50976125fba72718ada186bc8d162c8ed6ea8c5b103632",
+ "снято": "2026-10-27T19:58:20.065Z",
+ "клиент_sha256": "55545e4565b875a900cc62dd7234617164f6970e051c9d0a73855363ad1a754c",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
@@ -26,7 +26,8 @@
       "mayCards": true,
       "mayBook": true,
       "mayPeople": true,
-      "canTopup": true
+      "canTopup": true,
+      "mayRequests": true
      },
      "barSide": true,
      "достижимо": {
@@ -92,7 +93,8 @@
       "mayCards": false,
       "mayBook": false,
       "mayPeople": false,
-      "canTopup": true
+      "canTopup": true,
+      "mayRequests": false
      },
      "barSide": false,
      "достижимо": {
@@ -156,7 +158,8 @@
       "mayCards": true,
       "mayBook": true,
       "mayPeople": false,
-      "canTopup": false
+      "canTopup": false,
+      "mayRequests": false
      },
      "barSide": true,
      "достижимо": {
@@ -220,7 +223,8 @@
       "mayCards": true,
       "mayBook": true,
       "mayPeople": false,
-      "canTopup": false
+      "canTopup": false,
+      "mayRequests": false
      },
      "barSide": true,
      "достижимо": {
@@ -296,7 +300,8 @@
       "mayCards": true,
       "mayBook": false,
       "mayPeople": false,
-      "canTopup": false
+      "canTopup": false,
+      "mayRequests": false
      },
      "barSide": true,
      "достижимо": {
@@ -345,7 +350,8 @@
       "mayCards": false,
       "mayBook": false,
       "mayPeople": false,
-      "canTopup": false
+      "canTopup": false,
+      "mayRequests": false
      },
      "barSide": false,
      "достижимо": {

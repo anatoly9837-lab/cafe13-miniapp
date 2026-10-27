@@ -469,6 +469,8 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, bookings: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
               staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1,
+              // заявки на членство (Cafe13KPG#415): включены после выкладки api#74 на бой
+              membership: 1, memberRequests: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
