@@ -119,6 +119,8 @@ ABSENT = [
                  'направление приходит с сервера, прибором здесь не считается)"',
     'demo': '"кнопка солнышка — только у god и god_mentor и только в Telegram"',
 
+    # заявки на членство (Cafe13KPG#415): код есть, в WIRED не включён до выкладки api#74
+    'memberRequests': 'никто',
     'membership': 'никто', 'eventManage': 'никто', 'serviceNew': 'никто',
     'barShot': 'никто', 'barExpense': 'никто', 'curator': 'никто',
     'занятость суток': 'никто', 'архив мероприятий': 'никто',
@@ -677,7 +679,7 @@ def printable(items, prefix):
 
 TITLES = {
     'consent': 'Согласие на данные', 'consentFull': 'Согласие · полный текст',
-    'guest': 'Услуги и бар', 'home': 'Клуб', 'pass': 'Пропуск', 'membership': 'Членство',
+    'guest': 'Услуги и бар', 'home': 'Клуб', 'pass': 'Пропуск', 'membership': 'Членство', 'memberRequests': 'Заявки на членство',
     'events': 'Афиша', 'event': 'Мероприятие', 'bookings': 'Мои записи',
     'bar': 'Меню бара', 'drink': 'Напиток', 'barCart': 'Заказ', 'barOrder': 'Состояние заказа',
     'barQueue': 'Заказы на баре', 'barShot': 'Съёмка напитков', 'barDay': 'Отчёт за день',
