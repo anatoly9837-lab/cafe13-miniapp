@@ -5387,6 +5387,7 @@ if (grantsSet.length !== 1) {
     const cardsCase = (me, r) => open(true, true, json(200, me), null, null, null, q => {
       const u = q.url(), m = q.method();
       if (u.endsWith('/directions')) return DIR(true);
+      if (u.includes('/bar/orders') && m === 'GET') return json(200, []);
       // заведённая карточка появляется в перечитанной очереди, как на сервере
       if (/\/bar\/products\?/.test(u)) return r.list || json(200, r.made ? QUEUE_.concat([P(60, 'draft', 'Флэт-уайт', 'Кофе', [])]) : QUEUE_);
       if (/\/bar\/products\/\d+\/recipe\?lang=ru$/.test(u) && m === 'GET') return json(200, { product_id: 53, lang: 'ru', asked_lang: 'ru', exact: true, body: 'старый рецепт', created_at: '2026-10-21T10:00:00+00:00' });
@@ -5524,9 +5525,61 @@ if (grantsSet.length !== 1) {
     {
       const s = await cardsCase(MEMBER, {});
       if (await s.p.$('[data-go="barCards"]')) bad.push('cards-member: у члена клуба без роли есть вход «Карточки меню»');
+      await s.p.evaluate(() => go('barQueue')); await s.p.waitForTimeout(200);
+      if (await s.p.$('#view [data-go="barCards"]')) bad.push('cards-member: на экране заказов у члена клуба без роли есть вход «Карточки меню» (Cafe13KPG#396)');
       await s.p.evaluate(() => go('barCards')); await s.p.waitForTimeout(200);
       if (s.calls.some(c => /\/bar\/products/.test(c.url))) bad.push('cards-member: очередь спрошена без права');
       if (await s.p.evaluate(() => window.__main !== null)) bad.push('cards-member: главная кнопка без права');
+      await s.ctx.close();
+    }
+    // Бармен без членства (Сой): «Клуб» вкладкой не приходит, вход в карточки — на «Заказах»
+    // под сменой и над счётчиками (кадр E41, Cafe13KPG#396), и «назад» ведёт обратно
+    // в «Заказы», а не на услуги гостя (Cafe13KPG#403).
+    {
+      const SOI = clone(WORKER); SOI.membership_active = false; SOI.membership = null; SOI.memberships = [];
+      const s = await cardsCase(SOI, {});
+      const n = 'cards-queue';
+      if (await s.p.$('#tabs [data-go="home"]')) bad.push(`${n}: у работника без членства есть вкладка «Клуб» — фикстура не та`);
+      if (!(await s.p.$('#tabs [data-go="barQueue"]'))) bad.push(`${n}: у работника бара нет вкладки «Заказы»`);
+      else {
+        await s.p.click('#tabs [data-go="barQueue"]'); await s.p.waitForTimeout(250);
+        const at = await s.p.evaluate(() => {
+          const kids = [...document.querySelectorAll('#view > *')];
+          const i = kids.findIndex(e => e.querySelector('[data-go="barCards"]'));
+          const shift = kids.findIndex(e => /Смена/.test(e.textContent));
+          const rows = kids.findIndex(e => e.classList.contains('rows'));
+          return { i, shift, rows, cur: current };
+        });
+        console.log(`${n}: вход на месте ${at.i}, смена ${at.shift}, счётчики ${at.rows}`);
+        if (at.cur !== 'barQueue') bad.push(`${n}: вкладка «Заказы» открыла ${at.cur}`);
+        else if (at.i < 0) bad.push(`${n}: на «Заказах» нет входа «Карточки меню» — у бармена без членства другой двери нет (Cafe13KPG#396)`);
+        else if (at.shift < 0 || at.rows < 0 || !(at.shift < at.i && at.i < at.rows))
+          bad.push(`${n}: вход «Карточки меню» не между сменой и счётчиками: вход ${at.i}, смена ${at.shift}, счётчики ${at.rows} (кадр E41)`);
+        if (at.i >= 0) {
+          await s.p.click('#view [data-go="barCards"]'); await s.p.waitForTimeout(300);
+          if (await s.p.evaluate(() => current) !== 'barCards') bad.push(`${n}: вход не открыл «Карточки меню»`);
+          else {
+            if (await s.p.evaluate(() => backTo()) !== 'barQueue') bad.push(`${n}: «назад» из карточек ведёт не в «Заказы», откуда вошли (Cafe13KPG#403)`);
+            await openCard(s, 51);
+            if (await s.p.evaluate(() => current) !== 'barCard') bad.push(`${n}: карточка 51 не открылась`);
+            // «назад» — тем же путём, что кнопка шапки и BackButton Telegram: go(backTo())
+            await s.p.evaluate(() => go(backTo())); await s.p.waitForTimeout(250);
+            const back2 = await s.p.evaluate(() => [current, backTo()]);
+            if (back2[0] !== 'barCards' || back2[1] !== 'barQueue')
+              bad.push(`${n}: после карточки «назад» из списка ведёт в ${back2[1]}, а не в «Заказы» (Cafe13KPG#403)`);
+            await s.p.evaluate(() => go(backTo())); await s.p.waitForTimeout(250);
+            if (await s.p.evaluate(() => current) !== 'barQueue') bad.push(`${n}: два «назад» привели не в «Заказы»`);
+          }
+        }
+      }
+      await s.ctx.close();
+    }
+    // работник с членством входит из «Клуба» — и «назад» ведёт в «Клуб», а не в «Заказы»
+    {
+      const s = await cardsCase(WORKER, {});
+      if (await toCards(s)) {
+        if (await s.p.evaluate(() => backTo()) !== 'home') bad.push('cards-home-back: вошли из «Клуба», а «назад» ведёт не туда (Cafe13KPG#403)');
+      } else bad.push('cards-home-back: у работника с членством нет входа в «Клубе»');
       await s.ctx.close();
     }
     // новая карточка: предупреждение до сохранения; группа сводится к существующей без регистра

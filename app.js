@@ -1798,7 +1798,7 @@ function peopleFilter() {
 var CARD_STATES = ['draft', 'review', 'active', 'hidden'];
 var CARD_LANGS = [['ru', 'RU'], ['en', 'EN'], ['th', 'TH']];
 var CARD_FIELDS = ['c-title', 'c-group', 'c-price', 'c-mins', 'c-about'];
-var CARDS = { list: null, fail: '', gen: 0 };
+var CARDS = { list: null, fail: '', gen: 0, from: '' };
 var CARD = { v: {}, alcohol: false, lang: 'ru', text: {}, body: {}, err: '', deny: '', note: '',
              busy: false, back: false, reason: '', hideAsk: false, groupAsk: '' };
 
@@ -4342,6 +4342,13 @@ var SCREENS = {
         (BAR ? shiftBlock() : '<div class="card strong"><h2>Заказы на баре</h2></div>') +
         (canBook() ? '<div class="row" style="gap:8px"><button type="button" class="btn ghost" data-go="barMoney">Доход и расход</button>' +
                      '<button type="button" class="btn ghost" data-go="barDay">Отчёт за день</button></div>' : '') +
+        // Вход в карточки — здесь, а не только в «Клубе»: «Клуб» приходит вкладкой лишь
+        // при живом членстве, а «Заказы» работник бара видит всегда (barSide). Кадр E41,
+        // Cafe13KPG#396. Строка та же, что в группе «Работа» на home.
+        (mayCards() ? '<div class="group"><span class="label">Работа</span>' +
+          '<button type="button" class="listitem" data-go="barCards">' +
+            '<span class="grow"><b>Карточки меню</b><span class="small">Новые позиции и утверждение</span></span>' +
+            svg(ICON.chev, 'chev') + '</button></div>' : '') +
         (QUEUE_FAIL ? '<div class="card quiet"><span class="small">' + esc(QUEUE_FAIL) + '</span></div>' : '') +
         (QUEUE === null ? (QUEUE_FAIL ? '' : '<div class="card quiet"><span class="small">Загружаем очередь…</span></div>') :
           '<div class="rows">' +
@@ -5035,7 +5042,9 @@ var BACK = {
   eventManage: 'organizer',
   people: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
-  barCards: function () { return homeOf(); }, barCard: 'barCards',
+  // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
+  // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
+  barCards: function () { return CARDS.from || homeOf(); }, barCard: 'barCards',
   serviceNew: 'partner', consentFull: 'consent',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   barRecipe: function () { return 'drink'; },
@@ -5105,6 +5114,9 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
+  // с самой карточки в список возвращаются — это не новый вход, «откуда» не трогать
+  if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard')
+    CARDS.from = current === 'barQueue' ? 'barQueue' : homeOf();
   if (screen === 'barCards' && current !== 'barCards' && mayCards()) loadCards();
   if (screen === 'barCard' && (current !== 'barCard' || String(param) !== String(p))) {
     // заметка «черновик сохранён» переживает переход с формы на саму карточку
