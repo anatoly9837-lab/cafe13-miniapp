@@ -84,7 +84,7 @@ docker run --rm -v $PWD:/app:ro -v <каталог-снимков>:/work -w /wor
 собирает `tools/catalog.py`.
 
 ```bash
-docker run --rm -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
+docker run --rm -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /work/shots.cjs
 python3 tools/catalog.py <каталог-снимков>
 ```
