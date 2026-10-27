@@ -47,16 +47,38 @@ figure { margin:0; display:flex; flex-direction:column; gap:11px; }
 }
 .shot img { display:block; width:100%; height:auto; }
 figcaption { font-size:13px; color:var(--muted); }
+.shot { border-width:3px; }                      /* рамка стадии — цвет ставит СТАДИИ.tsv */
+.nosh {
+  border:3px dashed var(--line); border-radius:20px; background:var(--surface);
+  min-height:190px; display:flex; align-items:center; justify-content:center;
+  padding:18px; text-align:center; font-size:12px; color:var(--muted);
+}
+.stage { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.4px;
+         border-radius:999px; padding:2px 9px; border:1px solid currentColor; }
+.who { display:block; margin-top:5px; font-size:12px; }
+.who b { display:inline; font-weight:600; color:var(--ink); }
+.legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:20px; font-size:12px; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:7px; }
+.legend i { width:22px; height:14px; border:3px solid currentColor; border-radius:5px; }
 figcaption b { display:block; color:var(--ink); font-size:13px; font-weight:700; margin-bottom:3px; }
 figcaption b span { color:var(--gold-ink); font-variant-numeric:tabular-nums; }
+figcaption b em { font-style:normal; font-weight:500; color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
 footer { border-top:1px solid var(--line); padding-top:22px; font-size:13px; color:var(--muted); }
 footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:var(--ink); }
 </style></head><body>
 <div class="wrap"><header>
 <div class="wordmark">Caf&eacute; XIII</div>
 <h1>Экраны мини-приложения</h1>
-<div class="meta">v61 · 27.10.2026 &middot; 32 экрана &middot; снято с живой страницы, 390&nbsp;&times;&nbsp;844 &middot; <a href="https://anatoly9837-lab.github.io/cafe13-miniapp/">открыть приложение</a></div>
+<div class="meta">v60 · 27.10.2026 &middot; 42 экрана, снимков 33 &middot; снимок — с живой страницы, 390&nbsp;&times;&nbsp;844 &middot; <a href="https://anatoly9837-lab.github.io/cafe13-miniapp/">открыть приложение</a></div>
 <p class="lead">Полная опись экранов мини-приложения клуба. Каждый снимок сделан с живой страницы на экране телефона 390 × 844 — это не макет и не рисунок поверх идеи: то же самое открывается по ссылке ниже.</p>
+<p class="lead">Стадия каждого экрана — рамкой, и берётся она из одного файла (СТАДИИ.tsv), а не ставится руками. «Видят» — это ВЫВОД ПО КОДУ приложения: от вкладок человека прибор идёт по входам на отрисованных экранах, пока находятся новые. Право без входа видимостью не считается. Где вход рисуется строкой данных сервера или туда уходит сам код, это сказано словами: «никто» у такого экрана значило бы не «пути нет», а «нечем измерить». Под каждым человеком экран никто не открывал, наблюдение — отдельный шаг. Состав ролей и членств взят из тестовой базы (замер devops5, 27.10.2026, только чтение), а в бою он другой: у владельца там бессрочное членство, и вкладка «Клуб» у него есть.</p>
+<div class="legend">
+<span style="color:#9AA0A3"><i></i>нарисован — кадр есть, кода нет</span>
+<span style="color:#8E3324"><i></i>не готов — код есть, человеку не показывается</span>
+<span style="color:#AF984D"><i></i>в тесте — показывается, идёт проверка</span>
+<span style="color:#485143"><i></i>рабочий — тест принят владельцем</span>
+<span style="color:#485143"><i></i>анонсирован — людям сказано</span>
+</div>
 <div class="absent">
 <div><b>Снимки — демонстрация, а не данные клуба</b> <span>&mdash; опись снята вне Telegram, где приложение показывает демо с зашитыми числами. Внутри Telegram оно работает на сервере клуба: кабинет, пропуск, меню и заказ бара, очередь на баре. Остальные разделы там честно помечены «ещё не подключено».</span></div>
 <div><b>Фотографий напитков нет</b> <span>&mdash; на их месте цветные плитки и честная пометка. Картинку из каталога ставить нельзя: гость закажет не то, что увидел.</span></div>
@@ -74,124 +96,170 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 <a href="#g8">Касса</a>
 <a href="#g9">Служебное</a>
 <a href="#g10">Ночная тема</a>
+<a href="#g11">Клуб · ответственность</a>
+<a href="#g12">Нарисовано, кода ещё нет</a>
 </nav></header>
 <section id="g0"><div class="head">
 <span class="count">2 экрана</span>
 <h2>Первый вход</h2>
 <p>То, что человек видит до всего остального — один раз, при первом открытии.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/01-consent.png" alt="Согласие на данные. Первый экран до всего остального: без вкладок и «назад», уйт" width="780" height="1688"></div>
-<figcaption><b><span>01</span> &nbsp;consent</b>Согласие на данные. Первый экран до всего остального: без вкладок и «назад», уйти можно только решением.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/02-consent-full.png" alt="Полный текст согласия разделами. Черновик — перед открытием для людей со стороны" width="780" height="1688"></div>
-<figcaption><b><span>02</span> &nbsp;consentFull</b>Полный текст согласия разделами. Черновик — перед открытием для людей со стороны его смотрит тайский юрист.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/01-consent.png" alt="Согласие на данные. Первый экран до всего остального: без вкладок и «назад», уйт" width="780" height="1688"></div>
+<figcaption><b><span>01</span> &nbsp;Согласие на данные <em>consent</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Согласие на данные. Первый экран до всего остального: без вкладок и «назад», уйти можно только решением.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/02-consent-full.png" alt="Полный текст согласия разделами. Черновик — перед открытием для людей со стороны" width="780" height="1688"></div>
+<figcaption><b><span>02</span> &nbsp;Согласие · полный текст <em>consentFull</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Полный текст согласия разделами. Черновик — перед открытием для людей со стороны его смотрит тайский юрист.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
 </div></section>
 <section id="g1"><div class="head">
 <span class="count">1 экран</span>
 <h2>Гость без членства</h2>
 <p>Без членства открыты услуги острова и бар. Клуб закрыт, и это сказано прямо, а не спрятано.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/03-guest.png" alt="Услуги и бар видны всем, клуб — нет. Бар стоит первой строкой: это первое направ" width="780" height="1688"></div>
-<figcaption><b><span>03</span> &nbsp;guest</b>Услуги и бар видны всем, клуб — нет. Бар стоит первой строкой: это первое направление клуба.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/03-guest.png" alt="Услуги и бар видны всем, клуб — нет. Бар стоит первой строкой: это первое направ" width="780" height="1688"></div>
+<figcaption><b><span>03</span> &nbsp;Услуги и бар <em>guest</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Услуги и бар видны всем, клуб — нет. Бар стоит первой строкой: это первое направление клуба.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; своя вкладка</span></figcaption></figure>
 </div></section>
 <section id="g2"><div class="head">
-<span class="count">6 экранов</span>
+<span class="count">7 экранов</span>
 <h2>Член клуба</h2>
 <p>Ежедневные экраны: пропуск, афиша, записи, баланс.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/04-home.png" alt="Главный экран: уровень, срок, баланс, ближайшая запись." width="780" height="1688"></div>
-<figcaption><b><span>04</span> &nbsp;home</b>Главный экран: уровень, срок, баланс, ближайшая запись.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/05-pass.png" alt="Пропуск. Работает без интернета, сеть нужна тому, кто сканирует." width="780" height="1688"></div>
-<figcaption><b><span>05</span> &nbsp;pass</b>Пропуск. Работает без интернета, сеть нужна тому, кто сканирует.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/06-membership.png" alt="Уровни членства и что каждый даёт. Без сумм: цены называет владелец." width="780" height="1688"></div>
-<figcaption><b><span>06</span> &nbsp;membership</b>Уровни членства и что каждый даёт. Без сумм: цены называет владелец.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/07-events.png" alt="Афиша по дням." width="780" height="1688"></div>
-<figcaption><b><span>07</span> &nbsp;events</b>Афиша по дням.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/08-event.png" alt="Мероприятие: цена, места, съёмка, запись." width="780" height="1688"></div>
-<figcaption><b><span>08</span> &nbsp;event</b>Мероприятие: цена, места, съёмка, запись.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/09-bookings.png" alt="Свои записи — предстоящие и прошедшие." width="780" height="1688"></div>
-<figcaption><b><span>09</span> &nbsp;bookings</b>Свои записи — предстоящие и прошедшие.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/04-home.png" alt="Главный экран: уровень, срок, баланс, ближайшая запись." width="780" height="1688"></div>
+<figcaption><b><span>04</span> &nbsp;Клуб <em>home</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Главный экран: уровень, срок, баланс, ближайшая запись.</span><span class="who">видят: <b>куратор с живым членством</b> &middot; своя вкладка</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/05-pass.png" alt="Пропуск. Работает без интернета, сеть нужна тому, кто сканирует." width="780" height="1688"></div>
+<figcaption><b><span>05</span> &nbsp;Пропуск <em>pass</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Пропуск. Работает без интернета, сеть нужна тому, кто сканирует.</span><span class="who">видят: <b>куратор с живым членством</b> &middot; дверь на «Клуб»</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/06-membership.png" alt="Уровни членства и что каждый даёт. Без сумм: цены называет владелец." width="780" height="1688"></div>
+<figcaption><b><span>06</span> &nbsp;Членство <em>membership</em></b><span class="stage" style="color:#8E3324">не готов</span> &middot; кадры E38<span class="who">Уровни членства и что каждый даёт. Без сумм: цены называет владелец.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/07-events.png" alt="Афиша по дням." width="780" height="1688"></div>
+<figcaption><b><span>07</span> &nbsp;Афиша <em>events</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Афиша по дням.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; дверь на «Клуб» или «Мои записи» или «Мои мероприятия» и путь открыт только при непустой афише</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/08-event.png" alt="Мероприятие: цена, места, съёмка, запись." width="780" height="1688"></div>
+<figcaption><b><span>08</span> &nbsp;Мероприятие <em>event</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E37<span class="who">Мероприятие: цена, места, съёмка, запись.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; за экраном «Афиша» (в мероприятие ведёт строка афиши — обходом не подтверждено) и путь открыт только при непустой афише</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/09-bookings.png" alt="Свои записи — предстоящие и прошедшие." width="780" height="1688"></div>
+<figcaption><b><span>09</span> &nbsp;Мои записи <em>bookings</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E40<span class="who">Свои записи — предстоящие и прошедшие.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; своя вкладка</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/33-topup.png" alt="Свой счёт у члена клуба: остаток и чем он пополняется. Форму «внести себе» видит" width="780" height="1688"></div>
+<figcaption><b><span>10</span> &nbsp;Свой счёт <em>topup</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Свой счёт у члена клуба: остаток и чем он пополняется. Форму «внести себе» видит только тот, у кого право кассы, — её здесь нет.</span><span class="who">видят: <b>сегодня никто</b> &middot; право canTopup() и за экраном «Клуб» (вход — кнопка «Внести себе на счёт» на экране «Клуб» — обходом не подтверждено)</span></figcaption></figure>
 </div></section>
 <section id="g3"><div class="head">
 <span class="count">5 экранов</span>
 <h2>Бар · гость заказывает</h2>
 <p>Первое направление клуба. Меню, заказ из приложения, состояние заказа.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/10-bar.png" alt="Раздел «Бар» в услугах. Открыт или закрыт — видно сразу, заказ закрытому бару не" width="780" height="1688"></div>
-<figcaption><b><span>10</span> &nbsp;bar</b>Раздел «Бар» в услугах. Открыт или закрыт — видно сразу, заказ закрытому бару не уйдёт.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/11-bar-menu.png" alt="Меню группами. Позиции без фотографии честно помечены: картинок из каталогов не " width="780" height="1688"></div>
-<figcaption><b><span>11</span> &nbsp;bar</b>Меню группами. Позиции без фотографии честно помечены: картинок из каталогов не будет.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/12-drink.png" alt="Карточка напитка — место, куда попадает фотография после съёмки." width="780" height="1688"></div>
-<figcaption><b><span>12</span> &nbsp;drink</b>Карточка напитка — место, куда попадает фотография после съёмки.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/13-bar-cart.png" alt="Заказ: состав, куда подать, итог и «Купить». Оплата только со счёта в клубе — на" width="780" height="1688"></div>
-<figcaption><b><span>13</span> &nbsp;barCart</b>Заказ: состав, куда подать, итог и «Купить». Оплата только со счёта в клубе — наличные бар не принимает; отказ сервера показывается его словами над кнопкой, корзина остаётся.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/14-bar-order.png" alt="Состояние заказа. Те же пять шагов видит бар — расхождения быть не может." width="780" height="1688"></div>
-<figcaption><b><span>14</span> &nbsp;barOrder</b>Состояние заказа. Те же пять шагов видит бар — расхождения быть не может.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/10-bar.png" alt="Раздел «Бар» в услугах. Открыт или закрыт — видно сразу, заказ закрытому бару не" width="780" height="1688"></div>
+<figcaption><b><span>11</span> &nbsp;Меню бара <em>bar</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E21<span class="who">Раздел «Бар» в услугах. Открыт или закрыт — видно сразу, заказ закрытому бару не уйдёт.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; дверь на «Услуги и бар»</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/11-bar-menu.png" alt="Меню группами. Позиции без фотографии честно помечены: картинок из каталогов не " width="780" height="1688"></div>
+<figcaption><b><span>12</span> &nbsp;Меню бара <em>bar</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E21<span class="who">Меню группами. Позиции без фотографии честно помечены: картинок из каталогов не будет.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; дверь на «Услуги и бар»</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/12-drink.png" alt="Карточка напитка — место, куда попадает фотография после съёмки." width="780" height="1688"></div>
+<figcaption><b><span>13</span> &nbsp;Напиток <em>drink</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E22<span class="who">Карточка напитка — место, куда попадает фотография после съёмки.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; за экраном «Меню бара» (в карточку ведёт строка меню, а меню без сервера пусто — обходом не подтверждено)</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/13-bar-cart.png" alt="Заказ: состав, куда подать, итог и «Купить». Оплата только со счёта в клубе — на" width="780" height="1688"></div>
+<figcaption><b><span>14</span> &nbsp;Заказ <em>barCart</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E23<span class="who">Заказ: состав, куда подать, итог и «Купить». Оплата только со счёта в клубе — наличные бар не принимает; отказ сервера показывается его словами над кнопкой, корзина остаётся.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; за экраном «Меню бара» (кнопка «Оформить» появляется, когда в заказе что-то есть — обходом не подтверждено)</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/14-bar-order.png" alt="Состояние заказа. Те же пять шагов видит бар — расхождения быть не может." width="780" height="1688"></div>
+<figcaption><b><span>15</span> &nbsp;Состояние заказа <em>barOrder</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E24<span class="who">Состояние заказа. Те же пять шагов видит бар — расхождения быть не может.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; за экраном «Заказ» (открывается ответом сервера на оформленный заказ — обходом не подтверждено)</span></figcaption></figure>
 </div></section>
 <section id="g4"><div class="head">
-<span class="count">6 экранов</span>
+<span class="count">9 экранов</span>
 <h2>Бар · исполнитель</h2>
 <p>Рабочее место на баре: заказы, съёмка напитков, отчёт за день, затраты направления.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/15-bar-queue.png" alt="Заказы на баре: новый → принят → готов → выдан. Уведомление о новом заказе прихо" width="780" height="1688"></div>
-<figcaption><b><span>15</span> &nbsp;barQueue</b>Заказы на баре: новый → принят → готов → выдан. Уведомление о новом заказе приходит в чат бара.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/16-bar-shot.png" alt="Визуализатор: снимок с бара уходит ИИ-команде, та собирает карточку меню, курато" width="780" height="1688"></div>
-<figcaption><b><span>16</span> &nbsp;barShot</b>Визуализатор: снимок с бара уходит ИИ-команде, та собирает карточку меню, куратор утверждает.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/17-bar-shot-how.png" alt="Правила съёмки и список позиций без фотографии." width="780" height="1688"></div>
-<figcaption><b><span>17</span> &nbsp;barShot</b>Правила съёмки и список позиций без фотографии.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/18-bar-day.png" alt="Отчёт за день: выручка наличными и со счетов, чеки, средний чек." width="780" height="1688"></div>
-<figcaption><b><span>18</span> &nbsp;barDay</b>Отчёт за день: выручка наличными и со счетов, чеки, средний чек.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/19-bar-day-end.png" alt="Расход дня и сверка наличных. Закрытая смена не правится." width="780" height="1688"></div>
-<figcaption><b><span>19</span> &nbsp;barDay</b>Расход дня и сверка наличных. Закрытая смена не правится.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/20-bar-expense.png" alt="Учёт затрат направления: что, сколько, категория, чем платили, фото чека." width="780" height="1688"></div>
-<figcaption><b><span>20</span> &nbsp;barExpense</b>Учёт затрат направления: что, сколько, категория, чем платили, фото чека.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/15-bar-queue.png" alt="Заказы на баре: новый → принят → готов → выдан. Уведомление о новом заказе прихо" width="780" height="1688"></div>
+<figcaption><b><span>16</span> &nbsp;Заказы на баре <em>barQueue</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E41<span class="who">Заказы на баре: новый → принят → готов → выдан. Уведомление о новом заказе приходит в чат бара.</span><span class="who">видят: <b>владелец, куратор с живым членством, работник бара без членства</b> &middot; своя вкладка или дверь на «Клуб»</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/16-bar-shot.png" alt="Визуализатор: снимок с бара уходит ИИ-команде, та собирает карточку меню, курато" width="780" height="1688"></div>
+<figcaption><b><span>17</span> &nbsp;Съёмка напитков <em>barShot</em></b><span class="stage" style="color:#8E3324">не готов</span> &middot; кадры E30<span class="who">Визуализатор: снимок с бара уходит ИИ-команде, та собирает карточку меню, куратор утверждает.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/17-bar-shot-how.png" alt="Правила съёмки и список позиций без фотографии." width="780" height="1688"></div>
+<figcaption><b><span>18</span> &nbsp;Съёмка напитков <em>barShot</em></b><span class="stage" style="color:#8E3324">не готов</span> &middot; кадры E30<span class="who">Правила съёмки и список позиций без фотографии.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/18-bar-day.png" alt="Отчёт за день: выручка наличными и со счетов, чеки, средний чек." width="780" height="1688"></div>
+<figcaption><b><span>19</span> &nbsp;Отчёт за день <em>barDay</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Отчёт за день: выручка наличными и со счетов, чеки, средний чек.</span><span class="who">видят: <b>владелец, куратор с живым членством</b> &middot; право mayBook() и за экраном «Заказы на баре» (вход — на экране заказов при открытой смене — обходом не подтверждено)</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/19-bar-day-end.png" alt="Расход дня и сверка наличных. Закрытая смена не правится." width="780" height="1688"></div>
+<figcaption><b><span>20</span> &nbsp;Отчёт за день <em>barDay</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Расход дня и сверка наличных. Закрытая смена не правится.</span><span class="who">видят: <b>владелец, куратор с живым членством</b> &middot; право mayBook() и за экраном «Заказы на баре» (вход — на экране заказов при открытой смене — обходом не подтверждено)</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/20-bar-expense.png" alt="Учёт затрат направления: что, сколько, категория, чем платили, фото чека." width="780" height="1688"></div>
+<figcaption><b><span>21</span> &nbsp;Затраты направления <em>barExpense</em></b><span class="stage" style="color:#8E3324">не готов</span><span class="who">Учёт затрат направления: что, сколько, категория, чем платили, фото чека.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>22</span> &nbsp;Рецепт напитка <em>barRecipe</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E28<span class="who">Рецепт напитка: как готовить, на русском и тайском. Его видят бар и куратор направления.</span><span class="who">видимость: админ, а бар и куратор — на своём направлении (mayRecipe; направление приходит с сервера, прибором здесь не считается)</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>23</span> &nbsp;Карточки меню <em>barCards</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E26,E39<span class="who">Список карточек меню у того, кто их заводит: ждут утверждения, возвращены, черновики, в меню, сняты.</span><span class="who">видят: <b>владелец, куратор с живым членством, работник бара без членства</b> &middot; дверь на «Заказы на баре» или «Клуб»</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>24</span> &nbsp;Карточка напитка <em>barCard</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E27,E33<span class="who">Карточка напитка: название, группа, цена, минуты, описание, алкоголь; рецепт на двух языках.</span><span class="who">видят: <b>владелец, куратор с живым членством, работник бара без членства</b> &middot; право mayCards() и за экраном «Карточки меню» (в карточку ведёт строка списка карточек, а список приходит с сервера — обходом не подтверждено)</span></figcaption></figure>
 </div></section>
 <section id="g5"><div class="head">
-<span class="count">2 экрана</span>
+<span class="count">3 экрана</span>
 <h2>Бар · куратор</h2>
 <p>Кабинет куратора: деньги месяца, доля клуба, состояние меню.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/21-curator.png" alt="Кабинет куратора: месяц, чистая прибыль, доля клуба — и сколько вышло бы по втор" width="780" height="1688"></div>
-<figcaption><b><span>21</span> &nbsp;curator</b>Кабинет куратора: месяц, чистая прибыль, доля клуба — и сколько вышло бы по второму способу, 13 % с вала.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/22-curator-days.png" alt="Выручка по дням и состояние меню: сколько позиций без фотографии." width="780" height="1688"></div>
-<figcaption><b><span>22</span> &nbsp;curator</b>Выручка по дням и состояние меню: сколько позиций без фотографии.</figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/21-curator.png" alt="Кабинет куратора: месяц, чистая прибыль, доля клуба — и сколько вышло бы по втор" width="780" height="1688"></div>
+<figcaption><b><span>25</span> &nbsp;Кабинет куратора <em>curator</em></b><span class="stage" style="color:#8E3324">не готов</span><span class="who">Кабинет куратора: месяц, чистая прибыль, доля клуба — и сколько вышло бы по второму способу, 13 % с вала.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/22-curator-days.png" alt="Выручка по дням и состояние меню: сколько позиций без фотографии." width="780" height="1688"></div>
+<figcaption><b><span>26</span> &nbsp;Кабинет куратора <em>curator</em></b><span class="stage" style="color:#8E3324">не готов</span><span class="who">Выручка по дням и состояние меню: сколько позиций без фотографии.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>27</span> &nbsp;Доход и расход бара <em>barMoney</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Доход и расход направления руками: вид, сумма, категория, чем платили.</span><span class="who">видят: <b>куратор с живым членством</b> &middot; дверь на «Клуб»</span></figcaption></figure>
 </div></section>
 <section id="g6"><div class="head">
 <span class="count">3 экрана</span>
 <h2>Мастер</h2>
 <p>Член клуба, который проводит свои мероприятия и сам назначает их цену.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/23-organizer.png" alt="Свои мероприятия и наполненность." width="780" height="1688"></div>
-<figcaption><b><span>23</span> &nbsp;organizer</b>Свои мероприятия и наполненность.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/24-event-new.png" alt="Создание мероприятия." width="780" height="1688"></div>
-<figcaption><b><span>24</span> &nbsp;eventNew</b>Создание мероприятия.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/25-event-manage.png" alt="Управление своим мероприятием и список записавшихся." width="780" height="1688"></div>
-<figcaption><b><span>25</span> &nbsp;eventManage</b>Управление своим мероприятием и список записавшихся.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/23-organizer.png" alt="Свои мероприятия и наполненность." width="780" height="1688"></div>
+<figcaption><b><span>28</span> &nbsp;Мои мероприятия <em>organizer</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Свои мероприятия и наполненность.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством</b> &middot; дверь на «Афиша» и путь открыт только при непустой афише</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/24-event-new.png" alt="Создание мероприятия." width="780" height="1688"></div>
+<figcaption><b><span>29</span> &nbsp;Новое мероприятие <em>eventNew</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Создание мероприятия.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством</b> &middot; дверь на «Афиша» или «Мои мероприятия» и путь открыт только при непустой афише</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/25-event-manage.png" alt="Управление своим мероприятием и список записавшихся." width="780" height="1688"></div>
+<figcaption><b><span>30</span> &nbsp;Управление мероприятием <em>eventManage</em></b><span class="stage" style="color:#8E3324">не готов</span><span class="who">Управление своим мероприятием и список записавшихся.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
 </div></section>
 <section id="g7"><div class="head">
 <span class="count">2 экрана</span>
 <h2>Бизнес-партнёр</h2>
 <p>Член клуба со своим направлением внутри клуба и его отчётностью.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/26-partner.png" alt="Своё направление и его отчётность." width="780" height="1688"></div>
-<figcaption><b><span>26</span> &nbsp;partner</b>Своё направление и его отчётность.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/27-service-new.png" alt="Новая услуга — на проверку директору." width="780" height="1688"></div>
-<figcaption><b><span>27</span> &nbsp;serviceNew</b>Новая услуга — на проверку директору.</figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/26-partner.png" alt="Своё направление и его отчётность." width="780" height="1688"></div>
+<figcaption><b><span>31</span> &nbsp;Моё направление <em>partner</em></b><span class="stage" style="color:#8E3324">не готов</span><span class="who">Своё направление и его отчётность.</span><span class="who">видят: <b>куратор с живым членством (не всегда)</b> &middot; своя вкладка</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#8E3324"><img loading="lazy" src="screens/27-service-new.png" alt="Новая услуга — на проверку директору." width="780" height="1688"></div>
+<figcaption><b><span>32</span> &nbsp;Новая услуга <em>serviceNew</em></b><span class="stage" style="color:#8E3324">не готов</span><span class="who">Новая услуга — на проверку директору.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
 </div></section>
 <section id="g8"><div class="head">
-<span class="count">1 экран</span>
+<span class="count">5 экранов</span>
 <h2>Касса</h2>
 <p>Работник: сканировать пропуск, внести деньги.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/28-staff.png" alt="Касса: сканировать пропуск, принять деньги." width="780" height="1688"></div>
-<figcaption><b><span>28</span> &nbsp;staff</b>Касса: сканировать пропуск, принять деньги.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/28-staff.png" alt="Касса: сканировать пропуск, принять деньги." width="780" height="1688"></div>
+<figcaption><b><span>33</span> &nbsp;Касса <em>staff</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who">Касса: сканировать пропуск, принять деньги.</span><span class="who">видят: <b>владелец, работник кассы без членства</b> &middot; своя вкладка</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>34</span> &nbsp;День кассы <em>tillDay</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E36<span class="who">День кассы: что принято за сутки и чем, с отменой строки.</span><span class="who">видят: <b>владелец, работник кассы без членства</b> &middot; дверь на «Касса»</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>35</span> &nbsp;Карточка человека <em>tillPerson</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who">Карточка человека у кассира: членство, баланс, что ему продать.</span><span class="who">видят: <b>владелец, работник кассы без членства</b> &middot; за экраном «Касса» (кнопки нет вовсе: туда уходит сам код, ответом на скан пропуска — обходом не подтверждено)</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>36</span> &nbsp;Продажа членства <em>tillMembership</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who">Продажа членства в кассе.</span><span class="who">видят: <b>владелец, работник кассы без членства</b> &middot; за экраном «Карточка человека» (из карточки человека, строкой «что продать» — обходом не подтверждено)</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>37</span> &nbsp;Пополнение в кассе <em>tillTopup</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who">Пополнение счёта в кассе.</span><span class="who">видят: <b>владелец, работник кассы без членства</b> &middot; за экраном «Карточка человека» (из карточки человека, строкой «что продать» — обходом не подтверждено)</span></figcaption></figure>
 </div></section>
 <section id="g9"><div class="head">
-<span class="count">1 экран</span>
+<span class="count">5 экранов</span>
 <h2>Служебное</h2>
 <p>Экран под солнышком. Кнопка солнышка есть только у god и god_mentor в Telegram; вне Telegram её нет ни у кого. Снимок — тот же экран в демонстрации.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/29-demo.png" alt="Демо-режим: переключение роли и версия приложения." width="780" height="1688"></div>
-<figcaption><b><span>29</span> &nbsp;demo</b>Демо-режим: переключение роли и версия приложения.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/29-demo.png" alt="Демо-режим: переключение роли и версия приложения." width="780" height="1688"></div>
+<figcaption><b><span>38</span> &nbsp;Демо-режим <em>demo</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Демо-режим: переключение роли и версия приложения.</span><span class="who">видимость: кнопка солнышка — только у god и god_mentor и только в Telegram</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>39</span> &nbsp;Загрузка <em>loading</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Пока идёт первый ответ сервера.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>40</span> &nbsp;Подпись не дошла <em>noSign</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Подпись Telegram не дошла — войти нечем.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>41</span> &nbsp;Нет доступа <em>noAccess</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Человека нет в списке клуба.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>42</span> &nbsp;Сервер молчит <em>apiDown</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Сервер клуба не отвечает.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
 </div></section>
 <section id="g10"><div class="head">
 <span class="count">3 экрана</span>
 <h2>Ночная тема</h2>
 <p>Тему задаёт Telegram, а не приложение. Ночные цвета сняты с вечернего света места.</p></div><div class="grid">
-<figure><div class="shot"><img loading="lazy" src="screens/30-home-dark.png" alt="Главный экран ночью. Тему даёт Telegram, не приложение." width="780" height="1688"></div>
-<figcaption><b><span>30</span> &nbsp;home</b>Главный экран ночью. Тему даёт Telegram, не приложение.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/31-bar-dark.png" alt="Меню бара ночью — вечерние цвета места." width="780" height="1688"></div>
-<figcaption><b><span>31</span> &nbsp;bar</b>Меню бара ночью — вечерние цвета места.</figcaption></figure>
-<figure><div class="shot"><img loading="lazy" src="screens/32-bar-queue-dark.png" alt="Заказы на баре ночью: новый заказ выделен рамкой и золотой полосой." width="780" height="1688"></div>
-<figcaption><b><span>32</span> &nbsp;barQueue</b>Заказы на баре ночью: новый заказ выделен рамкой и золотой полосой.</figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/30-home-dark.png" alt="Главный экран ночью. Тему даёт Telegram, не приложение." width="780" height="1688"></div>
+<figcaption><b><span>43</span> &nbsp;Клуб <em>home</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Главный экран ночью. Тему даёт Telegram, не приложение.</span><span class="who">видят: <b>куратор с живым членством</b> &middot; своя вкладка</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/31-bar-dark.png" alt="Меню бара ночью — вечерние цвета места." width="780" height="1688"></div>
+<figcaption><b><span>44</span> &nbsp;Меню бара <em>bar</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E21<span class="who">Меню бара ночью — вечерние цвета места.</span><span class="who">видят: <b>владелец, работник кассы без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; дверь на «Услуги и бар»</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/32-bar-queue-dark.png" alt="Заказы на баре ночью: новый заказ выделен рамкой и золотой полосой." width="780" height="1688"></div>
+<figcaption><b><span>45</span> &nbsp;Заказы на баре <em>barQueue</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E41<span class="who">Заказы на баре ночью: новый заказ выделен рамкой и золотой полосой.</span><span class="who">видят: <b>владелец, куратор с живым членством, работник бара без членства</b> &middot; своя вкладка или дверь на «Клуб»</span></figcaption></figure>
+</div></section>
+<section id="g11"><div class="head">
+<span class="count">1 экран</span>
+<h2>Клуб · ответственность</h2>
+<p>Кто за что отвечает в клубе: выдать и снять роль.</p></div><div class="grid">
+<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
+<figcaption><b><span>46</span> &nbsp;Люди и ответственность <em>people</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Кто за что отвечает в клубе: выдать и снять ответственность.</span><span class="who">видят: <b>сегодня никто</b> &middot; право mayPeople() и за экраном «Клуб» (вход — строка группы «Клуб» на экране «Клуб» — обходом не подтверждено)</span></figcaption></figure>
+</div></section>
+<section id="g12"><div class="head">
+<span class="count">3 экрана</span>
+<h2>Нарисовано, кода ещё нет</h2>
+<p>Кадры базы экранов есть, кода нет. Стадия 1 по пути экрана: сначала рисуем, потом разрабатываем.</p></div><div class="grid">
+<figure><div class="nosh">снимка нет: кода ещё нет — есть только кадры базы экранов</div>
+<figcaption><b><span>47</span> &nbsp;Занятость суток <em>занятость суток</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E31<span class="who">Занятость места по суткам: накладки, скрытые события, переход через полночь.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: кода ещё нет — есть только кадры базы экранов</div>
+<figcaption><b><span>48</span> &nbsp;Архив мероприятий <em>архив мероприятий</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E32<span class="who">Архив прошедших мероприятий — у работника клуба и у организатора.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
+<figure><div class="nosh">снимка нет: кода ещё нет — есть только кадры базы экранов</div>
+<figcaption><b><span>49</span> &nbsp;Касса · оплата записи <em>касса · оплата записи</em></b><span class="stage" style="color:#9AA0A3">нарисован</span> &middot; кадры E35<span class="who">Оплата записи на мероприятие через кассу: что оплачиваем, взнос, отказы.</span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span></figcaption></figure>
 </div></section>
 <footer>Снимки пересобираются командой <code>tools/shots.cjs</code> (она же проверяет поведение: заказ, принятие заказа, запись затраты), страница — <code>tools/catalog.py</code>. Опись обновляется вместе с приложением: версия вверху должна совпадать с версией в демо-режиме приложения.</footer></div></body></html>
