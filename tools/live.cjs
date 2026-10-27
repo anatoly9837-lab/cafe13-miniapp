@@ -6117,33 +6117,36 @@ if (grantsSet.length !== 1) {
     const posts = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
     const gets = (s, re) => s.calls.filter(c => c.method === 'GET' && re.test(c.url));
 
-    // гость без заявки: виды и цены — сервера, подача одним нажатием
+    // гость без заявки: виды и цены — сервера, вид выбирается, подача одним нажатием (кадр E38)
     {
       const s = await memCase(GUEST), n = 'mreq-tiers';
       await wire(s, 'membership');
       let t = await s.view();
-      for (const w of ['Член клуба', '1 234 ฿ в месяц', '2 345.50 ฿ за 3 месяца', '4 321 ฿ в месяц'])
+      for (const w of ['Членства нет', 'Член клуба', '1 234 ฿', '2 345.50 ฿', 'за 3 месяца', '4 321 ฿', 'в месяц'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}» — цена не с сервера (Cafe13KPG#415)`);
       if (/3 ?316|6 ?633|9 ?950/.test(t)) bad.push(`${n}: на экране настоящая цена, а фикстура её не давала — цена вшита в клиент`);
-      const b = await sends(s);
-      if (b.length !== 3 || b.some(x => x !== 'Подать заявку')) bad.push(`${n}: кнопки подачи ${JSON.stringify(b)}, ждали три «Подать заявку»`);
-      await s.p.evaluate(() => document.querySelector('[data-action="mr-send:organizer"]').click()); await s.p.waitForTimeout(300);
+      let b = await sends(s);
+      if (b.length !== 1 || b[0] !== 'Подать заявку') bad.push(`${n}: кнопки подачи ${JSON.stringify(b)}, ждали одну «Подать заявку»`);
+      await s.p.evaluate(() => document.querySelector('[data-action="mr-pick:organizer"]').click()); await s.p.waitForTimeout(100);
+      const on = await s.p.evaluate(() => [...document.querySelectorAll('#view [aria-pressed="true"]')].map(x => x.textContent));
+      if (on.join() !== 'Мастер') bad.push(`${n}: выбран ${JSON.stringify(on)}, а нажат «Мастер»`);
+      await s.p.evaluate(() => document.querySelector('[data-action^="mr-send:"]').click()); await s.p.waitForTimeout(300);
       const pp = posts(s, /\/membership-requests$/);
       if (pp.length !== 1 || JSON.parse(pp[0].body).tier_code !== 'organizer') bad.push(`${n}: заявка ушла не так: ${JSON.stringify(pp.map(c => c.body))}`);
       t = await s.view();
-      if (!t.includes('Заявка отправлена') || !t.includes('«Мастер»')) bad.push(`${n}: после подачи нет «Заявка отправлена» на «Мастер»`);
-      if ((await sends(s)).length) bad.push(`${n}: после подачи кнопки подачи остались — вторая заявка уйдёт 409`);
+      if (!t.includes('Заявка отправлена') || !t.includes('Мастер · отправлена')) bad.push(`${n}: после подачи нет «Заявка отправлена» на «Мастер»`);
+      if ((await sends(s)).length) bad.push(`${n}: после подачи кнопка подачи осталась — вторая заявка уйдёт 409`);
       await s.ctx.close();
     }
-    // состояния своей заявки из /me
+    // состояния своей заявки из /me (кадры E38d, E38e, E38zh; прошлые — как «заявки нет»)
     for (const [st, said, want, nowant, btn] of [
-      ['pending', '', ['Заявка отправлена', 'Ждём ответа главы клуба'], ['Глава клуба согласен', 'отклонили'], 0],
+      ['pending', '', ['Заявка отправлена', 'ЖДЁТ ОТВЕТА', 'Глава клуба ответит в приложении'], ['Глава клуба согласен', 'Заявка отклонена'], []],
       // ⚠ согласие — не членство: «оформлено» здесь — ложь человеку
-      ['approved', 'ждём в кассе', ['Глава клуба согласен', 'касса'], ['оформлен', 'Оформлен', 'Заявка отправлена'], 0],
-      ['rejected', 'приходите в пятницу', ['Заявку отклонили', 'приходите в пятницу'], ['Глава клуба согласен'], 3],
-      ['rejected', '', ['Заявку отклонили', 'Пояснения глава клуба не оставил'], [], 3],
-      ['completed', '', [], ['Заявка отправлена', 'Глава клуба согласен', 'отклонили'], 3],
-      ['cancelled', '', [], ['Заявка отправлена', 'Глава клуба согласен', 'отклонили'], 3]]) {
+      ['approved', 'ждём в кассе', ['Глава клуба согласен', 'СОГЛАСОВАНО', 'Членство создаст касса', '1 234 ฿ в месяц'], ['оформлен', 'Оформлен', 'Заявка отправлена'], []],
+      ['rejected', 'приходите в пятницу', ['Заявка отклонена', 'ОТКАЗАНО', '«приходите в пятницу»'], ['Глава клуба согласен'], ['Подать снова']],
+      ['rejected', '', ['Заявка отклонена'], ['«»'], ['Подать снова']],
+      ['completed', '', ['Членства нет'], ['Заявка отправлена', 'Глава клуба согласен', 'Заявка отклонена'], ['Подать заявку']],
+      ['cancelled', '', ['Членства нет'], ['Заявка отправлена', 'Глава клуба согласен', 'Заявка отклонена'], ['Подать заявку']]]) {
       const n = `mreq-${st}${said ? '' : '-bare'}`;
       const s = await memCase(withReq(GUEST, st, said));
       await wire(s, 'membership');
@@ -6151,9 +6154,13 @@ if (grantsSet.length !== 1) {
       want.forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
       nowant.forEach(w => { if (t.includes(w)) bad.push(`${n}: есть «${w}»${st === 'approved' ? ' — согласие выдано за членство (Cafe13KPG#415)' : ''}`); });
       const b = await sends(s);
-      if (b.length !== btn) bad.push(`${n}: кнопок подачи ${b.length}, ждали ${btn}`);
-      if (st === 'rejected' && b.some(x => x !== 'Подать снова')) bad.push(`${n}: после отказа кнопки «${b[0]}», а не «Подать снова»`);
+      if (JSON.stringify(b) !== JSON.stringify(btn)) bad.push(`${n}: кнопки подачи ${JSON.stringify(b)}, ждали ${JSON.stringify(btn)}`);
       if (posts(s, /\/membership-requests/).length) bad.push(`${n}: заявка ушла без нажатия`);
+      if (st === 'rejected' && b.length) {
+        await s.p.evaluate(() => document.querySelector('[data-action^="mr-send:"]').click()); await s.p.waitForTimeout(300);
+        const pp = posts(s, /\/membership-requests$/);
+        if (pp.length !== 1 || JSON.parse(pp[0].body).tier_code !== 'member') bad.push(`${n}: «Подать снова» ушла не на прежний вид: ${JSON.stringify(pp.map(c => c.body))}`);
+      }
       await s.ctx.close();
     }
     // отказ сервера — его словами, и состояние перечитано: сервер знает новее нас
@@ -6161,21 +6168,23 @@ if (grantsSet.length !== 1) {
       const n = 'mreq-409';
       const s = await memCase(GUEST, { post: json(409, { detail: 'ваша заявка уже отправлена и ждёт ответа' }), me2: withReq(GUEST, 'pending') });
       await wire(s, 'membership');
-      await s.p.evaluate(() => document.querySelector('[data-action="mr-send:member"]').click()); await s.p.waitForTimeout(400);
+      await s.p.evaluate(() => document.querySelector('[data-action^="mr-send:"]').click()); await s.p.waitForTimeout(400);
       const t = await s.view();
       if (!t.includes('Ваша заявка уже отправлена и ждёт ответа.')) bad.push(`${n}: отказ сервера не показан его словами`);
       if (gets(s, /\/me$/).length < 2) bad.push(`${n}: после 409 /me не перечитан`);
-      if (!t.includes('Заявка отправлена')) bad.push(`${n}: перечитанная заявка не показана`);
+      if (!t.includes('ЖДЁТ ОТВЕТА')) bad.push(`${n}: перечитанная заявка не показана`);
       await s.ctx.close();
     }
-    // член клуба: свой вид отмечен, подавать нечего
+    // член клуба: свой вид отмечен, подавать нечего (кадр E38b)
     {
       const n = 'mreq-member';
       const s = await memCase(OWNER);
       await wire(s, 'membership');
       const mine = await s.p.evaluate(() => [...document.querySelectorAll('#view .card.strong h2')].map(e => e.textContent));
-      if (mine.join() !== 'Член клуба') bad.push(`${n}: «Ваш уровень» у ${JSON.stringify(mine)}, ждали «Член клуба»`);
-      if ((await sends(s)).length) bad.push(`${n}: у члена клуба есть кнопки подачи`);
+      if (mine.join() !== 'Член клуба') bad.push(`${n}: активное членство ${JSON.stringify(mine)}, ждали «Член клуба»`);
+      const has = await s.p.evaluate(() => [...document.querySelectorAll('#view .rows > div')].filter(r => r.textContent.includes('У ВАС ЕСТЬ')).map(r => r.querySelector('b').textContent));
+      if (has.join() !== 'Член клуба') bad.push(`${n}: «У ВАС ЕСТЬ» у ${JSON.stringify(has)}`);
+      if ((await sends(s)).length) bad.push(`${n}: у члена клуба есть кнопка подачи`);
       await s.ctx.close();
     }
     // /me без поля — сервер до выкладки заявок: приложение живёт; поле кривое — /me не разобран
@@ -6188,50 +6197,68 @@ if (grantsSet.length !== 1) {
       if (await s2.p.evaluate(() => current) !== 'apiDown') bad.push('mreq-badreq: заявка с чужим статусом принята — /me должен считаться неразобранным');
       await s2.ctx.close();
     }
-    // вход у главы клуба: только с правом и только когда экран включён
+    // вход у главы клуба: только с правом и только когда экран включён; подпись — счёт с сервера (кадр E42g)
     {
       const n = 'mq-entry';
       const s = await memCase(OWNER);
       await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
       if (await s.p.$('#view [data-go="memberRequests"]')) bad.push(`${n}: строка «Заявки на членство» есть, хотя экран не включён — вела бы в заглушку`);
-      await s.p.evaluate(() => { WIRED.memberRequests = 1; render(); }); await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s.p.waitForTimeout(300);
       if (!(await s.p.$('#view [data-go="memberRequests"]'))) bad.push(`${n}: у главы клуба нет строки «Заявки на членство»`);
+      else if (!(await s.view()).includes('Ждут ответа: 1')) bad.push(`${n}: в строке входа нет счёта ждущих с сервера (кадр E42g)`);
       await s.ctx.close();
       const MEM = clone(OWNER); MEM.roles = [];
       const s2 = await memCase(MEM);
-      await s2.p.evaluate(() => { WIRED.memberRequests = 1; go('home'); }); await s2.p.waitForTimeout(200);
+      await s2.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s2.p.waitForTimeout(200);
       if (await s2.p.$('#view [data-go="memberRequests"]')) bad.push(`${n}: у члена клуба без роли есть строка «Заявки на членство»`);
       await s2.p.evaluate(() => go('memberRequests')); await s2.p.waitForTimeout(200);
       if (!(await s2.view()).includes('смотрит и решает глава клуба')) bad.push(`${n}: экран заявок без права не сказал, кто решает`);
       if (gets(s2, /\/membership-requests$/).length) bad.push(`${n}: заявки спрошены без права`);
       await s2.ctx.close();
     }
-    // решение: слово уходит в теле, список перечитан; согласие читается как «оплата в кассе»
+    // согласие — без слова; отказ — со словом, через «Точно отказать»; список перечитан (кадры E42, E42v)
     {
       const n = 'mq-decide';
       const s = await memCase(OWNER);
       await wire(s, 'memberRequests');
       let t = await s.view();
-      for (const w of ['Вера Заявкина', 'пропуска ещё нет', '«хочу на вечера»', 'Лев', 'согласована — оплата в кассе'])
+      for (const w of ['Ждут ответа · 1', 'Вера Заявкина', '1 234 ฿', 'пропуска нет', '«хочу на вечера»', 'Лев', 'СОГЛАСОВАНА', '«ждём в кассе»'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
-      if (/оформлен/.test(t.replace('Согласие — ещё не членство', ''))) bad.push(`${n}: согласованная заявка названа оформленной`);
-      await s.p.fill('#mq-note', 'добро пожаловать');
+      if (/оформлен|ОФОРМЛЕН/.test(t)) bad.push(`${n}: согласованная заявка названа оформленной`);
       await s.p.evaluate(() => document.querySelector('[data-action="mq-ok:11"]').click()); await s.p.waitForTimeout(400);
-      const pp = posts(s, /\/membership-requests\/11\/decide$/);
-      const body = pp.length === 1 ? JSON.parse(pp[0].body) : null;
-      if (!body || body.decision !== 'approved' || body.note !== 'добро пожаловать') bad.push(`${n}: решение ушло так: ${JSON.stringify(pp.map(c => c.body))}`);
+      let pp = posts(s, /\/membership-requests\/11\/decide$/);
+      let body = pp.length === 1 ? JSON.parse(pp[0].body) : null;
+      if (!body || body.decision !== 'approved' || body.note !== '') bad.push(`${n}: согласие ушло так: ${JSON.stringify(pp.map(c => c.body))}`);
       if (gets(s, /\/membership-requests$/).length !== 2) bad.push(`${n}: после решения список не перечитан`);
-      if ((await s.p.inputValue('#mq-note').catch(() => null)) !== '') bad.push(`${n}: слово к решённой заявке осталось в поле — уйдёт со следующей`);
+      // отказ: сначала слово, «Не отказывать» ничего не шлёт
+      await s.p.evaluate(() => document.querySelector('[data-action="mq-ask:11"]').click()); await s.p.waitForTimeout(150);
+      if (!(await s.p.$('#d-note'))) bad.push(`${n}: «Отказать» не открыло поле слова (кадр E42v)`);
+      else {
+        await s.p.evaluate(() => document.querySelector('[data-action="mq-keep"]').click()); await s.p.waitForTimeout(150);
+        if (await s.p.$('#d-note')) bad.push(`${n}: «Не отказывать» не закрыло поле`);
+        await s.p.evaluate(() => document.querySelector('[data-action="mq-ask:11"]').click()); await s.p.waitForTimeout(150);
+        await s.p.fill('#d-note', 'приходите в четверг');
+        await s.p.evaluate(() => document.querySelector('[data-action="mq-no:11"]').click()); await s.p.waitForTimeout(400);
+        pp = posts(s, /\/membership-requests\/11\/decide$/);
+        body = pp.length === 2 ? JSON.parse(pp[1].body) : null;
+        if (!body || body.decision !== 'rejected' || body.note !== 'приходите в четверг') bad.push(`${n}: отказ ушёл так: ${JSON.stringify(pp.map(c => c.body))}`);
+      }
       await s.ctx.close();
     }
     {
       const n = 'mq-deny';
       const s = await memCase(OWNER, { decide: json(409, { detail: 'заявка уже отклонена' }) });
       await wire(s, 'memberRequests');
+      await s.p.evaluate(() => document.querySelector('[data-action="mq-ask:11"]').click()); await s.p.waitForTimeout(150);
       await s.p.evaluate(() => document.querySelector('[data-action="mq-no:11"]').click()); await s.p.waitForTimeout(400);
-      const pp = posts(s, /\/decide$/);
-      if (pp.length !== 1 || JSON.parse(pp[0].body).decision !== 'rejected') bad.push(`${n}: отказ ушёл так: ${JSON.stringify(pp.map(c => c.body))}`);
       if (!(await s.view()).includes('Заявка уже отклонена.')) bad.push(`${n}: отказ сервера не показан его словами`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'mq-empty';
+      const s = await memCase(OWNER, { list: json(200, { requests: [], pending: 0 }) });
+      await wire(s, 'memberRequests');
+      if (!(await s.view()).includes('Заявок нет')) bad.push(`${n}: пустой список не сказал «Заявок нет» (кадр E42b)`);
       await s.ctx.close();
     }
   }
