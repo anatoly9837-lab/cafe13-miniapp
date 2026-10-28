@@ -6382,13 +6382,16 @@ if (grantsSet.length !== 1) {
     {
       const n = 'lv-forged', s = await peopleCase(OWNER, {});
       await toPeople(s);
-      await s.p.evaluate(() => { UNDO_MS = 100; doAction('p-lvask:0.partner'); doAction('p-lvask:0.admin'); doAction('p-lvask:9.member'); });
+      // окно ДЛИННОЕ и метка спрашивается СРАЗУ: короткое окно закрылось бы своим таймером раньше
+      // вопроса, и невидимое окно прошло бы незамеченным (mv2 на первой редакции случая)
+      const held = await s.p.evaluate(() => { UNDO_MS = 3000; const o = [];
+        ['p-lvask:0.partner', 'p-lvask:0.admin', 'p-lvask:9.member'].forEach(a => { doAction(a); o.push(PEOPLE.lvAsk); });
+        return o; });
+      if (held.some(x => x !== null)) bad.push(`${n}: окно открылось невидимым — метка занята уровнем, которого у человека нет: ${JSON.stringify(held)}`);
       await s.p.waitForTimeout(400);
       if (await s.p.$('.undo')) bad.push(`${n}: окно открылось на уровень, которого у человека нет`);
-      // и НЕВИДИМОЕ окно тоже: полосы нет (её рисует только живой уровень), а метка занята — следующий
-      // крестик ответил бы «Идёт снятие «»». Без этой строки мутация «вход не сверяет уровень» зелена:
-      // запрос держит вторая линия в `lvSend` (мутация mv2 пакета v86)
-      if (await s.p.evaluate(() => PEOPLE.lvAsk) !== null) bad.push(`${n}: окно открылось невидимым — метка занята уровнем, которого у человека нет`);
+      // невидимое окно (метка занята, полосы нет) — выше, по метке сразу после действия: запрос держит
+      // и вторая линия в `lvSend`, так что без той проверки мутация «вход не сверяет уровень» зелена
       if (lvPosts(s).length) bad.push(`${n}: ушло снятие уровня, которого у человека нет: ${JSON.stringify(lvPosts(s).map(c => c.body))}`);
       await s.ctx.close();
     }
