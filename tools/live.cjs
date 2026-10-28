@@ -5309,7 +5309,9 @@ if (grantsSet.length !== 1) {
     const peopleCase = (me, r) => open(true, true, json(200, me), null, null, null, q => {
       const u = q.url();
       if (u.endsWith('/people')) return r.people || json(200, ROSTER);
-      if (u.endsWith('/directions')) return r.dirs || json(200, DIRS);
+      // r.dirs бывает ФАБРИКОЙ: задержка ответа начинается в момент запроса, а не при заведении случая
+      // (готовый промис истекал под нагрузкой раньше, чем случай доходил до проверки)
+      if (u.endsWith('/directions')) return typeof r.dirs === 'function' ? r.dirs() : r.dirs || json(200, DIRS);
       if (u.endsWith('/roles')) return r.grant || json(201, { id: 40, member_id: 702, role: 'x', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' });
       if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
       // исключение (v74): ответ — как у сервера (join.py, revoke_access): строка допуска плюс число оборванных
@@ -5576,7 +5578,7 @@ if (grantsSet.length !== 1) {
 
     // направления ещё грузятся: роль открыта, «Загружаем…», и ни слова о том, что их нет
     {
-      const s = await peopleCase(OWNER, { dirs: new Promise(r => setTimeout(() => r(json(200, DIRS)), 2000)) });
+      const s = await peopleCase(OWNER, { dirs: () => new Promise(r => setTimeout(() => r(json(200, DIRS)), 2000)) });
       await toPeople(s);
       await act(s, 'p-open:1');
       if (await s.p.$(`${card(s, 1)} [data-action="p-role:curator"][disabled]`)) bad.push('people-dirs-loading: роль куратора закрыта, пока перечень грузится');
