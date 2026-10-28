@@ -5676,8 +5676,10 @@ if (grantsSet.length !== 1) {
         ['Алевтина Тестова', 'Куратор направления · Бар', 'Сомчай', 'Член клуба', 'Бизнес-партнёр', 'Глава клуба']
           .forEach(x => { if (!t.includes(x)) bad.push(`people-head: нет «${x}»`); });
         const chips = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]));
-        if (!chips.some(c => c[0] === 'SPAN' && /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')) bad.push(`people-head: уровень не чипом «paid» без крестика: ${JSON.stringify(chips)}`);
-        if (chips.some(c => c[0] === 'BUTTON' && /paid/.test(c[1]))) bad.push('people-head: уровень нажимается, а ручки снятия уровня на бою нет');
+        // ⚠ Прежняя редакция ждала уровень `span` БЕЗ крестика: ручки снятия уровня на бою не было,
+        // и кнопка обещала бы несделанное. С `d1fa661` ручка на бою (v86) — уровень стал кнопкой с
+        // крестиком; что крестик открывает окно, а не шлёт, держит `lv-revoke` и мутация mv1.
+        if (!chips.some(c => c[0] === 'BUTTON' && /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')) bad.push(`people-head: уровень не кнопкой «paid»: ${JSON.stringify(chips)}`);
         // tg_user_id — ни текстом, ни в атрибутах разметки
         if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push('people-head: tg_user_id в разметке');
         // у админа «Снять» у админа есть
@@ -6386,6 +6388,21 @@ if (grantsSet.length !== 1) {
       if (lvPosts(s).length) bad.push(`${n}: ушло снятие уровня, которого у человека нет: ${JSON.stringify(lvPosts(s).map(c => c.body))}`);
       await s.ctx.close();
     }
+    // окно одно на экран: крестик, нажатый в открытое окно, второго окна не открывает и НЕ МОЛЧИТ —
+    // в карточке того, по кому нажали, сказано, почему ничего не снимается (иначе немая кнопка, #338)
+    {
+      const n = 'lv-second', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 3000; });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
+      await act(s, 'p-lvask:2.member'); await s.p.waitForTimeout(80);
+      if ((await s.p.$$('.undo')).length !== 1) bad.push(`${n}: окон отмены ${(await s.p.$$('.undo')).length}, ждали одно`);
+      const d = await s.p.$eval(`${card(s, 2)} .deny`, e => e.textContent).catch(() => '');
+      if (!d.includes('Сначала закончите открытое снятие')) bad.push(`${n}: второй крестик в открытое окно промолчал: «${d}»`);
+      await act(s, 'p-keep');
+      if (lvPosts(s).length || posts(s, /\/roles\/\d+\/revoke$/).length) bad.push(`${n}: ушёл запрос`);
+      await s.ctx.close();
+    }
     // отказы — словами сервера, в карточке того, кого касаются; 409 «уровня нет» перечитывает список
     for (const [name, reply, want, reread] of [
       ['lv-self', json(409, { detail: 'свои уровни снимать нельзя' }), 'Свои уровни снимать нельзя.', true],
@@ -6396,7 +6413,8 @@ if (grantsSet.length !== 1) {
       const gets0 = s.calls.filter(c => c.method === 'GET' && c.url.endsWith('/people')).length;
       await s.p.evaluate(() => { UNDO_MS = 100; });
       await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(700);
-      if (!(await note(s, 0)).includes(want)) bad.push(`${name}: в карточке нет отказа «${want}»: ${await note(s, 0)}`);
+      const deny = await s.p.$eval(`${card(s, 0)} .deny`, e => e.textContent).catch(() => '');
+      if (!deny.includes(want)) bad.push(`${name}: в карточке нет отказа «${want}»: «${deny}»`);
       if ((await s.view()).includes('Снято:')) bad.push(`${name}: отказ показан как снятие`);
       const reread_ = s.calls.filter(c => c.method === 'GET' && c.url.endsWith('/people')).length > gets0;
       if (reread_ !== reread) bad.push(`${name}: список ${reread_ ? '' : 'не '}перечитан, ждали ${reread ? '' : 'не '}перечитан`);

@@ -6634,10 +6634,19 @@ function doAction(a) {
       // `p-dir` снят: строка направления теперь выдаёт, и делает это `p-give` с парным ключом.
       if (a === 'p-role' && DIR_ROLES.indexOf(arg) !== -1) PEOPLE.role = PEOPLE.role === arg ? '' : arg;
       // крестик у роли: окно отмены вместо вопроса; второе окно поверх первого не открывается
-      if (a === 'p-ask') { if (PEOPLE.ask !== null || PEOPLE.lvAsk !== null) return; undoStart(Number(arg)); }
-      // уровень: только живой у этого человека и только одним окном на экран
+      // Окно на экране одно (v78: «второе поверх первого не открывается»). Но крестик, нажатый в
+      // это время, НЕ МОЛЧИТ: молчащая кнопка читается поломкой (demo-press, Cafe13KPG#338) —
+      // в карточке того, по кому нажали, говорится, что сначала закончить открытое снятие.
+      if ((a === 'p-ask' || a === 'p-lvask') && (PEOPLE.ask !== null || PEOPLE.lvAsk !== null)) {
+        var bk = a === 'p-lvask' ? Number(String(arg).split('.')[0]) : (PEOPLE.list || []).findIndex(function (x) {
+          return x.roles.some(function (r) { return r.id === Number(arg); }); });
+        var bp = PEOPLE.list && PEOPLE.list[bk];
+        if (bp) { PEOPLE.deny = { uid: bp.uid, text: 'Сначала закончите открытое снятие: дождитесь его или нажмите «Отменить».' }; haptic('warn'); peopleRedraw(before); }
+        return;
+      }
+      if (a === 'p-ask') undoStart(Number(arg));
+      // уровень: только живой у этого человека
       if (a === 'p-lvask') {
-        if (PEOPLE.ask !== null || PEOPLE.lvAsk !== null) return;
         var lm = /^(\d+)\.(\w+)$/.exec(arg), lp = lm && PEOPLE.list && PEOPLE.list[Number(lm[1])];
         if (!lp || lp.lvKeys.indexOf(lm[2]) === -1) return;
         undoStart(null, arg);
