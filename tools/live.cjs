@@ -6220,6 +6220,13 @@ if (grantsSet.length !== 1) {
       const gap = await s.p.evaluate(() => { const n = document.querySelector('.note.act'), b = n && n.querySelector('[data-action="p-back"]');
         return n && b ? Math.round(n.getBoundingClientRect().right - b.getBoundingClientRect().right) : null; });
       if (gap === null || gap > 20) bad.push(`people-revoke: «Отменить» не у правого края плашки (${gap} px)`);
+      // ⚠ На настоящем итоге текст ДЛИННЫЙ и сам заполняет строку — кнопка справа и без правила
+      // (мутация «без margin-left: auto» была зелёной: условие не возникло). Правило мерится на
+      // КОРОТКОМ тексте, подставленном в ту же плашку: тогда справа её держит только CSS.
+      const gapShort = await s.p.evaluate(() => { const n = document.querySelector('.note.act'), b = n && n.querySelector('[data-action="p-back"]');
+        if (!n || !b) return null; n.querySelector('span').textContent = 'Снято: Касса.';
+        return Math.round(n.getBoundingClientRect().right - b.getBoundingClientRect().right); });
+      if (gapShort === null || gapShort > 20) bad.push(`people-revoke: на коротком итоге «Отменить» не у правого края (${gapShort} px) — справа держит длина фразы, а не правило`);
       if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-revoke: список не перечитан');
       await s.ctx.close();
     }
