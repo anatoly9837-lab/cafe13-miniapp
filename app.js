@@ -1960,6 +1960,9 @@ function peopleReset() {
   PEOPLE.out = null; PEOPLE.gone = null;
   // окно отмены, открытое на прежнем заходе, закрывается БЕЗ отправки: снятие не случается само
   undoStop();
+  // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
+  // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
+  PEOPLE.sending = null;
 }
 function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }
 
@@ -2068,6 +2071,8 @@ function revokeSend(rid) {
   if (!p || PEOPLE.busy) return;
   var role = p.roles.filter(function (y) { return y.id === rid; })[0];
   var gen = PEOPLE.gen;
+  // отправка закрывает окно отмены сама — кто бы её ни позвал
+  undoStop(); PEOPLE.ask = null;
   PEOPLE.busy = true; PEOPLE.deny = null; PEOPLE.sending = rid; render();
   api('POST', '/roles/' + rid + '/revoke').then(function (r) {
     if (gen !== PEOPLE.gen) return;
