@@ -2161,18 +2161,22 @@ function decideJoin(id, decision) {
 function joinTile(q) {
   var s = JOINQ.shot[q.id] || {}, pdf = q.mime === 'application/pdf';
   var box = 'flex:0 0 auto;width:72px;aspect-ratio:3/4;border-radius:9px;border:1px dashed var(--line);' +
-            'background:var(--surface);display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;overflow:hidden';
+            'background:var(--surface);display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden;' +
+            (!pdf && s.url ? 'padding:0' : 'padding:6px');
   var inner = !pdf && s.url
-    ? '<img src="' + s.url + '" alt="Чек" style="width:72px;height:96px;object-fit:cover;margin:-6px">'
+    ? '<img src="' + s.url + '" alt="Чек" style="width:100%;height:100%;object-fit:cover">'
     : '<span style="font-size:10px;color:var(--muted)">' + (pdf ? 'PDF<br>показать<br>нечем' : 'чек<br>с сервера') + '</span>';
   // «открыть» у PDF, как в E45, нет нарочно: открывается ли objectURL в Telegram-вебвью,
   // не проверено, а обещание, которого может не быть, хуже отсутствующей кнопки (#413)
   var kind = JOIN_MIME[q.mime] + ' · ' + q.kb + ' КБ';
+  var sums = '<span class="small">Просили по заявке: <b class="num">' + money(q.thb) + ' ฿</b>' +
+    (q.usd !== null ? ' или <b class="num">' + money(q.usd) + ' USDT</b>' : '') + '</span>';
+  // E45e: чек не пришёл — место плитки занимает строка с «Повторить» (на 72 px пара рвётся);
+  // суммы остаются, они из строки очереди. Решения не запираются: сервер чека не спрашивает.
+  if (s.fail) return '<div class="col"><div class="row"><span class="small">Чек не загрузился</span>' +
+      '<button type="button" class="btn quiet" data-action="j-shot:' + q.id + '">Повторить</button></div>' + sums + '</div>';
   return '<div style="display:flex;gap:10px;align-items:flex-start"><div style="' + box + '">' + inner + '</div>' +
-    '<div class="col" style="flex:1 1 auto"><span class="small">' + kind + '</span>' +
-      (s.fail ? '<span class="small">ЖДЁТ КАДРА: чек не загрузился</span>' : '') +
-      '<span class="small">Просили по заявке: <b class="num">' + money(q.thb) + ' ฿</b>' +
-        (q.usd !== null ? ' или <b class="num">' + money(q.usd) + ' USDT</b>' : '') + '</span></div></div>';
+    '<div class="col" style="flex:1 1 auto"><span class="small">' + kind + '</span>' + sums + '</div></div>';
 }
 function joinCard(q) {
   var busy = JOINQ.busy ? ' disabled' : '';
@@ -5279,7 +5283,9 @@ var SCREENS = {
 
   // E45 очередь, E45b пусто, E45g только решённые, E45v отказ со словом
   joinQueue: function () {
-    if (!mayPeople()) return '<div class="card quiet"><span class="small">Просьбы о доступе смотрит и решает глава клуба.</span></div>';
+    // E45zh: слова — отказа сервера (_may_decide, 403) буквой; кнопок нет — идти отсюда некуда
+    if (!mayPeople()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
     if (!JOINQ.list) return JOINQ.fail
       ? '<div class="card strong"><h2>Просьбы не загрузились</h2><p>' + esc(JOINQ.fail) + '</p>' +
         '<button type="button" class="btn" data-action="j-retry">Попробовать снова</button></div>'
@@ -6297,6 +6303,7 @@ function doAction(a) {
     if (a === 'j-keep') { JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; render(); return; }
     if (a === 'j-no' && mayPeople() && JOINQ.no === Number(arg)) { decideJoin(Number(arg), 'rejected'); return; }
     if (a === 'j-retry' && mayPeople()) { loadJoin(); render(); return; }
+    if (a === 'j-shot' && mayPeople()) { delete JOINQ.shot[Number(arg)]; joinShot(Number(arg)); render(); return; }
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'book' && LIVE) { bookEvent(arg); return; }

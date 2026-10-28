@@ -6770,6 +6770,24 @@ if (grantsSet.length !== 1) {
       if (gets(s2, /\/receipt$/).length) bad.push(`${n2}: чек спрошен у решённой просьбы`);
       await s2.ctx.close();
     }
+    // чек не пришёл (E45e): строка с «Повторить» вместо плитки, суммы на месте, решения живы
+    {
+      const n = 'join-shot-fail';
+      let shotN = 0;
+      const s = await joinCase(OWNER, { shot: () => (shotN += 1) === 1 ? json(500, { detail: 'x' }) : { status: 200, contentType: 'image/png', body: PNG1 } });
+      await toJoin(s);
+      const card21 = () => s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes('Ада'))[0] || '');
+      let c = await card21();
+      for (const w of ['Чек не загрузился', 'Повторить', '1 111 ฿']) if (!c.includes(w)) bad.push(`${n}: нет «${w}» (кадр E45e)`);
+      if (await s.p.$('#view img[alt="Чек"]')) bad.push(`${n}: на отказе чека показана картинка`);
+      if (!(await s.p.$('#view [data-action="j-ok:21"]:not([disabled])'))) bad.push(`${n}: без чека решение заперто, а сервер его не запрещает (кадр E45e)`);
+      await press(s, n, 'j-shot:21');
+      await s.p.waitForTimeout(300);
+      if (gets(s, /\/21\/receipt$/).length !== 2) bad.push(`${n}: «Повторить» не спросил чек снова (${gets(s, /\/21\/receipt$/).length})`);
+      c = await card21();
+      if (c.includes('Чек не загрузился') || !(await s.p.$('#view img[alt="Чек"]'))) bad.push(`${n}: после «Повторить» чек не показан`);
+      await s.ctx.close();
+    }
     // список не загрузился — форма близнеца E42; одна битая строка — отказ целиком
     {
       const n = 'join-fail', s = await joinCase(OWNER, { list: json(500, { detail: 'x' }) });
@@ -6789,7 +6807,10 @@ if (grantsSet.length !== 1) {
       const MEM = clone(OWNER); MEM.roles = [];
       const s = await joinCase(MEM);
       await toJoin(s);
-      if (!(await s.view()).includes('смотрит и решает глава клуба')) bad.push(`${n}: без права экран не сказал, кто решает`);
+      // E45zh: слова отказа сервера буквой, кнопок нет
+      for (const w of ['Сюда нельзя', 'Просьбы о вступлении смотрит и решает глава клуба.'])
+        if (!(await s.view()).includes(w)) bad.push(`${n}: без права нет «${w}» (кадр E45zh)`);
+      if (await s.p.$('#view button')) bad.push(`${n}: на экране без права есть кнопка, а идти некуда (кадр E45zh)`);
       if (gets(s, /\/join\//).length) bad.push(`${n}: очередь спрошена без права`);
       await s.ctx.close();
       for (const [who, roles] of [['глава клуба без админа', [{ role: 'head', direction_id: null }]],
