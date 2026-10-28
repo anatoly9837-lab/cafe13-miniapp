@@ -5639,6 +5639,9 @@ if (grantsSet.length !== 1) {
       if (u.endsWith('/roles')) return r.grant || json(201, { id: 40, member_id: 702, role: 'x', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' });
       if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
       // исключение (v74): ответ — как у сервера (join.py, revoke_access): строка допуска плюс число оборванных
+      // снятие уровня (v86): ответ — как у сервера (`join.py`, revoke_level на `d1fa661`)
+      if (/\/memberships\/\d+\/revoke$/.test(u)) return r.lv || json(200, { tg_user_id: Number(u.match(/memberships\/(\d+)/)[1]),
+        level: JSON.parse(q.postData()).level, memberships_ended: 1 });
       if (/\/access\/\d+\/revoke$/.test(u)) return r.out || json(200, { tg_user_id: Number(u.match(/access\/(\d+)/)[1]),
         revoked_at: '2026-10-28T13:00:00+00:00', memberships_ended: 1, note: '' });
       return undefined;
@@ -5705,8 +5708,10 @@ if (grantsSet.length !== 1) {
         // клуба» кадр не рисует (последнего главу снять не даст сервер — его отказ словами)
         if (!t.includes('Глава клуба')) bad.push('people-head: в раскрытой карточке нет бейджа «Глава клуба»');
         const chips = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]));
-        if (!chips.some(c => c[0] === 'SPAN' && /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')) bad.push(`people-head: уровень не чипом «paid» без крестика: ${JSON.stringify(chips)}`);
-        if (chips.some(c => c[0] === 'BUTTON' && /paid/.test(c[1]))) bad.push('people-head: уровень нажимается, а ручки снятия уровня на бою нет');
+        // ⚠ Прежняя редакция ждала уровень `span` БЕЗ крестика: ручки снятия уровня на бою не было,
+        // и кнопка обещала бы несделанное. С `d1fa661` ручка на бою (v86) — уровень стал кнопкой с
+        // крестиком; что крестик открывает окно, а не шлёт, держит `lv-revoke` и мутация mv1.
+        if (!chips.some(c => c[0] === 'BUTTON' && /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')) bad.push(`people-head: уровень не кнопкой «paid»: ${JSON.stringify(chips)}`);
         // tg_user_id — ни текстом, ни в атрибутах разметки
         if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push('people-head: tg_user_id в разметке');
         // у админа «Снять» у админа есть
@@ -6563,6 +6568,115 @@ if (grantsSet.length !== 1) {
       await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(600);
       const pp = posts(s, /\/roles\/31\/revoke$/).length;
       if (pp !== 1) bad.push(`${n}: окно вышло — запросов ${pp}, ждали ровно 1`);
+      await s.ctx.close();
+    }
+
+    // ── уровень членства крестиком (v86): окно ДО отправки, уровень СЛОВОМ, ровно одно членство ──
+    // Ручка `POST /memberships/{tg_user_id}/revoke` на бою с `d1fa661`; обратного хода у неё нет
+    // (`ends_at = now()`, срок не сохраняется), поэтому отправка — только после окна.
+    // Карточка 0 — человек с одним уровнем «Член клуба» (701), 2 — с двумя (703: member и partner).
+    const lvPosts = s => s.calls.filter(c => c.method === 'POST' && /\/memberships\/\d+\/revoke$/.test(c.url));
+    {
+      const n = 'lv-revoke', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 3000; });
+      if (!(await act(s, 'p-lvask:2.partner'))) bad.push(`${n}: у уровня «Бизнес-партнёр» нет крестика`);
+      await s.p.waitForTimeout(80);
+      if (lvPosts(s).length) bad.push(`${n}: снятие уровня ушло сразу, окна нет — обратного хода у ручки нет`);
+      const strip = await s.p.$eval('[data-undo-of="2"] .small', e => e.textContent).catch(() => '');
+      if (!strip.includes('Снимаем: Бизнес-партнёр')) bad.push(`${n}: нет полосы «Снимаем: Бизнес-партнёр» под карточкой (${strip})`);
+      if (await s.p.$('[data-action="p-lvask:2.partner"]')) bad.push(`${n}: в окне отмены надпись уровня осталась нажимаемой`);
+      if (!(await s.p.$('[data-action="p-lvask:2.member"]'))) bad.push(`${n}: соседний уровень того же человека пропал`);
+      await act(s, 'p-keep');
+      if (await s.p.$('.undo') || !(await s.p.$('[data-action="p-lvask:2.partner"]'))) bad.push(`${n}: «Отменить» не вернул надпись уровня`);
+      await s.p.evaluate(() => { UNDO_MS = 150; });
+      await act(s, 'p-lvask:2.partner'); await s.p.waitForTimeout(700);
+      const pp = lvPosts(s);
+      if (pp.length !== 1 || !pp[0].url.endsWith('/memberships/703/revoke') || pp[0].body !== JSON.stringify({ level: 'partner' }))
+        bad.push(`${n}: окно вышло — ушло ${JSON.stringify(pp.map(c => [c.url.replace(/^.*\/memberships/, ''), c.body]))}, ждали один запрос 703 {level: partner}`);
+      const done = await note(s, 2);
+      if (!done.includes('Снято: Бизнес-партнёр.')) bad.push(`${n}: в карточке нет итога «Снято: Бизнес-партнёр»`);
+      // необратимость названа человеку: ручка срок не хранит (обрыв `ends_at = now()`)
+      if (!done.includes('Вернуть прежний срок нечем')) bad.push(`${n}: итог не говорит, что срок вернуть нечем: ${done}`);
+      if (posts(s, /\/roles\/\d+\/revoke$/).length || posts(s, /\/access\//).length) bad.push(`${n}: снятие уровня задело роль или доступ`);
+      await s.ctx.close();
+    }
+    // подложенное действие с уровнем, которого у человека НЕТ (или чужим словом), окна не открывает
+    {
+      const n = 'lv-forged', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      // окно ДЛИННОЕ и метка спрашивается СРАЗУ: короткое окно закрылось бы своим таймером раньше
+      // вопроса, и невидимое окно прошло бы незамеченным (mv2 на первой редакции случая)
+      const held = await s.p.evaluate(() => { UNDO_MS = 3000; const o = [];
+        ['p-lvask:0.partner', 'p-lvask:0.admin', 'p-lvask:9.member'].forEach(a => { doAction(a); o.push(PEOPLE.lvAsk); });
+        return o; });
+      if (held.some(x => x !== null)) bad.push(`${n}: окно открылось невидимым — метка занята уровнем, которого у человека нет: ${JSON.stringify(held)}`);
+      await s.p.waitForTimeout(400);
+      if (await s.p.$('.undo')) bad.push(`${n}: окно открылось на уровень, которого у человека нет`);
+      // невидимое окно (метка занята, полосы нет) — выше, по метке сразу после действия: запрос держит
+      // и вторая линия в `lvSend`, так что без той проверки мутация «вход не сверяет уровень» зелена
+      if (lvPosts(s).length) bad.push(`${n}: ушло снятие уровня, которого у человека нет: ${JSON.stringify(lvPosts(s).map(c => c.body))}`);
+      await s.ctx.close();
+    }
+    // окно одно на экран: крестик, нажатый в открытое окно, второго окна не открывает и НЕ МОЛЧИТ —
+    // в карточке того, по кому нажали, сказано, почему ничего не снимается (иначе немая кнопка, #338)
+    // Список длинный НАРОЧНО: полоса открыта у верхней карточки, нажатие — у нижней, и полоса за краем
+    // окна (самоконтроль). Экран при этом НЕ прыгает (слово владельца, #490) — текст называет снимаемое.
+    {
+      const n = 'lv-second', long = clone(ROSTER), L = ROSTER.people.length + 15;
+      for (let i = 0; i < 16; i++) long.people.push({ tg_user_id: 740 + i, first_name: '[член клуба ' + (i + 1) + ']', last_name: null, lang: 'ru',
+        roles: [], memberships: ['member'] });
+      const s = await peopleCase(OWNER, { people: json(200, long) });
+      await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 3000; });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
+      await s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).scrollIntoView({ block: 'center' }), L);
+      await s.p.waitForTimeout(80);
+      const inView = () => s.p.evaluate(() => { const r = document.querySelector('.undo').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
+      if (await inView()) bad.push(`${n}: полоса уже в виду до нажатия — проверять прокрутку не на чем`);
+      const y0 = await s.p.evaluate(() => window.scrollY);
+      await act(s, `p-lvask:${L}.member`); await s.p.waitForTimeout(80);
+      const y1 = await s.p.evaluate(() => window.scrollY);
+      if (Math.abs(y1 - y0) > 2) bad.push(`${n}: отказ сдвинул экран (${y0} → ${y1}) — «возвращайся где было»`);
+      if ((await s.p.$$('.undo')).length !== 1) bad.push(`${n}: окон отмены ${(await s.p.$$('.undo')).length}, ждали одно`);
+      const d = await s.p.$eval(`${card(s, L)} .deny`, e => e.textContent).catch(() => '');
+      // имя в тексте — ИЗ ПОЛОСЫ, а не вписанное: сверка с её собственным текстом
+      const busy = await s.p.$eval('.undo .small', e => e.textContent.replace(/^Снимаем: /, '')).catch(() => '?');
+      if (!d.includes('Идёт снятие «' + busy + '»: дождитесь его или отмените.')) bad.push(`${n}: второй крестик в открытое окно промолчал или не назвал снимаемое («${busy}»): «${d}»`);
+      await act(s, 'p-keep');
+      if (lvPosts(s).length || posts(s, /\/roles\/\d+\/revoke$/).length) bad.push(`${n}: ушёл запрос`);
+      await s.ctx.close();
+    }
+    // отказы — словами сервера, в карточке того, кого касаются; 409 «уровня нет» перечитывает список
+    for (const [name, reply, want, reread] of [
+      ['lv-self', json(409, { detail: 'свои уровни снимать нельзя' }), 'Свои уровни снимать нельзя.', true],
+      ['lv-403', json(403, { detail: 'снимать уровни членства вправе глава клуба' }), 'Снимать уровни членства вправе глава клуба.', false],
+      ['lv-gone', json(409, { detail: 'этого уровня членства у человека нет' }), 'Этого уровня членства у человека нет.', true]]) {
+      const s = await peopleCase(OWNER, { lv: reply });
+      await toPeople(s);
+      const gets0 = s.calls.filter(c => c.method === 'GET' && c.url.endsWith('/people')).length;
+      await s.p.evaluate(() => { UNDO_MS = 100; });
+      await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(700);
+      const deny = await s.p.$eval(`${card(s, 0)} .deny`, e => e.textContent).catch(() => '');
+      if (!deny.includes(want)) bad.push(`${name}: в карточке нет отказа «${want}»: «${deny}»`);
+      if ((await s.view()).includes('Снято:')) bad.push(`${name}: отказ показан как снятие`);
+      const reread_ = s.calls.filter(c => c.method === 'GET' && c.url.endsWith('/people')).length > gets0;
+      if (reread_ !== reread) bad.push(`${name}: список ${reread_ ? '' : 'не '}перечитан, ждали ${reread ? '' : 'не '}перечитан`);
+      await s.ctx.close();
+    }
+    // `topups` (Cafe13KPG#514): выдаётся как общая роль, без направления, человеческой подписью
+    {
+      const n = 'people-grant-topups', s = await peopleCase(OWNER, { grant: json(201, { id: 42, member_id: 702, role: 'topups', direction_id: null, granted_at: '2026-10-29T10:00:00+00:00' }) });
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      if (!(await s.view()).includes('Пополнение онлайн')) bad.push(`${n}: в выдаче нет строки «Пополнение онлайн»`);
+      if ((await s.view()).includes('topups')) bad.push(`${n}: на экране имя роли «topups», а не подпись`);
+      if (!(await act(s, 'p-give:topups'))) bad.push(`${n}: у строки «Пополнение онлайн» нет кружка выдачи`);
+      await s.p.waitForTimeout(300);
+      const pp = posts(s, /\/roles$/);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'topups' }))
+        bad.push(`${n}: ушло ${JSON.stringify(pp.map(c => c.body))}`);
+      if (!(await note(s, 1)).includes('Выдано: Пополнение онлайн.')) bad.push(`${n}: в карточке нет итога «Выдано: Пополнение онлайн»`);
       await s.ctx.close();
     }
 

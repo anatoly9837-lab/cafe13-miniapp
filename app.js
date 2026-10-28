@@ -260,7 +260,12 @@ var LEVEL = { member: 'Член клуба', organizer: 'Мастер', partner:
 var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клуба', god: 'Наследник',
                   admin: 'Администратор', director: 'Директор',
                   staff: 'Касса', curator: 'Куратор направления', bar: 'Бар · исполнитель',
-                  ops_director: 'Операционный директор', art_director: 'Арт-директор' };
+                  ops_director: 'Операционный директор', art_director: 'Арт-директор',
+                  // держатель ответственности за пополнения: ему идут заявки на пополнение (api `notify.py`,
+                  // Cafe13KPG#503). Роль общая, без направления; выдаёт глава клуба (Cafe13KPG#514).
+                  // Подпись — слово владельца 29.10.2026: «все ответственности на русском, а эта из кода —
+                  // „Пополнение онлайн“». Имя роли в схеме остаётся `topups`; меняется только подпись
+                  topups: 'Пополнение онлайн' };
 
 function ruDate(iso) {
   var d = new Date(iso);
@@ -1954,7 +1959,9 @@ function testStrip() {
    и «админа выдаёт только админ» — правила сервера, пересказ завёл бы копию. */
 // Что выдаётся ОТСЮДА. «Главы клуба» здесь нет НИКОГДА (слово владельца 28.10.2026: не выдаётся
 // из приложения); «Администратор» и «Чужими глазами» — в ROLE_GREY: видны СЕРЫМИ, не выдаются.
-var ROLE_PICK = ['ops_director', 'art_director', 'director', 'staff', 'curator', 'bar'];
+// `topups` (v86, Cafe13KPG#514): схема и `POST /roles` роль принимали, а выдать её было нечем —
+// держателя пополнений не назначить, и уведомление о заявке не приходило никому
+var ROLE_PICK = ['ops_director', 'art_director', 'director', 'staff', 'topups', 'curator', 'bar'];
 var ROLE_GREY = [['god_mentor', 'Чужими глазами'], ['admin', 'Администратор']];
 // head, god_mentor и admin на карточке — ОДИН бейдж «Глава клуба» без крестика (слово владельца
 // 28.10.2026, кадр E47z `.chip.fixed`). Общий ROLE_NAME не трогается: им живёт кабинет.
@@ -1966,7 +1973,8 @@ var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
                // «форма закрыта» и «карточка свёрнута» — разные состояния экрана.
                card: null,
                open: null, role: '', give: null, ask: null, busy: false, deny: null, done: null, find: '',
-               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null, land: null };
+               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null, land: null,
+               lvAsk: null, lvSending: null };
 /* Окно отмены вместо второго подтверждения (слово владельца 28.10.2026: «убери двойное
    подтверждение… оставь кнопку отмены на несколько секунд»; 5 секунд — число координатора,
    кадр E47l). Цифра в полосе считается ОТСЮДА ЖЕ — разойтись с задержкой ей нечем. */
@@ -1977,15 +1985,17 @@ function undoStop() {
   PEOPLE.askTimer = PEOPLE.askTick = null;
 }
 function undoLeft() { return Math.max(0, Math.ceil((PEOPLE.askAt + UNDO_MS - Date.now()) / 1000)); }
-function undoStart(rid) {
+// lv — ключ уровня членства «k.level» (v86): то же окно ДО отправки, другое действие. Окно одно на
+// экран: роль и уровень разом в нём не стоят.
+function undoStart(rid, lv) {
   undoStop();
-  PEOPLE.ask = rid; PEOPLE.askAt = Date.now(); PEOPLE.deny = null;
+  PEOPLE.ask = lv ? null : rid; PEOPLE.lvAsk = lv || null; PEOPLE.askAt = Date.now(); PEOPLE.deny = null;
   PEOPLE.askTimer = setTimeout(function () {
-    if (PEOPLE.ask !== rid) return;
-    undoStop(); PEOPLE.ask = null;
+    if (lv ? PEOPLE.lvAsk !== lv : PEOPLE.ask !== rid) return;
+    undoStop(); PEOPLE.ask = null; PEOPLE.lvAsk = null;
     // окно вышло — ровно один запрос, через общий вход действий: там защита от двойного нажатия
     // и демонстрация (в ней снятие не уходит). Ушли с экрана до конца окна — не уходит тоже.
-    doAction('p-revoke:' + rid);
+    doAction(lv ? 'p-lvrevoke:' + lv : 'p-revoke:' + rid);
   }, UNDO_MS);
   // отсчёт меняет только цифру, экран не перерисовывается
   PEOPLE.askTick = setInterval(function () {
@@ -2000,13 +2010,13 @@ function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
    без этой строки экран оставался запертым до перезапуска (Cafe13KPG#213). */
 function peopleReset() {
   PEOPLE.busy = false;
-  PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.give = null; PEOPLE.ask = null; PEOPLE.deny = null; PEOPLE.done = null;
+  PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.give = null; PEOPLE.ask = null; PEOPLE.lvAsk = null; PEOPLE.deny = null; PEOPLE.done = null;
   PEOPLE.out = null; PEOPLE.gone = null;
   // окно отмены, открытое на прежнем заходе, закрывается БЕЗ отправки: снятие не случается само
   undoStop();
   // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
   // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
-  PEOPLE.sending = null;
+  PEOPLE.sending = null; PEOPLE.lvSending = null;     // то же у погашенного уровня (v86)
   // ⚠ `PEOPLE.card` здесь НЕ сбрасывается НАРОЧНО: после выдачи, снятия и отказа список
   // перечитывается этим же путём, и человек, которого настраивают, обязан остаться
   // раскрытым — иначе итог («Выдано: …») показался бы в карточке, которая тут же схлопнулась.
@@ -2068,6 +2078,8 @@ function fromRoster(d) {
       // уровни через « · », в порядке сервера: виды не старше друг друга (кадр E47)
       levels: p.memberships.map(function (l) { return LEVEL[l] || l; }).join(' · '),
       lv: p.memberships.map(function (l) { return LEVEL[l] || l; }),
+      // слова сервера по тем же местам, что `lv`: снятие уровня берёт уровень СЛОВОМ (v86)
+      lvKeys: p.memberships.slice(),
       bal: bal,
       roles: roles
     });
@@ -2170,6 +2182,39 @@ function revokeSend(rid) {
     loadRoster(); render();
   });
 }
+/* Снятие ОДНОГО уровня членства (v86, слово владельца 28.10.2026: «отменить его партнерство или
+   мастерство»; надписи уровней — кнопки). Ручка `POST /memberships/{tg_user_id}/revoke` на бою с
+   `d1fa661`: уровень — СЛОВОМ в теле, обрывается ровно одно живое членство этого вида.
+   ⚠ Обратного хода нет: сервер ставит `ends_at = now()` и прежний срок не хранит. Поэтому «Отменить»
+   — окно ДО отправки (`undoStart`), а не откат; закрыл приложение в окне — снятие не случилось.
+   Отказы — словами сервера (`denyText`): 403 не глава, 409 свои уровни, 409 «этого уровня нет». */
+function lvSend(key) {
+  var m = /^(\d+)\.(member|organizer|partner)$/.exec(String(key));
+  var p = m && PEOPLE.list && PEOPLE.list[Number(m[1])];
+  if (!p || PEOPLE.busy || p.lvKeys.indexOf(m[2]) === -1) return;
+  var level = m[2], words = LEVEL[level] || level;
+  var gen = PEOPLE.gen;
+  undoStop(); PEOPLE.lvAsk = null;
+  PEOPLE.busy = true; PEOPLE.deny = null; PEOPLE.lvSending = key; render();
+  api('POST', '/memberships/' + p.uid + '/revoke', { level: level }).then(function (r) {
+    if (gen !== PEOPLE.gen) return;
+    PEOPLE.busy = false; PEOPLE.lvSending = null;
+    var ok = r.status === 200 && r.data && r.data.level === level && r.data.memberships_ended > 0;
+    if (!ok) {
+      PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn');
+      // «этого уровня членства у человека нет» — список устарел: уровень снял кто-то другой
+      if (r.status === 409) { PEOPLE.land = p.uid; loadRoster(); }
+      render(); return;
+    }
+    haptic('ok');
+    peopleReset();
+    PEOPLE.land = p.uid;
+    // слова designer-55: непоправимость ВПЕРЁД, механизм следом — у роли вторая фраза утешает
+    // («остаётся в истории»), здесь наоборот, и это главное, что человек должен унести
+    PEOPLE.done = { uid: p.uid, text: 'Снято: ' + words + '. Вернуть прежний срок нечем — членство оборвано сегодняшним днём.' };
+    loadRoster(); render();
+  });
+}
 /* «Исключить» (кадры E47v, E47d, E47g, E47zh; Cafe13KPG#413, v74). Человек берётся по НОМЕРУ
    СТРОКИ ОТВЕТА (k), а не по месту карточки на экране: порядок отрисовки свой (peopleOrder),
    и «исключили не того» стоило бы человеку входа и членства. tg_user_id живёт только в адресе
@@ -2206,11 +2251,10 @@ function personCard(p, k) {
   var open = PEOPLE.open === k;
   var X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   // Кадры E47z/E47k/E47l: доступ — надпись-кнопка («размер оставить»), крестик снимает без вопроса.
-  // Уровень членства — чип БЕЗ крестика и не нажимается НАРОЧНО: ручка снятия уровня
-  // (POST /memberships/{tg_user_id}/revoke, api `join.py`) в стволе api ЕСТЬ, а на бою её нет
-  // (замер по блобам 29.10.2026). Кнопка не обещает того, чего сервер не делает; крестик
-  // приедет с v86, когда ручку выложат (номер по карте #324 на 29.10.2026; был назван v84). Уровень она берёт СЛОВОМ в теле, то есть обрывает
-  // ровно одно живое членство названного вида — обратного хода нет, срок не сохраняется.
+  // Уровень членства (v86) — надпись-кнопка с крестиком, как доступ: ручка снятия уровня
+  // `POST /memberships/{tg_user_id}/revoke` на бою с `d1fa661`. Уровень она берёт СЛОВОМ в теле и
+  // обрывает ровно одно живое членство названного вида — обратного хода нет, срок не сохраняется,
+  // поэтому окно отмены — ДО отправки (`lvSend`).
   //
   // ДВА РЯДА, а не один (слово владельца 29.10.2026, Cafe13KPG#502 п.2): «разделим 2 уровня —
   // клубный доступ (глава клуба, член клуба, партнер, мастер) и ответственность (арт директор,
@@ -2219,7 +2263,14 @@ function personCard(p, k) {
   // членства) плюс бейдж по HEAD_ROLES, ответственность — все прочие роли и вход «+».
   // ⚠ Ряд доступа у человека без членства и без главенства ПУСТ, и тогда его не рисуем вовсе:
   // пустой `.chips` даёт свой `gap` и лишний отступ там, где смотреть не на что.
-  var dostup = p.lv.map(function (l) { return '<span class="chip paid fixed">' + esc(l) + '</span>'; }).join('') +
+  // v86: уровень — надпись-кнопка с крестиком, как роль: крестик открывает окно ДО отправки (ручка
+  // снятия уровня на бою с `d1fa661`). Ключ — «k.level»: номер строки и слово сервера, не id.
+  var dostup = p.lv.map(function (l, i) {
+    var key = k + '.' + p.lvKeys[i];
+    if (PEOPLE.lvAsk === key) return '';                                              // в окне отмены надписи нет
+    if (PEOPLE.lvSending === key) return '<span class="chip paid busy">' + esc(l) + X + '</span>';
+    return '<button type="button" class="chip paid" data-action="p-lvask:' + key + '"' + lock + '>' + esc(l) + X + '</button>';
+  }).join('') +
     (p.roles.some(function (r) { return HEAD_ROLES.indexOf(r.role) !== -1; }) ? '<span class="chip fixed">Глава клуба</span>' : '');
   var rows = (dostup ? '<div class="chips" data-chips="access">' + dostup + '</div>' : '') +
     '<div class="chips" data-chips="duty">' +
@@ -2238,6 +2289,7 @@ function personCard(p, k) {
   '</div>';
   var askRole = null;
   p.roles.forEach(function (r) { if (PEOPLE.ask === r.id) askRole = r; });
+  p.lvKeys.forEach(function (c, i) { if (PEOPLE.lvAsk === k + '.' + c) askRole = { words: p.lv[i] }; });
   var undo = askRole ? '<div class="undo" data-undo-of="' + k + '"><span class="small">Снимаем: ' + esc(askRole.words) + '</span>' +
     '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="p-keep">Отменить</button></div>' : '';
   var form = '';
@@ -2382,7 +2434,11 @@ function personCard(p, k) {
 function peopleTouched() {
   var ks = [], L = PEOPLE.list || [];
   var at = function (uid) { for (var i = 0; i < L.length; i++) if (L[i].uid === uid) return i; return null; };
+  // ⚠ Ключи ОБЪЕДИНЕНЫ при слиянии: `card` — свёртка карточек, `lvAsk`/`lvSending` — снятие
+  // уровня (v86). Потерять любой значит оставить его карточку неперерисованной.
   [PEOPLE.card, PEOPLE.open, PEOPLE.out,
+   PEOPLE.lvAsk !== null ? Number(String(PEOPLE.lvAsk).split('.')[0]) : null,
+   PEOPLE.lvSending !== null ? Number(String(PEOPLE.lvSending).split('.')[0]) : null,
    PEOPLE.ask !== null ? (function () { for (var i = 0; i < L.length; i++) if (L[i].roles.some(function (r) { return r.id === PEOPLE.ask; })) return i; return null; })() : null,
    PEOPLE.deny && at(PEOPLE.deny.uid), PEOPLE.done && at(PEOPLE.done.uid), PEOPLE.gone && at(PEOPLE.gone.uid)]
     .forEach(function (k) { if (typeof k === 'number' && ks.indexOf(k) === -1) ks.push(k); });
@@ -6327,7 +6383,7 @@ function demoWork(screen, p) {
 /* Отправки и перечитывания рабочих экранов. В демонстрации они не уходят:
    сервера нет, а «ничего не случилось» на нажатие — дефект, уже бывший у нас
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
-var DEMO_SENDS = ['p-give', 'p-revoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
+var DEMO_SENDS = ['p-give', 'p-revoke', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
                   'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
 
@@ -6602,6 +6658,7 @@ function doAction(a) {
         return;
       }
       if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
+      if (a === 'p-lvrevoke') { lvSend(arg); return; }
       if (a === 'p-outyes') { if (PEOPLE.out === Number(arg)) outSend(Number(arg)); return; }
       // Раскрыть ЭТУ карточку: прежняя сворачивается, и вместе с ней уходит её состояние.
       // ⚠ Окно отмены прежней карточки закрывается БЕЗ ОТПРАВКИ (это делает peopleReset) —
@@ -6624,8 +6681,35 @@ function doAction(a) {
       // `p-dir` снят: строка направления теперь выдаёт, и делает это `p-give` с парным ключом.
       if (a === 'p-role' && DIR_ROLES.indexOf(arg) !== -1) PEOPLE.role = PEOPLE.role === arg ? '' : arg;
       // крестик у роли: окно отмены вместо вопроса; второе окно поверх первого не открывается
-      if (a === 'p-ask') { if (PEOPLE.ask !== null) return; undoStart(Number(arg)); }
-      if (a === 'p-keep') { undoStop(); PEOPLE.ask = null; }
+      // Окно на экране одно (v78: «второе поверх первого не открывается»). Но крестик, нажатый в
+      // это время, НЕ МОЛЧИТ: молчащая кнопка читается поломкой (demo-press, Cafe13KPG#338) —
+      // в карточке того, по кому нажали, говорится, что сначала закончить открытое снятие.
+      if ((a === 'p-ask' || a === 'p-lvask') && (PEOPLE.ask !== null || PEOPLE.lvAsk !== null)) {
+        var bk = a === 'p-lvask' ? Number(String(arg).split('.')[0]) : (PEOPLE.list || []).findIndex(function (x) {
+          return x.roles.some(function (r) { return r.id === Number(arg); }); });
+        var bp = PEOPLE.list && PEOPLE.list[bk];
+        // Слова designer-55. Экран НЕ прокручивается к полосе — слово владельца «каждый клик дергает
+        // экран… возвращайся где было» (#490); вместо прокрутки текст НАЗЫВАЕТ, что снимается, и
+        // человек найдёт полосу сам. Нужен, пока окно одно на экран (v78).
+        if (bp) {
+          var busyWords = '';
+          (PEOPLE.list || []).forEach(function (x, i) {
+            x.roles.forEach(function (r) { if (r.id === PEOPLE.ask) busyWords = r.words; });
+            x.lvKeys.forEach(function (c, j) { if (PEOPLE.lvAsk === i + '.' + c) busyWords = x.lv[j]; });
+          });
+          PEOPLE.deny = { uid: bp.uid, text: 'Идёт снятие «' + busyWords + '»: дождитесь его или отмените.' };
+          haptic('warn'); peopleRedraw(before);
+        }
+        return;
+      }
+      if (a === 'p-ask') undoStart(Number(arg));
+      // уровень: только живой у этого человека
+      if (a === 'p-lvask') {
+        var lm = /^(\d+)\.(\w+)$/.exec(arg), lp = lm && PEOPLE.list && PEOPLE.list[Number(lm[1])];
+        if (!lp || lp.lvKeys.indexOf(lm[2]) === -1) return;
+        undoStart(null, arg);
+      }
+      if (a === 'p-keep') { undoStop(); PEOPLE.ask = null; PEOPLE.lvAsk = null; }
       haptic(); peopleRedraw(before);
       // раскрытая форма — в вид: иначе она открылась бы за нижним краем
       var f = a === 'p-open' && document.querySelector('[data-person="' + PEOPLE.open + '"]');
