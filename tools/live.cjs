@@ -6751,8 +6751,11 @@ if (grantsSet.length !== 1) {
       await press(s, n, 'j-yes:21');
       if (!(await s.view()).includes('Просьба уже согласована.')) bad.push(`${n}: повторное решение не сказано словами сервера`);
       if (gets(s, /\/join\/requests$/).length !== 2) bad.push(`${n}: после 409 очередь не перечитана`);
-      // занятость снята: кнопки снова нажимаются
-      if (await s.p.$('#view [data-action="j-ok:21"][disabled]')) bad.push(`${n}: после отказа сервера экран заперт`);
+      // занятость снята: кнопки снова нажимаются. Ищутся ВСЕ кнопки решения, а не j-ok:21 —
+      // после 409 карточка остаётся в вопросе (j-keep / j-yes), и j-ok:21 на экране нет вовсе
+      const btns = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="j-"]')].map(b => b.disabled));
+      if (!btns.length) bad.push(`${n}: после 409 на экране нет кнопок решения — проверять занятость не на чем`);
+      else if (btns.some(Boolean)) bad.push(`${n}: после отказа сервера экран заперт`);
       await s.ctx.close();
     }
     // пусто (E45b) и только решённые (E45g): подпись о согласии — только там, где решают или ждут
