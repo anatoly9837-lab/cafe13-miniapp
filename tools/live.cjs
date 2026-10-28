@@ -255,6 +255,40 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── баланс в шапке: скрыт по умолчанию, тап показывает и прячет; кошелёк — на пополнение (Cafe13KPG#500) ──
+  {
+    const n = 'balans-shapka';
+    const who = clone(OWNER); who.roles = [];        // член клуба без прав кассы: вид «у всех остальных»
+    const s = await open(true, true, json(200, who));
+    const head = () => s.p.evaluate(() => document.getElementById('bar-right').textContent);
+    const pressed = () => s.p.evaluate(() => { const b = document.getElementById('bal'); return b ? b.getAttribute('aria-pressed') : null; });
+    if (await pressed() === null) bad.push(`${n}: в шапке нет баланса`);
+    else {
+      if ((await head()).includes('3 170') || await pressed() !== 'false') bad.push(`${n}: баланс в шапке не скрыт по умолчанию`);
+      await s.p.click('#bal'); await s.p.waitForTimeout(100);
+      if (!(await head()).includes('3 170 ฿') || await pressed() !== 'true') bad.push(`${n}: тап не показал баланс`);
+      await s.p.click('#bal'); await s.p.waitForTimeout(100);
+      if ((await head()).includes('3 170') || await pressed() !== 'false') bad.push(`${n}: повторный тап не спрятал баланс`);
+    }
+    if (!(await s.p.$('#wallet'))) bad.push(`${n}: в шапке нет кошелька`);
+    else {
+      await s.p.click('#wallet'); await s.p.waitForTimeout(150);
+      if (await s.p.evaluate(() => current) !== 'topup') bad.push(`${n}: кошелёк не ведёт на пополнение`);
+      const t = await s.view();
+      for (const w of ['Онлайн', 'Касса', 'USDT', 'Пока только баты.', 'Приём онлайн-пополнений ещё не включён.'])
+        if (!t.includes(w)) bad.push(`${n}: на пополнении нет «${w}»`);
+      // у хостес пополнить МОЖНО (касса, POST /till вид topup): серая только кнопка, путь не отменён
+      if (!t.includes('Сейчас — у хостес клуба')) bad.push(`${n}: у «Кассы» не сказано, что у хостес пополнить можно уже сейчас`);
+      const live = await s.p.$$eval('#view .btn', bs => bs.filter(b => /^(Онлайн|Касса|USDT)$/.test(b.textContent.trim()) && !b.disabled).map(b => b.textContent.trim()));
+      if (live.length) bad.push(`${n}: пути пополнения нажимаются без серверных ручек: ${JSON.stringify(live)}`);
+    }
+    await s.ctx.close();
+    // экран входа: человека ещё нет — и баланса в шапке нет
+    const s2 = await open(true, true, json(403, { detail: 'доступа нет' }));
+    if (await s2.p.evaluate(() => document.getElementById('bar-right').innerHTML !== '')) bad.push(`${n}: баланс в шапке на экране входа`);
+    await s2.ctx.close();
+  }
+
   // ── Telegram есть, подписи нет — витрина, а не вход (условие arhitector-47 на v69) ──
   // tryLive() требует подпись; без неё boot() обязан уйти в демонстрацию, не спросив сервер.
   {
@@ -1216,7 +1250,7 @@ if (grantsSet.length !== 1) {
   // (макет E23б) и кнопка пополнения из неё. Член без права кассы видит,
   // куда идти; админ — форму внести себе.
   const NOTILL = clone(OWNER); NOTILL.roles = [];
-  for (const [who, name, want] of [[NOTILL, 'topup-409', 'пополняется у хостес'], [OWNER, 'topup-409-admin', null]]) {
+  for (const [who, name, want] of [[NOTILL, 'topup-409', 'Как пополнить'], [OWNER, 'topup-409-admin', null]]) {
     const s = await open(true, true, json(200, who), null, null, null,
       bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830' }) }));
     await toBar(s);
@@ -1237,7 +1271,7 @@ if (grantsSet.length !== 1) {
     const s = await open(true, true, json(200, NOTILL), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-go="topup"]');
-    if (!(await s.view()).includes('пополняется у хостес')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
+    if (!(await s.view()).includes('Как пополнить')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
     if (posts(s).length) bad.push('topup: заказ ушёл при нехватке');
     await s.ctx.close();
   }
@@ -1932,7 +1966,7 @@ if (grantsSet.length !== 1) {
     }
     await s.ctx.close();
   }
-  // Без права кассы — прежний текст и никакой формы.
+  // Без права кассы — ветка «у всех остальных» (с #500: «Как пополнить», три серых пути) и никакой формы.
   {
     const poor = clone(BARMAN); poor.balance = 0;
     const s = await open(true, true, json(200, poor), null, null, null, bar());
@@ -1943,7 +1977,7 @@ if (grantsSet.length !== 1) {
       await s.p.click('#view [data-go="topup"]');
       await s.p.waitForTimeout(100);
       if (await s.p.$('#t-amount')) bad.push('topup-norole: форма внесения у бармена');
-      if (!(await s.view()).includes('у хостес')) bad.push('topup-norole: нет прежнего текста');
+      if (!(await s.view()).includes('Как пополнить')) bad.push('topup-norole: нет ветки «Как пополнить»');
     }
     await s.ctx.close();
   }

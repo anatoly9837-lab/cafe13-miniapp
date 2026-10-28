@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v82 · 28.10.2026';
+var VERSION = 'v83 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3968,6 +3968,8 @@ var ICON = {
   cup:  '<path d="M5 8h11v5a5 5 0 01-5 5h-1a5 5 0 01-5-5z"/><path d="M16 9h2.4a2.4 2.4 0 010 4.8H16"/><path d="M4 21h13"/>',
   bell: '<path d="M18.5 16.5h-13L7 14.1V10a5 5 0 0110 0v4.1z"/><path d="M10 19.5a2 2 0 004 0"/>',
   chart:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
+  // кошелёк с плюсом — вход в пополнение из шапки (Cafe13KPG#500); облик временный до кадра
+  wallet: '<path d="M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4z"/><path d="M4 7l11-3v3"/><path d="M14 13.5h6"/><path d="M17 10.5v6"/>',
   coin: '<ellipse cx="12" cy="7" rx="8" ry="3.2"/><path d="M4 7v10c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V7"/><path d="M4 12.2c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2"/>',
   chev: '<path d="M9 6l6 6-6 6"/>',
   // Та же стрелка, что у кнопки «Назад» в шапке (`index.html`): у подписи
@@ -5096,9 +5098,20 @@ var SCREENS = {
         (TOPUP.from === 'home' ? '' : '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>');
     }
     return (FLASH ? flash() : '') +
+      // Пополнение члена клуба (Cafe13KPG#500): ПЕРЕПИСАННАЯ ветка этого же экрана, а не новый.
+      // Все три пути сегодня серые и называют причину: ручек просьбы о пополнении ещё нет
+      // (#503), а реквизиты без них обещали бы «отправьте деньги» без «и мы зачислим».
+      // ⚠ Слова — черновые до кадра, кроме «Пока только баты» (слово владельца).
       '<div class="card strong"><span class="label">На счёте</span>' +
-        '<span class="big num">' + money(DATA.member.balance) + ' ฿</span>' +
-        '<p>Счёт пополняется у хостес клуба. Деньги появятся здесь сразу, как их внесут.</p></div>' +
+        '<span class="big num">' + money(DATA.member.balance) + ' ฿</span></div>' +
+      '<div class="group"><span class="label">Как пополнить</span>' +
+        [['Онлайн', 'Приём онлайн-пополнений ещё не включён.'],
+         // у хостес пополнить МОЖНО уже сейчас (касса, POST /till вид topup) — серая только кнопка в приложении
+         ['Касса', 'Сейчас — у хостес клуба; из приложения позже.'],
+         ['USDT', 'Пока только баты.']].map(function (x) {
+          return '<button type="button" class="btn ghost" disabled>' + x[0] + '</button>' +
+            '<span class="small" style="text-align:center">' + x[1] + '</span>';
+        }).join('') + '</div>' +
       '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>';
   },
 
@@ -6023,6 +6036,19 @@ function backTo() {
   return b || homeOf();
 }
 
+/* Баланс в шапке (Cafe13KPG#500, слово владельца): справа на уровне «Café XIII»,
+   по умолчанию СКРЫТ; тап показывает, повторный прячет. Рядом — кошелёк с плюсом,
+   вход в пополнение. Число — то же DATA.member.balance, что из корня /me.
+   На экранах входа (BARE) шапка пустая: человека ещё нет. */
+var BAL = { shown: false };
+function barRight() {
+  if (bare() || !DATA.member || typeof DATA.member.balance !== 'number') return '';
+  return '<button type="button" class="bal" id="bal" data-action="bal-toggle" aria-pressed="' + BAL.shown + '"' +
+      ' aria-label="' + (BAL.shown ? 'Скрыть баланс' : 'Показать баланс') + '">' +
+      (BAL.shown ? money(DATA.member.balance) + ' ฿' : '••• ฿') + '</button>' +
+    '<button type="button" class="icon-btn" id="wallet" data-go="topup" aria-label="Пополнить счёт">' + svg(ICON.wallet) + '</button>';
+}
+
 /* Экраны без вкладок: уйти с них можно решением, а не переключением. */
 var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 function bare() { return !!BARE[current]; }
@@ -6054,6 +6080,8 @@ function render() {
     title.textContent = LIVE && current === 'demo' ? 'Просмотр' : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
+  var right = document.getElementById('bar-right');
+  if (right) right.innerHTML = barRight();
 
   var tabs = document.getElementById('tabs');
   var list = bare() ? [] : tabList();
@@ -6554,6 +6582,7 @@ function doAction(a) {
     }
     if (a === 'reset-consent') { if (LIVE) return; dropConsent(); go('consent'); return; }
     if (a === 'retry') { boot(); return; }
+    if (a === 'bal-toggle') { BAL.shown = !BAL.shown; render(); return; }
     // просьба о вступлении: до входа LIVE ложно, поэтому без «&& LIVE»
     if (a === 'join-retry') { loadJoin(); render(); return; }
     if (a === 'join-pay' && JOIN_PAY[arg]) { JOIN.pay = arg; loadRequisites(arg); render(); return; }
