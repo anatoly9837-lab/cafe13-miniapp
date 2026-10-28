@@ -2116,7 +2116,8 @@ function personCard(p, k) {
   var X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   // Кадры E47z/E47k/E47l: доступ — надпись-кнопка («размер оставить»), крестик снимает без вопроса.
   // Уровень членства — чип БЕЗ крестика и не нажимается НАРОЧНО: ручки снятия уровня на бою нет
-  // (POST /memberships/{id}/revoke — в стволе api, v79). Кнопка не обещает того, чего сервер не делает.
+  // (POST /memberships/{id}/revoke — ещё и не в стволе api: cafe13-api#85 открыт, 28.10.2026).
+  // Кнопка не обещает того, чего сервер не делает.
   var rows = '<div class="chips">' +
     p.lv.map(function (l) { return '<span class="chip paid">' + esc(l) + '</span>'; }).join('') +
     p.roles.map(function (r) {
