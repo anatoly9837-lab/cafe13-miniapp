@@ -112,14 +112,17 @@ function не_выполнено(текст) {
          меню» есть и на «Клубе», и на «Заказах». Запомнить только первого —
          значит сказать на странице «дверь на „Заказы“» там, где их две. */
       const двери = {};
-      вкладки.forEach((т) => { двери[т[0]] = ['вкладка']; });
-      const очередь = вкладки.map((т) => т[0]);
+      // закрытая вкладка (заморозка, Cafe13KPG#510) видна, но не ведёт никуда — пути через неё нет
+      const открыты = вкладки.filter((т) => !(typeof closed === 'function' && closed(т[0])));
+      открыты.forEach((т) => { двери[т[0]] = ['вкладка']; });
+      const очередь = открыты.map((т) => т[0]);
       while (очередь.length) {
         const к = очередь.shift();
         let вышло;
         try {
           current = к; param = null; render();
-          вышло = [].slice.call(document.querySelectorAll('#view [data-go]'))
+          // погашенный вход — не дверь: `render()` гасит входы на закрытые экраны (Cafe13KPG#510)
+          вышло = [].slice.call(document.querySelectorAll('#view [data-go]:not([disabled])'))
                     .map((э) => э.getAttribute('data-go'));
           всего_в_документе = Math.max(всего_в_документе,
             document.querySelectorAll('[data-go]').length);
