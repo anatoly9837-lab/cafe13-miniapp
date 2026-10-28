@@ -6641,7 +6641,18 @@ function doAction(a) {
         var bk = a === 'p-lvask' ? Number(String(arg).split('.')[0]) : (PEOPLE.list || []).findIndex(function (x) {
           return x.roles.some(function (r) { return r.id === Number(arg); }); });
         var bp = PEOPLE.list && PEOPLE.list[bk];
-        if (bp) { PEOPLE.deny = { uid: bp.uid, text: 'Сначала закончите открытое снятие: дождитесь его или нажмите «Отменить».' }; haptic('warn'); peopleRedraw(before); }
+        // Слова designer-55. Экран НЕ прокручивается к полосе — слово владельца «каждый клик дергает
+        // экран… возвращайся где было» (#490); вместо прокрутки текст НАЗЫВАЕТ, что снимается, и
+        // человек найдёт полосу сам. Нужен, пока окно одно на экран (v78).
+        if (bp) {
+          var busyWords = '';
+          (PEOPLE.list || []).forEach(function (x, i) {
+            x.roles.forEach(function (r) { if (r.id === PEOPLE.ask) busyWords = r.words; });
+            x.lvKeys.forEach(function (c, j) { if (PEOPLE.lvAsk === i + '.' + c) busyWords = x.lv[j]; });
+          });
+          PEOPLE.deny = { uid: bp.uid, text: 'Идёт снятие «' + busyWords + '»: дождитесь его или отмените.' };
+          haptic('warn'); peopleRedraw(before);
+        }
         return;
       }
       if (a === 'p-ask') undoStart(Number(arg));

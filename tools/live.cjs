@@ -6390,15 +6390,29 @@ if (grantsSet.length !== 1) {
     }
     // окно одно на экран: крестик, нажатый в открытое окно, второго окна не открывает и НЕ МОЛЧИТ —
     // в карточке того, по кому нажали, сказано, почему ничего не снимается (иначе немая кнопка, #338)
+    // Список длинный НАРОЧНО: полоса открыта у верхней карточки, нажатие — у нижней, и полоса за краем
+    // окна (самоконтроль). Экран при этом НЕ прыгает (слово владельца, #490) — текст называет снимаемое.
     {
-      const n = 'lv-second', s = await peopleCase(OWNER, {});
+      const n = 'lv-second', long = clone(ROSTER), L = ROSTER.people.length + 15;
+      for (let i = 0; i < 16; i++) long.people.push({ tg_user_id: 740 + i, first_name: '[член клуба ' + (i + 1) + ']', last_name: null, lang: 'ru',
+        roles: [], memberships: ['member'] });
+      const s = await peopleCase(OWNER, { people: json(200, long) });
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 3000; });
       await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
-      await act(s, 'p-lvask:2.member'); await s.p.waitForTimeout(80);
+      await s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).scrollIntoView({ block: 'center' }), L);
+      await s.p.waitForTimeout(80);
+      const inView = () => s.p.evaluate(() => { const r = document.querySelector('.undo').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
+      if (await inView()) bad.push(`${n}: полоса уже в виду до нажатия — проверять прокрутку не на чем`);
+      const y0 = await s.p.evaluate(() => window.scrollY);
+      await act(s, `p-lvask:${L}.member`); await s.p.waitForTimeout(80);
+      const y1 = await s.p.evaluate(() => window.scrollY);
+      if (Math.abs(y1 - y0) > 2) bad.push(`${n}: отказ сдвинул экран (${y0} → ${y1}) — «возвращайся где было»`);
       if ((await s.p.$$('.undo')).length !== 1) bad.push(`${n}: окон отмены ${(await s.p.$$('.undo')).length}, ждали одно`);
-      const d = await s.p.$eval(`${card(s, 2)} .deny`, e => e.textContent).catch(() => '');
-      if (!d.includes('Сначала закончите открытое снятие')) bad.push(`${n}: второй крестик в открытое окно промолчал: «${d}»`);
+      const d = await s.p.$eval(`${card(s, L)} .deny`, e => e.textContent).catch(() => '');
+      // имя в тексте — ИЗ ПОЛОСЫ, а не вписанное: сверка с её собственным текстом
+      const busy = await s.p.$eval('.undo .small', e => e.textContent.replace(/^Снимаем: /, '')).catch(() => '?');
+      if (!d.includes('Идёт снятие «' + busy + '»: дождитесь его или отмените.')) bad.push(`${n}: второй крестик в открытое окно промолчал или не назвал снимаемое («${busy}»): «${d}»`);
       await act(s, 'p-keep');
       if (lvPosts(s).length || posts(s, /\/roles\/\d+\/revoke$/).length) bad.push(`${n}: ушёл запрос`);
       await s.ctx.close();
