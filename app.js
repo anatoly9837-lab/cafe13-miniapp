@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v68 · 28.10.2026';
+var VERSION = 'v69 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -456,6 +456,172 @@ function decideRequest(id, decision) {
     // и после отказа: «уже не ждёт ответа» значит, что список устарел
     loadRequests();
     if (current === 'memberRequests') render();
+  });
+}
+
+/* ── просьба о вступлении (Cafe13KPG#459, кадры E44*) ─────────────
+   Экран того, кого нет в списке допущенных: `/me` ответил 403. Ручки /join*
+   висят на ПОДПИСИ, а не на допуске (api#78, app/routers/join.py), —
+   поэтому они отвечают ровно тому, кому отказал /me. Экран — `noAccess`, он
+   в BARE, и охрана входа (noEntry, #458) его пускает.
+
+   Деньги приложение не принимает: человек платит своим путём ДО просьбы, и
+   просьба без чека не уходит (сервер: receipt NOT NULL, 422).
+
+   Сумм в клиенте нет: обе приходят с сервера (`amount_thb`, `amount_usd`),
+   и это две назначенные цены, а не одна с курсом (слово владельца). Реквизиты —
+   картинки с сервера по подписи: на них имя живого человека, в публичном
+   клиенте им не место. */
+var JOIN_STATES = { pending: 1, approved: 1, rejected: 1 };
+var RECEIPT_MAX = 2 * 1024 * 1024;   // потолок сервера (MAX_RECEIPT); проверяем ДО отправки
+var RECEIPT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+/* method — слово сервера для способа (pay_method, api eba22fb): без него согласие
+   главы клуба не пишет деньги в книгу и не кладёт человеку на счёт его долю. */
+var JOIN_PAY = {
+  promptpay: { name: 'PromptPay', method: 'transfer', where: 'Bangkok Bank · Thai QR', cur: '฿',
+               hint: 'QR суммы не несёт — её вводят руками.' },
+  usdt:      { name: 'USDT', method: 'crypto', where: 'Binance · сеть TRC20', cur: 'USDT',
+               hint: 'Перевод в другой сети не возвращается.' }
+};
+
+// «Вы входите как …» — кем увидел сервер по подписи: у человека бывает два аккаунта
+function joinWho() {
+  var j = JOIN.info;
+  if (!j || !j.name) return '';
+  return '<span class="small">Вы входите как <b>' + esc(j.name) + (j.nick ? ' · ' + esc(j.nick) : '') + '</b></span>';
+}
+// Ответ GET /join → то, что рисует экран; null — не разобран целиком
+function fromJoin(d) {
+  if (!d || typeof d !== 'object') return null;
+  var thb = num(d.amount_thb), usd = num(d.amount_usd);
+  if (!(thb > 0) || !(usd > 0) || d.currency !== 'THB') return null;
+  if (typeof d.about_token !== 'string' || !d.about_token) return null;
+  var y = d.you;
+  if (!y || typeof y !== 'object' || typeof y.first_name !== 'string') return null;
+  var q = d.request, req = null;
+  if (q !== null) {
+    if (!q || typeof q !== 'object' || typeof q.id !== 'number' || !JOIN_STATES[q.status]) return null;
+    req = { id: q.id, status: q.status,
+            note: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' };
+  }
+  return {
+    thb: thb, usd: usd, request: req, token: d.about_token,
+    name: [y.first_name, typeof y.last_name === 'string' ? y.last_name : ''].filter(Boolean).join(' '),
+    nick: typeof y.username === 'string' && y.username ? '@' + y.username : ''
+  };
+}
+
+/* pay — выбранный способ; img — адреса картинок реквизитов (blob:), 'fail' —
+   не загрузилась; file — приложенный чек {mime, b64, size}; again — после
+   отказа человек попросил снова и видит форму. */
+var JOIN = { info: null, fail: '', gen: 0, pay: 'promptpay', img: {}, said: '',
+             file: null, fileErr: '', busy: false, err: '', again: false };
+
+// при КАЖДОМ входе на экран: ссылка «О клубе» живёт час, и с прошлого входа она могла умереть
+function loadJoin() {
+  var gen = ++JOIN.gen;
+  JOIN.fail = '';
+  api('GET', '/join').then(function (r) {
+    if (gen !== JOIN.gen) return;
+    var got = r.status === 200 ? fromJoin(r.data) : null;
+    if (got) JOIN.info = got;
+    else { JOIN.info = null; JOIN.fail = r.status === 200 ? failText(r) : denyText(r); }
+    if (got) loadRequisites(JOIN.pay);
+    if (current === 'noAccess') render();
+  });
+}
+
+/* Картинка реквизитов — по подписи, поэтому не <img src>: браузер заголовка
+   не пошлёт. Забираем сами и показываем адресом blob:. */
+function loadRequisites(name) {
+  if (JOIN.img[name]) return;
+  JOIN.img[name] = 'loading';
+  var opt = { headers: { 'X-Telegram-Init-Data': tg.initData } };
+  fetch(API + '/join/requisites/' + name, opt).then(function (r) {
+    var type = r.headers.get('Content-Type') || '';
+    if (r.status !== 200 || type.indexOf('image/') !== 0) throw new Error('requisites ' + r.status);
+    return r.blob();
+  }).then(function (b) {
+    JOIN.img[name] = URL.createObjectURL(b);
+  }, function () {
+    JOIN.img[name] = 'fail';
+  }).then(function () {
+    if (current === 'noAccess') render();
+  });
+}
+
+// чек → base64 без префикса data:; снимок ужимается, PDF идёт как есть
+function readAsB64(blob) {
+  return new Promise(function (ok, no) {
+    var fr = new FileReader();
+    fr.onload = function () { var s = String(fr.result); ok(s.slice(s.indexOf(',') + 1)); };
+    fr.onerror = no;
+    fr.readAsDataURL(blob);
+  });
+}
+/* Снимок с телефона легко больше 2 МиБ, а отказ 413 приходит после долгой
+   загрузки и после того, как человек уже заплатил. Поэтому снимок ужимается
+   здесь: длинная сторона не больше 1600 px, JPEG; не влез — качество ниже,
+   ступенями. 2 МиБ — потолок, а не цель. */
+function shrink(file) {
+  return new Promise(function (ok, no) {
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function () {
+      var k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      var c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      var steps = [0.85, 0.7, 0.5];
+      (function next() {
+        c.toBlob(function (b) {
+          if (!b) return no(new Error('toBlob'));
+          if (b.size > RECEIPT_MAX && steps.length > 1) { steps.shift(); return next(); }
+          ok(b);
+        }, 'image/jpeg', steps[0]);
+      })();
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); no(new Error('image')); };
+    img.src = url;
+  });
+}
+function attachReceipt(file) {
+  JOIN.fileErr = ''; JOIN.err = '';
+  if (RECEIPT_TYPES.indexOf(file.type) === -1) {
+    JOIN.file = null; JOIN.fileErr = 'Чек — фото или PDF. Выберите другой файл.'; render(); return;
+  }
+  var pdf = file.type === 'application/pdf';
+  (pdf ? Promise.resolve(file) : shrink(file)).then(function (b) {
+    if (b.size > RECEIPT_MAX) throw new Error('big');
+    return readAsB64(b).then(function (s) {
+      JOIN.file = { mime: pdf ? 'application/pdf' : 'image/jpeg', b64: s, size: b.size, pdf: pdf };
+    });
+  }).catch(function (e) {
+    JOIN.file = null;
+    JOIN.fileErr = e && e.message === 'big' ? 'Чек больше 2 МБ — приложите файл поменьше.' : 'Чек не прочитался — приложите его снова.';
+  }).then(function () {
+    if (current === 'noAccess') render();
+  });
+}
+
+function sendJoin() {
+  if (JOIN.busy || !JOIN.file) return;
+  var said = document.getElementById('join-said');
+  if (said) JOIN.said = said.value;
+  JOIN.busy = true; JOIN.err = ''; render();
+  api('POST', '/join/request', { said: JOIN.said.trim(), pay_method: JOIN_PAY[JOIN.pay].method, receipt_mime: JOIN.file.mime,
+                                 receipt_base64: JOIN.file.b64 }).then(function (r) {
+    JOIN.busy = false;
+    if (r.status === 201 && r.data && typeof r.data.id === 'number') {
+      // экран «ждёт ответа» рисует ответ сервера, а не наша догадка: перечитать
+      JOIN.file = null; JOIN.said = ''; JOIN.again = false;
+      loadJoin();
+    } else {
+      JOIN.err = denyText(r);
+      // «уже ждёт ответа» — состояние у сервера новее нашего
+      if (r.status === 409) loadJoin();
+    }
+    if (current === 'noAccess') render();
   });
 }
 
@@ -3434,6 +3600,7 @@ var ICON = {
   cal:  '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4M16 3v4M4 11h16"/>',
   till: '<path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M3 12h18"/>',
   cam:  '<path d="M3 7h3l2-3h8l2 3h3v12H3z"/><circle cx="12" cy="13" r="3.5"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   star: '<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
   case: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 12h18"/>',
@@ -5002,10 +5169,62 @@ var SCREENS = {
       '<p class="small">Закройте приложение и откройте его снова кнопкой меню в чате с ботом.</p></div>';
   },
 
+  // Кого нет в списке: просьба о вступлении (кадры E44*, Cafe13KPG#459)
   noAccess: function () {
-    return '<div class="card strong"><h2>Вас нет в списке</h2>' +
-      '<p>Приложение клуба пока открыто только для тех, кого внёс владелец. Подпись Telegram в порядке — дело не в ней.</p>' +
-      '<p class="small">Если вам нужен доступ, напишите владельцу клуба.</p></div>';
+    var j = JOIN.info, note = '<div class="note">' + svg(ICON.info) +
+      '<span>Приложение денег не принимает: оплата идёт прямо в клуб.</span></div>';
+    var head = '<h2>Вас ещё нет в списке</h2>' + joinWho() +
+      '<p>Приложение открыто тем, кого внёс владелец. Попасть в список можно отсюда.</p>';
+    if (!j) return '<div class="card strong">' + head +
+      (JOIN.fail ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(JOIN.fail) + '</span></div>' +
+        '<button type="button" class="btn" data-action="join-retry">Попробовать снова</button>' : '') + '</div>';
+    var q = j.request;
+    // E44g: ждёт ответа — отправки нет, вторую сервер отвергнет
+    if (q && q.status === 'pending') return '<div class="card strong"><div class="row top"><div class="col">' +
+        '<h2>Просьба отправлена</h2>' + joinWho() + '</div><span class="pill">ЖДЁТ ОТВЕТА</span></div>' +
+        '<p>Глава клуба посмотрит чек и ответит здесь же. Второй раз просить не нужно: сервер отвечает «ваша просьба уже ждёт ответа».</p></div>' + note;
+    // E44e: согласовано, а /me читался при старте — войти тем же путём, что «Попробовать снова»
+    if (q && q.status === 'approved') return '<div class="card strong"><div class="row top"><div class="col">' +
+        '<h2>Вас приняли в клуб</h2>' + joinWho() + '</div><span class="pill">СОГЛАСОВАНО</span></div>' +
+        '<p>Членство уже создано. Осталось войти — приложение перечитает вас с сервера.</p>' +
+        '<button type="button" class="btn" data-action="retry">Войти в клуб</button>' +
+        '<span class="small" style="text-align:center">Если клуб всё ещё не открылся — закройте приложение и откройте снова.</span></div>';
+    // E44d: отказано — слово решившего плашкой, это чужая прямая речь
+    if (q && q.status === 'rejected' && !JOIN.again) return '<div class="card strong"><div class="row top"><div class="col">' +
+        '<h2 style="color:var(--clay-ink)">Просьба отклонена</h2>' + joinWho() + '</div><span class="pill warm">ОТКАЗАНО</span></div>' +
+        '<p>Можно попросить снова — например, с другим чеком.</p>' +
+        (q.note ? '<div class="deny">' + svg(ICON.info) + '<span>«' + esc(q.note) + '»</span></div>' : '') +
+        '<button type="button" class="btn" data-action="join-again">Попросить снова</button></div>';
+    // E44, E44b, E44v: просьбы нет — форма
+    var m = JOIN_PAY[JOIN.pay], img = JOIN.img[JOIN.pay], f = JOIN.file, gone = img === 'fail';
+    return '<div class="card strong">' + head +
+        '<button type="button" class="btn quiet" data-action="join-about">О клубе — презентация</button></div>' +
+      '<div class="group"><span class="label">Чем платить</span><div class="seg">' +
+        Object.keys(JOIN_PAY).map(function (k) {
+          return '<button type="button" data-action="join-pay:' + k + '" aria-pressed="' + (JOIN.pay === k) + '">' + JOIN_PAY[k].name + '</button>';
+        }).join('') + '</div>' +
+        '<div class="qr"><div>' +
+          // E44zh: реквизитов нет — строка вместо квадрата (сообщению нужна ширина), суммы нет, платить не по чему
+          (gone ? '<div class="row"><span class="small">Реквизиты не загрузились</span>' +
+                  '<button type="button" class="btn quiet mini" data-action="join-req-retry">Повторить</button></div>' +
+                '<div class="row"><span class="small">' + m.where + '</span><span class="small">суммы нет</span></div>' +
+                '<span class="small">Платить не по чему, пока их нет.</span>'
+           : (img && img !== 'loading' ? '<div class="place img"><img src="' + esc(img) + '" alt="Реквизиты ' + m.name + '"></div>'
+              : '<div class="place"><span>Загружаем реквизиты…</span></div>') +
+            '<div class="row"><span class="small">' + m.where + '</span><b class="num">' +
+              money(JOIN.pay === 'usdt' ? j.usd : j.thb) + ' ' + m.cur + '</b></div>' +
+            '<span class="small">' + m.hint + '</span>') + '</div></div></div>' +
+      '<div class="field"><label for="join-said">Пара слов о себе <span class="small">— необязательно</span></label>' +
+        '<textarea id="join-said" maxlength="1000" placeholder="Кто вы и почему хотите в клуб">' + esc(JOIN.said) + '</textarea></div>' +
+      // близнец «Фото чека» затрат, но без камеры по умолчанию: чек уже лежит в телефоне (кадр E44)
+      '<label class="btn ghost" for="join-file">' + svg(f ? ICON.check : ICON.cam) + (f ? 'Чек приложен · заменить' : 'Приложить чек') +
+        '<input id="join-file" type="file" accept="' + RECEIPT_TYPES.join(',') + '" hidden></label>' +
+      '<span class="small" style="text-align:center">' +
+        (f ? (f.pdf ? 'PDF' : 'Фото') + ' · ' + money(Math.max(1, Math.round(f.size / 1024))) + ' КБ' : 'Фото или PDF, до 2 МБ') + '</span>' +
+      (JOIN.fileErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(JOIN.fileErr) + '</span></div>' : '') +
+      (JOIN.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(JOIN.err) + '</span></div>' : '') +
+      '<button type="button" class="btn" data-action="join-send"' + (!f || gone || JOIN.busy ? ' disabled' : '') + '>' +
+        (JOIN.busy ? '…' : 'Отправить запрос') + '</button>' + note;
   },
 
   apiDown: function () {
@@ -5516,6 +5735,7 @@ var DEMO_SENDS = ['p-grant', 'p-revoke', 'p-reload', 'c-save', 'c-group-theirs',
 function go(screen, p) {
   if (!SCREENS[screen]) return;
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
+  if (screen === 'noAccess' && current !== 'noAccess') { JOIN.err = ''; JOIN.fileErr = ''; loadJoin(); }
   if (screen === 'demo' && LIVE && !isGod()) return;
   if (screen === 'demo' && LIVE && !TEST.on && TEST.health !== 'configured' && TEST.health !== 'loading') loadHealth();
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
@@ -5897,6 +6117,18 @@ function doAction(a) {
     }
     if (a === 'reset-consent') { if (LIVE) return; dropConsent(); go('consent'); return; }
     if (a === 'retry') { boot(); return; }
+    // просьба о вступлении: до входа LIVE ложно, поэтому без «&& LIVE»
+    if (a === 'join-retry') { loadJoin(); render(); return; }
+    if (a === 'join-pay' && JOIN_PAY[arg]) { JOIN.pay = arg; loadRequisites(arg); render(); return; }
+    if (a === 'join-req-retry') { delete JOIN.img[JOIN.pay]; loadRequisites(JOIN.pay); render(); return; }
+    if (a === 'join-again') { JOIN.again = true; JOIN.err = ''; render(); return; }
+    if (a === 'join-send') { sendJoin(); return; }
+    // тетрадь клуба — браузером по токену на час: заголовка подписи браузер не шлёт
+    if (a === 'join-about' && JOIN.info) {
+      var about = API + '/join/about?t=' + encodeURIComponent(JOIN.info.token);
+      if (tg.openLink) tg.openLink(about); else window.open(about, '_blank');
+      return;
+    }
     if (a === 'retry-pass') { loadPass(); render(); return; }
     if (a === 'mr-send' && LIVE) { sendRequest(arg); return; }
     if (a === 'mr-retry' && LIVE) { loadTiers(); render(); return; }
@@ -5924,6 +6156,7 @@ function doAction(a) {
 document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'p-find') { PEOPLE.find = ev.target.value; peopleFilter(); }
   if (ev.target && ev.target.id === 'd-note') MREQS.note = ev.target.value;
+  if (ev.target && ev.target.id === 'join-said') JOIN.said = ev.target.value;
 });
 
 // Касса: набранное сразу в память формы — перерисовка от выбора способа или
@@ -5937,6 +6170,7 @@ document.addEventListener('change', function (ev) {
   var t = ev.target;
   // смена даты сразу показывает, в чей отчёт уйдёт запись
   if (t && t.id === 'b-date' && current === 'barMoney' && !BOOK.busy) { bookGrab(); render(); return; }
+  if (t && t.id === 'join-file') { if (t.files && t.files[0]) attachReceipt(t.files[0]); return; }
   if (!t || (t.id !== 'shot-file' && t.id !== 'bill-file')) return;
   var f = t.files && t.files[0];
   if (!f) return;

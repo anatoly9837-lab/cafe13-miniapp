@@ -16,11 +16,14 @@ const ROOT = process.env.APP || '/app';
 const OUT = process.env.OUT || '/work';
 const INIT = 'query_id=AAE&user=%7B%22id%22%3A1%7D&auth_date=1760000000&hash=stub';
 
+// inside: true — Telegram с подписью; 'nosign' — Telegram есть, подписи нет; false — браузер
 function tgStub(inside) {
-  return `window.__main = null;
+  const signed = inside === true;
+  return `window.__main = null; window.__link = null;
   window.Telegram = { WebApp: {
-    platform: ${inside ? "'ios'" : "'unknown'"}, initData: ${inside ? JSON.stringify(INIT) : "''"},
-    initDataUnsafe: ${inside ? '{ user: { id: 1 } }' : '{}'}, colorScheme: 'light', version: '7.0',
+    platform: ${inside ? "'ios'" : "'unknown'"}, initData: ${signed ? JSON.stringify(INIT) : "''"},
+    initDataUnsafe: ${signed ? '{ user: { id: 1 } }' : '{}'}, colorScheme: 'light', version: '7.0',
+    openLink: function (u) { window.__link = u; },
     isVersionAtLeast: function () { return true; },
     ready: function () {}, expand: function () {}, onEvent: function () {},
     HapticFeedback: { notificationOccurred: function () {}, selectionChanged: function () {} },
@@ -66,9 +69,10 @@ const CASES = [
     ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 2],
   ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 2],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
-    ['Подпись не принята'], ['Баланс', 'Вас нет в списке'], 1],
+    ['Подпись не принята'], ['Баланс', 'нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
-    ['Вас нет в списке'], ['Баланс', 'Подпись не принята', 'Член клуба'], 1],
+    // + GET /join: экран просьбы спрашивает сервер сам (Cafe13KPG#459); здесь /join тоже 403
+    ['Вас ещё нет в списке'], ['Баланс', 'Подпись не принята', 'Член клуба'], 2],
   ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], ['Баланс'], 1],
   ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], ['Баланс'], 1],
   ['html-200', true, true, { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
@@ -210,7 +214,7 @@ if (grantsSet.length !== 1) {
       if (!(await s.view()).includes(stay)) bad.push(`${n}: переход data-go увёл с экрана отказа`);
     };
     for (const [n, me, stay] of [
-      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Вас нет в списке'],
+      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Вас ещё нет в списке'],
       ['vyhod-401', json(401, { detail: 'подпись не принята' }), 'Подпись не принята'],
       ['vyhod-500', json(500, { detail: 'x' }), 'Сервер клуба недоступен']]) {
       const s = await open(true, true, me);
@@ -245,6 +249,198 @@ if (grantsSet.length !== 1) {
         if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: «назад» на витрине не вернула на главную`);
       }
       if (s.calls.length) bad.push(`${n}: витрина спросила сервер (${s.calls.length})`);
+      await s.ctx.close();
+    }
+  }
+
+  // ── Telegram есть, подписи нет — витрина, а не вход (условие arhitector-47 на v69) ──
+  // tryLive() требует подпись; без неё boot() обязан уйти в демонстрацию, не спросив сервер.
+  {
+    const n = 'tg-bez-podpisi';
+    const s = await open('nosign', true, json(401, { detail: 'подпись не принята' }));
+    const t = await s.view();
+    if (s.calls.length) bad.push(`${n}: без подписи ушло запросов к серверу: ${s.calls.length}`);
+    if (t.includes('Подпись не принята') || t.includes('нет в списке')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
+    if (!t.includes('1 250')) bad.push(`${n}: без подписи нет витрины (демонстрационного баланса)`);
+    await s.ctx.close();
+  }
+
+  // ── просьба о вступлении вместо тупика «нет в списке» (Cafe13KPG#459, кадры E44*) ──
+  {
+    const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    // имя — роль-словом, ник — короче пяти знаков: такого у живого аккаунта Telegram быть не может
+    const JOIN0 = { amount_thb: '3600.00', amount_usd: '130.00', period_months: 1, currency: 'THB',
+                    request: null, about_token: 'tok-проверка',
+                    you: { first_name: '[просящий]', last_name: '', username: 'ab' } };
+    const withReq = (status, note) => Object.assign(clone(JOIN0), { request: {
+      id: 7, status, said: '', created_at: '2026-10-28T08:00:00+00:00', decided_at: null,
+      decision_note: note || '', status_ru: '' } });
+    // ответы /join*: join — функция или ответ; post — ответ на POST /join/request
+    const joinCase = async (join, post, me) => {
+      const posted = [];
+      const s = await open(true, true, me || json(403, { detail: 'доступа нет' }), null, null, null, q => {
+        const u = q.url();
+        if (/\/join\/requisites\/(promptpay|usdt)$/.test(u)) return { status: 200, contentType: 'image/png', body: PNG1 };
+        if (u.endsWith('/join/request') && q.method() === 'POST') { posted.push(JSON.parse(q.postData())); return post || json(201, { id: 7, status: 'pending' }); }
+        if (u.endsWith('/join')) return typeof join === 'function' ? join() : join;
+        return undefined;
+      });
+      await s.p.waitForTimeout(200);
+      return Object.assign(s, { posted });
+    };
+    // клик изнутри страницы: запертая или пропавшая кнопка — ничего не делает, а не обрыв по таймауту
+    const tap = async (s, sel) => { await s.p.evaluate(q => { const e = document.querySelector(q); if (e) e.click(); }, sel); await s.p.waitForTimeout(200); };
+    const pdf = n => ({ name: 'chek.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(n, 0x25) });
+    // нет поля чека — строка «не выполнено», а не обрыв по таймауту, прячущий остальное
+    const attach = async (s, n, file) => {
+      if (!(await s.p.$('#join-file'))) { bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — нет поля чека`); return; }
+      await s.p.setInputFiles('#join-file', file, { timeout: 60000 });
+    };
+
+    // форма (E44, E44b, E44v): имя из подписи, обе цены с сервера, реквизиты по подписи, PDF как есть
+    {
+      const n = 'join-forma';
+      let state = JOIN0;
+      const s = await joinCase(() => json(200, state));
+      let t = await s.view();
+      for (const w of ['Вас ещё нет в списке', 'Вы входите как', '[просящий] · @ab', '3 600 ฿', 'Bangkok Bank', 'Фото или PDF, до 2 МБ'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      if (!(await s.p.$('[data-action="join-send"][disabled]'))) bad.push(`${n}: без чека «Отправить запрос» доступна`);
+      if (!(await s.p.$('.qr img'))) bad.push(`${n}: реквизиты PromptPay не показаны картинкой`);
+      if (!s.calls.some(c => c.url.endsWith('/join/requisites/promptpay') && c.init === INIT))
+        bad.push(`${n}: реквизиты не спрошены с подписью`);
+      await tap(s, '[data-action="join-pay:usdt"]');
+      t = await s.view();
+      for (const w of ['130 USDT', 'сеть TRC20']) if (!t.includes(w)) bad.push(`${n}: USDT — нет «${w}»`);
+      if (t.includes('3 600 USDT')) bad.push(`${n}: в USDT показана сумма в батах`);
+      await tap(s, '[data-action="join-about"]');
+      const link = await s.p.evaluate(() => window.__link);
+      if (link !== 'https://api.cafe13.club/join/about?t=' + encodeURIComponent('tok-проверка'))
+        bad.push(`${n}: «О клубе» открыло ${JSON.stringify(link)}`);
+      await s.p.fill('#join-said', 'хочу на вечера');
+      await attach(s, n, pdf(1500));
+      await s.p.waitForTimeout(300);
+      t = await s.view();
+      if (!t.includes('Чек приложен · заменить') || !t.includes('PDF · 1 КБ')) bad.push(`${n}: приложенный PDF не назван (E44b)`);
+      if (await s.p.$('[data-action="join-send"][disabled]')) bad.push(`${n}: с чеком «Отправить запрос» недоступна`);
+      state = withReq('pending');
+      await tap(s, '[data-action="join-send"]');
+      const b = s.posted[0];
+      // способ выбран USDT выше — до сервера он доезжает словом сервера (pay_method)
+      if (!b || b.said !== 'хочу на вечера' || b.pay_method !== 'crypto' || b.receipt_mime !== 'application/pdf' ||
+          b.receipt_base64 !== pdf(1500).buffer.toString('base64'))
+        bad.push(`${n}: просьба ушла так: ${JSON.stringify(b && { said: b.said, pay: b.pay_method, mime: b.receipt_mime, len: (b.receipt_base64 || '').length })}`);
+      t = await s.view();
+      if (!t.includes('Просьба отправлена') || !t.includes('ЖДЁТ ОТВЕТА')) bad.push(`${n}: после отправки не экран «ждёт ответа» (E44g)`);
+      if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: у ждущей просьбы есть отправка`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // снимок ужимается в клиенте: большой PNG уходит JPEG-ом не больше 2 МиБ
+    {
+      const n = 'join-szhatie';
+      const s = await joinCase(json(200, JOIN0));
+      // проба — непрозрачный шум 1400×1400: PNG больше потолка, но не десятки мегабайт
+      // (2400×2400 с прозрачностью под нагрузкой не успевал загрузиться в поле за 30 с)
+      const big = await s.p.evaluate(() => {
+        const c = document.createElement('canvas'); c.width = 1400; c.height = 1400;
+        const g = c.getContext('2d'), d = g.createImageData(1400, 1400);
+        // xorshift: шум не сжимается, и PNG выходит заведомо больше потолка
+        let x = 1;
+        for (let i = 0; i < d.data.length; i++) { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; d.data[i] = i % 4 === 3 ? 255 : x & 255; }
+        g.putImageData(d, 0, 0);
+        return c.toDataURL('image/png').split(',')[1];
+      });
+      const buf = Buffer.from(big, 'base64');
+      if (buf.length <= 2 * 1024 * 1024) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — снимок-проба ${buf.length} байт, не больше потолка`);
+      await attach(s, n, { name: 'chek.png', mimeType: 'image/png', buffer: buf });
+      await s.p.waitForTimeout(1500);
+      await tap(s, '[data-action="join-send"]');
+      const b = s.posted[0];
+      const len = b ? Buffer.from(b.receipt_base64, 'base64').length : -1;
+      if (!b || b.receipt_mime !== 'image/jpeg' || len > 2 * 1024 * 1024 || len <= 0)
+        bad.push(`${n}: снимок ушёл так: ${JSON.stringify(b ? { mime: b.receipt_mime, bytes: len } : null)}; на экране: ${(await s.view()).slice(0, 200)}`);
+      // способ по умолчанию — PromptPay, то есть перевод
+      if (b && b.pay_method !== 'transfer') bad.push(`${n}: способ PromptPay ушёл как ${JSON.stringify(b.pay_method)}`);
+      await s.ctx.close();
+    }
+    // PDF больше потолка: отказ ДО отправки, словами, отправка заперта
+    {
+      const n = 'join-bolshoy';
+      const s = await joinCase(json(200, JOIN0));
+      await attach(s, n, pdf(2 * 1024 * 1024 + 10));
+      await s.p.waitForTimeout(400);
+      if (!(await s.view()).includes('Чек больше 2 МБ')) bad.push(`${n}: про потолок 2 МБ не сказано до отправки`);
+      if (!(await s.p.$('[data-action="join-send"][disabled]'))) bad.push(`${n}: с чеком больше потолка отправка доступна`);
+      await s.ctx.close();
+    }
+    // отказ сервера — его словами, плашкой
+    {
+      const n = 'join-otkaz';
+      const s = await joinCase(json(200, JOIN0), json(413, { detail: 'чек больше 2 МиБ — пришлите снимок поменьше' }));
+      await attach(s, n, pdf(800));
+      await s.p.waitForTimeout(300);
+      await tap(s, '[data-action="join-send"]');
+      if (!(await s.view()).includes('Чек больше 2 МиБ — пришлите снимок поменьше.')) bad.push(`${n}: отказ 413 не показан словами сервера`);
+      await s.ctx.close();
+    }
+    // отказано (E44d): слово решившего плашкой и второй заход
+    {
+      const n = 'join-otkazano';
+      const s = await joinCase(json(200, withReq('rejected', 'чек не читается')));
+      let t = await s.view();
+      for (const w of ['Просьба отклонена', 'ОТКАЗАНО', '«чек не читается»', '[просящий] · @ab'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: форма показана до «Попросить снова»`);
+      await tap(s, '[data-action="join-again"]');
+      if (!(await s.p.$('#join-file'))) bad.push(`${n}: «Попросить снова» не открыло форму`);
+      await s.ctx.close();
+    }
+    // приняли (E44e): «Войти в клуб» перечитывает /me тем же путём, что «Попробовать снова»
+    {
+      const n = 'join-prinyali';
+      let me = json(403, { detail: 'доступа нет' });
+      const s = await joinCase(json(200, withReq('approved')), null, () => me);
+      if (!(await s.view()).includes('Вас приняли в клуб')) bad.push(`${n}: нет «Вас приняли в клуб»`);
+      me = json(200, OWNER);
+      await tap(s, '[data-action="retry"]');
+      await s.p.waitForTimeout(200);
+      if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
+      await s.ctx.close();
+    }
+    // реквизиты не пришли — не тупик: сказано и есть «Повторить», второй заход их показывает
+    {
+      const n = 'join-rekvizity';
+      let up = false;
+      const s = await open(true, true, json(403, { detail: 'доступа нет' }), null, null, null, q => {
+        const u = q.url();
+        if (u.endsWith('/join/requisites/promptpay'))
+          return up ? { status: 200, contentType: 'image/png', body: PNG1 } : json(503, { detail: 'реквизиты не собраны' });
+        if (u.endsWith('/join')) return json(200, JOIN0);
+        return undefined;
+      });
+      await s.p.waitForTimeout(250);
+      const t0 = await s.view();
+      for (const w of ['Реквизиты не загрузились', 'суммы нет', 'Платить не по чему, пока их нет.'])
+        if (!t0.includes(w)) bad.push(`${n}: нет «${w}» (E44zh)`);
+      if (t0.includes('3 600 ฿')) bad.push(`${n}: без реквизитов показана сумма`);
+      // и с чеком отправка заперта: платить не по чему
+      await attach(s, n, pdf(600));
+      await s.p.waitForTimeout(300);
+      if (!(await s.p.$('[data-action="join-send"][disabled]'))) bad.push(`${n}: без реквизитов отправка доступна`);
+      up = true;
+      if (!(await s.p.$('[data-action="join-req-retry"]'))) bad.push(`${n}: нет «Повторить» у реквизитов`);
+      else { await tap(s, '[data-action="join-req-retry"]'); if (!(await s.p.$('.qr img'))) bad.push(`${n}: после «Повторить» реквизитов нет`); }
+      await s.ctx.close();
+    }
+    // ответ /join не разобран — так и сказано, и есть повтор; формы без цен нет
+    {
+      const n = 'join-ne-razobran';
+      const s = await joinCase(json(200, { amount_thb: null }));
+      const t = await s.view();
+      if (!t.includes('Ответ сервера не разобран.')) bad.push(`${n}: неразобранный /join не назван`);
+      if (await s.p.$('#join-file')) bad.push(`${n}: форма без цен показана`);
+      if (!(await s.p.$('[data-action="join-retry"]'))) bad.push(`${n}: нет «Попробовать снова»`);
       await s.ctx.close();
     }
   }
@@ -550,7 +746,7 @@ if (grantsSet.length !== 1) {
     const s = await open(true, true, json(200, OWNER), null, json(403, { detail: 'доступа нет' }), SAVED);
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('Вас нет в списке')) bad.push('pass-403-list: не экран «нет в списке»');
+    if (!(await s.view()).includes('Вас ещё нет в списке')) bad.push('pass-403-list: не экран «нет в списке»');
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('pass-403-list: запас не стёрт');
     await s.ctx.close();
   }
