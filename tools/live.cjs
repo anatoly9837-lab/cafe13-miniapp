@@ -44,6 +44,8 @@ const OWNER = {
   // их пока не читает — поле здесь, чтобы заглушка совпадала с боем по форме
   memberships: [{ level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }],
   membership_active: true,
+  // своя заявка на членство (Cafe13KPG#415): у члена клуба — null, как в снимке me-member (cafe13-miniapp#106)
+  membership_request: null,
   balance: 3170,                      // не 1250: 1250 — демонстрационный баланс, его не спутать
   roles: [{ role: 'head', direction_id: null }, { role: 'admin', direction_id: null },
           { role: 'god_mentor', direction_id: null }]
@@ -265,6 +267,11 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  // Заглушки, объявленные в блоках СВОИХ случаев, сверяются с формой сервера
+  // в конце прогона: блок очереди просьб стоит ниже сверки STUBS, а копия
+  // заглушки в STUBS сверяла бы копию, а не то, что видит клиент. Объект
+  // кладётся сюда тот же самый, которым отвечает случай.
+  const LATE_STUBS = {};
   // ── просьба о вступлении вместо тупика «нет в списке» (Cafe13KPG#459, кадры E44*) ──
   {
     const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -275,13 +282,17 @@ if (grantsSet.length !== 1) {
     const withReq = (status, note) => Object.assign(clone(JOIN0), { request: {
       id: 7, status, said: '', created_at: '2026-10-28T08:00:00+00:00', decided_at: null,
       decision_note: note || '', status_ru: '' } });
+    // created_at — дословно из снимка join-request-create (cafe13-miniapp#106)
+    const JPOST = { id: 7, status: 'pending', created_at: '2026-10-28T10:05:43.558711Z' };
+    Object.assign(LATE_STUBS, { 'join-info-none': JOIN0, 'join-info-mine': withReq('pending'),
+                                'join-request-create': JPOST });
     // ответы /join*: join — функция или ответ; post — ответ на POST /join/request
     const joinCase = async (join, post, me) => {
       const posted = [];
       const s = await open(true, true, me || json(403, { detail: 'доступа нет' }), null, null, null, q => {
         const u = q.url();
         if (/\/join\/requisites\/(promptpay|usdt)$/.test(u)) return { status: 200, contentType: 'image/png', body: PNG1 };
-        if (u.endsWith('/join/request') && q.method() === 'POST') { posted.push(JSON.parse(q.postData())); return post || json(201, { id: 7, status: 'pending' }); }
+        if (u.endsWith('/join/request') && q.method() === 'POST') { posted.push(JSON.parse(q.postData())); return post || json(201, JPOST); }
         if (u.endsWith('/join')) return typeof join === 'function' ? join() : join;
         return undefined;
       });
@@ -6763,11 +6774,12 @@ if (grantsSet.length !== 1) {
     'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW,
     'events-afisha': AFISHA, 'places': PLACE_ROWS
   };
-  Object.keys(STUBS).forEach(name => {
+  const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
     if (REAL[name].status !== 200 && REAL[name].status !== 201) bad.push(`shape ${name}: снимок — отказ ${REAL[name].status}`);
-    diffShape(REAL[name].shape, shapeOf(STUBS[name]), name, []).forEach(x => bad.push('shape ' + x));
+    diffShape(REAL[name].shape, shapeOf(stubs[name]), name, []).forEach(x => bad.push('shape ' + x));
   });
+  checkShapes(STUBS);
   // Исключение не переживает свою причину: список в снимке стал непустым —
   // исключение лишнее, и молча лежать ему нельзя.
   Object.keys(UNVERIFIED).filter(k => !USED.has(k)).forEach(k => bad.push(`shape ${k}: исключение больше не нужно — убрать из UNVERIFIED`));
@@ -7039,26 +7051,30 @@ if (grantsSet.length !== 1) {
   {
     // 1×1 PNG — настоящий файл: objectURL от пустого тела экран честно не покажет
     const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    // pay_method и ledger_id — из снимка join-requests-head (cafe13-miniapp#106): у ждущей и у
+    // согласованной без способа оплаты оба null; клиент очереди их не читает.
     const JREQ = { pending: 2, requests: [
       { id: 21, tg_user_id: 801, first_name: 'Ада', last_name: 'Доступова', username: null, said: 'была на трёх вечерах',
-        receipt_mime: 'image/png', receipt_bytes: 3072, amount_thb: '1111.00', amount_usd: '22.00',
+        receipt_mime: 'image/png', receipt_bytes: 3072, amount_thb: '1111.00', amount_usd: '22.00', pay_method: null, ledger_id: null,
         status: 'pending', status_ru: 'ждёт ответа', created_at: '2026-10-27T10:00:00+00:00', decided_at: null, decision_note: '' },
       { id: 22, tg_user_id: 802, first_name: 'Борис', last_name: null, username: 'kvitancin', said: '',
-        receipt_mime: 'application/pdf', receipt_bytes: 204800, amount_thb: '1111.00', amount_usd: null,
+        receipt_mime: 'application/pdf', receipt_bytes: 204800, amount_thb: '1111.00', amount_usd: null, pay_method: null, ledger_id: null,
         status: 'pending', status_ru: 'ждёт ответа', created_at: '2026-10-27T09:00:00+00:00', decided_at: null, decision_note: '' },
       { id: 19, tg_user_id: 803, first_name: 'Вадим', last_name: 'Решённый', username: null, said: '',
-        receipt_mime: 'image/jpeg', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00',
+        receipt_mime: 'image/jpeg', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00', pay_method: null, ledger_id: null,
         status: 'rejected', status_ru: 'отклонена', created_at: '2026-10-25T09:00:00+00:00', decided_at: '2026-10-25T12:00:00+00:00',
         decision_note: 'познакомимся лично' },
       { id: 18, tg_user_id: 804, first_name: 'Галина', last_name: 'Впущенная', username: null, said: '',
-        receipt_mime: 'image/webp', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00',
+        receipt_mime: 'image/webp', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00', pay_method: null, ledger_id: null,
         status: 'approved', status_ru: 'согласована', created_at: '2026-10-24T09:00:00+00:00', decided_at: '2026-10-24T12:00:00+00:00',
         decision_note: '' }] };
     const JNOTE = 'Согласие одним действием впускает в приложение И создаёт членство.';
+    const JDECIDE = st => ({ id: 21, status: st, decided_at: '2026-10-27T13:00:00+00:00' });
+    Object.assign(LATE_STUBS, { 'join-requests-head': JREQ, 'join-decide-rejected': JDECIDE('rejected') });
     const joinCase = (me, r = {}) => open(true, true, json(200, me), null, null, null, q => {
       const u = q.url();
       if (/\/join\/requests\/\d+\/receipt$/.test(u)) return r.shot || { status: 200, contentType: 'image/png', body: PNG1 };
-      if (/\/join\/requests\/\d+\/decide$/.test(u)) return r.decide || json(200, { id: 21, status: JSON.parse(q.postData()).decision, decided_at: '2026-10-27T13:00:00+00:00' });
+      if (/\/join\/requests\/\d+\/decide$/.test(u)) return r.decide || json(200, JDECIDE(JSON.parse(q.postData()).decision));
       if (/\/join\/requests$/.test(u)) return r.list || json(200, JREQ);
       return undefined;
     });
@@ -7443,6 +7459,9 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
   }
+  // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
+  if (Object.keys(LATE_STUBS).length !== 5) bad.push(`shape: ПРОВЕРКА НЕ ВЫПОЛНЕНА — join-заглушек в реестре ${Object.keys(LATE_STUBS).length}, ждали 5`);
+  checkShapes(LATE_STUBS);
   // Номера людей: репозиторий публичный — разрешающий список, tools/ids-clean.cjs.
   bad.push(...require('./ids-clean.cjs').idsClean(ROOT));
 
