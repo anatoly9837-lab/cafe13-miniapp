@@ -1907,14 +1907,28 @@ function fromRoster(d) {
       roles.push({ id: r.id, role: r.role, dir: typeof r.direction_id === 'number' ? r.direction_id : null,
                    name: ROLE_NAME[r.role] || r.role, dirTitle: dt, words: roleWords(r.role, dt) });
     }
+    // Остаток (требование владельца 28.10.2026, кадры E47/E47e): поля НЕТ — «не спросили»,
+    // undefined; поле есть, но не число — ответ битый целиком. Признак — наличие ключа, а не
+    // `!p.balance`: у настоящего нуля остаток тоже ложный. null сервер не отдаёт (ноль ставит сам).
+    var bal;
+    if ('balance' in p) { bal = num(p.balance); if (!isFinite(bal)) return null; }
     out.push({
       uid: p.tg_user_id,
       name: [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Без имени',
-      levels: p.memberships.map(function (l) { return LEVEL[l] || l; }).join(', '),
+      // уровни через « · », в порядке сервера: виды не старше друг друга (кадр E47)
+      levels: p.memberships.map(function (l) { return LEVEL[l] || l; }).join(' · '),
+      bal: bal,
       roles: roles
     });
   }
   return out;
+}
+/* Живые членства — наверх (решение по #413), внутри групп порядок сервера. Сортируется
+   ПОРЯДОК ОТРИСОВКИ, а не список: карточка знает номер строки в ответе (k), и все действия
+   (p-open:k, data-person) указывают на того же человека, как бы строки ни стояли. */
+function peopleOrder(list) {
+  return list.map(function (x, i) { return i; })
+    .sort(function (a, b) { return (!list[a].levels - !list[b].levels) || a - b; });
 }
 function fromDirList(d) {
   if (!Array.isArray(d)) return null;
@@ -2060,7 +2074,12 @@ function personCard(p, k) {
   var q = PEOPLE.find.trim().toLowerCase();
   return '<div class="card" data-person="' + k + '"' +
     (q && p.name.toLowerCase().indexOf(q) === -1 ? ' hidden' : '') + '>' +
-    '<div class="row top"><b>' + esc(p.name) + '</b><span class="small">' + esc(p.levels || 'без членства') + '</span></div>' +
+    // Кадр E47: уровень — предмет строки, остаток справа. Стили встроены — долг Cafe13KPG#484
+    // (классов .level и .money в styles.css нет; styles.css — не зона этой правки).
+    '<div class="row"><div class="col"><b>' + esc(p.name) + '</b>' +
+      (p.levels ? '<span style="font-size:13px;color:var(--ink)">' + esc(p.levels) + '</span>' : '<span class="small">без членства</span>') +
+      '</div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
+      (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></div>' +
     (rows || '<span class="small">Ролей нет</span>') + done + deny + form +
     (open ? '' : '<button type="button" class="btn ghost" data-action="p-open:' + k + '"' + lock + '>Выдать ответственность</button>') +
   '</div>';
@@ -5324,10 +5343,13 @@ var SCREENS = {
       ? '<div class="card quiet"><span class="small">' + esc(PEOPLE.fail) + '</span></div>' +
         '<button type="button" class="btn ghost" data-action="p-reload">Повторить</button>'
       : '<div class="card quiet"><span class="small">Загружаем людей…</span></div>';
+    // E47e: поля остатка нет у сервера — прочерк объясняется ОДИН раз, над списком
+    var noBal = PEOPLE.list.some(function (x) { return x.bal === undefined; });
     return (!LIVE && FLASH ? flash() : '') +
       '<div class="field"><label for="p-find">Найти по имени</label>' +
         '<input id="p-find" type="search" value="' + esc(PEOPLE.find) + '" placeholder="Имя"></div>' +
-      (PEOPLE.list.length ? PEOPLE.list.map(personCard).join('')
+      (noBal && PEOPLE.list.length ? '<div class="card quiet"><span class="small">Остаток сервер не отдаёт — у этой ручки поля ещё нет. Прочерк здесь значит «не спросили», а не «ноль».</span></div>' : '') +
+      (PEOPLE.list.length ? peopleOrder(PEOPLE.list).map(function (k) { return personCard(PEOPLE.list[k], k); }).join('')
                           : '<div class="card quiet"><span class="small">Сервер не вернул ни одного человека.</span></div>');
   },
 
@@ -5836,11 +5858,11 @@ function render() {
 DATA.work = {
   dirs: [{ id: 1, title: 'Бар', is_active: true }],
   people: { people: [
-    { tg_user_id: 200000001, first_name: '[глава клуба]', roles: [{ id: 11, role: 'head' }], memberships: ['partner'] },
-    { tg_user_id: 200000002, first_name: '[куратор бара]', roles: [{ id: 12, role: 'curator', direction_id: 1, direction: 'Бар' }], memberships: ['member'] },
-    { tg_user_id: 200000003, first_name: '[исполнитель на баре]', roles: [{ id: 13, role: 'bar', direction_id: 1, direction: 'Бар' }], memberships: ['member'] },
-    { tg_user_id: 200000004, first_name: '[кассир]', roles: [{ id: 14, role: 'staff' }], memberships: [] },
-    { tg_user_id: 200000005, first_name: '[имя члена]', roles: [], memberships: ['member'] }
+    { tg_user_id: 200000001, first_name: '[глава клуба]', roles: [{ id: 11, role: 'head' }], memberships: ['partner'], balance: '3170.00' },
+    { tg_user_id: 200000002, first_name: '[куратор бара]', roles: [{ id: 12, role: 'curator', direction_id: 1, direction: 'Бар' }], memberships: ['member'], balance: '0.00' },
+    { tg_user_id: 200000003, first_name: '[исполнитель на баре]', roles: [{ id: 13, role: 'bar', direction_id: 1, direction: 'Бар' }], memberships: ['member'], balance: '420.00' },
+    { tg_user_id: 200000004, first_name: '[кассир]', roles: [{ id: 14, role: 'staff' }], memberships: [], balance: '0.00' },
+    { tg_user_id: 200000005, first_name: '[имя члена]', roles: [], memberships: ['member'], balance: '640.00' }
   ] },
   cards: [
     { id: 301, title: 'Тыквенный латте', group: 'Кофе', price: '135.00', mins: 4, about: 'Тыква, корица, двойной эспрессо', is_alcohol: false,
