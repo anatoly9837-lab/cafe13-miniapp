@@ -653,7 +653,7 @@ if (grantsSet.length !== 1) {
     if (look.op !== null && look.op < 1) bad.push(`${n}: серая вкладка погашена прозрачностью (${look.op}) — контраст ниже порога`);
     if (look.chev === null) bad.push(`${n}: на главной нет погашенной строки списка со стрелкой — облик строки не проверен`);
     else if (look.chev !== 'none') bad.push(`${n}: у погашенной строки осталась стрелка «туда»`);
-    if (look.why !== null && !/ · временно недоступно$/.test(look.why)) bad.push(`${n}: у погашенной строки нет причины в подстрочнике: «${look.why}»`);
+    if (look.why !== null && look.why !== 'временно недоступно') bad.push(`${n}: у погашенной строки нет причины в подстрочнике: «${look.why}»`);
     const entries = await s.p.$$eval('#view [data-go]', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
     if (!entries.some(e => e[1])) bad.push(`${n}: на главной владельца нет ни одного погашенного входа — проверять нечего (${JSON.stringify(entries)})`);
     entries.forEach(([g, d]) => { if (g === 'pass' && d) bad.push(`${n}: вход «Пропуск» погашен`); });

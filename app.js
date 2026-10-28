@@ -6091,10 +6091,10 @@ function render() {
   if (LIVE) [].forEach.call(view.querySelectorAll('[data-go]'), function (b) {
     if (!closed(b.getAttribute('data-go'))) return;
     b.disabled = true; b.setAttribute('aria-disabled', 'true');
-    // причина — к подстрочнику строки через «·», а не второй строкой: иначе список вырастет на треть
-    // (designer-55); серое без причины читается как поломка
+    // причина ЗАМЕНЯЕТ подстрочник (designer-55, по снимку): описание того, куда не войти, — шум, а
+    // приписка через «·» переносила строку на вторую; серое без причины читается как поломка
     var sub = b.classList.contains('listitem') && b.querySelector('.grow .small');
-    if (sub) sub.textContent += ' · временно недоступно';
+    if (sub) sub.textContent = 'временно недоступно';
   });
 
   var root = tabList().some(function (t) { return t[0] === current; });
