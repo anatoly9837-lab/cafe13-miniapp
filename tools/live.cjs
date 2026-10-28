@@ -659,6 +659,10 @@ if (grantsSet.length !== 1) {
     if (!entries.some(e => e[1])) bad.push(`${n}: на главной владельца нет ни одного погашенного входа — проверять нечего (${JSON.stringify(entries)})`);
     entries.forEach(([g, d]) => { if (g === 'pass' && d) bad.push(`${n}: вход «Пропуск» погашен`); });
     entries.filter(e => e[1]).forEach(([g]) => { if (['pass', 'topup', 'manage', 'people', 'joinQueue', 'home'].includes(g)) bad.push(`${n}: погашен живой вход «${g}»`); });
+    // подпись у баланса называла кассу, а касса заморожена (Cafe13KPG#513): путь не называется
+    const home = await s.view();
+    if (!home.includes('Пополнение временно недоступно') || home.includes('Пополняется в кассе'))
+      bad.push(`${n}: подпись у баланса обещает кассу, а «На счёт» в кассе заморожен`);
     await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(200);
     let t = await s.view();
     if (!t.includes('Бар — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
@@ -673,6 +677,8 @@ if (grantsSet.length !== 1) {
     // демонстрация вне Telegram: ни одной серой вкладки и ни одного погашенного входа по заморозке
     const d = await open(false, false);
     const dOff = await d.p.$$eval('#tabs button[disabled], #view [data-go][disabled]', b => b.map(x => x.getAttribute('data-go')));
+    // и обратная сторона подписи: где касса не заморожена, прежний текст на месте — иначе условие декоративно
+    if (!(await d.view()).includes('Пополняется в кассе')) bad.push(`${n}: в демонстрации пропало «Пополняется в кассе» — подпись снята, а не условна`);
     if (dOff.length) bad.push(`${n}: в демонстрации погашено ${JSON.stringify(dOff)} — заморозка только для живого режима`);
     await d.ctx.close();
   }

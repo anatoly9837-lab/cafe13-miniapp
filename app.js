@@ -4090,7 +4090,10 @@ var SCREENS = {
 
       '<div class="card quiet"><div class="row">' +
         '<div class="col"><span class="label">Баланс</span><span class="big num">' + money(m.balance) + ' ฿</span></div>' +
-        '<span class="small" style="text-align:right;max-width:130px">Пополняется в кассе</span>' +
+        // подпись называет ПУТЬ, а заморозка путь снимает (Cafe13KPG#510, #513): пока «На счёт» в кассе
+        // закрыт, путь не называется вовсе — слова designer-55. Текст не снят: при разморозке вернётся сам
+        '<span class="small" style="text-align:right;max-width:130px">' +
+          (closed('tillTopup') ? 'Пополнение временно недоступно' : 'Пополняется в кассе') + '</span>' +
       '</div></div>' +
 
       (next ? '<div class="group"><span class="label">Вы записаны</span>' +
