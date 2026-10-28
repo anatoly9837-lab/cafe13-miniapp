@@ -6327,6 +6327,7 @@ if (grantsSet.length !== 1) {
       await s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).scrollIntoView({ block: 'center' }), K);
       await s.p.waitForTimeout(100);
       const doScroll = await s.p.evaluate(() => Math.round(window.scrollY));
+      const doTop = await s.p.evaluate(k => Math.round(document.querySelector(`[data-person="${k}"]`).getBoundingClientRect().top), K);
       for (const st of steps) {
         if (st === 'short') { await s.p.evaluate(() => { UNDO_MS = 50; }); continue; }
         const a = st.replace('K', K).replace('RID', RID);
@@ -6348,9 +6349,20 @@ if (grantsSet.length !== 1) {
         return { top: Math.round(b.top), bottom: Math.round(b.bottom), scroll: Math.round(window.scrollY), okno: innerHeight }; }, K);
       if (!posle) bad.push(`${n} (${how}): карточки человека на экране нет вовсе`);
       else {
-        if (posle.scroll !== doScroll) bad.push(`${n} (${how}): экран дёрнулся на ${posle.scroll - doScroll} px, хотя карточка была видна`);
+        /* ⚠ Прежняя редакция требовала «прокрутка не изменилась» — и была НЕВЕРНА, что
+           показал первый же прогон (−265 px при видимой карточке). Сдвиг там не наш:
+           перечитывание списка на время делает страницу короче экрана, и браузер ЗАЖИМАЕТ
+           прокрутку к нулю (замер: 500 → 0 при пределе 1019 → 0, затем 195 после возврата).
+           Это свойство страницы, а не посадки, и запрещать его — требовать невозможного.
+           Остаются ДВА обещания, и оба наблюдаемы: человек после действия виден ЦЕЛИКОМ,
+           и карточка не ПРИЖАТА к шапке — прижатие и есть «улетает вверх» словами владельца.
+           ⚠ Предел прижатия назван: `block:'start'` кладёт верх ровно на `scroll-margin-top`
+           (70 px), поэтому различитель — совпадение с 70. Если карточку законно тянут
+           СВЕРХУ, `nearest` даст те же 70 — в этом случае (её зажало вниз) так не бывает. */
         if (posle.top < 58) bad.push(`${n} (${how}): карточка уехала под шапку — её верх в ${posle.top} px при низе шапки 58`);
         if (posle.bottom > posle.okno) bad.push(`${n} (${how}): карточка не видна целиком — низ в ${posle.bottom} px при окне ${posle.okno}`);
+        if (Math.abs(posle.top - 70) < 2) bad.push(`${n} (${how}): карточка прижата к шапке (верх ${posle.top}) — это поведение block:'start', от которого ушли`);
+        if (posle.scroll === doScroll && posle.top !== doTop) bad.push(`${n} (${how}): прокрутка та же, а карточка переехала — мерить нечем`);
       }
       await s.ctx.close();
     }
