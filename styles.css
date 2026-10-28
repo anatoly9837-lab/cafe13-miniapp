@@ -306,10 +306,21 @@ input[type="search"]::-webkit-search-cancel-button {
   height: calc(74px + var(--sab));
   padding-bottom: var(--sab);
   display: flex; align-items: stretch;
+  /* Зазор между вкладками объявлен: без него соседние подписи сходятся
+     вплотную, как только две из них шире равной доли (замер: «События» и
+     «Моё дело» на восьми вкладках — 0 px между ними). */
+  gap: 4px;
   background: var(--paper); border-top: 1px solid var(--line);
 }
 .tabs button {
   flex: 1 1 0; border: none; background: transparent; cursor: pointer;
+  /* ⚠ Отступ кнопки объявлен НУЛЁМ нарочно. Браузер по умолчанию даёт кнопке
+     1px 6px — двенадцать пикселей по горизонтали, которых мы нигде не
+     просили; на восьми вкладках это 96 px, и панель вылезала за край окна
+     (замер мой, 28.10.2026: восемь вкладок 415,2 при окне 390 — за край
+     25 px; на окне 360 — 55 px). Разговор при этом шёл о длине подписи:
+     число было снято верно, а объяснено не той причиной. */
+  padding: 0;
   /* подпись в одну строку: при семи вкладках «Моё дело» переносилось (замер, Cafe13KPG#410) */
   white-space: nowrap;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
