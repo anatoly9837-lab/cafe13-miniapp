@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v86 · 29.10.2026';
+var VERSION = 'v89 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1925,7 +1925,7 @@ function switchTo(on, as) {
     DAY.data = null; DAY.fail = ''; DAY.gen++;
     TOPUP.amount = ''; TOPUP.ask = false;
     tillReset();
-    peopleReset(); PEOPLE.list = null; PEOPLE.fail = ''; PEOPLE.gen++;
+    peopleReset(); PEOPLE.card = null; PEOPLE.list = null; PEOPLE.fail = ''; PEOPLE.gen++;
     cardReset(); CARDS.list = null; CARDS.fail = ''; CARDS.gen++;
     if (!on) TEST.people = null;
     applyMe(me);
@@ -1968,6 +1968,10 @@ var ROLE_GREY = [['god_mentor', 'Чужими глазами'], ['admin', 'Ад�
 var HEAD_ROLES = ['head', 'god_mentor', 'admin'];
 var DIR_ROLES = ['curator', 'bar'];
 var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
+               // ⚠ `card` — ключ СВЁРТКИ (#493), и он НЕ то же, что `open`: `open` — форма выдачи
+               // ВНУТРИ раскрытой карточки. Два смысла на одном ключе разошлись бы молча:
+               // «форма закрыта» и «карточка свёрнута» — разные состояния экрана.
+               card: null,
                open: null, role: '', give: null, ask: null, busy: false, deny: null, done: null, find: '',
                out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null, land: null,
                lvAsk: null, lvSending: null };
@@ -2013,6 +2017,10 @@ function peopleReset() {
   // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
   // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
   PEOPLE.sending = null; PEOPLE.lvSending = null;     // то же у погашенного уровня (v86)
+  // ⚠ `PEOPLE.card` здесь НЕ сбрасывается НАРОЧНО: после выдачи, снятия и отказа список
+  // перечитывается этим же путём, и человек, которого настраивают, обязан остаться
+  // раскрытым — иначе итог («Выдано: …») показался бы в карточке, которая тут же схлопнулась.
+  // Снимается свёртка только на входе на экран и при смене роли — там, где поднимается `gen`.
   // ⚠ И занятость СТРОКИ выдачи (PEOPLE.give) — там же и по той же причине: ключ её не id
   // (роли ещё нет, её только собираются выдать), а пара «роль + направление», и без сброса
   // «Выдаём…» осталось бы в строке прежнего захода — ровно то, что уже случалось с надписью
@@ -2030,7 +2038,14 @@ function peopleLand() {
   if (uid === null || !L) return;
   for (var k = 0; k < L.length; k++) if (L[k].uid === uid) {
     var el = document.querySelector('[data-person="' + k + '"]');
-    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+    /* ⚠ `nearest`, а НЕ `start` — замер по жалобе владельца 29.10.2026 («Плашка прыгает и
+       улетает вверх»). `start` тянет карточку к верху окна ДАЖЕ когда она целиком видна:
+       на списке из двадцати и видимой карточке экран уезжал на 379 px, при `nearest` — на 0.
+       То есть дефект был не в отступе и не в выросшей высоте строки, а в том, что экран
+       двигался там, где двигать незачем. Место по-прежнему держится ЧЕЛОВЕКОМ (список после
+       действия перечитывается и прокрутка прижимается к нулю), но экран дёргается только
+       тогда, когда карточка иначе осталась бы за краем. */
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
     return;
   }
 }
@@ -2248,13 +2263,18 @@ function personCard(p, k) {
   // членства) плюс бейдж по HEAD_ROLES, ответственность — все прочие роли и вход «+».
   // ⚠ Ряд доступа у человека без членства и без главенства ПУСТ, и тогда его не рисуем вовсе:
   // пустой `.chips` даёт свой `gap` и лишний отступ там, где смотреть не на что.
-  // v86: уровень — надпись-кнопка с крестиком, как роль: крестик открывает окно ДО отправки (ручка
-  // снятия уровня на бою с `d1fa661`). Ключ — «k.level»: номер строки и слово сервера, не id.
-  var dostup = p.lv.map(function (l, i) {
-    var key = k + '.' + p.lvKeys[i];
-    if (PEOPLE.lvAsk === key) return '';                                              // в окне отмены надписи нет
-    if (PEOPLE.lvSending === key) return '<span class="chip paid busy">' + esc(l) + X + '</span>';
-    return '<button type="button" class="chip paid" data-action="p-lvask:' + key + '"' + lock + '>' + esc(l) + X + '</button>';
+  /* ⚠ КРЕСТИК У УРОВНЯ ПОГАШЕН — ЭТО РЕШЕНИЕ, А НЕ НЕДОДЕЛКА (слово владельца 29.10.2026:
+     «гаси»). В v86 уровень стал надписью-кнопкой с крестиком, и крестик уже был у него на
+     экране, а ручка под ним работает по-старому: `UPDATE memberships SET ends_at = now()`
+     СТИРАЕТ прежний срок. Каждое нажатие теряло дату окончания уровня — восстановимо только
+     разбором по `ledger_id` и `starts_at`. Нашёл `arhitector-47`, владелец выбрал гасить.
+     Возвращается вместе с `Cafe13KPG#519` (ручке нужен «атрибут отменено + дата отмены», а не
+     затирание срока) — там же вернуть случаи батареи, снятые с причиной `lvOff`.
+     ⚠ Чипы уровней остаются КАК ЕСТЬ: гасится только вход в снятие, а не показ уровня.
+     Состояние (`lvAsk`, `lvSending`) и обработчик не трогаются нарочно: они целы и ждут
+     возврата крестика; снимать их значило бы писать v86 заново. */
+  var dostup = p.lv.map(function (l) {
+    return '<span class="chip paid fixed">' + esc(l) + '</span>';
   }).join('') +
     (p.roles.some(function (r) { return HEAD_ROLES.indexOf(r.role) !== -1; }) ? '<span class="chip fixed">Глава клуба</span>' : '');
   var rows = (dostup ? '<div class="chips" data-chips="access">' + dostup + '</div>' : '') +
@@ -2348,8 +2368,29 @@ function personCard(p, k) {
   if (PEOPLE.gone && PEOPLE.gone.uid === p.uid)
     return '<div class="card quiet" data-person="' + k + '" role="status"><span class="small">' + esc(PEOPLE.gone.text) + '</span></div>';
   var outAsk = PEOPLE.out === k;
-  return '<div class="card dense' + (open || outAsk ? ' open' : '') + '" data-person="' + k + '"' +
-    (q && p.name.toLowerCase().indexOf(q) === -1 ? ' hidden' : '') + '>' +
+  var hid = q && p.name.toLowerCase().indexOf(q) === -1 ? ' hidden' : '';
+  /* СВЁРНУТАЯ строка (слово владельца 28.10.2026, Cafe13KPG#493): «самое идеальное когда они
+     свернуты и по клику разворачиваются с настройками… большой список, по которому удобно
+     искать, и фокус только на настройки одного человека». Раскрыта РОВНО ОДНА.
+     ⚠ Структура — решение designer-55 по моему возражению: плашка остаётся НАСТОЯЩЕЙ кнопкой,
+     а минус лежит её СОСЕДОМ поверх (`.fold-wrap`), а не внутри. Вложенные кнопки невалидны,
+     а нажимаемых НЕ-кнопок в этом клиенте нет ни одной (`tabindex` 0, `role="button"` 0) —
+     то есть цель во всю плашку и правило клиента целы разом. Минус в свёрнутой строке — его
+     же слово, данное при виде цены («целиком видно 7 из 8 вместо 8»).
+     ⚠ Внутри кнопки только строчное: `.row`/`.col` вешаются на `span`, иначе разметка невалидна.
+     ⚠ `data-person` стоит на ОБЁРТКЕ: по нему живут посадка на карточку (`peopleLand`),
+     частичная перерисовка и поиск по имени — все трое ищут корень, а не кнопку. */
+  if (PEOPLE.card !== k)
+    return '<div class="fold-wrap" data-person="' + k + '"' + hid + '>' +
+      '<button type="button" class="card dense fold" data-action="p-card:' + k + '" aria-expanded="false"' + lock + '>' +
+        '<span class="row"><span class="col"><b>' + esc(p.name) + '</b>' +
+          '<span class="small">' + (p.lv.length ? esc(p.lv.join(' · ')) : 'без членства') + '</span>' +
+        '</span><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
+          (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></span>' +
+      '</button>' +
+      '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>' +
+    '</div>';
+  return '<div class="card dense open" data-person="' + k + '"' + hid + '>' +
     // Кадр E47: уровень — предмет строки, остаток справа. Стили встроены — долг Cafe13KPG#484
     // (класса .money в styles.css нет; .namerow и .round заведены этой правкой).
     // E47z: в строке имени — имя и остаток; уровень ушёл в надписи ниже (чип «paid»)
@@ -2362,8 +2403,7 @@ function personCard(p, k) {
     // ⚠ Действие НЕ меняется: вход в вопрос тот же `p-out:k`, и двойное подтверждение
     // остаётся его же словом. Кружок — только вход, а не «нажал и исключил».
     '<div class="row"><div class="col"><div class="namerow">' +
-      '<button type="button" class="round out" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>' +
-        '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>' +
+      '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>' +
       '<b>' + esc(p.name) + '</b></div></div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
       (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></div>' +
     rows + done + deny + form +
@@ -2399,7 +2439,9 @@ function personCard(p, k) {
 function peopleTouched() {
   var ks = [], L = PEOPLE.list || [];
   var at = function (uid) { for (var i = 0; i < L.length; i++) if (L[i].uid === uid) return i; return null; };
-  [PEOPLE.open, PEOPLE.out,
+  // ⚠ Ключи ОБЪЕДИНЕНЫ при слиянии: `card` — свёртка карточек, `lvAsk`/`lvSending` — снятие
+  // уровня (v86). Потерять любой значит оставить его карточку неперерисованной.
+  [PEOPLE.card, PEOPLE.open, PEOPLE.out,
    PEOPLE.lvAsk !== null ? Number(String(PEOPLE.lvAsk).split('.')[0]) : null,
    PEOPLE.lvSending !== null ? Number(String(PEOPLE.lvSending).split('.')[0]) : null,
    PEOPLE.ask !== null ? (function () { for (var i = 0; i < L.length; i++) if (L[i].roles.some(function (r) { return r.id === PEOPLE.ask; })) return i; return null; })() : null,
@@ -6368,7 +6410,7 @@ function go(screen, p) {
     BOOK.from = current === 'barQueue' ? 'barQueue' : homeOf();
     BOOK.ask = false; BOOK.err = '';
   }
-  if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
+  if (screen === 'people' && current !== 'people') { peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoinQueue(); }
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
@@ -6623,9 +6665,17 @@ function doAction(a) {
       if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
       if (a === 'p-lvrevoke') { lvSend(arg); return; }
       if (a === 'p-outyes') { if (PEOPLE.out === Number(arg)) outSend(Number(arg)); return; }
-      if (a === 'p-out') { peopleReset(); PEOPLE.out = Number(arg); }
+      // Раскрыть ЭТУ карточку: прежняя сворачивается, и вместе с ней уходит её состояние.
+      // ⚠ Окно отмены прежней карточки закрывается БЕЗ ОТПРАВКИ (это делает peopleReset) —
+      // так же, как при уходе с экрана: человек не должен получить снятие роли, которого
+      // он больше не видит. Повторное нажатие по той же карточке свёртки НЕ даёт: владелец
+      // просил «по клику разворачиваются», обратный ход у него — другой человек.
+      if (a === 'p-card') { var kc = Number(arg); if (PEOPLE.card !== kc) { peopleReset(); PEOPLE.card = kc; } }
+      // Минус живёт и в СВЁРНУТОЙ строке, поэтому вопрос об исключении обязан её раскрыть:
+      // иначе `PEOPLE.out` стоял бы у карточки, которая вопроса не рисует.
+      if (a === 'p-out') { var ko = Number(arg); peopleReset(); PEOPLE.card = ko; PEOPLE.out = ko; }
       if (a === 'p-outkeep') PEOPLE.out = null;
-      if (a === 'p-open') { peopleReset(); PEOPLE.open = Number(arg); }
+      if (a === 'p-open') { var ko2 = Number(arg); peopleReset(); PEOPLE.card = ko2; PEOPLE.open = ko2; }
       if (a === 'p-close') peopleReset();
       // `p-role` больше не ВЫБИРАЕТ, а раскрывает направления, и спрашивается только у
       // DIR_ROLES: у роли без направления раскрывать нечего, а состояние, которое ничего не
