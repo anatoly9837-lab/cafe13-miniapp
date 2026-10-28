@@ -475,7 +475,7 @@ if (grantsSet.length !== 1) {
       const got = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
       if (JSON.stringify(got) !== JSON.stringify(want))
         bad.push(`${name}: вкладки ${JSON.stringify(got)}, ждали ${JSON.stringify(want)}`);
-      // семь вкладок в 390 px: ни одна не вылезла за край и не съела соседнюю
+      // все вкладки в 390 px (до v72 — семь, с v72 у главы клуба восемь): ни одна не вылезла за край и не съела соседнюю
       const over = await s.p.evaluate(() => {
         const t = document.getElementById('tabs'), w = document.documentElement.clientWidth;
         return [...t.querySelectorAll('button')].filter(b => {
