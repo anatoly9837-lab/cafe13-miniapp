@@ -470,7 +470,9 @@ if (grantsSet.length !== 1) {
       ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'bookings']],
       ['tabs-tolko-member', who('member', ['member']), ['home', 'guest', 'bookings']],
       ['tabs-gost', who(null, []), ['guest', 'bookings']],
-      ['tabs-vse-sem', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
+      // было `tabs-vse-sem` («все семь»): до v72 вкладок было семь. Имя без числа нарочно —
+      // число в имени проверки стареет на следующей вкладке (решение координатора 28.10.2026)
+      ['tabs-vse', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
       const s = await open(true, true, json(200, me));
       const got = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
       if (JSON.stringify(got) !== JSON.stringify(want))
@@ -501,7 +503,7 @@ if (grantsSet.length !== 1) {
         }).map(b => b.textContent));
       if (wrapped.length) bad.push(`${name}: подпись вкладки переносится на вторую строку: ${JSON.stringify(wrapped)}`);
       if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
-      if (name === 'tabs-vse-sem') await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
+      if (name === 'tabs-vse') await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
       // что партнёр увидит за вкладкой: partner вне WIRED, сервера за ним нет (Cafe13KPG#99) —
       // снимок для решения владельца, а не проверка
       // без вкладки снимать нечего: строка о составе уже стоит выше, а клик в пустоту оборвал бы батарею
@@ -6816,7 +6818,7 @@ if (grantsSet.length !== 1) {
       await s2.ctx.close();
     }
     // Подпись вкладки не переносится в две строки на УЗКОМ окне, 360 px. Перенос на 390 px
-    // уже ловит `tabs-vse-sem` (#410) — мутация `white-space: nowrap` → `normal` краснит и его,
+    // уже ловит `tabs-vse` (#410, прежде `tabs-vse-sem`) — мутация `white-space: nowrap` → `normal` краснит и его,
     // поэтому 390 здесь не повторяется. Признак — высоты подписей (форма — designer-55,
     // 28.10.2026): подпись выше самой низкой больше чем на 1 px — перенесена.
     {
