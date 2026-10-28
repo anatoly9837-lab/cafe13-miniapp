@@ -5680,11 +5680,21 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, {});
       if (!(await toPeople(s))) bad.push('people-head: у главы клуба нет входа «Люди»');
       else {
+        /* ⚠ v86 (#493): ДО нажатия список свёрнут, и в строке видно только имя, уровень и
+           остаток. Поэтому проверка разбита надвое: что видно СВЁРНУТЫМ — спрашивается
+           сразу, а роли и чипы — после раскрытия. Если спрашивать всё сразу, отсутствие
+           будет означать свёртку, а не потерю, и случай станет вечно зелёным. */
+        const svёрnuto = await s.view();
+        ['Алевтина Тестова', 'Сомчай', 'Член клуба', 'Бизнес-партнёр']
+          .forEach(x => { if (!svёрnuto.includes(x)) bad.push(`people-head: в свёрнутом списке нет «${x}»`); });
+        if (svёрnuto.includes('Куратор направления · Бар')) bad.push('people-head: роль видна в СВЁРНУТОЙ строке — свёртка не свернула настройки');
+        if (await s.p.$(`${card(s, 0)} .chip`)) bad.push('people-head: чип в свёрнутой карточке');
+        await act(s, 'p-card:2');
         const t = await s.view();
         // v78 (E47z): уровни и роли — надписи-кнопки; «Ролей нет», «без членства» и «единственный глава
         // клуба» кадр не рисует (последнего главу снять не даст сервер — его отказ словами)
-        ['Алевтина Тестова', 'Куратор направления · Бар', 'Сомчай', 'Член клуба', 'Бизнес-партнёр', 'Глава клуба']
-          .forEach(x => { if (!t.includes(x)) bad.push(`people-head: нет «${x}»`); });
+        ['Куратор направления · Бар', 'Глава клуба']
+          .forEach(x => { if (!t.includes(x)) bad.push(`people-head: в раскрытой карточке нет «${x}»`); });
         const chips = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]));
         if (!chips.some(c => c[0] === 'SPAN' && /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')) bad.push(`people-head: уровень не чипом «paid» без крестика: ${JSON.stringify(chips)}`);
         if (chips.some(c => c[0] === 'BUTTON' && /paid/.test(c[1]))) bad.push('people-head: уровень нажимается, а ручки снятия уровня на бою нет');
@@ -5694,6 +5704,8 @@ if (grantsSet.length !== 1) {
         // v79: head и admin у главы — ОДИН бейдж «Глава клуба» без крестика (слово владельца 28.10.2026)
         const fixed = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]).filter(x => /Глава клуба|Администратор/.test(x[2])));
         if (JSON.stringify(fixed) !== JSON.stringify([['SPAN', 'chip fixed', 'Глава клуба']])) bad.push(`people-head: у главы ждали ровно один бейдж «Глава клуба» без крестика, есть ${JSON.stringify(fixed)}`);
+        // ⚠ Карточка 2 раскрыта выше: в свёрнутой надписей ролей нет вовсе, и ноль здесь
+        // означал бы свёртку, а не запрет — проверка стала бы вечно зелёной (#493).
         if (await s.p.$('[data-action="p-ask:6"]') || await s.p.$('[data-action="p-ask:5"]')) bad.push('people-head: главу или админа можно снять с экрана');
         const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
         if (/70[123]|Алевтина/.test(stored)) bad.push('people-head: люди из /people легли в хранилище браузера');
@@ -5706,7 +5718,7 @@ if (grantsSet.length !== 1) {
       }
       // кадр формы выдачи: состояние без кадра — состояние, на которое никто не смотрит
       await s.p.fill('#p-find', '');
-      await act(s, 'p-open:1'); await act(s, 'p-role:curator');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1'); await act(s, 'p-role:curator');
       await s.p.screenshot({ path: `${OUT}/live-people-form.png` });
       // ⚠ v85: нижнего ряда «Отмена · Выдать» больше нет, и закрыть раскрытую форму стало
       // нечем бы — если бы вход «+ ответственность» не остался видимым и не стал складывать
@@ -5716,8 +5728,10 @@ if (grantsSet.length !== 1) {
       if (!(await act(s, 'p-close'))) bad.push('people-head: у раскрытой формы нет входа, который её складывает');
       await s.p.waitForTimeout(150);
       if (await s.p.$(`${card(s, 1)} .grant`)) bad.push('people-head: форма выдачи не складывается обратно');
-      if (!(await s.p.$(`${card(s, 1)} [data-action="p-open:1"]`))) bad.push('people-head: сложенная карточка потеряла вход «ответственность»');
-      await act(s, 'p-open:1'); await act(s, 'p-role:curator');
+      // v86: сложенная форма возвращает карточку в РАСКРЫТОЕ состояние, а не в свёрнутое —
+      // свёртка это третье состояние экрана, и «закрыть форму» ею не является.
+      if (!(await s.p.$(`${card(s, 1)} [data-action="p-open:1"]`))) bad.push('people-head: сложенная форма потеряла вход «ответственность»');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1'); await act(s, 'p-role:curator');
       if (s.errs.length) bad.push('people-head: ошибки страницы ' + s.errs.join('; '));
       await s.ctx.close();
     }
@@ -5785,8 +5799,9 @@ if (grantsSet.length !== 1) {
     for (const [name, me] of [['people-pick-head', HEAD_ONLY], ['people-pick-admin', OWNER]]) {
       const s = await peopleCase(me, {});
       if (!(await toPeople(s))) { bad.push(`${name}: нет входа «Люди»`); await s.ctx.close(); continue; }
+      await act(s, 'p-card:2');   // та же причина: в свёрнутой карточке надписей ролей нет
       if (await s.p.$('[data-action="p-ask:6"]')) bad.push(`${name}: администратора можно снять с экрана`);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       // v85: погашенное — это строка `.grant.off` БЕЗ кружка, а не кнопка с `disabled`.
       // Мерить приходится строкой: `disabled` внутри `[data-person]` запрещён чужими
       // случаями `out-*`, и «потеря состояния» от «запрета по построению» отличается только тут.
@@ -5805,7 +5820,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { grant: json(201, { id: 40, member_id: 702, role: 'curator', direction_id: 7, granted_at: '2026-10-21T10:00:00+00:00' }) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       // ⚠ Роль направления НЕ выдаётся одним тапом: у неё указатель, а не кружок. Без этой
       // строки разворот «кружок у каждой роли» прошёл бы зелёным и слал бы запрос, который
       // сервер обязан отвергнуть проверкой базы.
@@ -5838,7 +5853,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { grant: json(201, { id: 41, member_id: 702, role: 'ops_director', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' }) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       if (!(await act(s, 'p-give:ops_director'))) bad.push('people-grant-general: у общей роли нет кружка выдачи');
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles$/);
@@ -5859,12 +5874,12 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       const uid = step === 'grant' ? 1 : 0;
       if (step === 'grant') {
-        await act(s, 'p-open:1');
+        await act(s, 'p-card:1'); await act(s, 'p-open:1');
         if (!(await act(s, 'p-give:director'))) bad.push(`${name}: у общей роли нет кружка выдачи`);
       } else {
         // окно отмены вместо вопроса (E47l): сначала полоса и ни одного запроса, потом — ровно один
         await s.p.evaluate(() => { UNDO_MS = 150; });
-        await act(s, 'p-ask:31');
+        await act(s, 'p-card:0'); await act(s, 'p-ask:31');
         if (posts(s, /revoke/).length) bad.push(`${name}: снятие ушло сразу, окна отмены нет`);
         if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${name}: нет полосы «Снимаем: Куратор направления · Бар»`);
       }
@@ -5881,7 +5896,7 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { dirs: json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: true }]),
         grant: json(201, { id: 40, member_id: 702, role: 'bar', direction_id: 7, granted_at: '2026-10-21T10:00:00+00:00' }) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       if (!(await act(s, 'p-role:bar'))) bad.push('people-one-dir: у роли направления нет указателя');
       // Самоподстановки единственного направления больше нет: выбирать нечего, выдаёт СТРОКА.
       // То же обещание («выбор из одного — формальность») мерится иначе: под раскрытой ролью
@@ -5901,7 +5916,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { dirs: json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: true }]) });
       await toPeople(s);
-      await act(s, 'p-open:0');
+      await act(s, 'p-card:0'); await act(s, 'p-open:0');
       const role = (await await s.p.$$eval(`${card(s, 0)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
       if (!role || !/\boff\b/.test(role[0]) || !role[1].includes('уже есть') || role[2])
         bad.push('people-one-dir-held: «Куратор направления» не погашен, хотя единственное направление занято: ' + JSON.stringify(role));
@@ -5917,7 +5932,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
-      await act(s, 'p-open:0');
+      await act(s, 'p-card:0'); await act(s, 'p-open:0');
       if (!(await act(s, 'p-role:curator'))) bad.push('people-two-dirs-one-held: роль погашена, хотя «Чай» свободен');
       await s.p.waitForTimeout(100);
       // занятое направление погашено строкой, свободное предложено кружком
@@ -5930,7 +5945,7 @@ if (grantsSet.length !== 1) {
       both.people[0].roles.push({ id: 33, role: 'curator', direction_id: 8, direction: 'Чай', granted_at: '2026-10-20T10:00:00+00:00' });
       const s = await peopleCase(OWNER, { people: json(200, both) });
       await toPeople(s);
-      await act(s, 'p-open:0');
+      await act(s, 'p-card:0'); await act(s, 'p-open:0');
       const role = (await await s.p.$$eval(`${card(s, 0)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
       if (!role || !/\boff\b/.test(role[0]) || !role[1].includes('уже есть') || role[2])
         bad.push('people-two-dirs-held: «Куратор направления» не погашен, хотя заняты оба направления: ' + JSON.stringify(role));
@@ -5943,7 +5958,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { dirs: json(500, { detail: 'x' }) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       // v85: перечня нет на руках — строка роли гаснет (выбирать не из чего), но причина
       // названа ТОЧНО: «не загрузились», а не «направлений нет». Ложь была именно в этой
       // подмене, и мерится она теперь текстом строки, а не её запертостью.
@@ -5958,7 +5973,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { dirs: () => new Promise(r => setTimeout(() => r(json(200, DIRS)), 2000)) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       const t = await s.view();
       if (!t.includes('Загружаем направления…')) bad.push('people-dirs-loading: нет «Загружаем направления…»');
       if (t.includes('направлений нет')) bad.push('people-dirs-loading: сказано «направлений нет», а перечень ещё грузится');
@@ -5972,7 +5987,7 @@ if (grantsSet.length !== 1) {
     for (const [name, dirs] of [['people-dirs-empty', []], ['people-dirs-all-closed', [{ id: 9, title: 'Старое', is_active: false, is_open: false }]]]) {
       const s = await peopleCase(OWNER, { dirs: json(200, dirs) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       // v85: общей строки «Куратора и бара выдать некуда» больше нет — причина стоит в САМОЙ
       // строке роли, по одной на роль. Снято нарочно: две надписи об одном расходятся молча.
       const role = (await await s.p.$$eval(`${card(s, 1)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
@@ -5994,8 +6009,8 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { [step]: reply });
       await toPeople(s);
       const k = step === 'grant' ? 1 : 0;
-      if (step === 'grant') { await act(s, 'p-open:1'); if (!(await act(s, 'p-give:ops_director'))) bad.push(`${name}: кружка выдачи нет`); }
-      else { await s.p.evaluate(() => { UNDO_MS = 50; }); await act(s, 'p-ask:31'); }
+      if (step === 'grant') { await act(s, 'p-card:1'); await act(s, 'p-open:1'); if (!(await act(s, 'p-give:ops_director'))) bad.push(`${name}: кружка выдачи нет`); }
+      else { await s.p.evaluate(() => { UNDO_MS = 50; }); await act(s, 'p-card:0'); await act(s, 'p-ask:31'); }
       await s.p.waitForTimeout(300);
       const deny = await s.p.$eval(`${card(s, k)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== 'Ответ сервера не разобран.') bad.push(`${name}: плашка «${deny}», ждали «Ответ сервера не разобран.»`);
@@ -6008,11 +6023,11 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
-      await act(s, 'p-open:2');
+      await act(s, 'p-card:2'); await act(s, 'p-open:2');
       // v79: «Главы клуба» в списке выдачи нет вовсе (была закрытой «уже есть» у главы)
       if (await s.p.$(`${card(s, 2)} [data-action^="p-give:head"]`)) bad.push('people-held: «Глава клуба» в списке выдачи');
       if (!(await s.p.$(`${card(s, 2)} [data-action="p-give:director"]`))) bad.push('people-held: «Директор» погашен без причины');
-      await act(s, 'p-open:0');
+      await act(s, 'p-card:0'); await act(s, 'p-open:0');
       if (!(await act(s, 'p-role:curator'))) bad.push('people-held: роль куратора погашена целиком, а другое направление законно');
       await s.p.waitForTimeout(100);
       if (await s.p.$(`${card(s, 0)} [data-action="p-give:curator:7"]`)) bad.push('people-held: куратору Бара снова предложен Бар');
@@ -6027,7 +6042,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       for (const key of ['head', 'curator', 'ops_director:7']) {
         await s.p.evaluate(k => doAction('p-give:' + k), key);
         await s.p.waitForTimeout(120);
@@ -6041,8 +6056,8 @@ if (grantsSet.length !== 1) {
     // а поздний ответ прежнего захода на новый экран не ложится. Первый запрос
     // медленный, второй быстрый; тело медленного — нечитаемый маркер.
     for (const [name, step, start, again, re] of [
-      ['people-late-grant', 'grant', ['p-open:1', 'p-give:ops_director'], ['p-open:1', 'p-give:ops_director'], /\/roles$/],
-      ['people-late-revoke', 'revoke', ['short', 'p-ask:31'], ['short', 'p-ask:31'], /\/roles\/31\/revoke$/],
+      ['people-late-grant', 'grant', ['p-card:1', 'p-open:1', 'p-give:ops_director'], ['p-card:1', 'p-open:1', 'p-give:ops_director'], /\/roles$/],
+      ['people-late-revoke', 'revoke', ['short', 'p-card:0', 'p-ask:31'], ['short', 'p-card:0', 'p-ask:31'], /\/roles\/31\/revoke$/],
     ]) {
       // задержка считается от самого запроса: таймер, заведённый при создании
       // случая, истекал ещё до ухода с экрана, и мутация на гард оставалась зелёной
@@ -6077,7 +6092,7 @@ if (grantsSet.length !== 1) {
         json(200, ROSTER), []],
       ['people-late-dirs', 'dirs', /\/directions$/,
         json(200, DIRS.map((x, i) => i ? x : Object.assign({}, x, { title: 'qzx-напр-qzx' }))),
-        json(200, DIRS), ['p-open:1', 'p-role:curator']],
+        json(200, DIRS), ['p-card:1', 'p-open:1', 'p-role:curator']],
     ]) {
       let n = 0, landed = false;
       const slow = () => new Promise(r => setTimeout(() => { landed = true; r(stale); }, 1500));
@@ -6102,7 +6117,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       // ⚠ Разметочной защиты у кружка выдачи больше нет НАРОЧНО: соседние кружки не гаснут
       // (слово designer-55), и `disabled` внутрь карточки не ставится вовсе. Значит линия
       // защиты осталась ОДНА — проверка `PEOPLE.busy` во входе действий, и этот случай мерит
@@ -6119,7 +6134,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       if (!(await act(s, 'p-give:ops_director'))) bad.push('people-busy-look: кружка выдачи нет');
       await s.p.waitForTimeout(150);
       const v = await s.p.evaluate(() => {
@@ -6146,7 +6161,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await act(s, 'p-card:1'); await act(s, 'p-open:1');
       if (!(await act(s, 'p-role:curator'))) bad.push('people-busy-dir: у роли направления нет указателя');
       if (!(await act(s, 'p-give:curator:7'))) bad.push('people-busy-dir: у строки направления нет кружка выдачи');
       await s.p.waitForTimeout(150);
@@ -6163,7 +6178,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { revoke: new Promise(() => {}) });
       await toPeople(s);
-      await act(s, 'p-ask:31');
+      await act(s, 'p-card:0'); await act(s, 'p-ask:31');
       await s.p.evaluate(() => { doAction('p-revoke:31'); doAction('p-revoke:31'); });
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles\/31\/revoke$/).length;
@@ -6179,11 +6194,11 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 150; });
-      await act(s, 'p-ask:31');
+      await act(s, 'p-card:0'); await act(s, 'p-ask:31');
       await act(s, 'p-keep');
       await s.p.waitForTimeout(300);              // окно истекло бы — но «Отменить» его снял
       if (posts(s, /revoke/).length) bad.push('people-revoke: «Отменить» не снял окно — снятие ушло');
-      await act(s, 'p-ask:31');
+      await act(s, 'p-card:0'); await act(s, 'p-ask:31');
       if (posts(s, /revoke/).length) bad.push('people-revoke: снятие ушло сразу, без окна отмены');
       await s.p.waitForTimeout(400);
       if (posts(s, /\/roles\/31\/revoke$/).length !== 1) bad.push('people-revoke: снятие не ушло ровно один раз');
@@ -6284,8 +6299,8 @@ if (grantsSet.length !== 1) {
     // прежний код проходил бы зелёным. Цель стоит в середине длинного списка: у края страницы
     // браузер не дал бы поставить карточку к верху и при правильном коде.
     for (const [how, steps] of [
-      ['выдачи', ['p-open:K', 'p-give:ops_director']],
-      ['снятия', ['short', 'p-ask:RID']],
+      ['выдачи', ['p-card:K', 'p-open:K', 'p-give:ops_director']],
+      ['снятия', ['short', 'p-card:K', 'p-ask:RID']],
       ['исключения', ['p-out:K', 'p-outyes:K']]]) {
       const n = 'people-land', long = clone(ROSTER), K = ROSTER.people.length + 10, RID = 70;
       // имена — роль-словом в скобках (#495): правдоподобное имя в публичном репозитории возвращают с ревью
@@ -6324,12 +6339,12 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       await s.p.evaluate(() => { document.querySelector('[data-person="1"]').setAttribute('data-mark', 'x');
                                  document.getElementById('p-find').setAttribute('data-mark', 'x'); });
-      await act(s, 'p-ask:31'); await s.p.waitForTimeout(150);
+      await act(s, 'p-card:0'); await act(s, 'p-ask:31'); await s.p.waitForTimeout(150);
       if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${n}: полоса отмены у своей карточки не появилась`);
       const marks = await s.p.evaluate(() => [!!document.querySelector('[data-person="1"][data-mark]'), !!document.querySelector('#p-find[data-mark]')]);
       if (!marks[0] || !marks[1]) bad.push(`${n}: действие в одной карточке перерисовало экран целиком (соседняя ${marks[0]}, поиск ${marks[1]})`);
       // и обратный ход: открыли форму у другой — у первой вопрос закрылся (перерисованы ОБЕ)
-      await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
+      await act(s, 'p-card:2'); await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
       if ((await s.view()).includes('Снимаем: Куратор')) bad.push(`${n}: полоса отмены прежней карточки осталась — перерисована только новая`);
       if (!(await s.p.$('[data-person="2"] [data-action="p-close"]'))) bad.push(`${n}: форма во второй карточке не открылась`);
       await s.ctx.close();
@@ -6341,7 +6356,7 @@ if (grantsSet.length !== 1) {
       const n = 'people-undo', s = await peopleCase(OWNER, {});
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 3000; });
-      await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
+      await act(s, 'p-card:0'); await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
       const sec = await s.p.$eval('.undo .sec', e => e.textContent).catch(() => null);
       if (sec !== '3') bad.push(`${n}: в полосе «${sec}», а задержка 3 с — цифра и задержка разошлись`);
       if (posts(s, /revoke/).length) bad.push(`${n}: снятие ушло сразу, окна нет`);
@@ -6350,7 +6365,7 @@ if (grantsSet.length !== 1) {
       if (await s.p.$('.undo')) bad.push(`${n}: «Отменить» не убрал полосу`);
       if (!(await s.p.$('[data-person="0"] [data-action="p-ask:31"]'))) bad.push(`${n}: после «Отменить» надпись роли не вернулась`);
       await s.p.evaluate(() => { UNDO_MS = 200; });
-      await act(s, 'p-ask:31'); await s.p.waitForTimeout(600);
+      await act(s, 'p-card:0'); await act(s, 'p-ask:31'); await s.p.waitForTimeout(600);
       const pp = posts(s, /\/roles\/31\/revoke$/).length;
       if (pp !== 1) bad.push(`${n}: окно вышло — запросов ${pp}, ждали ровно 1`);
       await s.ctx.close();
