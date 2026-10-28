@@ -6435,6 +6435,43 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
+    /* ── Cafe13KPG#517: то, что СДЕЛАНО, но ничем не охраняется ──
+       Пакет мутаций v85 показал две дыры: «ряды чипов слиты» и «ряд „Исключить" вернулся»
+       прошли ЗЕЛЁНЫМИ, потому что их не судит никто. Пункт 2 владельца («доступ первой
+       строкой, ответственность второй») в стволе есть, а защиты у него нет — следующая
+       правка карточки сольёт ряды молча.
+       ⚠ Различитель у «Исключить» — МЕСТО, а не ключ: `p-out:k` одинаков у ряда во всю
+       ширину и у кнопки в колонке, и по ключу они неразличимы (назвал координатор). */
+    {
+      const n = 'people-ryady', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await pokazhi(s, 0);
+      const ryady = await s.p.$$eval(`${card(s, 0)} .chips`, es => es.map(e => ({
+        imya: e.getAttribute('data-chips'),
+        chipy: [...e.querySelectorAll('.chip')].map(c => [c.className, c.textContent.trim()]) })));
+      if (ryady.length !== 2) bad.push(`${n}: рядов чипов ${ryady.length}, ждали два — доступ и ответственность`);
+      else {
+        if (ryady[0].imya !== 'access' || ryady[1].imya !== 'duty')
+          bad.push(`${n}: ряды названы ${JSON.stringify(ryady.map(r => r.imya))}, ждали access и duty по порядку`);
+        if (!ryady[0].chipy.some(c => /paid/.test(c[0]))) bad.push(`${n}: вид членства не в ПЕРВОМ ряду: ${JSON.stringify(ryady[0].chipy)}`);
+        if (ryady[1].chipy.some(c => /paid/.test(c[0]))) bad.push(`${n}: вид членства оказался во втором ряду — ряды слиты`);
+        if (!ryady[1].chipy.some(c => /Куратор направления/.test(c[1]))) bad.push(`${n}: ответственность не во ВТОРОМ ряду: ${JSON.stringify(ryady[1].chipy)}`);
+      }
+      /* Место кнопки исключения: одна на карточку, в колонке, НЕ строкой во всю ширину.
+         Ширина карточки за вычетом отступов — около 340 px; ряд-кнопка занял бы её почти
+         целиком, колонка — около 40. Порог 120 лежит между ними с запасом в обе стороны. */
+      const outs = await s.p.$$eval('[data-person] [data-action^="p-out:"]', es => es.map(e => ({
+        w: Math.round(e.getBoundingClientRect().width),
+        predok: e.parentElement.className || e.parentElement.tagName })));
+      const naKartochku = outs.length / (await s.p.$$eval('[data-person]', es => es.length));
+      if (naKartochku !== 1) bad.push(`${n}: кнопок исключения на карточку ${naKartochku}, ждали ровно одну`);
+      const shirokie = outs.filter(o => o.w > 120);
+      if (shirokie.length) bad.push(`${n}: «Исключить» вернулось СТРОКОЙ во всю ширину (${JSON.stringify(shirokie)}) — вход в исключение живёт в колонке, а не рядом`);
+      const chuzhie = outs.filter(o => !/fold-wrap|namerow/.test(o.predok));
+      if (chuzhie.length) bad.push(`${n}: кнопка исключения стоит не в колонке имени: ${JSON.stringify(chuzhie)}`);
+      await s.ctx.close();
+    }
+
     /* ⚠ Случай куплен СНИМКОМ, а не числом (designer-55, 29.10.2026): без `white-space:
        nowrap` у длинного имени «[ -» и «]» разъезжаются по двум строкам, а высота плашки
        при этом НЕ меняется — то есть прежние числовые проверки слепы к этому по построению.
