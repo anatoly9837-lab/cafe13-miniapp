@@ -5339,7 +5339,7 @@ if (grantsSet.length !== 1) {
       if (!(await toPeople(s))) bad.push('people-head: у главы клуба нет входа «Люди»');
       else {
         const t = await s.view();
-        ['Алевтина Тестова', 'Куратор направления', 'Сомчай', 'Ролей нет', 'без членства', 'Член клуба, Бизнес-партнёр', 'Глава клуба',
+        ['Алевтина Тестова', 'Куратор направления', 'Сомчай', 'Ролей нет', 'без членства', 'Член клуба · Бизнес-партнёр', 'Глава клуба',
          'единственный глава клуба']
           .forEach(x => { if (!t.includes(x)) bad.push(`people-head: нет «${x}»`); });
         // роль и направление — разные строки: длинное направление не рвёт имя роли
@@ -5760,6 +5760,47 @@ if (grantsSet.length !== 1) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (await s.p.$('[data-person]')) bad.push(`${name}: при отказе нарисован список`);
+      await s.ctx.close();
+    }
+
+    // ── «Члены клуба»: уровень, остаток, порядок (кадры E47, E47e; Cafe13KPG#413, v73) ──
+    // Остатки ВЫДУМАНЫ и разные, один нулевой строкой: «0.00» — настоящий ноль, его не прячут.
+    const withBal = clone(ROSTER);
+    withBal.people[0].balance = '9950.00'; withBal.people[1].balance = '0.00'; withBal.people[2].balance = '250.50';
+    const moneyOf = s => s.p.evaluate(() => [...document.querySelectorAll('[data-person]')]
+      .map(c => [c.getAttribute('data-person'), (c.querySelector('[data-money]') || {}).textContent]));
+    const BANNER = 'Остаток сервер не отдаёт';
+    {
+      const n = 'members-balance', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      const m = Object.fromEntries(await moneyOf(s));
+      if (m['0'] !== '9 950 ฿' || m['1'] !== '0 ฿' || m['2'] !== '250.50 ฿') bad.push(`${n}: остатки ${JSON.stringify(m)}, ждали 9 950 ฿ / 0 ฿ / 250.50 ฿`);
+      const t = await s.view();
+      if (t.includes(BANNER)) bad.push(`${n}: плашка «сервер не отдаёт» при остатках с сервера — ноль прочитан как отсутствие`);
+      // порядок: живые членства наверх, внутри — как у сервера. Сервер даёт 0 Алевтина (член),
+      // 1 Сомчай (без членства), 2 Глеб (член и партнёр) — экран обязан 0, 2, 1.
+      const order = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')].map(c => c.getAttribute('data-person')));
+      if (JSON.stringify(order) !== '["0","2","1"]') bad.push(`${n}: порядок карточек ${JSON.stringify(order)}, ждали ["0","2","1"] — живые членства наверх`);
+      // исключения в этой правке нет вовсе (v74): ни кнопки, ни серой
+      if (/Исключить/.test(t)) bad.push(`${n}: «Исключить» на экране, а ручка подключается только в v74`);
+      await s.p.screenshot({ path: `${OUT}/live-members.png` });
+      await s.ctx.close();
+    }
+    {
+      const n = 'members-no-balance', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      const t = await s.view();
+      if (!t.includes(BANNER)) bad.push(`${n}: поля остатка нет, а плашки «${BANNER}» нет (кадр E47e)`);
+      const m = await moneyOf(s);
+      if (m.length !== 3 || m.some(x => x[1] !== '—')) bad.push(`${n}: без поля остатка ждали «—» у всех трёх, есть ${JSON.stringify(m)}`);
+      if (/฿/.test(m.map(x => x[1]).join(''))) bad.push(`${n}: без поля остатка показаны деньги — отсутствие стало правдоподобным нулём`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'members-bad-balance', bad1 = clone(withBal); bad1.people[1].balance = 'много';
+      const s = await peopleCase(OWNER, { people: json(200, bad1) });
+      await toPeople(s);
+      if (!(await s.view()).includes('Ответ сервера не разобран.') || await s.p.$('[data-person]')) bad.push(`${n}: остаток не числом принят — ответ обязан отвергнуться целиком`);
       await s.ctx.close();
     }
   }
