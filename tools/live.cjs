@@ -7578,6 +7578,8 @@ if (grantsSet.length !== 1) {
       const nobody = clone(OWNER); nobody.roles = [];
       const s = await open(true, true, json(200, nobody), null, null, null, book());
       for (const [scr, q, mark, deny] of WORK) {
+        // замороженный экран рисует «временно недоступно» раньше любого отказа по праву (Cafe13KPG#510)
+        if (await s.p.evaluate(x => !!FROZEN[x], scr) && !thawed('отказ по праву на замороженных рабочих экранах')) continue;
         await s.p.evaluate(([x, y]) => go(x, y), [scr, q]); await s.p.waitForTimeout(250);
         const t = await s.view();
         if (!t.includes(deny)) bad.push(`live-norights ${scr}: в живом режиме без прав нет отказа «${deny}» (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
