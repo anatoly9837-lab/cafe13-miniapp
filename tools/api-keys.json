@@ -1214,5 +1214,97 @@
    "note": null
   },
   "status": 201
+ },
+ "topup-decide-approved": {
+  "request": "POST /topup/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "id": null,
+   "ledger_id": null,
+   "status": null
+  },
+  "status": 200
+ },
+ "topup-decide-rejected": {
+  "request": "POST /topup/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "id": null,
+   "ledger_id": null,
+   "status": null
+  },
+  "status": 200
+ },
+ "topup-request-create": {
+  "request": "POST /topup/request",
+  "shape": {
+   "amount": null,
+   "created_at": null,
+   "currency": null,
+   "id": null,
+   "status": null
+  },
+  "status": 201
+ },
+ "topup-request-pending-409": {
+  "request": "POST /topup/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "topup-requests-denied": {
+  "request": "GET /topup/requests",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "topup-requests-holder": {
+  "request": "GET /topup/requests",
+  "shape": {
+   "pending": null,
+   "requests": [
+    {
+     "amount": null,
+     "created_at": null,
+     "currency": null,
+     "decided_at": null,
+     "decision_note": null,
+     "first_name": null,
+     "id": null,
+     "last_name": null,
+     "ledger_id": null,
+     "member_id": null,
+     "pay_method": null,
+     "receipt_bytes": null,
+     "receipt_mime": null,
+     "status": null,
+     "status_ru": null,
+     "username": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "topup-requests-mine": {
+  "request": "GET /topup/requests/mine",
+  "shape": {
+   "requests": [
+    {
+     "amount": null,
+     "created_at": null,
+     "currency": null,
+     "decided_at": null,
+     "decision_note": null,
+     "hint": null,
+     "id": null,
+     "pay_method": null,
+     "status": null,
+     "status_ru": null
+    }
+   ]
+  },
+  "status": 200
  }
 }
