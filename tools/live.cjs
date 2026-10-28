@@ -6059,7 +6059,8 @@ if (grantsSet.length !== 1) {
       ['снятия', ['short', 'p-ask:RID']],
       ['исключения', ['p-out:K', 'p-outyes:K']]]) {
       const n = 'people-land', long = clone(ROSTER), K = ROSTER.people.length + 10, RID = 70;
-      for (let i = 0; i < 20; i++) long.people.push({ tg_user_id: 720 + i, first_name: 'Запасной ' + (i + 1), last_name: null, lang: 'ru',
+      // имена — роль-словом в скобках (#495): правдоподобное имя в публичном репозитории возвращают с ревью
+      for (let i = 0; i < 20; i++) long.people.push({ tg_user_id: 720 + i, first_name: '[член клуба ' + (i + 1) + ']', last_name: null, lang: 'ru',
         roles: [{ id: 60 + i, role: 'staff', direction_id: null, direction: null, granted_at: '2026-10-20T10:00:00+00:00' }], memberships: [] });
       let reads = 0;
       const s = await peopleCase(OWNER, {
@@ -6082,7 +6083,7 @@ if (grantsSet.length !== 1) {
       if (reads < 2) bad.push(`${n} (${how}): список не перечитан (${reads}) — проверять нечего`);
       const top = await s.p.evaluate(k => { const e = document.querySelector(`[data-person="${k}"]`); return e ? Math.round(e.getBoundingClientRect().top) : null; }, K);
       const name = await s.p.evaluate(k => { const e = document.querySelector(`[data-person="${k}"]`); return e ? e.textContent : ''; }, K);
-      if (!name.includes('Запасной 11')) bad.push(`${n} (${how}): карточка ${K} не того человека: ${name.slice(0, 40)}`);
+      if (!name.includes('[член клуба 11]')) bad.push(`${n} (${how}): карточка ${K} не того человека: ${name.slice(0, 40)}`);
       if (top === null || Math.abs(top) > 2) bad.push(`${n} (${how}): экран встал не на карточку человека — её верх в ${top} px от верха окна`);
       await s.ctx.close();
     }
