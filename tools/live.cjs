@@ -6631,11 +6631,18 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { people: json(200, long) });
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 3000; });
+      await pokazhi(s, 0);   // крестик роли — в раскрытой карточке (#493)
       await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
       await s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).scrollIntoView({ block: 'center' }), L);
       await s.p.waitForTimeout(80);
-      const inView = () => s.p.evaluate(() => { const r = document.querySelector('.undo').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
-      if (await inView()) bad.push(`${n}: полоса уже в виду до нажатия — проверять прокрутку не на чем`);
+      // ⚠ Полосы может не быть вовсе (нажатие ушло в пустоту) — тогда прежняя форма роняла
+      // БАТАРЕЮ исключением, и накопленное красное печатал обработчик обрыва, а не случай.
+      // Отсутствие полосы здесь — свой отказ, а не падение.
+      const inView = () => s.p.evaluate(() => { const e = document.querySelector('.undo');
+        if (!e) return null; const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
+      const vid0 = await inView();
+      if (vid0 === null) bad.push(`${n}: полосы отмены нет вовсе — крестик роли не нажался`);
+      if (vid0) bad.push(`${n}: полоса уже в виду до нажатия — проверять прокрутку не на чем`);
       const y0 = await s.p.evaluate(() => window.scrollY);
       await pokazhi(s, L);
       await act(s, `p-lvask:${L}.member`); await s.p.waitForTimeout(80);
