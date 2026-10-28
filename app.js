@@ -2327,8 +2327,7 @@ function personCard(p, k) {
     return '<div class="fold-wrap" data-person="' + k + '"' + hid + '>' +
       '<button type="button" class="card dense fold" data-action="p-card:' + k + '" aria-expanded="false"' + lock + '>' +
         '<span class="row"><span class="col"><b>' + esc(p.name) + '</b>' +
-          (p.lv.length ? '<span class="level">' + esc(p.lv.join(' · ')) + '</span>'
-                       : '<span class="small">без членства</span>') +
+          '<span class="small">' + (p.lv.length ? esc(p.lv.join(' · ')) : 'без членства') + '</span>' +
         '</span><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
           (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></span>' +
       '</button>' +
