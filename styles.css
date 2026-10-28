@@ -499,6 +499,34 @@ body.has-main .dup-main { display: none; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
+/* Кружок действия — НОВОЕ семейство (кадры E47r/E47s/E47u, Cafe13KPG#509).
+   Правило взято из кадра дословно: 26 px — не вкус, а цель нажатия не ниже 24
+   при том, что в строку 63,6 px больше не поставить без переноса.
+   ⚠ Погашенное делается рамкой и цветом значка, а НЕ `opacity`: у нас это уже
+   давало контраст ниже порога при любом фоне.
+   ⚠ Здесь объявлено только то, что УПОТРЕБЛЯЕТСЯ: `.out` (минус, исключение).
+   Зелёный `.yes`, указатель `.go`, погашенный `.off` и отмена `.no` приедут с
+   выдачей кружком — объявлять их заранее значило бы завести мёртвые правила, а
+   единица «мёртвого» для общего styles.css — весь клиент, не один экран. */
+.round { display: inline-flex; align-items: center; justify-content: center;
+         width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%;
+         background: transparent; cursor: pointer; }
+.round svg { width: 15px; height: 15px; fill: none; stroke-width: 2.6;
+             stroke-linecap: round; stroke-linejoin: round; }
+.round.out { border: 2px solid var(--clay); }
+.round.out svg { stroke: var(--clay); }
+/* Отказ от разрушительного действия — кружком, а само действие остаётся СЛОВОМ
+   (решение designer-55, кадр E47u): кружок это «нажал и сделал», и для
+   исключения человека из клуба такой жест слишком дёшев, а для отказа в самый раз. */
+.round.no { border: 2px solid var(--muted); }
+.round.no svg { stroke: var(--muted); }
+
+/* Пара «слово + кружок» в одной строке. */
+.rounds { display: flex; align-items: center; gap: 10px; }
+
+/* Имя и кружок перед ним — одна строка; `min-width: 0` держит длинное имя. */
+.namerow { display: flex; align-items: center; gap: 9px; min-width: 0; }
+
 /* Полоса отмены — вместо второго подтверждения (его слово: «убери двойное
    подтверждение, оно только будет увеличивать путь»). */
 .undo { display: flex; align-items: center; justify-content: space-between;
