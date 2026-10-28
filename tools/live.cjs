@@ -638,9 +638,7 @@ if (grantsSet.length !== 1) {
       const op = q => { const e = document.querySelector(q); return e ? Number(getComputedStyle(e).opacity) : null; };
       const li = document.querySelector('#view .listitem[disabled]');
       return { off: op('#tabs button[disabled]'), on: op('#tabs [data-go="home"]'),
-               chev: li && li.querySelector('.chev') ? getComputedStyle(li.querySelector('.chev')).visibility : null,
-               liBg: li ? getComputedStyle(li).backgroundColor : null,
-               paper: getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() };
+               chev: li && li.querySelector('.chev') ? getComputedStyle(li.querySelector('.chev')).visibility : null };
     });
     if (look.off === null || look.on === null || !(look.off < look.on)) bad.push(`${n}: серая вкладка на вид не отличается от живой (прозрачность ${look.off} против ${look.on})`);
     if (look.chev === null) bad.push(`${n}: на главной нет погашенной строки списка со стрелкой — облик строки не проверен`);
