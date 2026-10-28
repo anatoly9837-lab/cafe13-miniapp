@@ -492,6 +492,9 @@ body.has-main .dup-main { display: none; }
    это не доступ, который можно снять, а место, куда можно добавить. */
 .chip.add { border-style: dashed; color: var(--muted); }
 
+/* Бейдж: та же надпись, но нажимать нечего — крестика нет. */
+.chip.fixed { cursor: default; }
+
 .chip.add svg { stroke: var(--muted); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
