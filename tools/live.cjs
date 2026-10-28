@@ -184,6 +184,70 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  // ── вкладки — по ВСЕМ живым членствам (Cafe13KPG#410, шаг 1a) ──
+  // Сервер отдаёт роль одной строкой (ORDER BY ends_at DESC LIMIT 1), и при
+  // равных сроках она произвольна. Различающая пара — один и тот же список
+  // членств при двух разных «выигравших» строках: вкладки обязаны совпасть.
+  {
+    const lv = (level, ends) => ({ level, starts_at: '2026-10-01T00:00:00+00:00', ends_at: ends, lifelong: false });
+    const END = '2027-11-01T00:00:00+07:00';
+    const who = (row, levels, roles) => {
+      const m = clone(OWNER);
+      m.membership = row ? lv(row, END) : null; m.membership_active = !!row;
+      m.memberships = levels.map(l => lv(l, END)); m.roles = roles || [];
+      return m;
+    };
+    const ALL = ['staff', 'barQueue', 'home', 'guest', 'organizer', 'partner', 'bookings'];
+    for (const [name, me, want] of [
+      ['tabs-dva-member-vyigral', who('member', ['member', 'partner']), ['home', 'guest', 'partner', 'bookings']],
+      ['tabs-dva-partner-vyigral', who('partner', ['member', 'partner']), ['home', 'guest', 'partner', 'bookings']],
+      ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'bookings']],
+      ['tabs-tolko-member', who('member', ['member']), ['home', 'guest', 'bookings']],
+      ['tabs-gost', who(null, []), ['guest', 'bookings']],
+      ['tabs-vse-sem', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
+      const s = await open(true, true, json(200, me));
+      const got = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
+      if (JSON.stringify(got) !== JSON.stringify(want))
+        bad.push(`${name}: вкладки ${JSON.stringify(got)}, ждали ${JSON.stringify(want)}`);
+      // семь вкладок в 390 px: ни одна не вылезла за край и не съела соседнюю
+      const over = await s.p.evaluate(() => {
+        const t = document.getElementById('tabs'), w = document.documentElement.clientWidth;
+        return [...t.querySelectorAll('button')].filter(b => {
+          const r = b.getBoundingClientRect(), g = document.createRange();
+          g.selectNodeContents(b);
+          const c = g.getBoundingClientRect();
+          return r.right > w + 0.5 || c.width > r.width + 0.5;
+        }).map(b => b.textContent);
+      });
+      if (over.length) bad.push(`${name}: вкладки не влезли в ширину: ${JSON.stringify(over)}`);
+      // перенос подписи ширину не превышает — его видно только по числу строк текста
+      // (значок svg в счёт не идёт: берутся одни текстовые узлы)
+      const wrapped = await s.p.evaluate(() =>
+        [...document.querySelectorAll('#tabs button')].filter(b => {
+          // все текстовые узлы на любой глубине: подпись сидит в <span>, а не прямо в кнопке
+          const tw = document.createTreeWalker(b, NodeFilter.SHOW_TEXT), tops = new Set();
+          for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+            if (!n.textContent.trim()) continue;
+            const g = document.createRange(); g.selectNodeContents(n);
+            [...g.getClientRects()].forEach(x => tops.add(Math.round(x.top)));
+          }
+          return tops.size > 1;
+        }).map(b => b.textContent));
+      if (wrapped.length) bad.push(`${name}: подпись вкладки переносится на вторую строку: ${JSON.stringify(wrapped)}`);
+      if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+      if (name === 'tabs-vse-sem') await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
+      // что партнёр увидит за вкладкой: partner вне WIRED, сервера за ним нет (Cafe13KPG#99) —
+      // снимок для решения владельца, а не проверка
+      // без вкладки снимать нечего: строка о составе уже стоит выше, а клик в пустоту оборвал бы батарею
+      if (name === 'tabs-dva-member-vyigral' && await s.p.$('#tabs [data-go="partner"]')) {
+        await s.p.click('#tabs [data-go="partner"]');
+        await s.p.waitForTimeout(150);
+        await s.p.screenshot({ path: `${OUT}/live-tabs-partner.png` });
+      }
+      await s.ctx.close();
+    }
+  }
+
   // ── солнышко только у богов ──
   // Признак — наличие #demo-btn в DOM, а не видимость: скрытая стилем кнопка
   // нажимается. Обе стороны: без бога кнопки нет, с богом — есть.
@@ -2729,7 +2793,8 @@ if (grantsSet.length !== 1) {
      Условие назвал координатор, Cafe13KPG#360. */
   {
     const GOST = clone(OWNER);
-    GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false;
+    // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
+    GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
     /* Фикстура своя, БЕЗ записей: общая `AFISHA` несёт уже записанное
        событие (id 4, `booked_by_me: true`), и на ней экран показал бы строку,
        а не пустое состояние — судить пустоту на фикстуре с записью значит
@@ -2778,7 +2843,8 @@ if (grantsSet.length !== 1) {
      чтобы кнопка судилась под списком, а не под одной строкой. */
   {
     const GOST = clone(OWNER);
-    GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false;
+    // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
+    GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
     const S_ZAPISYU = [
       EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
       EV({ id: 11, title: 'Через три дня', starts_at: atBkk(3, 18), duration_min: 90,

@@ -292,6 +292,8 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 .tabs button {
   flex: 1 1 0; border: none; background: transparent; cursor: pointer;
+  /* подпись в одну строку: при семи вкладках «Моё дело» переносилось (замер, Cafe13KPG#410) */
+  white-space: nowrap;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
   color: var(--muted); font-family: 'Golos Text', sans-serif; font-size: 11px; font-weight: 500;
 }
