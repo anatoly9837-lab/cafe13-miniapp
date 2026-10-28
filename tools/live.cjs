@@ -458,7 +458,12 @@ if (grantsSet.length !== 1) {
       m.memberships = levels.map(l => lv(l, END)); m.roles = roles || [];
       return m;
     };
-    const ALL = ['staff', 'barQueue', 'home', 'guest', 'organizer', 'partner', 'bookings'];
+    // ⚠ ЧУЖОЙ случай (frontend-11, Cafe13KPG#410), ожидание правит frontend-upravlenie по решению
+    // координатора 28.10.2026. Прежняя редакция — семь вкладок, без 'manage': до v72 вкладки
+    // «Управление» не было. С v72 глава клуба (роли OWNER) получает восьмую, последней
+    // (Cafe13KPG#413, кадр E46). Что она появляется только у главы и только последней, держат
+    // `manage-tab` и мутация «вкладка без права», а не это ожидание.
+    const ALL = ['staff', 'barQueue', 'home', 'guest', 'organizer', 'partner', 'bookings', 'manage'];
     for (const [name, me, want] of [
       ['tabs-dva-member-vyigral', who('member', ['member', 'partner']), ['home', 'guest', 'partner', 'bookings']],
       ['tabs-dva-partner-vyigral', who('partner', ['member', 'partner']), ['home', 'guest', 'partner', 'bookings']],
