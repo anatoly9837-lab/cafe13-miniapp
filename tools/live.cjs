@@ -267,6 +267,11 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  // Заглушки, объявленные в блоках СВОИХ случаев, сверяются с формой сервера
+  // в конце прогона: блок очереди просьб стоит ниже сверки STUBS, а копия
+  // заглушки в STUBS сверяла бы копию, а не то, что видит клиент. Объект
+  // кладётся сюда тот же самый, которым отвечает случай.
+  const LATE_STUBS = {};
   // ── просьба о вступлении вместо тупика «нет в списке» (Cafe13KPG#459, кадры E44*) ──
   {
     const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -277,13 +282,16 @@ if (grantsSet.length !== 1) {
     const withReq = (status, note) => Object.assign(clone(JOIN0), { request: {
       id: 7, status, said: '', created_at: '2026-10-28T08:00:00+00:00', decided_at: null,
       decision_note: note || '', status_ru: '' } });
+    const JPOST = { id: 7, status: 'pending' };
+    Object.assign(LATE_STUBS, { 'join-info-none': JOIN0, 'join-info-mine': withReq('pending'),
+                                'join-request-create': JPOST });
     // ответы /join*: join — функция или ответ; post — ответ на POST /join/request
     const joinCase = async (join, post, me) => {
       const posted = [];
       const s = await open(true, true, me || json(403, { detail: 'доступа нет' }), null, null, null, q => {
         const u = q.url();
         if (/\/join\/requisites\/(promptpay|usdt)$/.test(u)) return { status: 200, contentType: 'image/png', body: PNG1 };
-        if (u.endsWith('/join/request') && q.method() === 'POST') { posted.push(JSON.parse(q.postData())); return post || json(201, { id: 7, status: 'pending' }); }
+        if (u.endsWith('/join/request') && q.method() === 'POST') { posted.push(JSON.parse(q.postData())); return post || json(201, JPOST); }
         if (u.endsWith('/join')) return typeof join === 'function' ? join() : join;
         return undefined;
       });
@@ -6363,11 +6371,12 @@ if (grantsSet.length !== 1) {
     'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW,
     'events-afisha': AFISHA, 'places': PLACE_ROWS
   };
-  Object.keys(STUBS).forEach(name => {
+  const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
     if (REAL[name].status !== 200 && REAL[name].status !== 201) bad.push(`shape ${name}: снимок — отказ ${REAL[name].status}`);
-    diffShape(REAL[name].shape, shapeOf(STUBS[name]), name, []).forEach(x => bad.push('shape ' + x));
+    diffShape(REAL[name].shape, shapeOf(stubs[name]), name, []).forEach(x => bad.push('shape ' + x));
   });
+  checkShapes(STUBS);
   // Исключение не переживает свою причину: список в снимке стал непустым —
   // исключение лишнее, и молча лежать ему нельзя.
   Object.keys(UNVERIFIED).filter(k => !USED.has(k)).forEach(k => bad.push(`shape ${k}: исключение больше не нужно — убрать из UNVERIFIED`));
@@ -6654,10 +6663,12 @@ if (grantsSet.length !== 1) {
         status: 'approved', status_ru: 'согласована', created_at: '2026-10-24T09:00:00+00:00', decided_at: '2026-10-24T12:00:00+00:00',
         decision_note: '' }] };
     const JNOTE = 'Согласие одним действием впускает в приложение И создаёт членство.';
+    const JDECIDE = st => ({ id: 21, status: st, decided_at: '2026-10-27T13:00:00+00:00' });
+    Object.assign(LATE_STUBS, { 'join-requests-head': JREQ, 'join-decide-rejected': JDECIDE('rejected') });
     const joinCase = (me, r = {}) => open(true, true, json(200, me), null, null, null, q => {
       const u = q.url();
       if (/\/join\/requests\/\d+\/receipt$/.test(u)) return r.shot || { status: 200, contentType: 'image/png', body: PNG1 };
-      if (/\/join\/requests\/\d+\/decide$/.test(u)) return r.decide || json(200, { id: 21, status: JSON.parse(q.postData()).decision, decided_at: '2026-10-27T13:00:00+00:00' });
+      if (/\/join\/requests\/\d+\/decide$/.test(u)) return r.decide || json(200, JDECIDE(JSON.parse(q.postData()).decision));
       if (/\/join\/requests$/.test(u)) return r.list || json(200, JREQ);
       return undefined;
     });
@@ -6976,6 +6987,9 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
   }
+  // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
+  if (Object.keys(LATE_STUBS).length !== 5) bad.push(`shape: ПРОВЕРКА НЕ ВЫПОЛНЕНА — join-заглушек в реестре ${Object.keys(LATE_STUBS).length}, ждали 5`);
+  checkShapes(LATE_STUBS);
   // Номера людей: репозиторий публичный — разрешающий список, tools/ids-clean.cjs.
   bad.push(...require('./ids-clean.cjs').idsClean(ROOT));
 
