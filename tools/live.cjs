@@ -842,6 +842,22 @@ if (grantsSet.length !== 1) {
       if (!rows.includes('Посмотреть о себе')) bad.push('consent: нет строки «Посмотреть о себе»');
     }
     await s.p.screenshot({ path: `${OUT}/live-consent.png` });
+    // полный текст (v92, Cafe13KPG#496, слово владельца «маркетинг без лжи»): из прав — ОДНА строка,
+    // без «всё»; правки, выгрузки, удаления себя, отзыва согласия и срока просьбы на сервере нет
+    {
+      await s.p.evaluate(() => go('consentFull')); await s.p.waitForTimeout(150);
+      const full = await s.p.evaluate(() => { const h = [...document.querySelectorAll('#view h2')].find(e => e.textContent === 'Ваши права');
+        return h ? [...h.parentNode.querySelectorAll('p')].map(e => e.textContent) : null; });
+      if (!full) bad.push('consent-rights: на полном тексте нет раздела «Ваши права» — проверять нечего');
+      else {
+        if (JSON.stringify(full) !== JSON.stringify(['Посмотреть, что о вас записано.']))
+          bad.push('consent-rights: в «Ваших правах» не одна строка «Посмотреть, что о вас записано.»: ' + JSON.stringify(full));
+        const all = await s.view();
+        ['Посмотреть всё', 'Исправить неверное', 'Забрать копию', 'Удалить себя', 'Отозвать согласие', '30 дней'].forEach(x => {
+          if (all.includes(x)) bad.push(`consent-rights: полный текст обещает «${x}», а на сервере этого нет`); });
+      }
+      await s.p.evaluate(() => go('consent')); await s.p.waitForTimeout(150);
+    }
     await s.p.evaluate(() => window.__main && window.__main());
     await s.p.waitForTimeout(150);
     const post = s.calls.filter(c => c.method === 'POST');
