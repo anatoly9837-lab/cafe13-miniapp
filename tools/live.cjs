@@ -6580,6 +6580,7 @@ if (grantsSet.length !== 1) {
       const n = 'lv-revoke', s = await peopleCase(OWNER, {});
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 3000; });
+      await pokazhi(s, 2);   // крестик уровня — в раскрытой карточке (#493)
       if (!(await act(s, 'p-lvask:2.partner'))) bad.push(`${n}: у уровня «Бизнес-партнёр» нет крестика`);
       await s.p.waitForTimeout(80);
       if (lvPosts(s).length) bad.push(`${n}: снятие уровня ушло сразу, окна нет — обратного хода у ручки нет`);
@@ -6608,6 +6609,7 @@ if (grantsSet.length !== 1) {
       // окно ДЛИННОЕ и метка спрашивается СРАЗУ: короткое окно закрылось бы своим таймером раньше
       // вопроса, и невидимое окно прошло бы незамеченным (mv2 на первой редакции случая)
       const held = await s.p.evaluate(() => { UNDO_MS = 3000; const o = [];
+        PEOPLE.card = 0; render();   // действия идут мимо разметки, но ключ свёртки обязан стоять (#493)
         ['p-lvask:0.partner', 'p-lvask:0.admin', 'p-lvask:9.member'].forEach(a => { doAction(a); o.push(PEOPLE.lvAsk); });
         return o; });
       if (held.some(x => x !== null)) bad.push(`${n}: окно открылось невидимым — метка занята уровнем, которого у человека нет: ${JSON.stringify(held)}`);
@@ -6635,6 +6637,7 @@ if (grantsSet.length !== 1) {
       const inView = () => s.p.evaluate(() => { const r = document.querySelector('.undo').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
       if (await inView()) bad.push(`${n}: полоса уже в виду до нажатия — проверять прокрутку не на чем`);
       const y0 = await s.p.evaluate(() => window.scrollY);
+      await pokazhi(s, L);
       await act(s, `p-lvask:${L}.member`); await s.p.waitForTimeout(80);
       const y1 = await s.p.evaluate(() => window.scrollY);
       if (Math.abs(y1 - y0) > 2) bad.push(`${n}: отказ сдвинул экран (${y0} → ${y1}) — «возвращайся где было»`);
@@ -6656,6 +6659,7 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       const gets0 = s.calls.filter(c => c.method === 'GET' && c.url.endsWith('/people')).length;
       await s.p.evaluate(() => { UNDO_MS = 100; });
+      await pokazhi(s, 0);
       await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(700);
       const deny = await s.p.$eval(`${card(s, 0)} .deny`, e => e.textContent).catch(() => '');
       if (!deny.includes(want)) bad.push(`${name}: в карточке нет отказа «${want}»: «${deny}»`);
