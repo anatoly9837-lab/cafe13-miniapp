@@ -6317,6 +6317,7 @@ if (grantsSet.length !== 1) {
       // к человеку — так, как глава до него доходит: прокруткой; карточка не у верха
       await s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).scrollIntoView({ block: 'center' }), K);
       await s.p.waitForTimeout(100);
+      const doScroll = await s.p.evaluate(() => Math.round(window.scrollY));
       for (const st of steps) {
         if (st === 'short') { await s.p.evaluate(() => { UNDO_MS = 50; }); continue; }
         const a = st.replace('K', K).replace('RID', RID);
@@ -6325,10 +6326,94 @@ if (grantsSet.length !== 1) {
       }
       await s.p.waitForTimeout(900);
       if (reads < 2) bad.push(`${n} (${how}): список не перечитан (${reads}) — проверять нечего`);
-      const top = await s.p.evaluate(k => { const e = document.querySelector(`[data-person="${k}"]`); return e ? Math.round(e.getBoundingClientRect().top) : null; }, K);
       const name = await s.p.evaluate(k => { const e = document.querySelector(`[data-person="${k}"]`); return e ? e.textContent : ''; }, K);
       if (!name.includes('[член клуба 11]')) bad.push(`${n} (${how}): карточка ${K} не того человека: ${name.slice(0, 40)}`);
-      if (top === null || Math.abs(top) > 2) bad.push(`${n} (${how}): экран встал не на карточку человека — её верх в ${top} px от верха окна`);
+      /* ⚠ v89: обещание СМЕНИЛОСЬ по жалобе владельца («Плашка прыгает и улетает вверх»).
+         Прежде случай требовал, чтобы карточка встала РОВНО к верху окна (`|top| <= 2`), и
+         это и был дефект: экран дёргался на 379 px даже тогда, когда карточка уже видна.
+         Теперь обещаний два, и оба мерятся здесь: человек после действия ОСТАЛСЯ НА ВИДУ
+         целиком, и экран НЕ сдвинулся, раз двигать было незачем. Под шапку карточка не
+         уезжает: она `position: fixed`, низ 58 px. */
+      const posle = await s.p.evaluate(k => { const e = document.querySelector(`[data-person="${k}"]`);
+        if (!e) return null; const b = e.getBoundingClientRect();
+        return { top: Math.round(b.top), bottom: Math.round(b.bottom), scroll: Math.round(window.scrollY), okno: innerHeight }; }, K);
+      if (!posle) bad.push(`${n} (${how}): карточки человека на экране нет вовсе`);
+      else {
+        if (posle.scroll !== doScroll) bad.push(`${n} (${how}): экран дёрнулся на ${posle.scroll - doScroll} px, хотя карточка была видна`);
+        if (posle.top < 58) bad.push(`${n} (${how}): карточка уехала под шапку — её верх в ${posle.top} px при низе шапки 58`);
+        if (posle.bottom > posle.okno) bad.push(`${n} (${how}): карточка не видна целиком — низ в ${posle.bottom} px при окне ${posle.okno}`);
+      }
+      await s.ctx.close();
+    }
+
+    /* ── СВЁРТКА карточек (Cafe13KPG#493, слово владельца 28.10.2026) ──
+       «Самое идеальное когда они свернуты и по клику разворачиваются с настройками… фокус
+       только на настройки одного человека». Мерится ПОВЕДЕНИЕМ, а не разметкой: сколько
+       раскрыто, что видно до нажатия, и цела ли опора остальных трёх механизмов экрана
+       (посадка на карточку, частичная перерисовка, поиск по имени живут на `[data-person]`). */
+    {
+      const n = 'people-fold', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      const sostoyanie = () => s.p.evaluate(() => ({
+        svernuto: document.querySelectorAll('.card.dense.fold').length,
+        raskryto: document.querySelectorAll('.card.dense.open').length,
+        korni: document.querySelectorAll('[data-person]').length,
+        vlozhennyh: document.querySelectorAll('button button').length }));
+      const a = await sostoyanie();
+      if (a.raskryto !== 0) bad.push(`${n}: при входе раскрыто ${a.raskryto} карточек, ждали ноль`);
+      if (a.svernuto !== a.korni) bad.push(`${n}: свёрнуты не все (${a.svernuto} из ${a.korni})`);
+      // ⚠ цель раскрытия — НАСТОЯЩАЯ кнопка, а минус её сосед: вложенные кнопки невалидны,
+      // а нажимаемых НЕ-кнопок в этом клиенте нет ни одной
+      if (a.vlozhennyh) bad.push(`${n}: кнопка внутри кнопки (${a.vlozhennyh}) — разметка невалидна`);
+      if (!(await s.p.$('.fold-wrap > .round.out'))) bad.push(`${n}: в свёрнутой строке нет минуса`);
+      // до нажатия в строке только узнавание: имя, уровень, остаток
+      if (await s.p.$(`${card(s, 0)} .chip`)) bad.push(`${n}: чип виден в свёрнутой строке`);
+      if (await s.p.$(`${card(s, 0)} [data-action^="p-give:"]`)) bad.push(`${n}: кружок выдачи виден до раскрытия`);
+      await act(s, 'p-card:1');
+      const b = await sostoyanie();
+      if (b.raskryto !== 1) bad.push(`${n}: после нажатия раскрыто ${b.raskryto}, ждали ровно одну`);
+      if (b.korni !== a.korni) bad.push(`${n}: корни [data-person] потерялись (${a.korni} → ${b.korni}) — на них живут посадка, перерисовка и поиск`);
+      if (!(await s.p.$(`${card(s, 1)} .chips`))) bad.push(`${n}: в раскрытой карточке нет чипов`);
+      await act(s, 'p-card:2');
+      const c = await sostoyanie();
+      if (c.raskryto !== 1) bad.push(`${n}: нажатие по другому человеку оставило раскрытыми ${c.raskryto}`);
+      if (await s.p.$(`${card(s, 1)} .chips`)) bad.push(`${n}: прежняя карточка не свернулась`);
+      // поиск по имени прячет СВЁРНУТЫЕ строки так же, как прежде карточки
+      await s.p.fill('#p-find', 'алев');
+      const hid = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')].map(e => e.hidden));
+      if (JSON.stringify(hid) !== '[false,true,true]') bad.push(`${n}: поиск по свёрнутому списку оставил ${JSON.stringify(hid)}`);
+      await s.ctx.close();
+    }
+
+    /* Минус живёт и в СВЁРНУТОЙ строке (слово владельца при виде цены), поэтому вопрос об
+       исключении обязан её раскрыть: иначе `PEOPLE.out` стоял бы у карточки, которая вопроса
+       не рисует, и человек нажал бы в пустоту. */
+    {
+      const n = 'people-fold-out', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      if (!(await act(s, 'p-out:0'))) bad.push(`${n}: минуса в свёрнутой строке нет`);
+      await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('потеряет вход в приложение')) bad.push(`${n}: вопрос об исключении не показан`);
+      if (!(await s.p.$('.card.dense.open'))) bad.push(`${n}: карточка не раскрылась под вопрос`);
+      if (!(await s.p.$('[data-action="p-outkeep"]'))) bad.push(`${n}: у вопроса нет отказа`);
+      await s.ctx.close();
+    }
+
+    /* Раскрытие ДРУГОГО человека закрывает окно отмены БЕЗ отправки — так же, как уход с
+       экрана. Иначе снятие роли ушло бы у карточки, которой человек уже не видит: это
+       правдоподобный успех, а он хуже явного отказа. */
+    {
+      const n = 'people-fold-undo', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 400; });
+      await act(s, 'p-card:0');
+      await act(s, 'p-ask:31');
+      if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${n}: полосы отмены нет`);
+      await act(s, 'p-card:2');
+      await s.p.waitForTimeout(700);
+      const posts_ = posts(s, /\/roles\/31\/revoke$/);
+      if (posts_.length) bad.push(`${n}: снятие ушло у свёрнутой карточки (${posts_.length}) — человек его уже не видел`);
+      if ((await s.view()).includes('Снимаем: ')) bad.push(`${n}: полоса отмены осталась после свёртки`);
       await s.ctx.close();
     }
 
