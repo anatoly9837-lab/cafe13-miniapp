@@ -6550,12 +6550,14 @@ if (grantsSet.length !== 1) {
     // «+ ответственность», минус, «свернуть» у ЛЮБОЙ карточки звали сброс, и снятие не уходило —
     // человек видел полосу и думал, что снял. Различитель: снял → действие у другого человека →
     // запрос ОБЯЗАН уйти. На стволе e74249d оба случая красные, на v91 — зелёные.
-    for (const [n, x, re_] of [['leave-card-role', 'p-ask:31', /\/roles\/31\/revoke$/],
-                               ['leave-card-level', 'p-lvask:0.member', /\/memberships\/701\/revoke$/]]) {
+    // Уход с карточки после свёртки (#493) — это и раскрытие ДРУГОЙ карточки (`p-card`), и действие в ней.
+    for (const [n, x, re_] of [['leave-card-role', 'p-ask:31', /\/roles\/31\/revoke$/]].concat(
+                               lvOff('уход с карточки при открытом окне уровня') ? [['leave-card-level', 'p-lvask:0.member', /\/memberships\/701\/revoke$/]] : [])) {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 3000; });
-      await act(s, x); await s.p.waitForTimeout(100);
+      await pokazhi(s, 0); await act(s, x); await s.p.waitForTimeout(100);
+      await pokazhi(s, 2);
       if (!(await act(s, 'p-open:2'))) bad.push(`${n}: у другой карточки нет «+ ответственность»`);
       await s.p.waitForTimeout(400);
       const pp = s.calls.filter(c => c.method === 'POST' && re_.test(c.url)).length;
@@ -6564,11 +6566,11 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
     // уход с экрана — тоже «ушли»: окно уровня уходит отправкой
-    {
+    if (lvOff('уход с экрана при открытом окне уровня')) {
       const n = 'leave-screen-level', s = await peopleCase(OWNER, {});
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 3000; });
-      await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(100);
+      await pokazhi(s, 0); await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(100);
       await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(400);
       const pp = s.calls.filter(c => c.method === 'POST' && /\/memberships\/701\/revoke$/.test(c.url)).length;
       if (pp !== 1) bad.push(`${n}: ушли с экрана — снятие уровня ушло ${pp} раз, ждали 1`);
@@ -6579,7 +6581,7 @@ if (grantsSet.length !== 1) {
     {
       const n = 'back-revoke', s = await peopleCase(OWNER, { grant: json(201, { id: 77, member_id: 701, role: 'curator', direction_id: 7, granted_at: '2026-10-29T10:00:00+00:00' }) });
       await toPeople(s);
-      await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
+      await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
       if (!(await act(s, 'p-back'))) bad.push(`${n}: у итога «Снято» нет «Отменить»`);
       await s.p.waitForTimeout(300);
       const g = posts(s, /\/roles$/);
@@ -6594,7 +6596,8 @@ if (grantsSet.length !== 1) {
         grant: json(201, { id: 41, member_id: 702, role: 'ops_director', direction_id: null, granted_at: '2026-10-29T10:00:00+00:00' }),
         revoke: json(200, { id: 41, member_id: 702, role: 'ops_director', revoked_at: '2026-10-29T10:01:00+00:00' }) });
       await toPeople(s);
-      await act(s, 'p-open:1'); await act(s, 'p-give:ops_director'); await s.p.waitForTimeout(300);
+      await pokazhi(s, 1); await act(s, 'p-open:1'); await act(s, 'p-give:ops_director'); await s.p.waitForTimeout(300);
+      await pokazhi(s, 1);
       if (!(await act(s, 'p-back'))) bad.push(`${n}: у итога «Выдано» нет «Отменить»`);
       await s.p.waitForTimeout(300);
       if (posts(s, /\/roles\/41\/revoke$/).length !== 1) bad.push(`${n}: отмена выдачи не сняла выданную роль (id из ответа)`);
@@ -6604,7 +6607,8 @@ if (grantsSet.length !== 1) {
     {
       const n = 'back-gone', s = await peopleCase(OWNER, {});
       await toPeople(s);
-      await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
+      await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
+      await pokazhi(s, 0);
       if (!(await s.p.$('[data-action="p-back"]'))) bad.push(`${n}: «Отменить» нет и до выбора другой карточки — проверять нечего`);
       // своя карточка — «Отменить» живёт
       // в РАСКРЫТОЙ своей карточке плашка не сливается с её фоном (designer-55: оба были --surface)
@@ -6615,7 +6619,7 @@ if (grantsSet.length !== 1) {
       else if (bg[0] === bg[1]) bad.push(`${n}: в раскрытой карточке плашка того же фона, что карточка (${bg[0]}) — её не видно`);
       await act(s, 'p-close'); await s.p.waitForTimeout(150);
       if (!(await s.p.$('[data-action="p-back"]'))) bad.push(`${n}: действие у СВОЕЙ карточки погасило «Отменить»`);
-      await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
+      await pokazhi(s, 2); await s.p.waitForTimeout(150);
       if (await s.p.$('[data-action="p-back"]')) bad.push(`${n}: выбрана другая карточка, а «Отменить» осталось`);
       await s.ctx.close();
     }
