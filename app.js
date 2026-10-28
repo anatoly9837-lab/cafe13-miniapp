@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v81 · 28.10.2026';
+var VERSION = 'v84 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -656,11 +656,20 @@ function sendJoin() {
 // `membership` нет нарочно: экран обещал суммы-заглушки в скобках, кнопки
 // без действия и путь через кассу, который новичку сегодня не пройти
 // (Cafe13KPG#301). Вернётся кадром E38 после слова владельца.
-var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 1,
-              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
-              events: 1, event: 1, eventNew: 1, bookings: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
-              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1, joinQueue: 1, manage: 1,
+var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, people: 1, joinQueue: 1, manage: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
+/* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
+   член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
+   всех»; «не удаляем — делаем временно недоступным». Экраны ниже были в `WIRED` и стоят на данных
+   сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
+   тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
+var FROZEN = { organizer: 1, guest: 1, events: 1, event: 1, eventNew: 1, bookings: 1,
+               bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1, barQueue: 1, barMoney: 1, barDay: 1,
+               barCards: 1, barCard: 1, staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
+function frozen(screen) { return LIVE && !!FROZEN[screen]; }
+// куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
+// по слову владельца серым гаснет всё, кроме двух ролей, а не только то, что было включено
+function closed(screen) { return LIVE && (!!FROZEN[screen] || !WIRED[screen]); }
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -1953,7 +1962,7 @@ var HEAD_ROLES = ['head', 'god_mentor', 'admin'];
 var DIR_ROLES = ['curator', 'bar'];
 var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
                open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '',
-               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null };
+               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null, land: null };
 /* Окно отмены вместо второго подтверждения (слово владельца 28.10.2026: «убери двойное
    подтверждение… оставь кнопку отмены на несколько секунд»; 5 секунд — число координатора,
    кадр E47l). Цифра в полосе считается ОТСЮДА ЖЕ — разойтись с задержкой ей нечем. */
@@ -1994,6 +2003,22 @@ function peopleReset() {
   // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
   // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
   PEOPLE.sending = null;
+  PEOPLE.land = null;
+}
+/* Встать на карточку того, по кому нажали (слово владельца 28.10.2026, Cafe13KPG#502 п.1).
+   После выдачи, снятия и исключения список перечитывается, и на время загрузки страница
+   короче экрана: прокрутка прижимается к нулю, и возврат «где было» (render) возвращал уже
+   прижатое место. Поэтому место берётся не числом пикселей, а ЧЕЛОВЕКОМ — по tg_user_id в
+   памяти: строка его в новом списке может стоять иначе (живые членства наверх). */
+function peopleLand() {
+  var uid = PEOPLE.land, L = PEOPLE.list;
+  PEOPLE.land = null;
+  if (uid === null || !L) return;
+  for (var k = 0; k < L.length; k++) if (L[k].uid === uid) {
+    var el = document.querySelector('[data-person="' + k + '"]');
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+    return;
+  }
 }
 function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }
 
@@ -2057,7 +2082,7 @@ function loadRoster() {
     var list = r.status === 200 ? fromRoster(r.data) : null;
     if (list) PEOPLE.list = list;
     else PEOPLE.fail = r.status === 403 ? denyText(r) : failText(r);
-    if (current === 'people') render();
+    if (current === 'people') { render(); peopleLand(); }
   });
   if (PEOPLE.dirs) return;
   api('GET', '/directions').then(function (r) {
@@ -2093,6 +2118,7 @@ function grantSend() {
     if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
     haptic('ok');
     peopleReset();
+    PEOPLE.land = p.uid;
     PEOPLE.done = { uid: p.uid, text: 'Выдано: ' + roleWords(body.role, dir ? dir.title : '') + '. Кто выдал и когда — записано на сервере.' };
     loadRoster(); render();
   });
@@ -2112,6 +2138,7 @@ function revokeSend(rid) {
     if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
     haptic('ok');
     peopleReset();
+    PEOPLE.land = p.uid;
     PEOPLE.done = { uid: p.uid, text: 'Снято: ' + role.words + '. Снятая роль остаётся в истории на сервере.' };
     loadRoster(); render();
   });
@@ -2133,11 +2160,12 @@ function outSend(k) {
     if (!ok) {
       PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn');
       // «этого человека в клубе нет» — список устарел: его исключил кто-то другой (E47d)
-      if (r.status === 409) loadRoster();
+      if (r.status === 409) { PEOPLE.land = p.uid; loadRoster(); }
       render(); return;
     }
     haptic('ok');
     peopleReset();
+    PEOPLE.land = p.uid;
     PEOPLE.gone = { uid: p.uid, text: r.data.memberships_ended > 0
       ? p.name + ' больше не в клубе. Вход закрыт, живое членство оборвано сегодняшним днём.'
       : p.name + ' больше не в клубе. Вход закрыт; живых членств не было — обрывать было нечего.' };
@@ -3949,6 +3977,8 @@ var ICON = {
   cup:  '<path d="M5 8h11v5a5 5 0 01-5 5h-1a5 5 0 01-5-5z"/><path d="M16 9h2.4a2.4 2.4 0 010 4.8H16"/><path d="M4 21h13"/>',
   bell: '<path d="M18.5 16.5h-13L7 14.1V10a5 5 0 0110 0v4.1z"/><path d="M10 19.5a2 2 0 004 0"/>',
   chart:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
+  // кошелёк с плюсом — вход в пополнение из шапки (Cafe13KPG#500); облик временный до кадра
+  wallet: '<path d="M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4z"/><path d="M4 7l11-3v3"/><path d="M14 13.5h6"/><path d="M17 10.5v6"/>',
   coin: '<ellipse cx="12" cy="7" rx="8" ry="3.2"/><path d="M4 7v10c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V7"/><path d="M4 12.2c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2"/>',
   chev: '<path d="M9 6l6 6-6 6"/>',
   // Та же стрелка, что у кнопки «Назад» в шапке (`index.html`): у подписи
@@ -4060,7 +4090,11 @@ var SCREENS = {
 
       '<div class="card quiet"><div class="row">' +
         '<div class="col"><span class="label">Баланс</span><span class="big num">' + money(m.balance) + ' ฿</span></div>' +
-        '<span class="small" style="text-align:right;max-width:130px">Пополняется в кассе</span>' +
+        // подпись называет ПУТЬ, а заморозка путь снимает (Cafe13KPG#510, #513): пока «На счёт» в кассе
+        // закрыт, путь не обещается, но и не снят: «Через кассу — позже» — слова designer-55, измерены в слоте
+        // (одна строка, 124 px из 130); прежнее «Пополнение временно недоступно» шло в две и стирало кассу
+        '<span class="small" style="text-align:right;max-width:130px">' +
+          (closed('tillTopup') ? 'Через кассу — позже' : 'Пополняется в кассе') + '</span>' +
       '</div></div>' +
 
       (next ? '<div class="group"><span class="label">Вы записаны</span>' +
@@ -5077,9 +5111,20 @@ var SCREENS = {
         (TOPUP.from === 'home' ? '' : '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>');
     }
     return (FLASH ? flash() : '') +
+      // Пополнение члена клуба (Cafe13KPG#500): ПЕРЕПИСАННАЯ ветка этого же экрана, а не новый.
+      // Все три пути сегодня серые и называют причину: ручек просьбы о пополнении ещё нет
+      // (#503), а реквизиты без них обещали бы «отправьте деньги» без «и мы зачислим».
+      // ⚠ Слова — черновые до кадра, кроме «Пока только баты» (слово владельца).
       '<div class="card strong"><span class="label">На счёте</span>' +
-        '<span class="big num">' + money(DATA.member.balance) + ' ฿</span>' +
-        '<p>Счёт пополняется у хостес клуба. Деньги появятся здесь сразу, как их внесут.</p></div>' +
+        '<span class="big num">' + money(DATA.member.balance) + ' ฿</span></div>' +
+      '<div class="group"><span class="label">Как пополнить</span>' +
+        [['Онлайн', 'Приём онлайн-пополнений ещё не включён.'],
+         // у хостес пополнить МОЖНО уже сейчас (касса, POST /till вид topup) — серая только кнопка в приложении
+         ['Касса', 'Сейчас — у хостес клуба; из приложения позже.'],
+         ['USDT', 'Пока только баты.']].map(function (x) {
+          return '<button type="button" class="btn ghost" disabled>' + x[0] + '</button>' +
+            '<span class="small" style="text-align:center">' + x[1] + '</span>';
+        }).join('') + '</div>' +
       '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>';
   },
 
@@ -5635,6 +5680,16 @@ var SCREENS = {
     return notWired(TITLES[current] || 'Этот раздел');
   },
 
+  // не `notWired`: тот говорит «работает только в демонстрации… подключат к серверу», а
+  // замороженный экран был подключён — для него это неправда (Cafe13KPG#510)
+  frozen: function () {
+    return '<div class="card quiet"><div class="col">' +
+      '<b style="font-size:13px">' + esc(TITLES[current] || 'Этот раздел') + ' — временно недоступно</b>' +
+      // текст designer-55: «данные на месте» — первое, о чём думает человек, увидевший пустоту на месте своей работы
+      '<span class="small">Раздел выключен в приложении, данные на сервере на месте. Вернётся, когда дойдут руки.</span>' +
+    '</div></div>';
+  },
+
   demo: function () {
     // В Telegram это не демонстрация: данные настоящие. Панель — тестовый
     // режим и просмотр чужими глазами; список людей даёт сервер, своей
@@ -6004,6 +6059,19 @@ function backTo() {
   return b || homeOf();
 }
 
+/* Баланс в шапке (Cafe13KPG#500, слово владельца): справа на уровне «Café XIII»,
+   по умолчанию СКРЫТ; тап показывает, повторный прячет. Рядом — кошелёк с плюсом,
+   вход в пополнение. Число — то же DATA.member.balance, что из корня /me.
+   На экранах входа (BARE) шапка пустая: человека ещё нет. */
+var BAL = { shown: false };
+function barRight() {
+  if (bare() || !DATA.member || typeof DATA.member.balance !== 'number') return '';
+  return '<button type="button" class="bal" id="bal" data-action="bal-toggle" aria-pressed="' + BAL.shown + '"' +
+      ' aria-label="' + (BAL.shown ? 'Скрыть баланс' : 'Показать баланс') + '">' +
+      (BAL.shown ? money(DATA.member.balance) + ' ฿' : '••• ฿') + '</button>' +
+    '<button type="button" class="icon-btn" id="wallet" data-go="topup" aria-label="Пополнить счёт">' + svg(ICON.wallet) + '</button>';
+}
+
 /* Экраны без вкладок: уйти с них можно решением, а не переключением. */
 var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 function bare() { return !!BARE[current]; }
@@ -6020,7 +6088,18 @@ function render() {
   var here = current + '|' + String(param), y = window.scrollY || 0;
   var same = RENDERED === here;
   RENDERED = here;
-  view.innerHTML = (bare() ? '' : testStrip()) + SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
+  view.innerHTML = (bare() ? '' : testStrip()) +
+    SCREENS[frozen(current) ? 'frozen' : LIVE && !WIRED[current] ? 'soon' : current](param);
+  // вход на замороженный экран гаснет ПО СВОЙСТВУ, а не перечнем кнопок: любой [data-go] туда
+  // (Cafe13KPG#510); облик — общий .btn[disabled]
+  if (LIVE) [].forEach.call(view.querySelectorAll('[data-go]'), function (b) {
+    if (!closed(b.getAttribute('data-go'))) return;
+    b.disabled = true; b.setAttribute('aria-disabled', 'true');
+    // причина ЗАМЕНЯЕТ подстрочник (designer-55, по снимку): описание того, куда не войти, — шум, а
+    // приписка через «·» переносила строку на вторую; серое без причины читается как поломка
+    var sub = b.classList.contains('listitem') && b.querySelector('.grow .small');
+    if (sub) sub.textContent = 'временно недоступно';
+  });
 
   var root = tabList().some(function (t) { return t[0] === current; });
   // экран входа без вкладок, но со своим «назад» (consentFull, joinAbout) — стрелка и своё имя в шапке
@@ -6035,6 +6114,8 @@ function render() {
     title.textContent = LIVE && current === 'demo' ? 'Просмотр' : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
+  var right = document.getElementById('bar-right');
+  if (right) right.innerHTML = barRight();
 
   var tabs = document.getElementById('tabs');
   var list = bare() ? [] : tabList();
@@ -6042,7 +6123,9 @@ function render() {
   document.body.classList.toggle('no-tabs', !list.length);
   tabs.innerHTML = list.map(function (t) {
     var on = t[0] === current;
-    return '<button type="button" data-go="' + t[0] + '"' + (on ? ' aria-current="page"' : '') + '>' +
+    // замороженная вкладка — серая и не нажимается, а не спрятана (буква владельца, Cafe13KPG#510)
+    return '<button type="button" data-go="' + t[0] + '"' + (on ? ' aria-current="page"' : '') +
+      (closed(t[0]) ? ' disabled aria-disabled="true"' : '') + '>' +
       svg(t[2]) + '<span>' + t[1] + '</span></button>';
   }).join('');
 
@@ -6259,6 +6342,8 @@ document.addEventListener('click', function (ev) {
 
   if (el.hasAttribute('data-action')) { doAction(el.getAttribute('data-action')); return; }
   if (el.hasAttribute('data-event')) { go('event', el.getAttribute('data-event')); return; }
+  // погашенный вход не ведёт никуда, даже если щелчок дошёл до него сквозь дочерний элемент
+  if (el.disabled) return;
   go(el.getAttribute('data-go'));
 });
 
@@ -6535,6 +6620,7 @@ function doAction(a) {
     }
     if (a === 'reset-consent') { if (LIVE) return; dropConsent(); go('consent'); return; }
     if (a === 'retry') { boot(); return; }
+    if (a === 'bal-toggle') { BAL.shown = !BAL.shown; render(); return; }
     // просьба о вступлении: до входа LIVE ложно, поэтому без «&& LIVE»
     if (a === 'join-retry') { loadJoin(); render(); return; }
     if (a === 'join-pay' && JOIN_PAY[arg]) { JOIN.pay = arg; loadRequisites(arg); render(); return; }
