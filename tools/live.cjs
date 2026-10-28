@@ -6843,7 +6843,13 @@ if (grantsSet.length !== 1) {
       if (!img || !img.startsWith('blob:')) bad.push(`${n}: чек не показан картинкой из ответа сервера (${img})`);
       // подпись — та же, что у остальных ручек: без неё сервер чек не отдаст
       if (gets(s, /\/receipt$/).some(c => c.init !== INIT)) bad.push(`${n}: чек спрошен без подписи`);
-      if (/80[1-4]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push(`${n}: tg_user_id в разметке`);
+      // адрес чека `blob:` несёт случайный UUID, и в нём «801» бывает само (Cafe13KPG#486): его вырезаем
+      // ДО поиска; настоящий id в разметке по-прежнему краснит — проверяется подлогом в самом случае
+      const html = await s.p.evaluate(() => document.getElementById('view').innerHTML);
+      const bare = h => h.replace(/blob:[^"'\s)]*/g, '');
+      if (/80[1-4]/.test(bare(html))) bad.push(`${n}: tg_user_id в разметке`);
+      if (!/80[1-4]/.test(bare(html + '<span data-x="801"></span>')) || /80[1-4]/.test(bare('<img src="blob:file:///aa801bb">')))
+        bad.push(`${n}: вырезка blob: слепа или шире своего предмета — признак id не различает`);
       const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
       if (/80[1-4]|Доступова/.test(stored)) bad.push(`${n}: просьбы легли в хранилище браузера`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
