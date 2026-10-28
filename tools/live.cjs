@@ -57,12 +57,14 @@ const msAlien = clone(OWNER); msAlien.memberships = [{ level: 'boss', starts_at:
 const msLife = clone(OWNER); msLife.memberships[0].lifelong = 'true';   // строка, не булево
 const msNoEnd = clone(OWNER); msNoEnd.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: false });
 
-/* [имя, внутри Telegram, API_ON, ответ /me, есть, нет, сколько запросов к API, после] */
+/* [имя, внутри Telegram, API_ON, ответ /me, есть, нет, сколько запросов к API, после]
+   У главы клуба (OWNER и его клоны) на один запрос больше: главная спрашивает
+   GET /membership-requests ради счёта «Ждут ответа» в строке «Заявки» (кадр E42g, v65). */
 const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
     ['Пожизненно', '3 170 ฿', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 2],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 2],
+    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 3],
+  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 3],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Баланс', 'Вас нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -360,7 +362,7 @@ if (grantsSet.length !== 1) {
     await s.p.click('[data-action="retry"]');
     await s.p.waitForTimeout(150);
     if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
-    if (s.calls.length !== 3) bad.push(`retry: запросов ${s.calls.length}, ждали 3 (/me, /me, /events)`);
+    if (s.calls.length !== 4) bad.push(`retry: запросов ${s.calls.length}, ждали 4 (/me, /me, /events, /membership-requests)`);
     await s.ctx.close();
   }
 
@@ -6269,11 +6271,13 @@ if (grantsSet.length !== 1) {
       for (const w of ['Ждут ответа · 1', 'Вера Заявкина', '1 234 ฿', 'пропуска нет', '«хочу на вечера»', 'Лев', 'СОГЛАСОВАНА', '«ждём в кассе»'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
       if (/оформлен|ОФОРМЛЕН/.test(t)) bad.push(`${n}: согласованная заявка названа оформленной`);
+      // счёт от исходного: главная главы клуба уже спрашивала список ради счёта ждущих
+      const before = gets(s, /\/membership-requests$/).length;
       await press(s, n, '[data-action="mq-ok:11"]');
       let pp = posts(s, /\/membership-requests\/11\/decide$/);
       let body = pp.length === 1 ? JSON.parse(pp[0].body) : null;
       if (!body || body.decision !== 'approved' || body.note !== '') bad.push(`${n}: согласие ушло так: ${JSON.stringify(pp.map(c => c.body))}`);
-      if (gets(s, /\/membership-requests$/).length !== 2) bad.push(`${n}: после решения список не перечитан`);
+      if (gets(s, /\/membership-requests$/).length !== before + 1) bad.push(`${n}: после решения список не перечитан`);
       // отказ: сначала слово, «Не отказывать» ничего не шлёт
       await press(s, n, '[data-action="mq-ask:11"]');
       if (!(await s.p.$('#d-note'))) bad.push(`${n}: «Отказать» не открыло поле слова (кадр E42v)`);
