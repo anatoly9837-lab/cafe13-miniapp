@@ -1952,7 +1952,7 @@ var ROLE_GREY = [['god_mentor', 'Чужими глазами'], ['admin', 'Ад�
 var HEAD_ROLES = ['head', 'god_mentor', 'admin'];
 var DIR_ROLES = ['curator', 'bar'];
 var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
-               open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '',
+               open: null, role: '', give: null, ask: null, busy: false, deny: null, done: null, find: '',
                out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null, land: null };
 /* Окно отмены вместо второго подтверждения (слово владельца 28.10.2026: «убери двойное
    подтверждение… оставь кнопку отмены на несколько секунд»; 5 секунд — число координатора,
@@ -1987,13 +1987,17 @@ function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
    без этой строки экран оставался запертым до перезапуска (Cafe13KPG#213). */
 function peopleReset() {
   PEOPLE.busy = false;
-  PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.dir = null; PEOPLE.ask = null; PEOPLE.deny = null; PEOPLE.done = null;
+  PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.give = null; PEOPLE.ask = null; PEOPLE.deny = null; PEOPLE.done = null;
   PEOPLE.out = null; PEOPLE.gone = null;
   // окно отмены, открытое на прежнем заходе, закрывается БЕЗ отправки: снятие не случается само
   undoStop();
   // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
   // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
   PEOPLE.sending = null;
+  // ⚠ И занятость СТРОКИ выдачи (PEOPLE.give) — там же и по той же причине: ключ её не id
+  // (роли ещё нет, её только собираются выдать), а пара «роль + направление», и без сброса
+  // «Выдаём…» осталось бы в строке прежнего захода — ровно то, что уже случалось с надписью
+  // снятия. Ключ стоит в строке выше, в общем присваивании.
   PEOPLE.land = null;
 }
 /* Встать на карточку того, по кому нажали (слово владельца 28.10.2026, Cafe13KPG#502 п.1).
@@ -2083,28 +2087,36 @@ function loadRoster() {
     if (current === 'people') render();
   });
 }
-function grantMissing() {
-  if (!PEOPLE.role) return 'Выберите, что поручить.';
-  if (DIR_ROLES.indexOf(PEOPLE.role) !== -1 && PEOPLE.dir === null) return 'Выберите направление.';
-  return '';
-}
+/* `grantMissing()` снят ЦЕЛИКОМ (#502 п.4), а не наполовину. Обе его причины стали
+   недостижимы: «что поручить» задаёт сама строка, направление — строка направления под ней.
+   Оставленная проверка, которая не умеет покраснеть, — это третий смысл зелёного («условие
+   в прогоне не возникает»), и он дороже снятых строк. Текст «Выберите направление.» остался
+   ПОДПИСЬЮ раскрытой роли: его держат два случая батареи. */
 function holds(p, role, dir) {
   return p.roles.some(function (r) { return r.role === role && (dir === undefined || r.dir === dir); });
 }
-function grantSend() {
+/* Роль и направление приходят ИЗ СТРОКИ, по которой нажали, а не из состояния экрана:
+   выбранного больше нет вовсе (#502 п.4). Ключ занятости — та же пара, им «Выдаём…» встаёт
+   в слот кружка ТОЙ строки, а остальные кружки не гаснут (слово designer-55). */
+function giveKey(role, dirId) { return dirId === null ? role : role + ':' + dirId; }
+function grantSend(role, dirId) {
   var p = PEOPLE.list && PEOPLE.list[PEOPLE.open];
-  if (!p || PEOPLE.busy || grantMissing()) return;
-  var body = { member_id: p.uid, role: PEOPLE.role };
+  var dirRole = DIR_ROLES.indexOf(role) !== -1;
+  if (!p || PEOPLE.busy || ROLE_PICK.indexOf(role) === -1) return;
+  // Роль направления БЕЗ направления и общая роль С направлением не отправляются: первое
+  // сервер отвергнет проверкой базы, второе он примет — но не тем, о чём просили.
+  if (dirRole !== (dirId !== null)) return;
+  var body = { member_id: p.uid, role: role };
   var dir = null;
-  if (DIR_ROLES.indexOf(PEOPLE.role) !== -1) {
-    body.direction_id = PEOPLE.dir;
-    dir = (PEOPLE.dirs || []).filter(function (x) { return x.id === PEOPLE.dir; })[0];
+  if (dirRole) {
+    body.direction_id = dirId;
+    dir = (PEOPLE.dirs || []).filter(function (x) { return x.id === dirId; })[0];
   }
   var gen = PEOPLE.gen;
-  PEOPLE.busy = true; PEOPLE.deny = null; render();
+  PEOPLE.busy = true; PEOPLE.deny = null; PEOPLE.give = giveKey(role, dirId); render();
   api('POST', '/roles', body).then(function (r) {
     if (gen !== PEOPLE.gen) return;
-    PEOPLE.busy = false;
+    PEOPLE.busy = false; PEOPLE.give = null;
     var ok = r.status === 201 && r.data && r.data.member_id === p.uid && r.data.role === body.role;
     if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
     haptic('ok');
@@ -2173,7 +2185,7 @@ function personCard(p, k) {
   // Уровень членства — чип БЕЗ крестика и не нажимается НАРОЧНО: ручка снятия уровня
   // (POST /memberships/{tg_user_id}/revoke, api `join.py`) в стволе api ЕСТЬ, а на бою её нет
   // (замер по блобам 29.10.2026). Кнопка не обещает того, чего сервер не делает; крестик
-  // приедет с v84, когда ручку выложат. Уровень она берёт СЛОВОМ в теле, то есть обрывает
+  // приедет с v86, когда ручку выложат (номер по карте #324 на 29.10.2026; был назван v84). Уровень она берёт СЛОВОМ в теле, то есть обрывает
   // ровно одно живое членство названного вида — обратного хода нет, срок не сохраняется.
   //
   // ДВА РЯДА, а не один (слово владельца 29.10.2026, Cafe13KPG#502 п.2): «разделим 2 уровня —
@@ -2192,8 +2204,13 @@ function personCard(p, k) {
       if (PEOPLE.sending === r.id) return '<span class="chip busy">' + esc(r.words) + X + '</span>';  // E47k
       return '<button type="button" class="chip" data-action="p-ask:' + r.id + '"' + lock + '>' + esc(r.words) + X + '</button>';
     }).join('') +
-    (open ? '' : '<button type="button" class="chip add" data-action="p-open:' + k + '"' + lock + '>' +
-      '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>ответственность</button>') +
+    // ⚠ Вход «+ ответственность» остаётся ВИДИМЫМ и при раскрытой форме (так он стоит в кадре
+    // E47s), и в этом состоянии он её СКЛАДЫВАЕТ. Это не украшение: нижний ряд с кнопкой
+    // «Отмена» снят вместе с «Выдать», и без этого закрыть раскрытую форму стало бы нечем —
+    // увидел только отрисовкой, разметка молчала.
+    '<button type="button" class="chip add" data-action="' + (open ? 'p-close' : 'p-open:' + k) + '"' +
+      ' aria-expanded="' + (open ? 'true' : 'false') + '"' + lock + '>' +
+      '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>ответственность</button>' +
   '</div>';
   var askRole = null;
   p.roles.forEach(function (r) { if (PEOPLE.ask === r.id) askRole = r; });
@@ -2201,46 +2218,66 @@ function personCard(p, k) {
     '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="p-keep">Отменить</button></div>' : '';
   var form = '';
   if (open) {
-    var seg = function (label, list, cur, act) {
-      return '<div class="group"><span class="label">' + label + '</span><div class="seg wrap">' +
-        list.map(function (x) {
-          return '<button type="button" data-action="' + act + ':' + esc(String(x[0])) + '"' +
-            (String(cur) === String(x[0]) ? ' aria-pressed="true"' : '') + (x[2] ? ' disabled' : lock) + '>' + esc(x[1]) + '</button>';
-        }).join('') + '</div></div>';
+    /* ВЫДАЧА — КРУЖКОМ В СТРОКЕ РОЛИ (слово владельца 29.10.2026, #502 п.4: «Кнопку выдать
+       сделай круглишком с галочкой зеленым, тоже жирным»; там же про отмену: «отмену так же
+       замени минималистичной кнопкой»). Форма — кадр E47s (#509): строки `.grant`, кружок
+       справа, погашенная строка БЕЗ кружка.
+       ⚠ Погашенная строка — это ОТСУТСТВИЕ кружка, а не `disabled` у него, и это не вкус:
+       чужие случаи `out-403`/`out-self`/`out-gone` красят экран запертым, если внутри
+       `[data-person]` нашёлся `[disabled]`. Так запрет держится ПОСТРОЕНИЕМ, а не договором.
+       ⚠ Нижний ряд «Отмена · Выдать» ушёл целиком, и вместе с ним ветка `current === 'people'`
+       в `mainFor()`: главной кнопке Telegram обещать нечем — у неё нет строки, по которой
+       нажали. Закрыть форму — тем же входом «+ ответственность» (`p-close` остался у него).
+       ⚠ Направление — ВТОРОЙ шаг, и это замер, а не упрощение: перечня направлений кадр не
+       рисует вовсе (слова «направление» в E47s нет ни разу), а сервер без `direction_id`
+       отвечает отказом базы. Поэтому у куратора и бара в строке стоит указатель, он
+       раскрывает направления строками, и выдаёт кружок В СТРОКЕ НАПРАВЛЕНИЯ — один тап,
+       но после выбора. «Один тап всегда» — вопрос к владельцу, он у координатора с ценой.
+       ⚠ `disabled` в этом блоке не ставится НИГДЕ, в том числе при занятости: кружки соседних
+       строк не гаснут (слово designer-55). От двойного нажатия остаётся одна линия — проверка
+       `PEOPLE.busy` во входе действий; снятие её обязано краснить `people-double`. */
+    var CHECK = '<svg viewBox="0 0 24 24"><path d="M5 13l4.5 4.5L19 7"/></svg>';
+    var CHEV = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+    // Отступы встроены — тот же долг Cafe13KPG#484, что у остатка в строке имени.
+    var grow = function (label, small, right, off) {
+      return '<div class="grant' + (off ? ' off' : '') + '"><span class="col"><span>' + esc(label) + '</span>' +
+        (small ? '<span class="small">' + esc(small) + '</span>' : '') + '</span>' + (right || '') + '</div>';
     };
-    // админа выдаёт только админ — кнопку, которую сервер отвергнет, не рисуем.
-    // Общую роль, которая уже есть, второй раз не выдать (409). Роль направления
-    // закрыта целиком, только если человек занял ВСЕ её направления — иначе выбор
-    // вёл бы в тупик «выберите направление», где выбрать нечего; занято не всё —
-    // роль открыта, закрыты лишь занятые направления. Состояний перечня три:
-    // грузится или не пришёл — роль открыта, под ней причина словами; пришёл
-    // ПУСТЫМ (все направления сняты) — роль закрыта «· направлений нет»: выбрать
-    // нечего никогда. «Заняты все» на пустом перечне не считаем: [].every истинно.
-    var picks = ROLE_PICK
-      .map(function (r) {
-        var dirRole = DIR_ROLES.indexOf(r) !== -1;
-        var none = dirRole && !!PEOPLE.dirs && PEOPLE.dirs.length === 0;
-        var have = !dirRole ? holds(p, r)
-          : !!PEOPLE.dirs && PEOPLE.dirs.length > 0 && PEOPLE.dirs.every(function (d) { return holds(p, r, d.id); });
-        return [r, (ROLE_NAME[r] || r) + (have ? ' · уже есть' : none ? ' · направлений нет' : ''), have || none];
-      })
+    // «Выдаём…» стоит в слоте кружка ТОЙ строки, по которой нажали, и держится до ответа:
+    // дальше список перечитывается, форма закрыта, и итог говорит заметка в карточке.
+    var give = function (key, words) {
+      if (PEOPLE.give === key) return '<span class="sending">Выдаём…</span>';
+      return '<button type="button" class="round yes" data-action="p-give:' + key + '"' +
+        ' aria-label="Выдать: ' + esc(words) + '">' + CHECK + '</button>';
+    };
+    var grants = ROLE_PICK.map(function (r) {
+      var label = ROLE_NAME[r] || r;
+      // Общую роль, которая уже есть, второй раз не выдать (409) — строка гаснет и теряет кружок.
+      if (DIR_ROLES.indexOf(r) === -1)
+        return holds(p, r) ? grow(label, 'уже есть', '', true) : grow(label, '', give(r, label), false);
+      // Роль направления. Состояний перечня три: грузится или не пришёл — строка гаснет, но
+      // причина названа словами; пришёл ПУСТЫМ (все направления сняты) — «направлений нет»,
+      // выбрать нечего никогда; занято ВСЁ — «уже есть». Занято не всё — роль открыта, а
+      // закрыты лишь занятые строки: иначе выбор вёл бы в тупик, где выбрать нечего.
+      // «Заняты все» на пустом перечне не считаем: [].every истинно.
+      if (!PEOPLE.dirs)
+        return grow(label, PEOPLE.dirsFail ? 'Направления не загрузились: ' + PEOPLE.dirsFail : 'Загружаем направления…', '', true);
+      if (!PEOPLE.dirs.length) return grow(label, 'направлений нет', '', true);
+      if (PEOPLE.dirs.every(function (d) { return holds(p, r, d.id); })) return grow(label, 'уже есть', '', true);
+      var shown = PEOPLE.role === r;
+      var head = grow(label, shown ? 'Выберите направление.' : '',
+        '<button type="button" class="round go" data-action="p-role:' + r + '"' +
+        ' aria-label="Направления: ' + esc(label) + '" aria-expanded="' + (shown ? 'true' : 'false') + '">' + CHEV + '</button>', false);
+      if (!shown) return head;
+      return head + '<div class="grants" style="margin-left:14px">' + PEOPLE.dirs.map(function (d) {
+        return holds(p, r, d.id) ? grow(d.title, 'уже есть', '', true)
+          : grow(d.title, '', give(r + ':' + d.id, label + ' · ' + d.title), false);
+      }).join('') + '</div>';
+    }).join('') +
       // серые: «есть, но не сейчас» — отличие от отсутствующей «Главы клуба» (слово владельца)
-      .concat(ROLE_GREY.map(function (g) { return [g[0], g[1] + ' · выдаётся не из приложения', true]; }));
-    var needDir = DIR_ROLES.indexOf(PEOPLE.role) !== -1;
-    var miss = grantMissing();
-    form = seg('Что поручить', picks, PEOPLE.role, 'p-role') +
-      (PEOPLE.dirs && !PEOPLE.dirs.length ? '<span class="small">Куратора и бара выдать некуда: открытых направлений в клубе нет.</span>' : '') +
-      (!needDir ? ''
-       : PEOPLE.dirs ? seg('Направление', PEOPLE.dirs.map(function (d) {
-           var have = holds(p, PEOPLE.role, d.id);
-           return [d.id, d.title + (have ? ' · уже есть' : ''), have];
-         }), PEOPLE.dir, 'p-dir')
-       : '<span class="small">' + (PEOPLE.dirsFail ? 'Направления не загрузились: ' + esc(PEOPLE.dirsFail) : 'Загружаем направления…') + '</span>') +
-      '<span class="small">Кто выдал и когда — запишется на сервере.</span>' +
-      // почему «Выдать» не нажимается — своей строкой у кнопки, а не хвостом заметки
-      (miss ? '<span class="small" role="status"><b>' + esc(miss) + '</b></span>' : '') +
-      '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="p-close"' + lock + '>Отмена</button>' +
-      '<button type="button" class="btn dup-main" data-action="p-grant"' + (miss ? ' disabled' : lock) + '>' + (PEOPLE.busy ? 'Выдаём…' : 'Выдать') + '</button></div>';
+      ROLE_GREY.map(function (g) { return grow(g[1], 'выдаётся не из приложения', '', true); }).join('');
+    form = '<div class="grants">' + grants + '</div>' +
+      '<span class="small">Кто выдал и когда — запишется на сервере.</span>';
   }
   var mine = function (x) { return x && x.uid === p.uid; };
   var deny = mine(PEOPLE.deny) ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(PEOPLE.deny.text) + '</span></div>' : '';
@@ -2318,7 +2355,7 @@ function peopleRedraw(before) {
     if (tail && tail.getAttribute('data-undo-of') === String(ks[i])) tail.remove();   // полоса отмены — сосед карточки (E47l)
     el.outerHTML = personCard(PEOPLE.list[ks[i]], ks[i]);
   }
-  tgChrome();   // главная кнопка Telegram («Выдать») зависит от открытой формы
+  tgChrome();   // BACK и главная кнопка: «Выдать» у неё больше нет, но состояние экрана могло смениться
 }
 function peopleFilter() {
   var q = PEOPLE.find.trim().toLowerCase();
@@ -6191,7 +6228,7 @@ function demoWork(screen, p) {
 /* Отправки и перечитывания рабочих экранов. В демонстрации они не уходят:
    сервера нет, а «ничего не случилось» на нажатие — дефект, уже бывший у нас
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
-var DEMO_SENDS = ['p-grant', 'p-revoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
+var DEMO_SENDS = ['p-give', 'p-revoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
                   'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
 
@@ -6456,20 +6493,27 @@ function doAction(a) {
       if (PEOPLE.busy) return;
       var before = peopleTouched();
       if (a === 'p-reload') { loadRoster(); render(); return; }
-      if (a === 'p-grant') { grantSend(); return; }
+      if (a === 'p-give') {
+        // Ключ строки — «роль» или «роль:направление». Приставку `p-` разобрал doAction,
+        // здесь режется ПЕРВОЕ двоеточие остатка; у общей роли его нет вовсе.
+        var cutg = String(arg).indexOf(':');
+        grantSend(cutg === -1 ? arg : arg.slice(0, cutg), cutg === -1 ? null : Number(arg.slice(cutg + 1)));
+        return;
+      }
       if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
       if (a === 'p-outyes') { if (PEOPLE.out === Number(arg)) outSend(Number(arg)); return; }
       if (a === 'p-out') { peopleReset(); PEOPLE.out = Number(arg); }
       if (a === 'p-outkeep') PEOPLE.out = null;
       if (a === 'p-open') { peopleReset(); PEOPLE.open = Number(arg); }
       if (a === 'p-close') peopleReset();
-      if (a === 'p-role' && ROLE_PICK.indexOf(arg) !== -1) {
-        PEOPLE.role = arg; PEOPLE.dir = null;
-        // выбор из одного — не выбор: единственное направление ставится само
-        // (занятое единственное направление сюда не доходит: такая роль закрыта в форме)
-        if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1) PEOPLE.dir = PEOPLE.dirs[0].id;
-      }
-      if (a === 'p-dir') PEOPLE.dir = Number(arg);
+      // `p-role` больше не ВЫБИРАЕТ, а раскрывает направления, и спрашивается только у
+      // DIR_ROLES: у роли без направления раскрывать нечего, а состояние, которое ничего не
+      // рисует, не заводится. Второе нажатие складывает обратно — у указателя это его
+      // единственный обратный ход, и `aria-expanded` в разметке обещает ровно это.
+      // Самоподстановка единственного направления снята вместе с выбором: выдаёт СТРОКА, и
+      // «выбранного» направления больше не существует.
+      // `p-dir` снят: строка направления теперь выдаёт, и делает это `p-give` с парным ключом.
+      if (a === 'p-role' && DIR_ROLES.indexOf(arg) !== -1) PEOPLE.role = PEOPLE.role === arg ? '' : arg;
       // крестик у роли: окно отмены вместо вопроса; второе окно поверх первого не открывается
       if (a === 'p-ask') { if (PEOPLE.ask !== null) return; undoStart(Number(arg)); }
       if (a === 'p-keep') { undoStop(); PEOPLE.ask = null; }
@@ -6797,7 +6841,9 @@ function mainFor() {
   // в одном месте, сторожит tools/live.cjs до первого случая.
   if (current === 'barCards' && LIVE && CARDS.list) return { text: 'Новая карточка', a: 'c-new' };
   if (current === 'barCard' && param === 'new' && !CARD.busy) return { text: 'Сохранить черновик', a: 'c-save' };
-  if (current === 'people' && PEOPLE.open !== null && !PEOPLE.busy && !grantMissing()) return { text: 'Выдать', a: 'p-grant' };
+  // Ветки «Выдать» здесь больше нет (#502 п.4): выдаёт кружок в строке роли, а главной
+  // кнопке Telegram обещать нечем — строки, по которой нажали, у неё нет. Экранного дубля
+  // она на этом экране и лишилась вместе с нижним рядом, где стоял `.dup-main`.
   if (current === 'barExpense') return { text: 'Записать затрату', a: 'add-expense' };
   if (current === 'drink' && LIVE) {
     var dl = findDrink(param);
