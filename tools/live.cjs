@@ -6385,6 +6385,10 @@ if (grantsSet.length !== 1) {
       await s.p.evaluate(() => { UNDO_MS = 100; doAction('p-lvask:0.partner'); doAction('p-lvask:0.admin'); doAction('p-lvask:9.member'); });
       await s.p.waitForTimeout(400);
       if (await s.p.$('.undo')) bad.push(`${n}: окно открылось на уровень, которого у человека нет`);
+      // и НЕВИДИМОЕ окно тоже: полосы нет (её рисует только живой уровень), а метка занята — следующий
+      // крестик ответил бы «Идёт снятие «»». Без этой строки мутация «вход не сверяет уровень» зелена:
+      // запрос держит вторая линия в `lvSend` (mv2 на 8232029)
+      if (await s.p.evaluate(() => PEOPLE.lvAsk) !== null) bad.push(`${n}: окно открылось невидимым — метка занята уровнем, которого у человека нет`);
       if (lvPosts(s).length) bad.push(`${n}: ушло снятие уровня, которого у человека нет: ${JSON.stringify(lvPosts(s).map(c => c.body))}`);
       await s.ctx.close();
     }
