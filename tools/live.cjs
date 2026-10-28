@@ -5884,6 +5884,9 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles\/31\/revoke$/).length;
       if (pp !== 1) bad.push(`people-double-revoke: двойное «Точно снять» отправило ${pp} запросов, а не один`);
+      // E47k: пока сервер отвечает, надпись на месте, но погашена и не нажимается
+      const busy = await s.p.$eval('[data-person="0"] .chip.busy', e => [e.tagName, e.textContent]).catch(() => null);
+      if (!busy || busy[0] !== 'SPAN' || !/Куратор направления/.test(busy[1])) bad.push(`people-chip-busy: снимаемая надпись не погашена на время ответа (E47k): ${JSON.stringify(busy)}`);
       await s.ctx.close();
     }
 
