@@ -5784,8 +5784,7 @@ if (grantsSet.length !== 1) {
       // 1 Сомчай (без членства), 2 Глеб (член и партнёр) — экран обязан 0, 2, 1.
       const order = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')].map(c => c.getAttribute('data-person')));
       if (JSON.stringify(order) !== '["0","2","1"]') bad.push(`${n}: порядок карточек ${JSON.stringify(order)}, ждали ["0","2","1"] — живые членства наверх`);
-      // исключения в этой правке нет вовсе (v74): ни кнопки, ни серой
-      if (/Исключить/.test(t)) bad.push(`${n}: «Исключить» на экране, а ручка подключается только в v74`);
+      // (в v73 здесь стоял запрет «Исключить» на экране — с v74 кнопка есть, её держат случаи out-*)
       await s.p.screenshot({ path: `${OUT}/live-members.png` });
       await s.ctx.close();
     }
@@ -5816,6 +5815,8 @@ if (grantsSet.length !== 1) {
       const second = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')][1].getAttribute('data-person'));
       if (second !== '2') bad.push(`${n}: второй по отрисовке ${second}, ждали 2 — порядок не тот, случай спрашивает не того человека`);
       await act(s, 'p-out:2');
+      // ждать, а не смотреть сразу: запрос уходит асинхронно, и мгновенный счёт был бы нулём всегда
+      await s.p.waitForTimeout(300);
       if (outs(s).length) bad.push(`${n}: исключение ушло с первого нажатия — вопроса нет (E47v)`);
       const t = await s.view();
       if (!t.includes('Глеб Главный потеряет вход в приложение и живое членство разом')) bad.push(`${n}: в вопросе нет имени человека (E47v)`);
