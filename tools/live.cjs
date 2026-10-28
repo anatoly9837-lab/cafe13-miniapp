@@ -5898,11 +5898,8 @@ if (grantsSet.length !== 1) {
         await pokazhi(s, 1); await act(s, 'p-open:1');
         if (!(await act(s, 'p-give:director'))) bad.push(`${name}: у общей роли нет кружка выдачи`);
       } else {
-        // окно отмены вместо вопроса (E47l): сначала полоса и ни одного запроса, потом — ровно один
-        await s.p.evaluate(() => { UNDO_MS = 150; });
+        // v91: роль снимается СРАЗУ (слово владельца), окна у ролей нет — отказ приходит ответом
         await pokazhi(s, 0); await act(s, 'p-ask:31');
-        if (posts(s, /revoke/).length) bad.push(`${name}: снятие ушло сразу, окна отмены нет`);
-        if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${name}: нет полосы «Снимаем: Куратор направления · Бар»`);
       }
       await s.p.waitForTimeout(300);
       if (step === 'revoke' && (posts(s, /\/roles\/31\/revoke$/).length !== 1)) bad.push(`${name}: снятие не ушло ровно один раз`);
@@ -6031,7 +6028,7 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       const k = step === 'grant' ? 1 : 0;
       if (step === 'grant') { await pokazhi(s, 1); await act(s, 'p-open:1'); if (!(await act(s, 'p-give:ops_director'))) bad.push(`${name}: кружка выдачи нет`); }
-      else { await s.p.evaluate(() => { UNDO_MS = 50; }); await pokazhi(s, 0); await act(s, 'p-ask:31'); }
+      else { await pokazhi(s, 0); await act(s, 'p-ask:31'); }
       await s.p.waitForTimeout(300);
       const deny = await s.p.$eval(`${card(s, k)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== 'Ответ сервера не разобран.') bad.push(`${name}: плашка «${deny}», ждали «Ответ сервера не разобран.»`);
@@ -6078,7 +6075,7 @@ if (grantsSet.length !== 1) {
     // медленный, второй быстрый; тело медленного — нечитаемый маркер.
     for (const [name, step, start, again, re] of [
       ['people-late-grant', 'grant', ['p-card:1', 'p-open:1', 'p-give:ops_director'], ['p-card:1', 'p-open:1', 'p-give:ops_director'], /\/roles$/],
-      ['people-late-revoke', 'revoke', ['short', 'p-card:0', 'p-ask:31'], ['short', 'p-card:0', 'p-ask:31'], /\/roles\/31\/revoke$/],
+      ['people-late-revoke', 'revoke', ['p-card:0', 'p-ask:31'], ['p-card:0', 'p-ask:31'], /\/roles\/31\/revoke$/],
     ]) {
       // задержка считается от самого запроса: таймер, заведённый при создании
       // случая, истекал ещё до ухода с экрана, и мутация на гард оставалась зелёной
@@ -6199,8 +6196,8 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { revoke: new Promise(() => {}) });
       await toPeople(s);
-      await pokazhi(s, 0); await act(s, 'p-ask:31');
-      await s.p.evaluate(() => { doAction('p-revoke:31'); doAction('p-revoke:31'); });
+      // v91: крестик и есть отправка — два нажатия, поставленные в очередь до перерисовки
+      await pokazhi(s, 0); await s.p.evaluate(() => { doAction('p-ask:31'); doAction('p-ask:31'); });
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles\/31\/revoke$/).length;
       if (pp !== 1) bad.push(`people-double-revoke: двойное «Точно снять» отправило ${pp} запросов, а не один`);
@@ -6210,20 +6207,15 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
-    // снятие: подтверждение → запрос → итог и перечитанный список
+    // снятие роли СРАЗУ (v91, слово владельца 29.10.2026): запрос один, итог с «Отменить», список перечитан.
+    // ⚠ Прежняя редакция (v78) ждала окно ДО отправки; у ролей его больше нет — окно осталось у уровня.
     {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
-      await s.p.evaluate(() => { UNDO_MS = 150; });
-      await pokazhi(s, 0); await act(s, 'p-ask:31');
-      await act(s, 'p-keep');
-      await s.p.waitForTimeout(300);              // окно истекло бы — но «Отменить» его снял
-      if (posts(s, /revoke/).length) bad.push('people-revoke: «Отменить» не снял окно — снятие ушло');
-      await pokazhi(s, 0); await act(s, 'p-ask:31');
-      if (posts(s, /revoke/).length) bad.push('people-revoke: снятие ушло сразу, без окна отмены');
-      await s.p.waitForTimeout(400);
+      await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
       if (posts(s, /\/roles\/31\/revoke$/).length !== 1) bad.push('people-revoke: снятие не ушло ровно один раз');
       if (!(await note(s, 0)).includes('Снято: Куратор направления · Бар.')) bad.push('people-revoke: в карточке нет итога «Снято»');
+      if (!(await s.p.$(`${card(s, 0)} .note [data-action="p-back"]`))) bad.push('people-revoke: у итога «Снято» нет «Отменить»');
       if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-revoke: список не перечитан');
       await s.ctx.close();
     }
@@ -6321,7 +6313,7 @@ if (grantsSet.length !== 1) {
     // браузер не дал бы поставить карточку к верху и при правильном коде.
     for (const [how, steps] of [
       ['выдачи', ['p-card:K', 'p-open:K', 'p-give:ops_director']],
-      ['снятия', ['short', 'p-card:K', 'p-ask:RID']],
+      ['снятия', ['p-card:K', 'p-ask:RID']],
       ['исключения', ['p-out:K', 'p-outyes:K']]]) {
       const n = 'people-land', long = clone(ROSTER), K = ROSTER.people.length + 10, RID = 70;
       // имена — роль-словом в скобках (#495): правдоподобное имя в публичном репозитории возвращают с ревью
@@ -6539,6 +6531,78 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
+    const lvPosts = s => s.calls.filter(c => c.method === 'POST' && /\/memberships\/\d+\/revoke$/.test(c.url));
+    const lvOff = sec => { if (process.env.LVON === '1') return true;
+      SKIPPED.add('крестик уровня погашен до Cafe13KPG#519: ' + sec); return false; };
+    // ── ДЕФЕКТ v86, который чинит v91: действие у другой карточки ТИХО отменяло снятие ──
+    // Замер 29.10.2026 по жалобе владельца («на 5 секунд мы теряем управление»): в окне отмены
+    // «+ ответственность», минус, «свернуть» у ЛЮБОЙ карточки звали сброс, и снятие не уходило —
+    // человек видел полосу и думал, что снял. Различитель: снял → действие у другого человека →
+    // запрос ОБЯЗАН уйти. На стволе e74249d оба случая красные, на v91 — зелёные.
+    for (const [n, x, re_] of [['leave-card-role', 'p-ask:31', /\/roles\/31\/revoke$/],
+                               ['leave-card-level', 'p-lvask:0.member', /\/memberships\/701\/revoke$/]]) {
+      const s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 3000; });
+      await act(s, x); await s.p.waitForTimeout(100);
+      if (!(await act(s, 'p-open:2'))) bad.push(`${n}: у другой карточки нет «+ ответственность»`);
+      await s.p.waitForTimeout(400);
+      const pp = s.calls.filter(c => c.method === 'POST' && re_.test(c.url)).length;
+      if (pp !== 1) bad.push(`${n}: действие у другой карточки — снятие ушло ${pp} раз, ждали 1 (прежде тихо отменялось)`);
+      if (!(await s.p.$(`${card(s, 2)} .grant`))) bad.push(`${n}: само действие у другой карточки не выполнилось — экран заперт`);
+      await s.ctx.close();
+    }
+    // уход с экрана — тоже «ушли»: окно уровня уходит отправкой
+    {
+      const n = 'leave-screen-level', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 3000; });
+      await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(400);
+      const pp = s.calls.filter(c => c.method === 'POST' && /\/memberships\/701\/revoke$/.test(c.url)).length;
+      if (pp !== 1) bad.push(`${n}: ушли с экрана — снятие уровня ушло ${pp} раз, ждали 1`);
+      await s.ctx.close();
+    }
+    // «Отменить» — ОБРАТНОЕ действие (v91): у снятия — выдать ту же роль снова, у выдачи — снять выданную;
+    // живёт до выбора другой карточки
+    {
+      const n = 'back-revoke', s = await peopleCase(OWNER, { grant: json(201, { id: 77, member_id: 701, role: 'curator', direction_id: 7, granted_at: '2026-10-29T10:00:00+00:00' }) });
+      await toPeople(s);
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
+      if (!(await act(s, 'p-back'))) bad.push(`${n}: у итога «Снято» нет «Отменить»`);
+      await s.p.waitForTimeout(300);
+      const g = posts(s, /\/roles$/);
+      if (g.length !== 1 || g[0].body !== JSON.stringify({ member_id: 701, role: 'curator', direction_id: 7 }))
+        bad.push(`${n}: отмена снятия ушла не той выдачей: ${JSON.stringify(g.map(c => c.body))}`);
+      if (!(await note(s, 0)).includes('Возвращено: Куратор направления · Бар.')) bad.push(`${n}: нет итога «Возвращено»: ${await note(s, 0)}`);
+      if (await s.p.$('[data-action="p-back"]')) bad.push(`${n}: «Отменить» осталось после отмены`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'back-grant', s = await peopleCase(OWNER, {
+        grant: json(201, { id: 41, member_id: 702, role: 'ops_director', direction_id: null, granted_at: '2026-10-29T10:00:00+00:00' }),
+        revoke: json(200, { id: 41, member_id: 702, role: 'ops_director', revoked_at: '2026-10-29T10:01:00+00:00' }) });
+      await toPeople(s);
+      await act(s, 'p-open:1'); await act(s, 'p-give:ops_director'); await s.p.waitForTimeout(300);
+      if (!(await act(s, 'p-back'))) bad.push(`${n}: у итога «Выдано» нет «Отменить»`);
+      await s.p.waitForTimeout(300);
+      if (posts(s, /\/roles\/41\/revoke$/).length !== 1) bad.push(`${n}: отмена выдачи не сняла выданную роль (id из ответа)`);
+      if (!(await note(s, 1)).includes('Отменено: Операционный директор.')) bad.push(`${n}: нет итога «Отменено»: ${await note(s, 1)}`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'back-gone', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
+      if (!(await s.p.$('[data-action="p-back"]'))) bad.push(`${n}: «Отменить» нет и до выбора другой карточки — проверять нечего`);
+      // своя карточка — «Отменить» живёт
+      await act(s, 'p-open:0'); await act(s, 'p-close'); await s.p.waitForTimeout(150);
+      if (!(await s.p.$('[data-action="p-back"]'))) bad.push(`${n}: действие у СВОЕЙ карточки погасило «Отменить»`);
+      await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
+      if (await s.p.$('[data-action="p-back"]')) bad.push(`${n}: выбрана другая карточка, а «Отменить» осталось`);
+      await s.ctx.close();
+    }
+
     // ── частичная перерисовка (Cafe13KPG#490, v78): действие в карточке не трогает соседние ──
     // Различитель — метка, поставленная в СОСЕДНЮЮ карточку и в поле поиска: полная перерисовка её стирает.
     {
@@ -6546,34 +6610,36 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       await s.p.evaluate(() => { document.querySelector('[data-person="1"]').setAttribute('data-mark', 'x');
                                  document.getElementById('p-find').setAttribute('data-mark', 'x'); });
-      await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(150);
-      if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${n}: полоса отмены у своей карточки не появилась`);
+      // v91: окна отмены у ролей нет, а окно уровня погашено вместе с крестиком (#519) — частичная
+      // перерисовка мерится на вопросе «Исключить»: он тоже рисуется только в своей карточке
+      await pokazhi(s, 0); await act(s, 'p-out:0'); await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('Точно исключить')) bad.push(`${n}: вопрос «Исключить» у своей карточки не появился`);
       const marks = await s.p.evaluate(() => [!!document.querySelector('[data-person="1"][data-mark]'), !!document.querySelector('#p-find[data-mark]')]);
       if (!marks[0] || !marks[1]) bad.push(`${n}: действие в одной карточке перерисовало экран целиком (соседняя ${marks[0]}, поиск ${marks[1]})`);
-      // и обратный ход: открыли форму у другой — у первой вопрос закрылся (перерисованы ОБЕ)
-      await pokazhi(s, 2); await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
-      if ((await s.view()).includes('Снимаем: Куратор')) bad.push(`${n}: полоса отмены прежней карточки осталась — перерисована только новая`);
-      if (!(await s.p.$('[data-person="2"] [data-action="p-close"]'))) bad.push(`${n}: форма во второй карточке не открылась`);
+      // и обратный ход: открыли другую карточку — у первой вопрос закрылся (перерисованы ОБЕ)
+      await pokazhi(s, 2); await s.p.waitForTimeout(150);
+      if ((await s.view()).includes('Точно исключить')) bad.push(`${n}: вопрос прежней карточки остался — перерисована только новая`);
       await s.ctx.close();
     }
 
     // ── окно отмены (E47l, v78): цифра в полосе = задержка в коде; «Отменить» — запроса нет; вышло — ровно один ──
     // Задержка в случае НЕ равна 5 нарочно: при цифре, вписанной в разметку руками, «5 == 5» прошло бы по построению.
-    {
+    if (lvOff('окно отмены — с v91 оно только у уровня')) {
+      // v91: окно ДО отправки осталось только у уровня (срок сервер не хранит) — мерится на нём
       const n = 'people-undo', s = await peopleCase(OWNER, {});
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 3000; });
-      await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
+      await pokazhi(s, 0); await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(60);
       const sec = await s.p.$eval('.undo .sec', e => e.textContent).catch(() => null);
       if (sec !== '3') bad.push(`${n}: в полосе «${sec}», а задержка 3 с — цифра и задержка разошлись`);
-      if (posts(s, /revoke/).length) bad.push(`${n}: снятие ушло сразу, окна нет`);
-      if (await s.p.$('[data-person="0"] [data-action="p-ask:31"]')) bad.push(`${n}: в окне отмены надпись роли осталась нажимаемой (E47l)`);
+      if (lvPosts(s).length) bad.push(`${n}: снятие ушло сразу, окна нет`);
+      if (await s.p.$('[data-person="0"] [data-action="p-lvask:0.member"]')) bad.push(`${n}: в окне отмены надпись уровня осталась нажимаемой (E47l)`);
       await act(s, 'p-keep');
       if (await s.p.$('.undo')) bad.push(`${n}: «Отменить» не убрал полосу`);
-      if (!(await s.p.$('[data-person="0"] [data-action="p-ask:31"]'))) bad.push(`${n}: после «Отменить» надпись роли не вернулась`);
+      if (!(await s.p.$('[data-person="0"] [data-action="p-lvask:0.member"]'))) bad.push(`${n}: после «Отменить» надпись уровня не вернулась`);
       await s.p.evaluate(() => { UNDO_MS = 200; });
-      await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(600);
-      const pp = posts(s, /\/roles\/31\/revoke$/).length;
+      await pokazhi(s, 0); await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(600);
+      const pp = lvPosts(s).length;
       if (pp !== 1) bad.push(`${n}: окно вышло — запросов ${pp}, ждали ровно 1`);
       await s.ctx.close();
     }
@@ -6583,14 +6649,11 @@ if (grantsSet.length !== 1) {
        Случаи НЕ удалены, а СНЯТЫ С ПРИЧИНОЙ — вернутся вместе с `Cafe13KPG#519`, когда у
        ручки появится «атрибут отменено + дата отмены». Форма та же, что у заморозки:
        снятое печатается в конце прогона, `LVON=1` гоняет их обратно. */
-    const lvOff = sec => { if (process.env.LVON === '1') return true;
-      SKIPPED.add('крестик уровня погашен до Cafe13KPG#519: ' + sec); return false; };
 
     // ── уровень членства крестиком (v86): окно ДО отправки, уровень СЛОВОМ, ровно одно членство ──
     // Ручка `POST /memberships/{tg_user_id}/revoke` на бою с `d1fa661`; обратного хода у неё нет
     // (`ends_at = now()`, срок не сохраняется), поэтому отправка — только после окна.
     // Карточка 0 — человек с одним уровнем «Член клуба» (701), 2 — с двумя (703: member и partner).
-    const lvPosts = s => s.calls.filter(c => c.method === 'POST' && /\/memberships\/\d+\/revoke$/.test(c.url));
     if (lvOff('снятие уровня крестиком')) {
       const n = 'lv-revoke', s = await peopleCase(OWNER, {});
       await toPeople(s);
@@ -6635,41 +6698,33 @@ if (grantsSet.length !== 1) {
       if (lvPosts(s).length) bad.push(`${n}: ушло снятие уровня, которого у человека нет: ${JSON.stringify(lvPosts(s).map(c => c.body))}`);
       await s.ctx.close();
     }
-    // окно одно на экран: крестик, нажатый в открытое окно, второго окна не открывает и НЕ МОЛЧИТ —
-    // в карточке того, по кому нажали, сказано, почему ничего не снимается (иначе немая кнопка, #338)
-    // Список длинный НАРОЧНО: полоса открыта у верхней карточки, нажатие — у нижней, и полоса за краем
-    // окна (самоконтроль). Экран при этом НЕ прыгает (слово владельца, #490) — текст называет снимаемое.
-    if (lvOff('второй крестик в открытое окно')) {
+    // ── второй крестик уровня при открытом окне (v91) ──
+    // ⚠ Прежняя редакция (v86): второе окно не открывалось, и крестик говорил «Идёт снятие…». По
+    // слову владельца («пока не выбрали другую карточку») нажатие у ДРУГОГО человека — уход с карточки:
+    // открытое снятие уходит досрочно, новое окно открывается. Экран не прыгает (#490). Список длинный
+    // НАРОЧНО: окно у верхней карточки, нажатие у нижней — иначе «не прыгнул» не на чем проверить.
+    if (lvOff('второй крестик уровня при открытом окне')) {
       const n = 'lv-second', long = clone(ROSTER), L = ROSTER.people.length + 15;
       for (let i = 0; i < 16; i++) long.people.push({ tg_user_id: 740 + i, first_name: '[член клуба ' + (i + 1) + ']', last_name: null, lang: 'ru',
         roles: [], memberships: ['member'] });
       const s = await peopleCase(OWNER, { people: json(200, long) });
       await toPeople(s);
       await s.p.evaluate(() => { UNDO_MS = 3000; });
-      await pokazhi(s, 0);   // крестик роли — в раскрытой карточке (#493)
-      await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
+      await pokazhi(s, 0); await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(60);
       await s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).scrollIntoView({ block: 'center' }), L);
       await s.p.waitForTimeout(80);
-      // ⚠ Полосы может не быть вовсе (нажатие ушло в пустоту) — тогда прежняя форма роняла
-      // БАТАРЕЮ исключением, и накопленное красное печатал обработчик обрыва, а не случай.
-      // Отсутствие полосы здесь — свой отказ, а не падение.
-      const inView = () => s.p.evaluate(() => { const e = document.querySelector('.undo');
-        if (!e) return null; const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
-      const vid0 = await inView();
-      if (vid0 === null) bad.push(`${n}: полосы отмены нет вовсе — крестик роли не нажался`);
-      if (vid0) bad.push(`${n}: полоса уже в виду до нажатия — проверять прокрутку не на чем`);
       const y0 = await s.p.evaluate(() => window.scrollY);
-      await pokazhi(s, L);
-      await act(s, `p-lvask:${L}.member`); await s.p.waitForTimeout(80);
+      if (y0 < 300) bad.push(`${n}: прокрутка не ушла вниз (${y0}) — «не прыгнул» проверять не на чем`);
+      await pokazhi(s, L); await act(s, `p-lvask:${L}.member`); await s.p.waitForTimeout(400);
       const y1 = await s.p.evaluate(() => window.scrollY);
-      if (Math.abs(y1 - y0) > 2) bad.push(`${n}: отказ сдвинул экран (${y0} → ${y1}) — «возвращайся где было»`);
-      if ((await s.p.$$('.undo')).length !== 1) bad.push(`${n}: окон отмены ${(await s.p.$$('.undo')).length}, ждали одно`);
-      const d = await s.p.$eval(`${card(s, L)} .deny`, e => e.textContent).catch(() => '');
-      // имя в тексте — ИЗ ПОЛОСЫ, а не вписанное: сверка с её собственным текстом
-      const busy = await s.p.$eval('.undo .small', e => e.textContent.replace(/^Снимаем: /, '')).catch(() => '?');
-      if (!d.includes('Идёт снятие «' + busy + '»: дождитесь его или отмените.')) bad.push(`${n}: второй крестик в открытое окно промолчал или не назвал снимаемое («${busy}»): «${d}»`);
+      if (Math.abs(y1 - y0) > 2) bad.push(`${n}: второй крестик сдвинул экран (${y0} → ${y1}) — «возвращайся где было»`);
+      const pp = lvPosts(s);
+      if (pp.length !== 1 || !pp[0].url.endsWith('/memberships/701/revoke')) bad.push(`${n}: открытое снятие не ушло досрочно ровно одним запросом: ${JSON.stringify(pp.map(c => c.url.replace(/^.*\/memberships/, '')))}`);
+      const strips = await s.p.$$eval('.undo', e => e.map(x => x.getAttribute('data-undo-of')));
+      if (JSON.stringify(strips) !== JSON.stringify([String(L)])) bad.push(`${n}: окно не переехало к нажатой карточке: ${JSON.stringify(strips)}`);
+      if (await s.p.$('.deny')) bad.push(`${n}: на месте второго окна отказ: ${await s.p.$eval('.deny', e => e.textContent)}`);
       await act(s, 'p-keep');
-      if (lvPosts(s).length || posts(s, /\/roles\/\d+\/revoke$/).length) bad.push(`${n}: ушёл запрос`);
+      if (lvPosts(s).length !== 1) bad.push(`${n}: «Отменить» второго окна отправил его`);
       await s.ctx.close();
     }
     // отказы — словами сервера, в карточке того, кого касаются; 409 «уровня нет» перечитывает список
