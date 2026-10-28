@@ -6626,6 +6626,10 @@ if (grantsSet.length !== 1) {
       if (!(await s.p.$('[data-action="p-back"]'))) bad.push(`${n}: действие у СВОЕЙ карточки погасило «Отменить»`);
       await pokazhi(s, 2); await s.p.waitForTimeout(150);
       if (await s.p.$('[data-action="p-back"]')) bad.push(`${n}: выбрана другая карточка, а «Отменить» осталось`);
+      // и ВЕРНУВШИСЬ к прежней карточке, «Отменить» не находит: свёртка прячет её и без погашения, поэтому
+      // смотреть надо после повторного раскрытия (иначе мутация «не гаснет» зелена — условие не возникло)
+      await act(s, 'p-card:0'); await s.p.waitForTimeout(150);
+      if (await s.p.$('[data-action="p-back"]')) bad.push(`${n}: ушли к другой карточке и вернулись — «Отменить» снова на месте`);
       await s.ctx.close();
     }
 
