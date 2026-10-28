@@ -6439,14 +6439,14 @@ if (grantsSet.length !== 1) {
       const n = 'people-grant-topups', s = await peopleCase(OWNER, { grant: json(201, { id: 42, member_id: 702, role: 'topups', direction_id: null, granted_at: '2026-10-29T10:00:00+00:00' }) });
       await toPeople(s);
       await act(s, 'p-open:1');
-      if (!(await s.view()).includes('Пополнения счёта')) bad.push(`${n}: в выдаче нет строки «Пополнения счёта»`);
+      if (!(await s.view()).includes('Пополнение онлайн')) bad.push(`${n}: в выдаче нет строки «Пополнение онлайн»`);
       if ((await s.view()).includes('topups')) bad.push(`${n}: на экране имя роли «topups», а не подпись`);
-      if (!(await act(s, 'p-give:topups'))) bad.push(`${n}: у строки «Пополнения счёта» нет кружка выдачи`);
+      if (!(await act(s, 'p-give:topups'))) bad.push(`${n}: у строки «Пополнение онлайн» нет кружка выдачи`);
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles$/);
       if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'topups' }))
         bad.push(`${n}: ушло ${JSON.stringify(pp.map(c => c.body))}`);
-      if (!(await note(s, 1)).includes('Выдано: Пополнения счёта.')) bad.push(`${n}: в карточке нет итога «Выдано: Пополнения счёта»`);
+      if (!(await note(s, 1)).includes('Выдано: Пополнение онлайн.')) bad.push(`${n}: в карточке нет итога «Выдано: Пополнение онлайн»`);
       await s.ctx.close();
     }
 
