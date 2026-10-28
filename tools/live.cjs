@@ -1138,7 +1138,7 @@ if (grantsSet.length !== 1) {
   }
   // Услуг у клуба нет (решение владельца, Cafe13KPG#102, со слов координатора): гость в живом режиме
   // видит бар и не видит обещания «Услуги острова — ещё не подключено».
-  {
+  if (thawed('экран гостя «Услуги»')) {
     const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = [];
     const s = await open(true, true, json(200, guest), null, null, null);
     const t = await s.view();
@@ -2021,7 +2021,8 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Без права кассы — ветка «у всех остальных» (с #500: «Как пополнить», три серых пути) и никакой формы.
-  {
+  // Путь — через бар, а он заморожен (Cafe13KPG#510).
+  if (thawed('пополнение из бара (бармен без права кассы)')) {
     const poor = clone(BARMAN); poor.balance = 0;
     const s = await open(true, true, json(200, poor), null, null, null, bar());
     if (await s.p.$('#view [data-go="topup"]')) bad.push('topup-norole: бармену предложено вносить');
@@ -3033,7 +3034,9 @@ if (grantsSet.length !== 1) {
         if (!(await s.p.isVisible('#demo-btn'))) bad.push('test-path: в просмотре пропало солнышко — к панели не вернуться');
         // Куратор без членства: путь к записи через «Заказы»; запись идёт с обоими заголовками
         const before = s.calls.length;
-        if (await toBook(s, 'test-path') && await fillExpense(s, 'test-path', '240', ALL_PICKS) && await askSend(s, 'test-path')) {
+        // запись в тестовой базе шла через «Доход и расход» бара — он заморожен (Cafe13KPG#510); заголовки
+        // у ЧТЕНИЙ в просмотре держит проверка `after` ниже, у записи — снята вместе с экраном
+        if (thawed('запись в тестовом режиме через «Доход и расход» бара') && await toBook(s, 'test-path') && await fillExpense(s, 'test-path', '240', ALL_PICKS) && await askSend(s, 'test-path')) {
           const w = s.calls.slice(before).filter(c => c.method === 'POST');
           if (w.length !== 1 || w[0].test !== '1' || w[0].as !== '501') bad.push('test-path: запись ушла не в тестовую базу глазами выбранного человека: ' + JSON.stringify(w.map(c => [c.url, c.test, c.as])));
           if (!((await strip(s)) || '').includes('Смотрите как Образец')) bad.push('test-path: на экране записи нет полосы');
@@ -3054,7 +3057,9 @@ if (grantsSet.length !== 1) {
             if ((await strip(s)) !== null) bad.push('test-path: после выхода из теста полоса осталась');
             const me3 = s.calls.filter(c => c.url.endsWith('/me')).pop();
             if (me3.test || me3.as) bad.push('test-path: выход из теста перечитал /me с тестовыми заголовками');
-            await s.p.click('#tabs [data-go="barQueue"]').catch(() => {}); await s.p.waitForTimeout(300);
+            // была вкладка «Заказы» — заморожена (Cafe13KPG#510); «Управление» тоже шлёт запрос (очередь просьб)
+            await s.p.click('#tabs [data-go="manage"]').catch(() => {}); await s.p.waitForTimeout(300);
+            if (s.calls.length === n0) bad.push('test-path: после выхода из теста ни одного запроса — проверять заголовки не на чем');
             if (s.calls.slice(n0).some(c => c.test || c.as)) bad.push('test-path: после выхода запросы с тестовыми заголовками');
           }
         }
