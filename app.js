@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v80 · 28.10.2026';
+var VERSION = 'v81 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1943,7 +1943,13 @@ function testStrip() {
    сверху: изменение видно там, где оно произошло.
    Отказы 403 и 409 показываются текстом сервера: «последнего главу не снять»
    и «админа выдаёт только админ» — правила сервера, пересказ завёл бы копию. */
-var ROLE_PICK = ['head', 'ops_director', 'art_director', 'director', 'staff', 'curator', 'bar', 'admin'];
+// Что выдаётся ОТСЮДА. «Главы клуба» здесь нет НИКОГДА (слово владельца 28.10.2026: не выдаётся
+// из приложения); «Администратор» и «Чужими глазами» — в ROLE_GREY: видны СЕРЫМИ, не выдаются.
+var ROLE_PICK = ['ops_director', 'art_director', 'director', 'staff', 'curator', 'bar'];
+var ROLE_GREY = [['god_mentor', 'Чужими глазами'], ['admin', 'Администратор']];
+// head, god_mentor и admin на карточке — ОДИН бейдж «Глава клуба» без крестика (слово владельца
+// 28.10.2026, кадр E47z `.chip.fixed`). Общий ROLE_NAME не трогается: им живёт кабинет.
+var HEAD_ROLES = ['head', 'god_mentor', 'admin'];
 var DIR_ROLES = ['curator', 'bar'];
 var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
                open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '',
@@ -2150,11 +2156,10 @@ function personCard(p, k) {
   // Кнопка не обещает того, чего сервер не делает.
   var rows = '<div class="chips">' +
     p.lv.map(function (l) { return '<span class="chip paid">' + esc(l) + '</span>'; }).join('') +
-    p.roles.map(function (r) {
+    (p.roles.some(function (r) { return HEAD_ROLES.indexOf(r.role) !== -1; }) ? '<span class="chip fixed">Глава клуба</span>' : '') +
+    p.roles.filter(function (r) { return HEAD_ROLES.indexOf(r.role) === -1; }).map(function (r) {
       if (PEOPLE.ask === r.id) return '';                  // в окне отмены надписи нет (E47l)
       if (PEOPLE.sending === r.id) return '<span class="chip busy">' + esc(r.words) + X + '</span>';  // E47k
-      // админа снимает только админ (roles.py _may_touch_admin): крестика, который кончится отказом, нет
-      if (r.role === 'admin' && !grant('admin')) return '<span class="chip">' + esc(r.words) + '</span>';
       return '<button type="button" class="chip" data-action="p-ask:' + r.id + '"' + lock + '>' + esc(r.words) + X + '</button>';
     }).join('') +
     (open ? '' : '<button type="button" class="chip add" data-action="p-open:' + k + '"' + lock + '>' +
@@ -2181,14 +2186,16 @@ function personCard(p, k) {
     // грузится или не пришёл — роль открыта, под ней причина словами; пришёл
     // ПУСТЫМ (все направления сняты) — роль закрыта «· направлений нет»: выбрать
     // нечего никогда. «Заняты все» на пустом перечне не считаем: [].every истинно.
-    var picks = ROLE_PICK.filter(function (r) { return r !== 'admin' || grant('admin'); })
+    var picks = ROLE_PICK
       .map(function (r) {
         var dirRole = DIR_ROLES.indexOf(r) !== -1;
         var none = dirRole && !!PEOPLE.dirs && PEOPLE.dirs.length === 0;
         var have = !dirRole ? holds(p, r)
           : !!PEOPLE.dirs && PEOPLE.dirs.length > 0 && PEOPLE.dirs.every(function (d) { return holds(p, r, d.id); });
         return [r, (ROLE_NAME[r] || r) + (have ? ' · уже есть' : none ? ' · направлений нет' : ''), have || none];
-      });
+      })
+      // серые: «есть, но не сейчас» — отличие от отсутствующей «Главы клуба» (слово владельца)
+      .concat(ROLE_GREY.map(function (g) { return [g[0], g[1] + ' · выдаётся не из приложения', true]; }));
     var needDir = DIR_ROLES.indexOf(PEOPLE.role) !== -1;
     var miss = grantMissing();
     form = seg('Что поручить', picks, PEOPLE.role, 'p-role') +

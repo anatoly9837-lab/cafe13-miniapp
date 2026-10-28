@@ -5546,7 +5546,10 @@ if (grantsSet.length !== 1) {
         // tg_user_id — ни текстом, ни в атрибутах разметки
         if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push('people-head: tg_user_id в разметке');
         // у админа «Снять» у админа есть
-        if (!(await s.p.$('[data-action="p-ask:6"]'))) bad.push('people-head: админу нечем снять администратора');
+        // v79: head и admin у главы — ОДИН бейдж «Глава клуба» без крестика (слово владельца 28.10.2026)
+        const fixed = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]).filter(x => /Глава клуба|Администратор/.test(x[2])));
+        if (JSON.stringify(fixed) !== JSON.stringify([['SPAN', 'chip fixed', 'Глава клуба']])) bad.push(`people-head: у главы ждали ровно один бейдж «Глава клуба» без крестика, есть ${JSON.stringify(fixed)}`);
+        if (await s.p.$('[data-action="p-ask:6"]') || await s.p.$('[data-action="p-ask:5"]')) bad.push('people-head: главу или админа можно снять с экрана');
         const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
         if (/70[123]|Алевтина/.test(stored)) bad.push('people-head: люди из /people легли в хранилище браузера');
         if (s.calls.filter(c => c.url.endsWith('/people')).length !== 1) bad.push('people-head: /people запрошен не один раз');
@@ -5621,18 +5624,19 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
-    // админа выдаёт только админ: у главы без admin такой кнопки нет, у админа — есть
-    for (const [name, me, want] of [['people-pick-head', HEAD_ONLY, false], ['people-pick-admin', OWNER, true]]) {
+    // v79 (слово владельца 28.10.2026): «Администратор» и «Чужими глазами» в выдаче — СЕРЫЕ у всех,
+    // с «выдаётся не из приложения»; «Главы клуба» в выдаче нет; снять админа с экрана нельзя никому.
+    // Прежняя редакция: админа выдавал и снимал только админ (у главы без admin кнопки не было).
+    for (const [name, me] of [['people-pick-head', HEAD_ONLY], ['people-pick-admin', OWNER]]) {
       const s = await peopleCase(me, {});
       if (!(await toPeople(s))) { bad.push(`${name}: нет входа «Люди»`); await s.ctx.close(); continue; }
-      // админа снимает только админ: у главы на строке администратора кнопки нет, есть подпись
-      const ask = !!(await s.p.$('[data-action="p-ask:6"]'));
-      if (ask !== want) bad.push(`${name}: «Снять» у администратора ${ask ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
-      // без права на админа его надпись — чип без крестика, не кнопка
-      if (!want && !(await s.p.$$eval('[data-person="2"] span.chip', e => e.map(x => x.textContent))).includes('Администратор')) bad.push(`${name}: надписи «Администратор» без крестика нет`);
+      if (await s.p.$('[data-action="p-ask:6"]')) bad.push(`${name}: администратора можно снять с экрана`);
       await act(s, 'p-open:1');
-      const has = !!(await s.p.$(`${card(s, 1)} [data-action="p-role:admin"]`));
-      if (has !== want) bad.push(`${name}: выбор «Администратор» ${has ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
+      for (const [role, word] of [['admin', 'Администратор'], ['god_mentor', 'Чужими глазами']]) {
+        const b = await s.p.$eval(`${card(s, 1)} [data-action="p-role:${role}"]`, e => [e.disabled, e.textContent]).catch(() => null);
+        if (!b || !b[0] || b[1] !== word + ' · выдаётся не из приложения') bad.push(`${name}: «${word}» не серая с причиной: ${JSON.stringify(b)}`);
+      }
+      if (await s.p.$(`${card(s, 1)} [data-action="p-role:head"]`)) bad.push(`${name}: «Глава клуба» в списке выдачи — её здесь нет никогда`);
       await s.ctx.close();
     }
 
@@ -5679,23 +5683,24 @@ if (grantsSet.length !== 1) {
     for (const [name, step, reply, detail] of [
       ['people-grant-409', 'grant', json(409, { detail: 'такая живая роль у человека уже есть' }), 'Такая живая роль у человека уже есть.'],
       ['people-grant-403', 'grant', json(403, { detail: 'системного администратора выдаёт и снимает только администратор' }), 'Системного администратора выдаёт и снимает только администратор.'],
-      ['people-revoke-last-head', 'revoke', json(409, { detail: 'это последний глава клуба: сначала назначьте другого, иначе выдавать роли станет некому' }),
-        'Это последний глава клуба: сначала назначьте другого, иначе выдавать роли станет некому.']]) {
+      // с v79 «Главу клуба» с экрана не снять (бейдж без крестика, слово владельца) — отказ
+      // «последний глава клуба» недостижим отсюда; отказ снятия проверяется на роли куратора
+      ['people-revoke-409', 'revoke', json(409, { detail: 'эта роль уже снята' }), 'Эта роль уже снята.']]) {
       const s = await peopleCase(OWNER, { [step]: reply });
       await toPeople(s);
-      const uid = step === 'grant' ? 1 : 2;
+      const uid = step === 'grant' ? 1 : 0;
       if (step === 'grant') {
         await act(s, 'p-open:1'); await act(s, 'p-role:director');
         await s.p.evaluate(() => window.__main && window.__main());
       } else {
         // окно отмены вместо вопроса (E47l): сначала полоса и ни одного запроса, потом — ровно один
         await s.p.evaluate(() => { UNDO_MS = 150; });
-        await act(s, 'p-ask:5');
+        await act(s, 'p-ask:31');
         if (posts(s, /revoke/).length) bad.push(`${name}: снятие ушло сразу, окна отмены нет`);
-        if (!(await s.view()).includes('Снимаем: Глава клуба')) bad.push(`${name}: нет полосы «Снимаем: Глава клуба»`);
+        if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${name}: нет полосы «Снимаем: Куратор направления · Бар»`);
       }
       await s.p.waitForTimeout(300);
-      if (step === 'revoke' && (posts(s, /\/roles\/5\/revoke$/).length !== 1)) bad.push(`${name}: снятие не ушло ровно один раз`);
+      if (step === 'revoke' && (posts(s, /\/roles\/31\/revoke$/).length !== 1)) bad.push(`${name}: снятие не ушло ровно один раз`);
       const deny = await s.p.$eval(`${card(s, uid)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== detail) bad.push(`${name}: плашка «${deny}», ждали «${detail}»`);
       if ((await s.view()).match(/Выдано:|Снято:/)) bad.push(`${name}: отказ показан успехом`);
@@ -5826,7 +5831,8 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
       await act(s, 'p-open:2');
-      if (!(await s.p.$(`${card(s, 2)} [data-action="p-role:head"][disabled]`))) bad.push('people-held: «Глава клуба» у главы не закрыта');
+      // v79: «Главы клуба» в списке выдачи нет вовсе (была закрытой «уже есть» у главы)
+      if (await s.p.$(`${card(s, 2)} [data-action="p-role:head"]`)) bad.push('people-held: «Глава клуба» в списке выдачи');
       if (await s.p.$(`${card(s, 2)} [data-action="p-role:director"][disabled]`)) bad.push('people-held: «Директор» закрыт без причины');
       await act(s, 'p-open:0'); await act(s, 'p-role:curator');
       await s.p.waitForTimeout(100);
