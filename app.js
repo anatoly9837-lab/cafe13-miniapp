@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v67 · 28.10.2026';
+var VERSION = 'v68 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -2142,8 +2142,18 @@ function applyMe(me) {
   if (!TEST.on) syncPass(me);
 }
 
+/* Вход не состоялся (Cafe13KPG#458): Telegram и подпись есть, сервер спрошен, а
+   в приложение не пустил — или ещё не ответил. Условие то же, по которому boot()
+   идёт к серверу, поэтому витрину вне Telegram (и Telegram без подписи) оно не
+   задевает. Пока оно верно, с экрана нет выхода — ни системной «назад», ни
+   перехода (нарисованную прячет BARE: экраны входа все в нём). Отказ уводил
+   в демонстрационный кабинет клуба: LIVE не поднят, DATA.role по умолчанию
+   'member'. Свойство, а не список экранов: новый экран отказа закроется сам. */
+function tryLive() { return API_ON && inTelegram() && !!tg.initData; }
+function noEntry() { return tryLive() && !LIVE; }
+
 function boot() {
-  if (!API_ON || !inTelegram() || !tg.initData) { go(startScreen()); return; }
+  if (!tryLive()) { go(startScreen()); return; }
   go('loading');
   api('GET', '/me').then(function (r) {
     // 401 и 403 — разные люди: первому не дошла подпись, второго нет в списке.
@@ -5505,6 +5515,7 @@ var DEMO_SENDS = ['p-grant', 'p-revoke', 'p-reload', 'c-save', 'c-group-theirs',
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
+  if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
   if (screen === 'demo' && LIVE && !isGod()) return;
   if (screen === 'demo' && LIVE && !TEST.on && TEST.health !== 'configured' && TEST.health !== 'loading') loadHealth();
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
@@ -6106,7 +6117,7 @@ function tgChrome() {
   if (tg.BackButton && tgHas('6.1')) {
     document.getElementById('back').hidden = true;
     if (backHandler) { tg.BackButton.offClick(backHandler); backHandler = null; }
-    if (BACK[current] || !tabList().some(function (t) { return t[0] === current; })) {
+    if (!noEntry() && (BACK[current] || !tabList().some(function (t) { return t[0] === current; }))) {
       backHandler = function () { go(backTo()); };
       tg.BackButton.onClick(backHandler);
       tg.BackButton.show();
