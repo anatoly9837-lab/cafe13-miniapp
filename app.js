@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v83 · 29.10.2026';
+var VERSION = 'v84 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -656,11 +656,20 @@ function sendJoin() {
 // `membership` нет нарочно: экран обещал суммы-заглушки в скобках, кнопки
 // без действия и путь через кассу, который новичку сегодня не пройти
 // (Cafe13KPG#301). Вернётся кадром E38 после слова владельца.
-var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 1,
-              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
-              events: 1, event: 1, eventNew: 1, bookings: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
-              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1, joinQueue: 1, manage: 1,
+var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, people: 1, joinQueue: 1, manage: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
+/* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
+   член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
+   всех»; «не удаляем — делаем временно недоступным». Экраны ниже были в `WIRED` и стоят на данных
+   сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
+   тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
+var FROZEN = { organizer: 1, guest: 1, events: 1, event: 1, eventNew: 1, bookings: 1,
+               bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1, barQueue: 1, barMoney: 1, barDay: 1,
+               barCards: 1, barCard: 1, staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
+function frozen(screen) { return LIVE && !!FROZEN[screen]; }
+// куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
+// по слову владельца серым гаснет всё, кроме двух ролей, а не только то, что было включено
+function closed(screen) { return LIVE && (!!FROZEN[screen] || !WIRED[screen]); }
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -4081,7 +4090,11 @@ var SCREENS = {
 
       '<div class="card quiet"><div class="row">' +
         '<div class="col"><span class="label">Баланс</span><span class="big num">' + money(m.balance) + ' ฿</span></div>' +
-        '<span class="small" style="text-align:right;max-width:130px">Пополняется в кассе</span>' +
+        // подпись называет ПУТЬ, а заморозка путь снимает (Cafe13KPG#510, #513): пока «На счёт» в кассе
+        // закрыт, путь не обещается, но и не снят: «Через кассу — позже» — слова designer-55, измерены в слоте
+        // (одна строка, 124 px из 130); прежнее «Пополнение временно недоступно» шло в две и стирало кассу
+        '<span class="small" style="text-align:right;max-width:130px">' +
+          (closed('tillTopup') ? 'Через кассу — позже' : 'Пополняется в кассе') + '</span>' +
       '</div></div>' +
 
       (next ? '<div class="group"><span class="label">Вы записаны</span>' +
@@ -5667,6 +5680,16 @@ var SCREENS = {
     return notWired(TITLES[current] || 'Этот раздел');
   },
 
+  // не `notWired`: тот говорит «работает только в демонстрации… подключат к серверу», а
+  // замороженный экран был подключён — для него это неправда (Cafe13KPG#510)
+  frozen: function () {
+    return '<div class="card quiet"><div class="col">' +
+      '<b style="font-size:13px">' + esc(TITLES[current] || 'Этот раздел') + ' — временно недоступно</b>' +
+      // текст designer-55: «данные на месте» — первое, о чём думает человек, увидевший пустоту на месте своей работы
+      '<span class="small">Раздел выключен в приложении, данные на сервере на месте. Вернётся, когда дойдут руки.</span>' +
+    '</div></div>';
+  },
+
   demo: function () {
     // В Telegram это не демонстрация: данные настоящие. Панель — тестовый
     // режим и просмотр чужими глазами; список людей даёт сервер, своей
@@ -6065,7 +6088,18 @@ function render() {
   var here = current + '|' + String(param), y = window.scrollY || 0;
   var same = RENDERED === here;
   RENDERED = here;
-  view.innerHTML = (bare() ? '' : testStrip()) + SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
+  view.innerHTML = (bare() ? '' : testStrip()) +
+    SCREENS[frozen(current) ? 'frozen' : LIVE && !WIRED[current] ? 'soon' : current](param);
+  // вход на замороженный экран гаснет ПО СВОЙСТВУ, а не перечнем кнопок: любой [data-go] туда
+  // (Cafe13KPG#510); облик — общий .btn[disabled]
+  if (LIVE) [].forEach.call(view.querySelectorAll('[data-go]'), function (b) {
+    if (!closed(b.getAttribute('data-go'))) return;
+    b.disabled = true; b.setAttribute('aria-disabled', 'true');
+    // причина ЗАМЕНЯЕТ подстрочник (designer-55, по снимку): описание того, куда не войти, — шум, а
+    // приписка через «·» переносила строку на вторую; серое без причины читается как поломка
+    var sub = b.classList.contains('listitem') && b.querySelector('.grow .small');
+    if (sub) sub.textContent = 'временно недоступно';
+  });
 
   var root = tabList().some(function (t) { return t[0] === current; });
   // экран входа без вкладок, но со своим «назад» (consentFull, joinAbout) — стрелка и своё имя в шапке
@@ -6089,7 +6123,9 @@ function render() {
   document.body.classList.toggle('no-tabs', !list.length);
   tabs.innerHTML = list.map(function (t) {
     var on = t[0] === current;
-    return '<button type="button" data-go="' + t[0] + '"' + (on ? ' aria-current="page"' : '') + '>' +
+    // замороженная вкладка — серая и не нажимается, а не спрятана (буква владельца, Cafe13KPG#510)
+    return '<button type="button" data-go="' + t[0] + '"' + (on ? ' aria-current="page"' : '') +
+      (closed(t[0]) ? ' disabled aria-disabled="true"' : '') + '>' +
       svg(t[2]) + '<span>' + t[1] + '</span></button>';
   }).join('');
 
@@ -6306,6 +6342,8 @@ document.addEventListener('click', function (ev) {
 
   if (el.hasAttribute('data-action')) { doAction(el.getAttribute('data-action')); return; }
   if (el.hasAttribute('data-event')) { go('event', el.getAttribute('data-event')); return; }
+  // погашенный вход не ведёт никуда, даже если щелчок дошёл до него сквозь дочерний элемент
+  if (el.disabled) return;
   go(el.getAttribute('data-go'));
 });
 
