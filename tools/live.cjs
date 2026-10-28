@@ -6005,6 +6005,26 @@ if (grantsSet.length !== 1) {
       if (!v.close) bad.push('people-busy-look: вход «ответственность» не заперт, пока выдача в пути');
       await s.ctx.close();
     }
+    /* Занятость строки НАПРАВЛЕНИЯ: ключ парный («роль:направление»), и случай выше мерит
+       только общую роль, то есть ключ без двоеточия. Без этого случая мутация «склеивать
+       ключ всегда без направления» зелена: у общей роли слово встаёт верно, а у направления
+       «Выдаём…» ушло бы в ЧУЖУЮ строку — в строку самой роли, под указатель. */
+    {
+      const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      if (!(await act(s, 'p-role:curator'))) bad.push('people-busy-dir: у роли направления нет указателя');
+      if (!(await act(s, 'p-give:curator:7'))) bad.push('people-busy-dir: у строки направления нет кружка выдачи');
+      await s.p.waitForTimeout(150);
+      const v = await s.p.evaluate(() => {
+        const rows = [...document.querySelectorAll('#view .grant')];
+        const slot = rows.filter(e => e.querySelector('.sending'));
+        return { gde: slot.map(e => e.textContent.replace('Выдаём…', '').trim()), skolko: slot.length };
+      });
+      if (v.skolko !== 1 || v.gde[0] !== 'Бар') bad.push('people-busy-dir: «Выдаём…» не в строке направления, а в ' + JSON.stringify(v));
+      await s.ctx.close();
+    }
+
     // то же для «Точно снять»: два нажатия, поставленные в очередь до перерисовки
     {
       const s = await peopleCase(OWNER, { revoke: new Promise(() => {}) });
