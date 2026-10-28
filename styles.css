@@ -212,6 +212,16 @@ b.num, .big { white-space: nowrap; }
 .qr .place.img { border-style: solid; padding: 0; overflow: hidden; background: var(--card); }
 .qr .place img { display: block; width: 100%; height: auto; }
 .qr .place span { font-size: 11px; color: var(--muted); }
+/* Тетрадь клуба внутри приложения (v74, кадры E49*): белый лист во всю высоту
+   main — без вкладок это окно минус шапка (58 + отступ сверху), поля main
+   (16 + 20) и нижний отступ; ничего над листом и под ним (designer-55). */
+.paper { height: calc(100vh - 94px - var(--sat) - var(--sab)); min-height: 360px;
+         border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+         overflow: hidden; display: flex; flex-direction: column; }
+.paper .wait { flex: 1 1 auto; display: flex; flex-direction: column;
+               align-items: center; justify-content: center; gap: 8px; padding: 24px; }
+.paper .wait[hidden], iframe.about[hidden] { display: none; }
+iframe.about { flex: 1 1 auto; display: block; width: 100%; border: 0; }
 
 .listitem {
   border: 1px solid var(--line); border-radius: 12px;

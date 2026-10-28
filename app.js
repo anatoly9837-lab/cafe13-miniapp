@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v77 · 28.10.2026';
+var VERSION = 'v80 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -604,6 +604,31 @@ function attachReceipt(file) {
   });
 }
 
+/* Тетрадь клуба в рамке. Отказ сервера приходит JSON-ом (403 на устаревшем
+   токене), а у кросс-доменной рамки нет события «не загрузилось»: onload
+   срабатывает и на странице отказа. Поэтому решение — ДО рамки: перечитать
+   GET /join за свежим токеном (живёт час) и вставлять рамку только по нему;
+   нет токена — отказ нашими словами, а не голый JSON в рамке (designer-55). */
+var ABOUT = { url: '', fail: '', gen: 0, loaded: false };
+// рамка дочитала страницу — убрать «Открываем…» (E49b); перерисовка помнит это через loaded
+function aboutLoaded() {
+  ABOUT.loaded = true;
+  var f = document.querySelector('iframe.about'), w = document.querySelector('.paper .wait');
+  if (f) f.hidden = false;
+  if (w) w.hidden = true;
+}
+function loadAbout() {
+  var gen = ++ABOUT.gen;
+  ABOUT.url = ''; ABOUT.fail = ''; ABOUT.loaded = false;
+  api('GET', '/join').then(function (r) {
+    if (gen !== ABOUT.gen) return;
+    var got = r.status === 200 ? fromJoin(r.data) : null;
+    if (got) { JOIN.info = got; ABOUT.url = API + '/join/about?t=' + encodeURIComponent(got.token); }
+    else ABOUT.fail = r.status === 200 ? failText(r) : denyText(r);
+    if (current === 'joinAbout') render();
+  });
+}
+
 function sendJoin() {
   if (JOIN.busy || !JOIN.file) return;
   var said = document.getElementById('join-said');
@@ -635,7 +660,7 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, bookings: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
               staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1, joinQueue: 1, manage: 1,
-              loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
+              loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -4692,7 +4717,8 @@ var SCREENS = {
       '<div class="rows">' +
         '<div><span>Данные остаются внутри клуба</span><span class="pill on">не передаём</span></div>' +
         '<div><span>Реклама и продажа данных</span><span class="pill">нет</span></div>' +
-        '<div><span>Посмотреть и удалить о себе</span><span class="pill gold">в любой момент</span></div>' +
+        // «и удалить» снято словом владельца 28.10: удаления себя на сервере нет — обещание было ложным
+        '<div><span>Посмотреть о себе</span><span class="pill gold">в любой момент</span></div>' +
       '</div>' +
       '<button type="button" class="btn dup-main" data-action="accept-consent">Принимаю</button>' +
       '<button type="button" class="btn ghost" data-go="consentFull">Подробно</button>' +
@@ -5450,6 +5476,20 @@ var SCREENS = {
       '<p class="small">Закройте приложение и откройте его снова кнопкой меню в чате с ботом.</p></div>';
   },
 
+  // Тетрадь клуба внутри приложения (v74): рамка только по свежему токену
+  // кадры E49 (тетрадь), E49b (пока грузится), E49v (отказ — листа нет вовсе: отказ приходит JSON-ом)
+  joinAbout: function () {
+    if (ABOUT.fail) return '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(ABOUT.fail) + '</span></div>' +
+        '<button type="button" class="btn" data-action="about-retry">Попробовать снова</button>' +
+        '<span class="small" style="text-align:center">Тетрадь живёт на сервере клуба — без него её не показать.</span>';
+    return '<div class="paper">' +
+        '<div class="wait"' + (ABOUT.loaded ? ' hidden' : '') + '><span>Открываем тетрадь клуба</span>' +
+          '<span class="small" style="text-align:center">Страница большая — это занимает секунду</span></div>' +
+        (ABOUT.url ? '<iframe class="about" src="' + esc(ABOUT.url) + '" title="О клубе"' + (ABOUT.loaded ? '' : ' hidden') +
+          ' onload="aboutLoaded()"></iframe>' : '') +
+      '</div>';
+  },
+
   // Кого нет в списке: просьба о вступлении (кадры E44*, Cafe13KPG#459)
   noAccess: function () {
     var j = JOIN.info, note = '<div class="note">' + svg(ICON.info) +
@@ -5479,7 +5519,7 @@ var SCREENS = {
     // E44, E44b, E44v: просьбы нет — форма
     var m = JOIN_PAY[JOIN.pay], img = JOIN.img[JOIN.pay], f = JOIN.file, gone = img === 'fail';
     return '<div class="card strong">' + head +
-        '<button type="button" class="btn quiet" data-action="join-about">О клубе — презентация</button></div>' +
+        '<button type="button" class="btn quiet" data-action="join-about">О клубе</button></div>' +
       '<div class="group"><span class="label">Чем платить</span><div class="seg">' +
         Object.keys(JOIN_PAY).map(function (k) {
           return '<button type="button" data-action="join-pay:' + k + '" aria-pressed="' + (JOIN.pay === k) + '">' + JOIN_PAY[k].name + '</button>';
@@ -5813,7 +5853,7 @@ var TAB_ORDER = ['home', 'guest', 'organizer', 'partner', 'bookings'];
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
-  consentFull: 'Подробно',
+  consentFull: 'Подробно', joinAbout: 'О клубе',
   bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
@@ -5874,6 +5914,8 @@ var BACK = {
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
   barCards: function () { return CARDS.from || homeOf(); }, barCard: 'barCards',
   serviceNew: 'partner', consentFull: 'consent',
+  // тетрадь клуба открыта с экрана просьбы — туда и возврат (решение владельца 28.10, Cafe13KPG#324 v74)
+  joinAbout: 'noAccess',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   barRecipe: function () { return 'drink'; },
   topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
@@ -5889,7 +5931,7 @@ function backTo() {
 }
 
 /* Экраны без вкладок: уйти с них можно решением, а не переключением. */
-var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
+var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 function bare() { return !!BARE[current]; }
 
 var current = 'home';
@@ -5907,10 +5949,12 @@ function render() {
   view.innerHTML = (bare() ? '' : testStrip()) + SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
 
   var root = tabList().some(function (t) { return t[0] === current; });
-  document.getElementById('back').hidden = root || bare() && current !== 'consentFull';
+  // экран входа без вкладок, но со своим «назад» (consentFull, joinAbout) — стрелка и своё имя в шапке
+  var away = bare() && !BACK[current];
+  document.getElementById('back').hidden = root || away;
 
   var title = document.getElementById('title');
-  if (current === 'home' || current === 'guest' || bare() && current !== 'consentFull') {
+  if (current === 'home' || current === 'guest' || away) {
     title.textContent = 'Café XIII';
     title.className = 'wordmark';
   } else {
@@ -6028,6 +6072,7 @@ function go(screen, p) {
   if (!SCREENS[screen]) return;
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
   if (screen === 'noAccess' && current !== 'noAccess') { JOIN.err = ''; JOIN.fileErr = ''; loadJoin(); }
+  if (screen === 'joinAbout' && current !== 'joinAbout') loadAbout();
   if (screen === 'demo' && LIVE && !isGod()) return;
   if (screen === 'demo' && LIVE && !TEST.on && TEST.health !== 'configured' && TEST.health !== 'loading') loadHealth();
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
@@ -6421,11 +6466,9 @@ function doAction(a) {
     if (a === 'join-again') { JOIN.again = true; JOIN.err = ''; render(); return; }
     if (a === 'join-send') { sendJoin(); return; }
     // тетрадь клуба — браузером по токену на час: заголовка подписи браузер не шлёт
-    if (a === 'join-about' && JOIN.info) {
-      var about = API + '/join/about?t=' + encodeURIComponent(JOIN.info.token);
-      if (tg.openLink) tg.openLink(about); else window.open(about, '_blank');
-      return;
-    }
+    // тетрадь — внутри приложения, со стрелкой назад на экран просьбы (слово владельца 28.10)
+    if (a === 'join-about') { go('joinAbout'); return; }
+    if (a === 'about-retry') { loadAbout(); render(); return; }
     if (a === 'retry-pass') { loadPass(); render(); return; }
     if (a === 'mr-send' && LIVE) { sendRequest(arg); return; }
     if (a === 'mr-retry' && LIVE) { loadTiers(); render(); return; }
@@ -6656,7 +6699,8 @@ function tgChrome() {
   if (tg.BackButton && tgHas('6.1')) {
     document.getElementById('back').hidden = true;
     if (backHandler) { tg.BackButton.offClick(backHandler); backHandler = null; }
-    if (!noEntry() && (BACK[current] || !tabList().some(function (t) { return t[0] === current; }))) {
+    // до входа «назад» есть, только если она ведёт на экран входа: свойство, а не список экранов (#458, v74)
+    if ((!noEntry() || BARE[backTo()]) && (BACK[current] || !tabList().some(function (t) { return t[0] === current; }))) {
       backHandler = function () { go(backTo()); };
       tg.BackButton.onClick(backHandler);
       tg.BackButton.show();

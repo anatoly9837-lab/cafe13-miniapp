@@ -313,10 +313,6 @@ if (grantsSet.length !== 1) {
       t = await s.view();
       for (const w of ['130 USDT', 'сеть TRC20']) if (!t.includes(w)) bad.push(`${n}: USDT — нет «${w}»`);
       if (t.includes('3 600 USDT')) bad.push(`${n}: в USDT показана сумма в батах`);
-      await tap(s, '[data-action="join-about"]');
-      const link = await s.p.evaluate(() => window.__link);
-      if (link !== 'https://api.cafe13.club/join/about?t=' + encodeURIComponent('tok-проверка'))
-        bad.push(`${n}: «О клубе» открыло ${JSON.stringify(link)}`);
       await s.p.fill('#join-said', 'хочу на вечера');
       await attach(s, n, pdf(1500));
       await s.p.waitForTimeout(300);
@@ -406,6 +402,53 @@ if (grantsSet.length !== 1) {
       await tap(s, '[data-action="retry"]');
       await s.p.waitForTimeout(200);
       if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
+      await s.ctx.close();
+    }
+    // «О клубе» — внутри приложения (v74): рамка по СВЕЖЕМУ токену, «назад» — на экран просьбы
+    {
+      const n = 'about-vnutri';
+      let k = 0;
+      const s = await joinCase(() => json(200, Object.assign(clone(JOIN0), { about_token: ++k > 1 ? 'tok-svezhiy' : 'tok-staryy' })));
+      await tap(s, '[data-action="join-about"]');
+      await s.p.waitForTimeout(200);
+      if (await s.p.evaluate(() => window.__link)) bad.push(`${n}: «О клубе» открыло ссылку наружу`);
+      if (await s.p.evaluate(() => current) !== 'joinAbout') bad.push(`${n}: «О клубе» не открыло экран тетради`);
+      else {
+        const src = await s.p.evaluate(() => { const f = document.querySelector('iframe.about'); return f ? f.getAttribute('src') : null; });
+        if (src === null) bad.push(`${n}: рамки тетради нет при свежем токене`);
+        else if (src !== 'https://api.cafe13.club/join/about?t=tok-svezhiy') bad.push(`${n}: рамка открыта не по свежему токену: ${src}`);
+        if (await s.p.evaluate(() => document.getElementById('title').textContent) !== 'О клубе') bad.push(`${n}: в шапке не «О клубе»`);
+        // E49b → E49: после загрузки страницы «Открываем тетрадь клуба» уходит, рамка видна
+        await s.p.waitForTimeout(300);
+        if (!(await s.p.isVisible('iframe.about'))) bad.push(`${n}: рамка не показана после загрузки страницы`);
+        if (await s.p.isVisible('.paper .wait')) bad.push(`${n}: «Открываем тетрадь клуба» осталось после загрузки`);
+        // системная «назад» — на экран просьбы, не в кабинет
+        if (!(await s.p.evaluate(() => window.__backShown === true))) bad.push(`${n}: у тетради нет системной «назад»`);
+        await s.p.evaluate(() => window.__back && window.__back());
+        await s.p.waitForTimeout(200);
+        if (!(await s.view()).includes('Отправить запрос')) bad.push(`${n}: системная «назад» увела не на экран с «Отправить запрос»`);
+        // Telegram старше 6.1: нарисованная «назад» ведёт туда же
+        await tap(s, '[data-action="join-about"]');
+        await s.p.evaluate(() => { Telegram.WebApp.isVersionAtLeast = () => false; render(); });
+        if (!(await s.p.isVisible('#back'))) bad.push(`${n}: у тетради нет нарисованной «назад»`);
+        else { await s.p.click('#back'); await s.p.waitForTimeout(200);
+          if (!(await s.view()).includes('Отправить запрос')) bad.push(`${n}: нарисованная «назад» увела не на экран с «Отправить запрос»`); }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // отказ GET /join при входе на тетрадь — нашими словами и без рамки (иначе в рамке голый JSON 403)
+    {
+      const n = 'about-otkaz';
+      let k = 0;
+      // настоящий отказ /join: 503, когда токен тетради нечем подписать (join.py, _about_token)
+      const s = await joinCase(() => ++k > 1 ? json(503, { detail: 'ключ бота не задан' }) : json(200, JOIN0));
+      await tap(s, '[data-action="join-about"]');
+      await s.p.waitForTimeout(200);
+      if (await s.p.$('iframe.about')) bad.push(`${n}: при отказе сервера рамка вставлена`);
+      if (!(await s.view()).includes('Ключ бота не задан.')) bad.push(`${n}: отказ сервера не показан его словами`);
+      if (!(await s.p.$('[data-action="about-retry"]'))) bad.push(`${n}: нет «Попробовать снова»`);
+      if (await s.p.$('.paper')) bad.push(`${n}: при отказе показан лист тетради (E49v: листа нет)`);
       await s.ctx.close();
     }
     // реквизиты не пришли — не тупик: сказано и есть «Повторить», второй заход их показывает
@@ -665,6 +708,12 @@ if (grantsSet.length !== 1) {
   {
     const s = await open(true, true, json(200, noConsent), json(200, { consent_data_at: '2026-10-18T12:00:00+00:00', consent_filming_at: null }));
     if (!(await s.view()).includes('Клуб запомнит вас')) bad.push('consent: экран согласия не показан');
+    // приветственный экран не обещает удаления себя: на сервере его нет (слово владельца 28.10)
+    {
+      const rows = await s.p.evaluate(() => [...document.querySelectorAll('#view .rows')].map(e => e.textContent).join(' '));
+      if (/удал/i.test(rows)) bad.push('consent: строки согласия обещают удаление себя, а на сервере его нет');
+      if (!rows.includes('Посмотреть о себе')) bad.push('consent: нет строки «Посмотреть о себе»');
+    }
     await s.p.screenshot({ path: `${OUT}/live-consent.png` });
     await s.p.evaluate(() => window.__main && window.__main());
     await s.p.waitForTimeout(150);
