@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v64 · 28.10.2026';
+var VERSION = 'v67 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -5298,6 +5298,8 @@ var TABS = {
   curator:   [['curator', 'Бар', ICON.cup], ['barDay', 'День', ICON.chart],
               ['barExpense', 'Затраты', ICON.coin], ['home', 'Клуб', ICON.home]]
 };
+// порядок вкладок у человека с несколькими членствами: оба своих экрана — между «Услугами» и «Записями»
+var TAB_ORDER = ['home', 'guest', 'organizer', 'partner', 'bookings'];
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
@@ -5317,6 +5319,18 @@ var TITLES = {
    (вход был только кнопкой на главной, а главной у гостя нет). */
 function tabList() {
   var t = (TABS[DATA.role] || []).slice();
+  // В живом режиме — объединением по ВСЕМ живым членствам, а не по DATA.role:
+  // сервер отдаёт роль одной строкой, и при равных сроках двух членств она
+  // произвольна — вкладка «Моё дело» то была, то нет (Cafe13KPG#410, шаг 1a).
+  // DATA.role здесь не правится: его читают homeOf, isMember, касса.
+  if (LIVE) {
+    var on = {};
+    ((DATA.member && DATA.member.memberships) || []).map(function (m) { return m.level; })
+      .concat(DATA.role).forEach(function (l) {
+        (TABS[l] || []).forEach(function (x) { on[x[0]] = x; });
+      });
+    t = TAB_ORDER.filter(function (k) { return on[k]; }).map(function (k) { return on[k]; });
+  }
   if (LIVE && DATA.barSide && !t.some(function (x) { return x[0] === 'barQueue'; }))
     t.unshift(['barQueue', 'Заказы', ICON.bell]);
   // касса — от права, а не от уровня: кассир с членством — член клуба по уровню
