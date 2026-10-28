@@ -450,3 +450,71 @@ body.has-main .dup-main { display: none; }
 .shot .grow { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .shot .grow b { font-size: 14px; font-weight: 600; }
 .shot .small { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+
+/* ── «Члены клуба», плотная карточка, надписи-кнопки, полоса отмены (v78) ──
+   Перенесено ДОСЛОВНО из кадра Cafe13KPG `_docs/design/screens/E47m-people-card-revoke-ask.dc.html`
+   (dev, 9345acd); своих формулировок не добавлено. Ревьюер этого блока — designer-55:
+   расхождение правила с кадром — к нему (решение координатора 28.10.2026, Cafe13KPG#490). */
+/* ⚠ ПЛОТНАЯ КАРТОЧКА. Требование владельца 28.10.2026: «на экране всегда
+   видно от 3 до 6 пользователей, в зависимости от объёма доступов». Это
+   число, и оно переведено в высоту замером (прибор геометрии, окна 844 и
+   736): под карточки остаётся 591 px и 483 px соответственно, зазор 14 —
+   значит максимальная карточка ≤ 151, минимальная ≤ 68, и взяты 144 и 64,
+   чтобы «ровно влезает» не читалось как «влезает». */
+.card.dense { padding: 10px 12px; gap: 7px; }
+
+/* Раскрытая карточка — тем же семейством, но на тихом фоне: так видно, что
+   список не ушёл, а одна строка в нём открыта. */
+.card.dense.open { background: var(--surface); border-color: transparent; }
+
+/* Надпись доступа — КНОПКА, но размер прежний: его слово «размер оставить».
+   Поэтому кегль и цвет те же, что у `.level` (13 px, тушь), а нажимаемость
+   показана рамкой и крестиком, а не ростом. Площадь нажатия добирается
+   отступом по вертикали, который не увеличивает строку: 6 px сверху и снизу
+   при кегле 13 дают 31 px — это не 44, и так и сказано в прозе. */
+.chip { display: inline-flex; align-items: center; gap: 6px;
+        font-size: 13px; color: var(--ink); background: var(--paper);
+        border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px;
+        font-family: 'Golos Text', sans-serif; line-height: 1.15; }
+
+.chip svg { width: 13px; height: 13px; flex: 0 0 auto; fill: none;
+            stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+
+/* Нажатая — пока сервер отвечает: надпись гаснет, но остаётся на месте,
+   чтобы строка не прыгала. */
+.chip.busy { color: var(--muted); border-style: dashed; }
+
+/* Членство и роль различаются ЗНАКОМ, а не цветом: цвет у нас занят
+   состоянием, а не видом предмета. */
+.chip.paid { border-color: var(--gold); }
+
+/* «+ ответственность» — то же семейство и тот же кегль, но пунктиром:
+   это не доступ, который можно снять, а место, куда можно добавить. */
+.chip.add { border-style: dashed; color: var(--muted); }
+
+.chip.add svg { stroke: var(--muted); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* Полоса отмены — вместо второго подтверждения (его слово: «убери двойное
+   подтверждение, оно только будет увеличивать путь»). */
+.undo { display: flex; align-items: center; justify-content: space-between;
+        gap: 10px; background: var(--surface); border-radius: 10px;
+        padding: 8px 10px 8px 12px; }
+
+.undo .small { color: var(--muted); }
+
+.undo button { background: none; border: none; padding: 4px 6px;
+               font-family: 'Golos Text', sans-serif; font-size: 13px;
+               font-weight: 700; color: var(--ink); }
+
+/* ⚠ ОТСЧЁТ — ЧИСЛОМ, и число это ОБЕЩАНИЕ, у которого есть привратник.
+   Первая редакция рисовала полосу времени нарочно: число в кадре держит
+   код, и расходятся они молча. Координатор назвал 5 секунд СВОИМ решением
+   (владелец сказал «на несколько секунд», то есть отдал величину нам) и
+   поставил условие, которое делает число честным: цифра в кадре и задержка
+   отправки в коде — одно место или один случай батареи («отсчёт в разметке
+   совпадает с задержкой»). С привратником число лучше полосы: человек
+   знает, сколько у него времени. Без привратника — хуже. */
+.undo .sec { font-variant-numeric: tabular-nums; color: var(--muted);
+             font-size: 13px; white-space: nowrap; }

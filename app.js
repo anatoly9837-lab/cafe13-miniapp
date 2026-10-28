@@ -1947,7 +1947,33 @@ var ROLE_PICK = ['head', 'ops_director', 'art_director', 'director', 'staff', 'c
 var DIR_ROLES = ['curator', 'bar'];
 var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
                open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '',
-               out: null, gone: null };
+               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null };
+/* Окно отмены вместо второго подтверждения (слово владельца 28.10.2026: «убери двойное
+   подтверждение… оставь кнопку отмены на несколько секунд»; 5 секунд — число координатора,
+   кадр E47l). Цифра в полосе считается ОТСЮДА ЖЕ — разойтись с задержкой ей нечем. */
+var UNDO_MS = 5000;
+function undoStop() {
+  if (PEOPLE.askTimer) clearTimeout(PEOPLE.askTimer);
+  if (PEOPLE.askTick) clearInterval(PEOPLE.askTick);
+  PEOPLE.askTimer = PEOPLE.askTick = null;
+}
+function undoLeft() { return Math.max(0, Math.ceil((PEOPLE.askAt + UNDO_MS - Date.now()) / 1000)); }
+function undoStart(rid) {
+  undoStop();
+  PEOPLE.ask = rid; PEOPLE.askAt = Date.now(); PEOPLE.deny = null;
+  PEOPLE.askTimer = setTimeout(function () {
+    if (PEOPLE.ask !== rid) return;
+    undoStop(); PEOPLE.ask = null;
+    // окно вышло — ровно один запрос, через общий вход действий: там защита от двойного нажатия
+    // и демонстрация (в ней снятие не уходит). Ушли с экрана до конца окна — не уходит тоже.
+    doAction('p-revoke:' + rid);
+  }, UNDO_MS);
+  // отсчёт меняет только цифру, экран не перерисовывается
+  PEOPLE.askTick = setInterval(function () {
+    var el = document.querySelector('.undo .sec');
+    if (el) el.textContent = String(undoLeft());
+  }, 250);
+}
 
 function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
 /* Блокировка снимается вместе с состоянием экрана: вход на экран и смена роли
@@ -1957,6 +1983,11 @@ function peopleReset() {
   PEOPLE.busy = false;
   PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.dir = null; PEOPLE.ask = null; PEOPLE.deny = null; PEOPLE.done = null;
   PEOPLE.out = null; PEOPLE.gone = null;
+  // окно отмены, открытое на прежнем заходе, закрывается БЕЗ отправки: снятие не случается само
+  undoStop();
+  // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
+  // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
+  PEOPLE.sending = null;
 }
 function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }
 
@@ -1986,6 +2017,7 @@ function fromRoster(d) {
       name: [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Без имени',
       // уровни через « · », в порядке сервера: виды не старше друг друга (кадр E47)
       levels: p.memberships.map(function (l) { return LEVEL[l] || l; }).join(' · '),
+      lv: p.memberships.map(function (l) { return LEVEL[l] || l; }),
       bal: bal,
       roles: roles
     });
@@ -2064,10 +2096,12 @@ function revokeSend(rid) {
   if (!p || PEOPLE.busy) return;
   var role = p.roles.filter(function (y) { return y.id === rid; })[0];
   var gen = PEOPLE.gen;
-  PEOPLE.busy = true; PEOPLE.deny = null; render();
+  // отправка закрывает окно отмены сама — кто бы её ни позвал
+  undoStop(); PEOPLE.ask = null;
+  PEOPLE.busy = true; PEOPLE.deny = null; PEOPLE.sending = rid; render();
   api('POST', '/roles/' + rid + '/revoke').then(function (r) {
     if (gen !== PEOPLE.gen) return;
-    PEOPLE.busy = false; PEOPLE.ask = null;
+    PEOPLE.busy = false; PEOPLE.ask = null; PEOPLE.sending = null;
     var ok = r.status === 200 && r.data && r.data.id === rid && !!r.data.revoked_at;
     if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
     haptic('ok');
@@ -2109,21 +2143,27 @@ function outSend(k) {
 function personCard(p, k) {
   var lock = PEOPLE.busy ? ' disabled' : '';
   var open = PEOPLE.open === k;
-  var heads = PEOPLE.list.filter(function (x) { return holds(x, 'head'); }).length;
-  var rows = p.roles.map(function (r) {
-    var asking = PEOPLE.ask === r.id;
-    // админа снимает только админ (roles.py _may_touch_admin) — кнопки, которая
-    // гарантированно кончится отказом, нет; вместо неё — кто может
-    var btn = r.role === 'admin' && !grant('admin') ? '<span class="small">снимает только администратор</span>'
-      : asking ? '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="p-keep"' + lock + '>Не снимать</button>' +
-                 '<button type="button" class="btn quiet" data-action="p-revoke:' + r.id + '"' + lock + '>Точно снять</button></span>'
-      : '<button type="button" class="btn quiet" data-action="p-ask:' + r.id + '"' + lock + '>Снять</button>';
-    // роль и направление — два факта: длинное название направления не рвёт имя роли
-    var under = [r.dirTitle, r.role === 'head' && heads === 1 ? 'единственный глава клуба' : ''].filter(Boolean).join(' · ');
-    return '<div class="row role-row"><span class="col"><span>' + esc(r.name) + '</span>' +
-        (under ? '<span class="small">' + esc(under) + '</span>' : '') + '</span>' + btn + '</div>' +
-      (asking ? '<span class="small">Снять «' + esc(r.words) + '» у ' + esc(p.name) + '? Права пропадут сразу.</span>' : '');
-  }).join('');
+  var X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  // Кадры E47z/E47k/E47l: доступ — надпись-кнопка («размер оставить»), крестик снимает без вопроса.
+  // Уровень членства — чип БЕЗ крестика и не нажимается НАРОЧНО: ручки снятия уровня на бою нет
+  // (POST /memberships/{id}/revoke — ещё и не в стволе api: cafe13-api#85 открыт, 28.10.2026).
+  // Кнопка не обещает того, чего сервер не делает.
+  var rows = '<div class="chips">' +
+    p.lv.map(function (l) { return '<span class="chip paid">' + esc(l) + '</span>'; }).join('') +
+    p.roles.map(function (r) {
+      if (PEOPLE.ask === r.id) return '';                  // в окне отмены надписи нет (E47l)
+      if (PEOPLE.sending === r.id) return '<span class="chip busy">' + esc(r.words) + X + '</span>';  // E47k
+      // админа снимает только админ (roles.py _may_touch_admin): крестика, который кончится отказом, нет
+      if (r.role === 'admin' && !grant('admin')) return '<span class="chip">' + esc(r.words) + '</span>';
+      return '<button type="button" class="chip" data-action="p-ask:' + r.id + '"' + lock + '>' + esc(r.words) + X + '</button>';
+    }).join('') +
+    (open ? '' : '<button type="button" class="chip add" data-action="p-open:' + k + '"' + lock + '>' +
+      '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>ответственность</button>') +
+  '</div>';
+  var askRole = null;
+  p.roles.forEach(function (r) { if (PEOPLE.ask === r.id) askRole = r; });
+  var undo = askRole ? '<div class="undo" data-undo-of="' + k + '"><span class="small">Снимаем: ' + esc(askRole.words) + '</span>' +
+    '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="p-keep">Отменить</button></div>' : '';
   var form = '';
   if (open) {
     var seg = function (label, list, cur, act) {
@@ -2173,25 +2213,52 @@ function personCard(p, k) {
   if (PEOPLE.gone && PEOPLE.gone.uid === p.uid)
     return '<div class="card quiet" data-person="' + k + '" role="status"><span class="small">' + esc(PEOPLE.gone.text) + '</span></div>';
   var outAsk = PEOPLE.out === k;
-  return '<div class="card" data-person="' + k + '"' +
+  return '<div class="card dense' + (open || outAsk ? ' open' : '') + '" data-person="' + k + '"' +
     (q && p.name.toLowerCase().indexOf(q) === -1 ? ' hidden' : '') + '>' +
     // Кадр E47: уровень — предмет строки, остаток справа. Стили встроены — долг Cafe13KPG#484
     // (классов .level и .money в styles.css нет; styles.css — не зона этой правки).
-    '<div class="row"><div class="col"><b>' + esc(p.name) + '</b>' +
-      (p.levels ? '<span style="font-size:13px;color:var(--ink)">' + esc(p.levels) + '</span>' : '<span class="small">без членства</span>') +
-      '</div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
+    // E47z: в строке имени — имя и остаток; уровень ушёл в надписи ниже (чип «paid»)
+    '<div class="row"><div class="col"><b>' + esc(p.name) + '</b></div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
       (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></div>' +
-    (rows || '<span class="small">Ролей нет</span>') + done + deny + form +
+    rows + done + deny + form +
     // E47v: вопрос во всю карточку, с ИМЕНЕМ; «себя нельзя» — отказом сервера, кнопку не прячем (E47)
     (outAsk ? '<span class="small">' + esc(p.levels
         ? p.name + ' потеряет вход в приложение и живое членство разом: оплаченное членство обрывается сегодняшним днём. Обратного действия у этой кнопки нет.'
         : p.name + ' потеряет вход в приложение; живого членства нет — обрывать нечего. Обратного действия у этой кнопки нет.') + '</span>' +
       '<div class="row" style="justify-content:flex-start;gap:8px"><button type="button" class="btn quiet" data-action="p-outkeep"' + lock + '>Не исключать</button>' +
       '<button type="button" class="btn quiet" data-action="p-outyes:' + k + '"' + lock + '>Точно исключить</button></div>'
+    // ⚠ ЧТО открывает «Исключить» в плотной карточке, кадры не рисуют (вопрос у дизайнера) —
+    // до ответа кнопка стоит, как в v74, одна в ряд
     : open ? '' : '<div class="row" style="justify-content:flex-start;gap:8px">' +
-      '<button type="button" class="btn quiet" data-action="p-open:' + k + '"' + lock + '>Выдать ответственность</button>' +
       '<button type="button" class="btn quiet" data-action="p-out:' + k + '"' + lock + '>Исключить</button></div>') +
-  '</div>';
+  '</div>' + undo;
+}
+/* Частичная перерисовка (слово владельца 28.10.2026: «перерисовывай только элемент»,
+   Cafe13KPG#490). Действия ВНУТРИ карточки — открыть форму, выбрать роль и направление,
+   вопрос «Снять» и «Исключить» — меняют только те карточки, у которых было или стало своё
+   состояние; их и перерисовываем, а экран целиком — нет: соседняя карточка, поле поиска и
+   место прокрутки остаются как были. */
+function peopleTouched() {
+  var ks = [], L = PEOPLE.list || [];
+  var at = function (uid) { for (var i = 0; i < L.length; i++) if (L[i].uid === uid) return i; return null; };
+  [PEOPLE.open, PEOPLE.out,
+   PEOPLE.ask !== null ? (function () { for (var i = 0; i < L.length; i++) if (L[i].roles.some(function (r) { return r.id === PEOPLE.ask; })) return i; return null; })() : null,
+   PEOPLE.deny && at(PEOPLE.deny.uid), PEOPLE.done && at(PEOPLE.done.uid), PEOPLE.gone && at(PEOPLE.gone.uid)]
+    .forEach(function (k) { if (typeof k === 'number' && ks.indexOf(k) === -1) ks.push(k); });
+  return ks;
+}
+function peopleRedraw(before) {
+  var ks = before.slice();
+  peopleTouched().forEach(function (k) { if (ks.indexOf(k) === -1) ks.push(k); });
+  for (var i = 0; i < ks.length; i++) {
+    var el = document.querySelector('[data-person="' + ks[i] + '"]');
+    // карточки нет на экране (список перечитан, экран другой) — честная полная перерисовка
+    if (!el || !PEOPLE.list || !PEOPLE.list[ks[i]] || current !== 'people') { render(); return; }
+    var tail = el.nextElementSibling;
+    if (tail && tail.getAttribute('data-undo-of') === String(ks[i])) tail.remove();   // полоса отмены — сосед карточки (E47l)
+    el.outerHTML = personCard(PEOPLE.list[ks[i]], ks[i]);
+  }
+  tgChrome();   // главная кнопка Telegram («Выдать») зависит от открытой формы
 }
 function peopleFilter() {
   var q = PEOPLE.find.trim().toLowerCase();
@@ -5836,12 +5903,12 @@ function queueCard(o) {
 /* ── навигация ───────────────────────────────────────── */
 
 var TABS = {
-  guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
-  member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
+  guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Ивенты', ICON.cal]],
+  member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Ивенты', ICON.cal]],
   organizer: [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
-              ['organizer', 'События', ICON.star], ['bookings', 'Записи', ICON.cal]],
+              ['organizer', 'События', ICON.star], ['bookings', 'Ивенты', ICON.cal]],
   partner:   [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
-              ['partner', 'Моё дело', ICON.case], ['bookings', 'Записи', ICON.cal]],
+              ['partner', 'Моё дело', ICON.case], ['bookings', 'Ивенты', ICON.cal]],
   staff:     [['staff', 'Касса', ICON.till], ['home', 'Клуб', ICON.home]],
   bar:       [['barQueue', 'Заказы', ICON.bell], ['barShot', 'Съёмка', ICON.cam],
               ['barDay', 'День', ICON.chart], ['barExpense', 'Затраты', ICON.coin]],
@@ -6327,6 +6394,7 @@ function doAction(a) {
       // Cafe13KPG#214, 22.10.2026). Снимать можно одну, не обе. Эта ещё и
       // держит p-open/p-close: peopleReset снимает блокировку.
       if (PEOPLE.busy) return;
+      var before = peopleTouched();
       if (a === 'p-reload') { loadRoster(); render(); return; }
       if (a === 'p-grant') { grantSend(); return; }
       if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
@@ -6342,9 +6410,10 @@ function doAction(a) {
         if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1) PEOPLE.dir = PEOPLE.dirs[0].id;
       }
       if (a === 'p-dir') PEOPLE.dir = Number(arg);
-      if (a === 'p-ask') { PEOPLE.ask = Number(arg); PEOPLE.deny = null; }
-      if (a === 'p-keep') PEOPLE.ask = null;
-      haptic(); render();
+      // крестик у роли: окно отмены вместо вопроса; второе окно поверх первого не открывается
+      if (a === 'p-ask') { if (PEOPLE.ask !== null) return; undoStart(Number(arg)); }
+      if (a === 'p-keep') { undoStop(); PEOPLE.ask = null; }
+      haptic(); peopleRedraw(before);
       // раскрытая форма — в вид: иначе она открылась бы за нижним краем
       var f = a === 'p-open' && document.querySelector('[data-person="' + PEOPLE.open + '"]');
       if (f && f.scrollIntoView) f.scrollIntoView({ block: 'start' });
