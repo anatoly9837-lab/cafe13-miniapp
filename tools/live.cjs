@@ -6216,6 +6216,10 @@ if (grantsSet.length !== 1) {
       if (posts(s, /\/roles\/31\/revoke$/).length !== 1) bad.push('people-revoke: снятие не ушло ровно один раз');
       if (!(await note(s, 0)).includes('Снято: Куратор направления · Бар.')) bad.push('people-revoke: в карточке нет итога «Снято»');
       if (!(await s.p.$(`${card(s, 0)} .note [data-action="p-back"]`))) bad.push('people-revoke: у итога «Снято» нет «Отменить»');
+      // «справа» — правилом, а не длиной фразы (designer-55: на коротком итоге кнопка вставала в 154 px от края)
+      const gap = await s.p.evaluate(() => { const n = document.querySelector('.note.act'), b = n && n.querySelector('[data-action="p-back"]');
+        return n && b ? Math.round(n.getBoundingClientRect().right - b.getBoundingClientRect().right) : null; });
+      if (gap === null || gap > 20) bad.push(`people-revoke: «Отменить» не у правого края плашки (${gap} px)`);
       if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-revoke: список не перечитан');
       await s.ctx.close();
     }
@@ -6713,11 +6717,15 @@ if (grantsSet.length !== 1) {
       await pokazhi(s, 0); await act(s, 'p-lvask:0.member'); await s.p.waitForTimeout(60);
       await s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).scrollIntoView({ block: 'center' }), L);
       await s.p.waitForTimeout(80);
-      const y0 = await s.p.evaluate(() => window.scrollY);
-      if (y0 < 300) bad.push(`${n}: прокрутка не ушла вниз (${y0}) — «не прыгнул» проверять не на чем`);
+      // «не прыгнул» — нажатая карточка стоит на месте В ОКНЕ, а не число scrollY: досрочно снятый
+      // уровень убирает ряд у верхней карточки, и браузер сам сдвигает scrollY, чтобы содержимое
+      // под пальцем не уехало (первая редакция мерила scrollY и краснела на законном: 2051 → 2080)
+      const top = () => s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).getBoundingClientRect().top, L);
+      if (await s.p.evaluate(() => window.scrollY) < 300) bad.push(`${n}: прокрутка не ушла вниз — «не прыгнул» проверять не на чем`);
+      const t0 = await top();
       await pokazhi(s, L); await act(s, `p-lvask:${L}.member`); await s.p.waitForTimeout(400);
-      const y1 = await s.p.evaluate(() => window.scrollY);
-      if (Math.abs(y1 - y0) > 2) bad.push(`${n}: второй крестик сдвинул экран (${y0} → ${y1}) — «возвращайся где было»`);
+      const t1 = await top();
+      if (Math.abs(t1 - t0) > 2) bad.push(`${n}: второй крестик сдвинул нажатую карточку в окне (${Math.round(t0)} → ${Math.round(t1)}) — «возвращайся где было»`);
       const pp = lvPosts(s);
       if (pp.length !== 1 || !pp[0].url.endsWith('/memberships/701/revoke')) bad.push(`${n}: открытое снятие не ушло досрочно ровно одним запросом: ${JSON.stringify(pp.map(c => c.url.replace(/^.*\/memberships/, '')))}`);
       const strips = await s.p.$$eval('.undo', e => e.map(x => x.getAttribute('data-undo-of')));

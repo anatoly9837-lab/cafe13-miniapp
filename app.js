@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v89 · 29.10.2026';
+var VERSION = 'v91 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -2209,7 +2209,11 @@ function backSend() {
     haptic('ok');
     peopleReset();
     PEOPLE.land = b.uid;
-    PEOPLE.done = { uid: b.uid, text: (b.kind === 'revoked' ? 'Возвращено: ' : 'Отменено: ') + b.words + '.' };
+    // слова designer-55 (кадр E47c): вторая фраза ИСПРАВЛЯЕТ обещание первой — на сервере теперь
+    // две записи. Кнопки в этом состоянии нет: отменять нечего
+    PEOPLE.done = { uid: b.uid, text: b.kind === 'revoked'
+      ? 'Возвращено: ' + b.words + '. В истории останутся обе записи — и снятие, и возврат.'
+      : 'Отменено: ' + b.words + '. В истории останутся обе записи — и выдача, и снятие.' };
     loadRoster(); render();
   });
 }
@@ -2403,10 +2407,11 @@ function personCard(p, k) {
   var deny = mine(PEOPLE.deny) ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(PEOPLE.deny.text) + '</span></div>' : '';
   // v91: у итога выдачи и снятия роли справа «Отменить» — обратное действие (слово владельца:
   // «на плашку со „снято…“ повесим кнопку отмены в правой части»). Живёт, пока не выбрана
-  // другая карточка и не покинут экран. Облик кнопки — временный, до слова designer-55.
+  // другая карточка и не покинут экран. Облик — кадры E47f/E47h (Cafe13KPG#521): `btn mini quiet`
+  // справа ПРАВИЛОМ `.note.act`, а не длиной фразы (на коротком итоге кнопка вставала за словами).
   var backBtn = PEOPLE.back && PEOPLE.back.uid === p.uid
     ? '<button type="button" class="btn mini quiet" data-action="p-back"' + lock + '>Отменить</button>' : '';
-  var done = mine(PEOPLE.done) ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(PEOPLE.done.text) + '</span>' + backBtn + '</div>' : '';
+  var done = mine(PEOPLE.done) ? '<div class="note' + (backBtn ? ' act' : '') + '" role="status">' + svg(ICON.info) + '<span>' + esc(PEOPLE.done.text) + '</span>' + backBtn + '</div>' : '';
   var q = PEOPLE.find.trim().toLowerCase();
   // E47g/E47zh: исключённый — итогом на месте своей карточки
   if (PEOPLE.gone && PEOPLE.gone.uid === p.uid)
@@ -6705,7 +6710,7 @@ function doAction(a) {
          решение координатора), «Отменить» у роли гаснет. Само действие при этом выполняется — экран
          не заперт. Человек — по tg_user_id в памяти, не по номеру строки. */
       var L0 = PEOPLE.list || [], tk = null;
-      if (a === 'p-open' || a === 'p-out' || a === 'p-outyes') tk = Number(arg);
+      if (a === 'p-open' || a === 'p-out' || a === 'p-outyes' || a === 'p-card') tk = Number(arg);
       else if (a === 'p-lvask') tk = Number(String(arg).split('.')[0]);
       else if (a === 'p-ask') tk = L0.findIndex(function (x) { return x.roles.some(function (r) { return r.id === Number(arg); }); });
       else if (a === 'p-give' || a === 'p-role' || a === 'p-close') tk = PEOPLE.open;
@@ -6729,11 +6734,14 @@ function doAction(a) {
       if (a === 'p-back') { backSend(); return; }
       if (a === 'p-lvrevoke') return;               // живой режим шлёт уровень сам (`lvSend`); здесь — только демонстрация
       if (a === 'p-outyes') { if (PEOPLE.out === Number(arg)) outSend(Number(arg)); return; }
+      // сброс карточки НЕ гасит «Отменить» у той же карточки: итог с отменой живёт, пока не выбрана
+      // ДРУГАЯ (слово владельца) — а «+ ответственность» у своей это не другая (back-gone)
+      var keepDone = PEOPLE.back && PEOPLE.done && PEOPLE.done.uid === PEOPLE.back.uid ? PEOPLE.done : null;
       // Раскрыть ЭТУ карточку: прежняя сворачивается, и вместе с ней уходит её состояние.
-      // ⚠ Окно отмены прежней карточки закрывается БЕЗ ОТПРАВКИ (это делает peopleReset) —
-      // так же, как при уходе с экрана: человек не должен получить снятие роли, которого
-      // он больше не видит. Повторное нажатие по той же карточке свёртки НЕ даёт: владелец
-      // просил «по клику разворачиваются», обратный ход у него — другой человек.
+      // ⚠ v91: окно отмены уровня прежней карточки уходит ОТПРАВКОЙ (выше, «уход с карточки»), а не
+      // закрывается без неё, как было: слово владельца «отмена активна, пока не выбрали другую
+      // карточку» — значит, выбрав другую, человек снятие подтвердил, а не отменил. Повторное нажатие
+      // по той же карточке свёртки НЕ даёт: владелец просил «по клику разворачиваются».
       if (a === 'p-card') { var kc = Number(arg); if (PEOPLE.card !== kc) { peopleReset(); PEOPLE.card = kc; } }
       // Минус живёт и в СВЁРНУТОЙ строке, поэтому вопрос об исключении обязан её раскрыть:
       // иначе `PEOPLE.out` стоял бы у карточки, которая вопроса не рисует.
@@ -6741,6 +6749,7 @@ function doAction(a) {
       if (a === 'p-outkeep') PEOPLE.out = null;
       if (a === 'p-open') { var ko2 = Number(arg); peopleReset(); PEOPLE.card = ko2; PEOPLE.open = ko2; }
       if (a === 'p-close') peopleReset();
+      if (keepDone && PEOPLE.back && !PEOPLE.done) PEOPLE.done = keepDone;
       // `p-role` больше не ВЫБИРАЕТ, а раскрывает направления, и спрашивается только у
       // DIR_ROLES: у роли без направления раскрывать нечего, а состояние, которое ничего не
       // рисует, не заводится. Второе нажатие складывает обратно — у указателя это его
