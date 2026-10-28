@@ -5695,6 +5695,16 @@ if (grantsSet.length !== 1) {
       await s.p.fill('#p-find', '');
       await act(s, 'p-open:1'); await act(s, 'p-role:curator');
       await s.p.screenshot({ path: `${OUT}/live-people-form.png` });
+      // ⚠ v85: нижнего ряда «Отмена · Выдать» больше нет, и закрыть раскрытую форму стало
+      // нечем бы — если бы вход «+ ответственность» не остался видимым и не стал складывать
+      // её обратно (кадр E47s рисует его и в раскрытой карточке). Случай мерит ИМЕННО это:
+      // без обратного хода человек заперт в форме, а разметка об этом молчит.
+      if (!(await s.p.$(`${card(s, 1)} .grant`))) bad.push('people-head: форма выдачи не раскрылась');
+      if (!(await act(s, 'p-close'))) bad.push('people-head: у раскрытой формы нет входа, который её складывает');
+      await s.p.waitForTimeout(150);
+      if (await s.p.$(`${card(s, 1)} .grant`)) bad.push('people-head: форма выдачи не складывается обратно');
+      if (!(await s.p.$(`${card(s, 1)} [data-action="p-open:1"]`))) bad.push('people-head: сложенная карточка потеряла вход «ответственность»');
+      await act(s, 'p-open:1'); await act(s, 'p-role:curator');
       if (s.errs.length) bad.push('people-head: ошибки страницы ' + s.errs.join('; '));
       await s.ctx.close();
     }
@@ -5764,11 +5774,17 @@ if (grantsSet.length !== 1) {
       if (!(await toPeople(s))) { bad.push(`${name}: нет входа «Люди»`); await s.ctx.close(); continue; }
       if (await s.p.$('[data-action="p-ask:6"]')) bad.push(`${name}: администратора можно снять с экрана`);
       await act(s, 'p-open:1');
+      // v85: погашенное — это строка `.grant.off` БЕЗ кружка, а не кнопка с `disabled`.
+      // Мерить приходится строкой: `disabled` внутри `[data-person]` запрещён чужими
+      // случаями `out-*`, и «потеря состояния» от «запрета по построению» отличается только тут.
+      const greys = await await s.p.$$eval(`${card(s, 1)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]));
       for (const [role, word] of [['admin', 'Администратор'], ['god_mentor', 'Чужими глазами']]) {
-        const b = await s.p.$eval(`${card(s, 1)} [data-action="p-role:${role}"]`, e => [e.disabled, e.textContent]).catch(() => null);
-        if (!b || !b[0] || b[1] !== word + ' · выдаётся не из приложения') bad.push(`${name}: «${word}» не серая с причиной: ${JSON.stringify(b)}`);
+        const r = greys.filter(x => x[1].indexOf(word) === 0)[0];
+        if (!r || !/\boff\b/.test(r[0]) || r[1] !== word + 'выдаётся не из приложения' || r[2])
+          bad.push(`${name}: «${word}» не погашенная строка с причиной: ${JSON.stringify(r)}`);
+        if (await s.p.$(`${card(s, 1)} [data-action="p-give:${role}"]`)) bad.push(`${name}: «${word}» всё-таки выдаётся кружком`);
       }
-      if (await s.p.$(`${card(s, 1)} [data-action="p-role:head"]`)) bad.push(`${name}: «Глава клуба» в списке выдачи — её здесь нет никогда`);
+      if (greys.some(x => x[1].indexOf('Глава клуба') === 0)) bad.push(`${name}: «Глава клуба» в списке выдачи — её здесь нет никогда`);
       await s.ctx.close();
     }
 
@@ -5777,15 +5793,24 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { grant: json(201, { id: 40, member_id: 702, role: 'curator', direction_id: 7, granted_at: '2026-10-21T10:00:00+00:00' }) });
       await toPeople(s);
       await act(s, 'p-open:1');
-      await act(s, 'p-role:curator');
-      if (await s.p.$('[data-action="p-dir:9"]')) bad.push('people-grant-dir: предложено закрытое направление');
-      // без направления «Выдать» не нажимается: иначе гарантированный отказ базы
-      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-grant-dir: главная кнопка есть без направления');
-      if (!(await s.view()).includes('Выберите направление.')) bad.push('people-grant-dir: без направления нет подсказки');
+      // ⚠ Роль направления НЕ выдаётся одним тапом: у неё указатель, а не кружок. Без этой
+      // строки разворот «кружок у каждой роли» прошёл бы зелёным и слал бы запрос, который
+      // сервер обязан отвергнуть проверкой базы.
+      if (await s.p.$(`${card(s, 1)} [data-action="p-give:curator"]`)) bad.push('people-grant-dir: роль направления выдаётся одним тапом, без направления');
+      if (!(await act(s, 'p-role:curator'))) bad.push('people-grant-dir: у роли направления нет указателя');
+      if (await s.p.$('[data-action="p-give:curator:9"]')) bad.push('people-grant-dir: предложено закрытое направление');
+      // главной кнопки Telegram на этом экране больше нет ни в одном состоянии (#502 п.4)
+      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-grant-dir: главная кнопка вернулась на экран людей');
+      if (!(await s.view()).includes('Выберите направление.')) bad.push('people-grant-dir: у раскрытой роли нет подписи «Выберите направление.»');
+      // разметка обязана СКАЗАТЬ, что роль раскрыта: от этого живёт поворот указателя,
+      // и читающий разметку не должен выводить состояние из наличия соседних строк
+      if (!(await s.p.$(`${card(s, 1)} [data-action="p-role:curator"][aria-expanded="true"]`))) bad.push('people-grant-dir: указатель не говорит, что роль раскрыта');
+      // второе нажатие складывает направления обратно — иначе у раскрытия нет обратного хода
+      await act(s, 'p-role:curator'); await s.p.waitForTimeout(100);
+      if (await s.p.$(`${card(s, 1)} [data-action="p-give:curator:7"]`)) bad.push('people-grant-dir: направления не складываются вторым нажатием');
+      await act(s, 'p-role:curator'); await s.p.waitForTimeout(100);
       {
-        await act(s, 'p-dir:7');
-        if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push('people-grant-dir: с направлением нет главной кнопки');
-        await s.p.evaluate(() => window.__main());
+        if (!(await act(s, 'p-give:curator:7'))) bad.push('people-grant-dir: у строки направления нет кружка выдачи');
         await s.p.waitForTimeout(300);
         const pp = posts(s, /\/roles$/);
         if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'curator', direction_id: 7 }))
@@ -5801,8 +5826,7 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { grant: json(201, { id: 41, member_id: 702, role: 'ops_director', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' }) });
       await toPeople(s);
       await act(s, 'p-open:1');
-      await act(s, 'p-role:ops_director');
-      await s.p.evaluate(() => window.__main && window.__main());
+      if (!(await act(s, 'p-give:ops_director'))) bad.push('people-grant-general: у общей роли нет кружка выдачи');
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles$/);
       if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'ops_director' }))
@@ -5822,8 +5846,8 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       const uid = step === 'grant' ? 1 : 0;
       if (step === 'grant') {
-        await act(s, 'p-open:1'); await act(s, 'p-role:director');
-        await s.p.evaluate(() => window.__main && window.__main());
+        await act(s, 'p-open:1');
+        if (!(await act(s, 'p-give:director'))) bad.push(`${name}: у общей роли нет кружка выдачи`);
       } else {
         // окно отмены вместо вопроса (E47l): сначала полоса и ни одного запроса, потом — ровно один
         await s.p.evaluate(() => { UNDO_MS = 150; });
@@ -5844,9 +5868,14 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { dirs: json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: true }]),
         grant: json(201, { id: 40, member_id: 702, role: 'bar', direction_id: 7, granted_at: '2026-10-21T10:00:00+00:00' }) });
       await toPeople(s);
-      await act(s, 'p-open:1'); await act(s, 'p-role:bar');
-      if (!(await s.p.$(`${card(s, 1)} [data-action="p-dir:7"][aria-pressed="true"]`))) bad.push('people-one-dir: единственное направление не выбрано само');
-      await s.p.evaluate(() => window.__main && window.__main());
+      await act(s, 'p-open:1');
+      if (!(await act(s, 'p-role:bar'))) bad.push('people-one-dir: у роли направления нет указателя');
+      // Самоподстановки единственного направления больше нет: выбирать нечего, выдаёт СТРОКА.
+      // То же обещание («выбор из одного — формальность») мерится иначе: под раскрытой ролью
+      // ровно одна строка с кружком, и от раскрытия до запроса остаётся один тап.
+      const one = await s.p.$$eval(`${card(s, 1)} .grant`, es => es.filter(e => e.querySelector('[data-action^="p-give:bar"]')).map(e => e.textContent));
+      if (JSON.stringify(one) !== JSON.stringify(['Бар'])) bad.push('people-one-dir: строк направления с кружком не одна: ' + JSON.stringify(one));
+      if (!(await act(s, 'p-give:bar:7'))) bad.push('people-one-dir: у единственного направления нет кружка выдачи');
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles$/);
       if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'bar', direction_id: 7 }))
@@ -5860,12 +5889,12 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { dirs: json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: true }]) });
       await toPeople(s);
       await act(s, 'p-open:0');
-      const role = await s.p.$eval(`${card(s, 0)} [data-action="p-role:curator"]`, e => ({ off: e.disabled, t: e.textContent })).catch(() => null);
-      if (!role || !role.off || !role.t.includes('уже есть')) bad.push('people-one-dir-held: «Куратор направления» не закрыт, хотя единственное направление занято: ' + JSON.stringify(role));
-      await act(s, 'p-role:curator');
-      if (await s.p.$(`${card(s, 0)} [data-action="p-dir:7"][aria-pressed="true"]`)) bad.push('people-one-dir-held: выбрано занятое направление');
-      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-one-dir-held: «Выдать» нажимается на занятую пару');
-      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(200);
+      const role = (await await s.p.$$eval(`${card(s, 0)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
+      if (!role || !/\boff\b/.test(role[0]) || !role[1].includes('уже есть') || role[2])
+        bad.push('people-one-dir-held: «Куратор направления» не погашен, хотя единственное направление занято: ' + JSON.stringify(role));
+      if (await act(s, 'p-role:curator')) bad.push('people-one-dir-held: у погашенной роли остался указатель');
+      await s.p.waitForTimeout(100);
+      if (await s.p.$(`${card(s, 0)} [data-action^="p-give:curator"]`)) bad.push('people-one-dir-held: занятая пара всё-таки предложена кружком');
       if (posts(s, /\/roles$/).length) bad.push('people-one-dir-held: ушёл дубль роли');
       await s.ctx.close();
     }
@@ -5876,9 +5905,11 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
       await act(s, 'p-open:0');
-      if (await s.p.$(`${card(s, 0)} [data-action="p-role:curator"][disabled]`)) bad.push('people-two-dirs-one-held: роль закрыта, хотя «Чай» свободен');
-      await act(s, 'p-role:curator');
-      if (await s.p.$(`${card(s, 0)} [data-action^="p-dir:"][aria-pressed="true"]`)) bad.push('people-two-dirs-one-held: направление выбрано само из двух');
+      if (!(await act(s, 'p-role:curator'))) bad.push('people-two-dirs-one-held: роль погашена, хотя «Чай» свободен');
+      await s.p.waitForTimeout(100);
+      // занятое направление погашено строкой, свободное предложено кружком
+      if (await s.p.$(`${card(s, 0)} [data-action="p-give:curator:7"]`)) bad.push('people-two-dirs-one-held: занятый «Бар» предложен снова');
+      if (!(await s.p.$(`${card(s, 0)} [data-action="p-give:curator:8"]`))) bad.push('people-two-dirs-one-held: свободный «Чай» не предложен');
       await s.ctx.close();
     }
     {
@@ -5887,10 +5918,10 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { people: json(200, both) });
       await toPeople(s);
       await act(s, 'p-open:0');
-      const role = await s.p.$eval(`${card(s, 0)} [data-action="p-role:curator"]`, e => ({ off: e.disabled, t: e.textContent })).catch(() => null);
-      if (!role || !role.off || !role.t.includes('уже есть')) bad.push('people-two-dirs-held: «Куратор направления» не закрыт, хотя заняты оба направления: ' + JSON.stringify(role));
-      await act(s, 'p-role:curator');
-      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-two-dirs-held: «Выдать» нажимается');
+      const role = (await await s.p.$$eval(`${card(s, 0)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
+      if (!role || !/\boff\b/.test(role[0]) || !role[1].includes('уже есть') || role[2])
+        bad.push('people-two-dirs-held: «Куратор направления» не погашен, хотя заняты оба направления: ' + JSON.stringify(role));
+      if (await act(s, 'p-role:curator')) bad.push('people-two-dirs-held: у погашенной роли остался указатель');
       await s.ctx.close();
     }
 
@@ -5900,11 +5931,13 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { dirs: json(500, { detail: 'x' }) });
       await toPeople(s);
       await act(s, 'p-open:1');
-      if (await s.p.$(`${card(s, 1)} [data-action="p-role:curator"][disabled]`)) bad.push('people-dirs-failed: роль куратора закрыта, хотя направления просто не пришли');
-      await act(s, 'p-role:curator');
+      // v85: перечня нет на руках — строка роли гаснет (выбирать не из чего), но причина
+      // названа ТОЧНО: «не загрузились», а не «направлений нет». Ложь была именно в этой
+      // подмене, и мерится она теперь текстом строки, а не её запертостью.
       if (!(await s.view()).includes('Направления не загрузились: Сервер ответил кодом 500.')) bad.push('people-dirs-failed: нет причины «Направления не загрузились»');
-      if ((await s.view()).includes('открытых направлений в клубе нет')) bad.push('people-dirs-failed: ложная фраза «открытых направлений нет», а перечень просто не пришёл');
-      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-dirs-failed: «Выдать» нажимается без направления');
+      if ((await s.view()).includes('направлений нет')) bad.push('people-dirs-failed: сказано «направлений нет», а перечень просто не пришёл');
+      if (await s.p.$(`${card(s, 1)} [data-action^="p-give:curator"]`)) bad.push('people-dirs-failed: куратор выдаётся, хотя направлений нет на руках');
+      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push('people-dirs-failed: главная кнопка вернулась на экран людей');
       await s.ctx.close();
     }
 
@@ -5913,11 +5946,10 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { dirs: () => new Promise(r => setTimeout(() => r(json(200, DIRS)), 2000)) });
       await toPeople(s);
       await act(s, 'p-open:1');
-      if (await s.p.$(`${card(s, 1)} [data-action="p-role:curator"][disabled]`)) bad.push('people-dirs-loading: роль куратора закрыта, пока перечень грузится');
-      await act(s, 'p-role:curator');
       const t = await s.view();
       if (!t.includes('Загружаем направления…')) bad.push('people-dirs-loading: нет «Загружаем направления…»');
-      if (t.includes('открытых направлений в клубе нет')) bad.push('people-dirs-loading: ложная фраза «открытых направлений нет», а перечень ещё грузится');
+      if (t.includes('направлений нет')) bad.push('people-dirs-loading: сказано «направлений нет», а перечень ещё грузится');
+      if (await s.p.$(`${card(s, 1)} [data-action^="p-give:curator"]`)) bad.push('people-dirs-loading: куратор выдаётся, пока перечень не пришёл');
       // закрыть после ответа: fulfill на закрытой странице роняет прогон
       await s.p.waitForTimeout(2200);
       await s.ctx.close();
@@ -5928,14 +5960,15 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { dirs: json(200, dirs) });
       await toPeople(s);
       await act(s, 'p-open:1');
-      const role = await s.p.$eval(`${card(s, 1)} [data-action="p-role:curator"]`, e => ({ off: e.disabled, t: e.textContent })).catch(() => null);
-      if (!role || !role.off || !role.t.includes('направлений нет')) bad.push(`${name}: «Куратор направления» не закрыт словами: ` + JSON.stringify(role));
-      if (!(await s.view()).includes('открытых направлений в клубе нет')) bad.push(`${name}: нет причины «открытых направлений нет»`);
-      await act(s, 'p-role:curator');
+      // v85: общей строки «Куратора и бара выдать некуда» больше нет — причина стоит в САМОЙ
+      // строке роли, по одной на роль. Снято нарочно: две надписи об одном расходятся молча.
+      const role = (await await s.p.$$eval(`${card(s, 1)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
+      if (!role || !/\boff\b/.test(role[0]) || !role[1].includes('направлений нет') || role[2])
+        bad.push(`${name}: «Куратор направления» не погашен словами: ` + JSON.stringify(role));
+      if (await act(s, 'p-role:curator')) bad.push(`${name}: у роли с пустым перечнем остался указатель`);
       if ((await s.view()).includes('Выберите направление.')) bad.push(`${name}: подсказка просит выбрать из пустого перечня`);
-      if (await s.p.evaluate(() => typeof window.__main === 'function')) bad.push(`${name}: «Выдать» нажимается`);
       // общая роль при этом выдаётся как обычно
-      if (await s.p.$(`${card(s, 1)} [data-action="p-role:director"][disabled]`)) bad.push(`${name}: закрыта и общая роль`);
+      if (!(await s.p.$(`${card(s, 1)} [data-action="p-give:director"]`))) bad.push(`${name}: погашена и общая роль`);
       await s.ctx.close();
     }
 
@@ -5948,7 +5981,7 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { [step]: reply });
       await toPeople(s);
       const k = step === 'grant' ? 1 : 0;
-      if (step === 'grant') { await act(s, 'p-open:1'); await act(s, 'p-role:ops_director'); await s.p.evaluate(() => window.__main && window.__main()); }
+      if (step === 'grant') { await act(s, 'p-open:1'); if (!(await act(s, 'p-give:ops_director'))) bad.push(`${name}: кружка выдачи нет`); }
       else { await s.p.evaluate(() => { UNDO_MS = 50; }); await act(s, 'p-ask:31'); }
       await s.p.waitForTimeout(300);
       const deny = await s.p.$eval(`${card(s, k)} .deny`, e => e.textContent).catch(() => null);
@@ -5964,12 +5997,30 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       await act(s, 'p-open:2');
       // v79: «Главы клуба» в списке выдачи нет вовсе (была закрытой «уже есть» у главы)
-      if (await s.p.$(`${card(s, 2)} [data-action="p-role:head"]`)) bad.push('people-held: «Глава клуба» в списке выдачи');
-      if (await s.p.$(`${card(s, 2)} [data-action="p-role:director"][disabled]`)) bad.push('people-held: «Директор» закрыт без причины');
-      await act(s, 'p-open:0'); await act(s, 'p-role:curator');
+      if (await s.p.$(`${card(s, 2)} [data-action^="p-give:head"]`)) bad.push('people-held: «Глава клуба» в списке выдачи');
+      if (!(await s.p.$(`${card(s, 2)} [data-action="p-give:director"]`))) bad.push('people-held: «Директор» погашен без причины');
+      await act(s, 'p-open:0');
+      if (!(await act(s, 'p-role:curator'))) bad.push('people-held: роль куратора погашена целиком, а другое направление законно');
       await s.p.waitForTimeout(100);
-      if (!(await s.p.$(`${card(s, 0)} [data-action="p-dir:7"][disabled]`))) bad.push('people-held: куратору Бара снова предложен Бар');
-      if (await s.p.$(`${card(s, 0)} [data-action="p-role:curator"][disabled]`)) bad.push('people-held: роль куратора закрыта целиком, а другое направление законно');
+      if (await s.p.$(`${card(s, 0)} [data-action="p-give:curator:7"]`)) bad.push('people-held: куратору Бара снова предложен Бар');
+      await s.ctx.close();
+    }
+
+    /* Привратники самой отправки, а не разметки: `p-give` приходит СЛОВОМ из атрибута, и
+       строки с такими словами в карточке нет. Проверяется то, чего глазами не увидеть:
+       роль вне перечня выдачи и роль направления БЕЗ направления на сервер не уходят.
+       ⚠ Случай нарочно зовёт действие мимо разметки: иначе он мерил бы её, а она эти пары
+       и так не рисует — и зелёное значило бы «условие не возникло». */
+    {
+      const s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      for (const key of ['head', 'curator', 'ops_director:7']) {
+        await s.p.evaluate(k => doAction('p-give:' + k), key);
+        await s.p.waitForTimeout(120);
+      }
+      const sent = posts(s, /\/roles$/).map(c => c.body);
+      if (sent.length) bad.push('people-give-guard: ушло то, чего строка не предлагает: ' + JSON.stringify(sent));
       await s.ctx.close();
     }
 
@@ -5977,7 +6028,7 @@ if (grantsSet.length !== 1) {
     // а поздний ответ прежнего захода на новый экран не ложится. Первый запрос
     // медленный, второй быстрый; тело медленного — нечитаемый маркер.
     for (const [name, step, start, again, re] of [
-      ['people-late-grant', 'grant', ['p-open:1', 'p-role:ops_director', 'main'], ['p-open:1', 'p-role:ops_director', 'main'], /\/roles$/],
+      ['people-late-grant', 'grant', ['p-open:1', 'p-give:ops_director'], ['p-open:1', 'p-give:ops_director'], /\/roles$/],
       ['people-late-revoke', 'revoke', ['short', 'p-ask:31'], ['short', 'p-ask:31'], /\/roles\/31\/revoke$/],
     ]) {
       // задержка считается от самого запроса: таймер, заведённый при создании
@@ -5988,8 +6039,8 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, r);
       await toPeople(s);
       // 'short' — окно отмены в 50 мс: снятие уходит по таймеру окна, а не вторым нажатием (v78)
-      const run = async steps => { for (const a of steps) { if (a === 'main') await s.p.evaluate(() => window.__main && window.__main());
-        else if (a === 'short') await s.p.evaluate(() => { UNDO_MS = 50; }); else await act(s, a); } };
+      // ветка 'main' снята вместе с главной кнопкой на этом экране: выдача идёт кружком строки
+      const run = async steps => { for (const a of steps) { if (a === 'short') await s.p.evaluate(() => { UNDO_MS = 50; }); else await act(s, a); } };
       await run(start);
       await s.p.waitForTimeout(100);
       await s.p.evaluate(() => { go('home'); go('people'); });
@@ -6038,11 +6089,16 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
       await toPeople(s);
-      await act(s, 'p-open:1'); await act(s, 'p-role:ops_director');
-      await s.p.evaluate(() => { const f = window.__main; f && f(); f && f(); });
+      await act(s, 'p-open:1');
+      // ⚠ Разметочной защиты у кружка выдачи больше нет НАРОЧНО: соседние кружки не гаснут
+      // (слово designer-55), и `disabled` внутрь карточки не ставится вовсе. Значит линия
+      // защиты осталась ОДНА — проверка `PEOPLE.busy` во входе действий, и этот случай мерит
+      // именно её: два вызова подряд, как два тапа, поставленных в очередь до перерисовки.
+      if (!(await s.p.$(`${card(s, 1)} [data-action="p-give:ops_director"]`))) bad.push('people-double: кружка выдачи нет');
+      await s.p.evaluate(() => { doAction('p-give:ops_director'); doAction('p-give:ops_director'); });
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles$/).length;
-      if (pp !== 1) bad.push(`people-double: двойной тап «Выдать» отправил ${pp} запросов, а не один`);
+      if (pp !== 1) bad.push(`people-double: двойной тап кружка отправил ${pp} запросов, а не один`);
       await s.ctx.close();
     }
     // видимая сторона блокировки: пока «Выдать» в пути — надпись «Выдаём…»,
@@ -6050,18 +6106,46 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
       await toPeople(s);
-      await act(s, 'p-open:1'); await act(s, 'p-role:ops_director');
-      await s.p.evaluate(() => window.__main && window.__main());
+      await act(s, 'p-open:1');
+      if (!(await act(s, 'p-give:ops_director'))) bad.push('people-busy-look: кружка выдачи нет');
       await s.p.waitForTimeout(150);
       const v = await s.p.evaluate(() => {
-        const b = document.querySelector('#view [data-action="p-grant"]');
-        const c = document.querySelector('#view [data-action="p-close"]');
-        return { text: b && b.textContent.trim(), dis: !!(b && b.disabled), close: !!(c && c.disabled) };
+        const view = document.getElementById('view');
+        const mine = [...view.querySelectorAll('.grant')].filter(e => e.textContent.indexOf('Операционный директор') === 0)[0];
+        const c = view.querySelector('[data-action="p-close"]');
+        return { slot: mine && mine.querySelector('.sending') && mine.querySelector('.sending').textContent.trim(),
+                 stay: !!(mine && mine.querySelector('[data-action^="p-give:"]')),
+                 others: view.querySelectorAll('.round.yes').length,
+                 close: !!(c && c.disabled) };
       });
-      if (v.text !== 'Выдаём…') bad.push(`people-busy-look: пока выдача в пути, на кнопке «${v.text}», а не «Выдаём…»`);
-      if (!v.dis || !v.close) bad.push(`people-busy-look: пока выдача в пути, кнопки не заперты (Выдать ${v.dis}, Отмена ${v.close})`);
+      if (v.slot !== 'Выдаём…') bad.push(`people-busy-look: в слоте кружка «${v.slot}», а не «Выдаём…»`);
+      if (v.stay) bad.push('people-busy-look: нажатый кружок остался рядом с «Выдаём…» — нажать можно дважды');
+      // ⚠ остальные кружки НЕ гаснут — слово designer-55, и мерить его надо: «запереть
+      // карточку целиком» вернулось бы незаметно, а чужие out-* этого не увидят
+      if (!v.others) bad.push('people-busy-look: соседние кружки выдачи исчезли или погасли');
+      if (!v.close) bad.push('people-busy-look: вход «ответственность» не заперт, пока выдача в пути');
       await s.ctx.close();
     }
+    /* Занятость строки НАПРАВЛЕНИЯ: ключ парный («роль:направление»), и случай выше мерит
+       только общую роль, то есть ключ без двоеточия. Без этого случая мутация «склеивать
+       ключ всегда без направления» зелена: у общей роли слово встаёт верно, а у направления
+       «Выдаём…» ушло бы в ЧУЖУЮ строку — в строку самой роли, под указатель. */
+    {
+      const s = await peopleCase(OWNER, { grant: new Promise(() => {}) });
+      await toPeople(s);
+      await act(s, 'p-open:1');
+      if (!(await act(s, 'p-role:curator'))) bad.push('people-busy-dir: у роли направления нет указателя');
+      if (!(await act(s, 'p-give:curator:7'))) bad.push('people-busy-dir: у строки направления нет кружка выдачи');
+      await s.p.waitForTimeout(150);
+      const v = await s.p.evaluate(() => {
+        const rows = [...document.querySelectorAll('#view .grant')];
+        const slot = rows.filter(e => e.querySelector('.sending'));
+        return { gde: slot.map(e => e.textContent.replace('Выдаём…', '').trim()), skolko: slot.length };
+      });
+      if (v.skolko !== 1 || v.gde[0] !== 'Бар') bad.push('people-busy-dir: «Выдаём…» не в строке направления, а в ' + JSON.stringify(v));
+      await s.ctx.close();
+    }
+
     // то же для «Точно снять»: два нажатия, поставленные в очередь до перерисовки
     {
       const s = await peopleCase(OWNER, { revoke: new Promise(() => {}) });
@@ -6187,7 +6271,7 @@ if (grantsSet.length !== 1) {
     // прежний код проходил бы зелёным. Цель стоит в середине длинного списка: у края страницы
     // браузер не дал бы поставить карточку к верху и при правильном коде.
     for (const [how, steps] of [
-      ['выдачи', ['p-open:K', 'p-role:ops_director', 'p-grant']],
+      ['выдачи', ['p-open:K', 'p-give:ops_director']],
       ['снятия', ['short', 'p-ask:RID']],
       ['исключения', ['p-out:K', 'p-outyes:K']]]) {
       const n = 'people-land', long = clone(ROSTER), K = ROSTER.people.length + 10, RID = 70;

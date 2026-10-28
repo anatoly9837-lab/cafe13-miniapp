@@ -516,6 +516,69 @@ body.has-main .dup-main { display: none; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
+/* Кружок действия — НОВОЕ семейство (кадры E47r/E47s/E47u, Cafe13KPG#509).
+   Правило взято из кадра дословно: 26 px — не вкус, а цель нажатия не ниже 24
+   при том, что в строку 63,6 px больше не поставить без переноса.
+   ⚠ Погашенное делается рамкой и цветом значка, а НЕ `opacity`: у нас это уже
+   давало контраст ниже порога при любом фоне.
+   ⚠ Здесь объявлено только то, что УПОТРЕБЛЯЕТСЯ: `.out` (минус, исключение).
+   Зелёный `.yes`, указатель `.go`, погашенный `.off` и отмена `.no` приедут с
+   выдачей кружком — объявлять их заранее значило бы завести мёртвые правила, а
+   единица «мёртвого» для общего styles.css — весь клиент, не один экран. */
+/* ⚠ `border: 0` в основании — не уборка, а замер: без него у кружка, который рамки себе
+   не объявил (указатель направлений), проступала РОДНАЯ рамка кнопки браузера, и на
+   отрисовке она читалась как «ещё одно действие». Увидеть это можно было только снимком. */
+.round { display: inline-flex; align-items: center; justify-content: center;
+         width: 26px; height: 26px; flex: 0 0 auto; border: 0; border-radius: 50%;
+         background: transparent; cursor: pointer; }
+.round svg { width: 15px; height: 15px; fill: none; stroke-width: 2.6;
+             stroke-linecap: round; stroke-linejoin: round; }
+.round.out { border: 2px solid var(--clay); }
+.round.out svg { stroke: var(--clay); }
+
+/* Выдача — зелёный кружок с галочкой (слово владельца 29.10.2026): «Кнопку выдать сделай
+   круглишком с галочкой зеленым, тоже жирным». Цвет — лист палитры, своего оттенка здесь
+   не заводится. */
+.round.yes { border: 2px solid var(--sage); }
+.round.yes svg { stroke: var(--sage); }
+
+/* Указатель у роли направления — НЕ действие, поэтому БЕЗ рамки: кружок на этом экране
+   обещает «нажал и сделал», а здесь нажатие только раскрывает строки направлений.
+   Размер 26 px остаётся: цель нажатия не должна быть меньше кружков рядом.
+   ⚠ Облик мой, а не кадра: перечня направлений E47s не рисует вовсе — сказано в теле PR,
+   чтобы правка пришла от дизайнера, а не осталась моим вкусом. */
+.round.go svg { stroke: var(--muted); transform-origin: center; }
+.round.go[aria-expanded="true"] svg { transform: rotate(90deg); }
+/* Отказ от разрушительного действия — кружком, а само действие остаётся СЛОВОМ
+   (решение designer-55, кадр E47u): кружок это «нажал и сделал», и для
+   исключения человека из клуба такой жест слишком дёшев, а для отказа в самый раз. */
+.round.no { border: 2px solid var(--muted); }
+.round.no svg { stroke: var(--muted); }
+
+/* Пара «слово + кружок» в одной строке. */
+.rounds { display: flex; align-items: center; gap: 10px; }
+
+/* Имя и кружок перед ним — одна строка; `min-width: 0` держит длинное имя. */
+.namerow { display: flex; align-items: center; gap: 9px; min-width: 0; }
+
+/* Строки выдачи (кадр E47s): предмет слева, кружок справа, погашенная строка — без кружка.
+   ⚠ Контраст у погашенной строки МЕРЯЕТСЯ, а не берётся на глаз, поэтому цвет задан прямо
+   (`--muted` на `--surface`), а прозрачности здесь нет: `opacity` у нас уже уводила текст
+   ниже порога при любом фоне. */
+.grants { display: flex; flex-direction: column; gap: 7px; }
+
+.grant { display: flex; align-items: center; justify-content: space-between;
+         gap: 10px; padding: 9px 12px; border-radius: 9px;
+         background: var(--paper); border: 1px solid var(--line); }
+
+.grant.off { background: var(--surface); border-color: transparent; color: var(--muted); }
+
+.grant .small { color: var(--muted); }
+
+/* «Выдаём…» стоит в слоте кружка той строки, по которой нажали (слово designer-55: 12 px,
+   `--muted`); строка от этого не прыгает — слот и так держит высоту кружка. */
+.sending { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
 /* Полоса отмены — вместо второго подтверждения (его слово: «убери двойное
    подтверждение, оно только будет увеличивать путь»). */
 .undo { display: flex; align-items: center; justify-content: space-between;
