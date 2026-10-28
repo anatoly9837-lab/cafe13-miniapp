@@ -731,7 +731,7 @@ if (grantsSet.length !== 1) {
     // Фикстура несёт `photo_url: null` — значит здесь кружок обязан быть буквой.
     // Без этой строки «фото никогда не рисуется» было бы зелено и тогда, когда
     // клиент рисует его всегда.
-    if (await s.p.evaluate(() => document.querySelectorAll('.pass img').length))
+    if (await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
       bad.push('pass: фото при пустом photo_url');
     await s.ctx.close();
   }
@@ -749,29 +749,37 @@ if (grantsSet.length !== 1) {
                          json(200, Object.assign({}, PASS, { photo_url: PHOTO })));
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
+    /* Что мерим: признак `photo` на кружке, адрес в своём свойстве, и —
+       главное — что ПРАВИЛО КАДРА действительно применилось: фон у
+       псевдоэлемента `::after`, а не у самого кружка (фоном кружка буква
+       проступила бы на лице; это первая редакция кадра, отвергнутая
+       отрисовкой). Картинку в docker не загрузить — сети нет, Telegram CDN
+       не ответит, — поэтому мерится РАЗМЕТКА и ПРАВИЛО, а не пиксели лица. */
     const face = await s.p.evaluate(() => {
-      const i = document.querySelector('.pass img.avatar');
-      const sp = document.querySelector('.pass span.avatar');
-      return { src: i && i.getAttribute('src'), cls: i ? i.className : null,
-               ref: i && i.getAttribute('referrerpolicy'), letter: sp && sp.textContent };
+      const el = document.querySelector('.pass .avatar');
+      if (!el) return null;
+      const c = getComputedStyle(el), a = getComputedStyle(el, '::after');
+      const r = el.getBoundingClientRect();
+      return { tag: el.tagName, cls: el.className, letter: el.textContent,
+               prop: el.style.getPropertyValue('--photo'),
+               after: a.backgroundImage, afterSize: a.backgroundSize,
+               own: c.backgroundImage, pos: c.position, style: c.borderTopStyle,
+               radius: c.borderRadius, w: Math.round(r.width), h: Math.round(r.height),
+               imgs: document.querySelectorAll('.pass img').length };
     });
-    if (face.src !== PHOTO) bad.push('pass-photo: фото не из ответа сервера: ' + face.src);
-    if (!/(^| )photo( |$)/.test(face.cls || '')) bad.push('pass-photo: кружок без признака фото: ' + face.cls);
-    if (face.ref !== 'no-referrer') bad.push('pass-photo: адрес уходит с отсылкой: ' + face.ref);
-    if (face.letter !== null) bad.push('pass-photo: буква осталась рядом с фото: ' + face.letter);
-    // Кружок — ровно та коробка, что в кадре E50: 54x54, круг, обрезка.
-    const box = await s.p.evaluate(() => {
-      const i = document.querySelector('.pass img.avatar');
-      if (!i) return null;
-      const c = getComputedStyle(i), r = i.getBoundingClientRect();
-      return { w: Math.round(r.width), h: Math.round(r.height), fit: c.objectFit,
-               radius: c.borderRadius, style: c.borderTopStyle };
-    });
-    if (!box || box.w !== 54 || box.h !== 54) bad.push('pass-photo: коробка не 54x54: ' + JSON.stringify(box));
+    if (!face) bad.push('pass-photo: кружка нет вовсе');
     else {
-      if (box.fit !== 'cover') bad.push('pass-photo: фото не обрезается, а тянется: ' + box.fit);
-      if (!/50%/.test(box.radius)) bad.push('pass-photo: кружок не круглый: ' + box.radius);
-      if (box.style !== 'solid') bad.push('pass-photo: обводка фото пунктиром (заполнитель): ' + box.style);
+      if (!/(^| )photo( |$)/.test(face.cls)) bad.push('pass-photo: кружок без признака фото: ' + face.cls);
+      if (face.prop.indexOf(PHOTO) === -1) bad.push('pass-photo: адрес не в свойстве кружка: ' + face.prop);
+      if (face.after.indexOf(PHOTO) === -1) bad.push('pass-photo: правило кадра не применилось, фона у ::after нет: ' + face.after);
+      if (face.afterSize !== 'cover') bad.push('pass-photo: фото не обрезается, а тянется: ' + face.afterSize);
+      if (face.own !== 'none') bad.push('pass-photo: фон у САМОГО кружка — буква проступит на лице: ' + face.own);
+      if (face.letter !== 'Т') bad.push('pass-photo: буквы под фото нет, терять её незачем: ' + face.letter);
+      if (face.pos !== 'relative') bad.push('pass-photo: кружок не держит псевдоэлемент: ' + face.pos);
+      if (face.style !== 'solid') bad.push('pass-photo: обводка фото пунктиром (заполнитель): ' + face.style);
+      if (!/50%/.test(face.radius)) bad.push('pass-photo: кружок не круглый: ' + face.radius);
+      if (face.w !== 54 || face.h !== 54) bad.push(`pass-photo: коробка ${face.w}x${face.h}, в кадре 54x54`);
+      if (face.imgs) bad.push('pass-photo: фото вставлено тегом — при неудаче в кружке значок битого изображения');
     }
     const kept = await s.p.evaluate(() => localStorage.getItem('cafe13.pass'));
     if (!kept) bad.push('pass-photo: пропуск не сохранён — условие проверять не на чем');
@@ -787,18 +795,34 @@ if (grantsSet.length !== 1) {
   }
   // Негодный адрес — буква, а не `src`, которому клиент поверил. `http://`
   // здесь главный: картинка по нему пошла бы открытой сетью с устройства.
+  // ⚠ Три последних — не «мусор», а вылазка: адрес попадает в `url()` внутри
+  // атрибута `style`, и экранирование разметки от этого не спасает (`esc`
+  // превратит кавычку в `&quot;`, разборщик атрибута вернёт её обратно).
+  // Поэтому запрещён НАБОР ЗНАКОВ, и проверять надо именно его.
   for (const [name, photo] of [['http', 'http://t.me/i/userpic/320/0000000000.jpg'],
                                ['пусто', ''], ['число', 7], ['null', null],
-                               ['нет поля', undefined]]) {
+                               ['нет поля', undefined],
+                               ['закрыть url', 'https://t.me/0.jpg");color:red;x:url("y'],
+                               ['кавычка', "https://t.me/0'.jpg"],
+                               ['пробел', 'https://t.me/0 .jpg']]) {
     const d = Object.assign({}, PASS);
     if (photo === undefined) delete d.photo_url; else d.photo_url = photo;
     const s = await open(true, true, json(200, OWNER), null, json(200, d));
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    const имг = await s.p.evaluate(() => document.querySelectorAll('.pass img').length);
-    const буква = await s.p.evaluate(() => { const sp = document.querySelector('.pass span.avatar'); return sp && sp.textContent; });
-    if (имг !== 0) bad.push(`pass-photo-bad(${name}): клиент поверил адресу`);
-    if (буква !== 'Т') bad.push(`pass-photo-bad(${name}): в кружке не буква имени: ` + буква);
+    const кружок = await s.p.evaluate(() => {
+      const el = document.querySelector('.pass .avatar');
+      if (!el) return null;
+      return { cls: el.className, letter: el.textContent, html: el.outerHTML,
+               after: getComputedStyle(el, '::after').backgroundImage };
+    });
+    if (!кружок) bad.push(`pass-photo-bad(${name}): кружка нет вовсе`);
+    else {
+      if (/(^| )photo( |$)/.test(кружок.cls)) bad.push(`pass-photo-bad(${name}): клиент поверил адресу: ` + кружок.html);
+      if (кружок.after !== 'none') bad.push(`pass-photo-bad(${name}): фон у ::after есть: ` + кружок.after);
+      if (кружок.letter !== 'Т') bad.push(`pass-photo-bad(${name}): в кружке не буква имени: ` + кружок.letter);
+      if (/color *: *red/.test(кружок.html)) bad.push(`pass-photo-bad(${name}): чужое правило попало в разметку: ` + кружок.html);
+    }
     if (!(await s.view()).includes('XIII · 0042')) bad.push(`pass-photo-bad(${name}): код не показан`);
     await s.ctx.close();
   }
@@ -821,7 +845,7 @@ if (grantsSet.length !== 1) {
     });
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.p.evaluate(() => document.querySelectorAll('.pass img').length)))
+    if (!(await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length)))
       bad.push('pass-photo-offline: фото не приехало — предел проверять не на чем');
     мёртв = true;
     await s.p.evaluate(() => switchTo(false, null));
@@ -829,7 +853,7 @@ if (grantsSet.length !== 1) {
     const t = await s.view();
     if (!t.includes('Сервер клуба недоступен')) bad.push('pass-photo-offline: не экран сбоя: ' + t.slice(0, 80));
     if (!t.includes('Пропуск, сохранённый на телефоне')) bad.push('pass-photo-offline: сохранённый пропуск не показан');
-    if (await s.p.evaluate(() => document.querySelectorAll('.pass img').length))
+    if (await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
       bad.push('pass-photo-offline: фото на экране сбоя — без сети оно не загрузится, а кружок обещает человека');
     await s.p.screenshot({ path: `${OUT}/live-pass-photo-offline.png`, fullPage: true });
     await s.ctx.close();
@@ -1578,7 +1602,7 @@ if (grantsSet.length !== 1) {
     if (has !== show) bad.push(`${name}: сохранённый пропуск ${has ? 'показан' : 'не показан'}`);
     if (show && !t.includes('XIII · 0042')) bad.push(`${name}: показан не тот код`);
     // В запасе адреса фото нет и не бывает — значит кружок здесь всегда буква.
-    if (show && await s.p.evaluate(() => document.querySelectorAll('.pass img').length))
+    if (show && await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
       bad.push(`${name}: в сохранённом пропуске фото`);
     if (!t.includes('Сервер клуба недоступен')) bad.push(`${name}: нет экрана сбоя`);
     if (name === 'offline-pass') await s.p.screenshot({ path: `${OUT}/live-offline-pass.png`, fullPage: true });
