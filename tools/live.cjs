@@ -5806,6 +5806,30 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
+    // ── место при перерисовке (Cafe13KPG#490): тот же экран — место сохраняется, другой — сверху ──
+    // Список длинный нарочно: в короткий экран прокрутке нечего беречь, и случай прошёл бы по построению.
+    {
+      const n = 'keep-place', long = clone(ROSTER);
+      for (let i = 0; i < 12; i++) long.people.push({ tg_user_id: 710 + i, first_name: 'Запасной ' + (i + 1), last_name: null, lang: 'ru',
+        roles: [{ id: 60 + i, role: 'staff', direction_id: null, direction: null, granted_at: '2026-10-20T10:00:00+00:00' }], memberships: [] });
+      const s = await peopleCase(OWNER, { people: json(200, long) });
+      await toPeople(s);
+      const room = await s.p.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+      if (room < 400) bad.push(`${n}: прокручивать некуда (${room} px) — случай не проверяет место`);
+      await s.p.evaluate(() => window.scrollTo(0, 600)); await s.p.waitForTimeout(100);
+      const before = await s.p.evaluate(() => window.scrollY);
+      // действие на том же экране, которое перерисовывает его целиком: вопрос перед снятием роли
+      await act(s, 'p-ask:70'); await s.p.waitForTimeout(150);
+      const after = await s.p.evaluate(() => window.scrollY);
+      if (before < 500) bad.push(`${n}: прокрутка не встала (${before}) — сравнивать нечего`);
+      else if (Math.abs(after - before) > 2) bad.push(`${n}: после действия на том же экране место уехало: было ${before}, стало ${after}`);
+      // другой экран — сверху
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click()); await s.p.waitForTimeout(200);
+      const other = await s.p.evaluate(() => window.scrollY);
+      if (other !== 0) bad.push(`${n}: другой экран открылся не сверху (${other})`);
+      await s.ctx.close();
+    }
+
     // ── «Исключить» (кадры E47v, E47d, E47g, E47zh; v74) ──
     const outs = s => s.calls.filter(c => c.method === 'POST' && /\/access\/\d+\/revoke$/.test(c.url)).map(c => c.url.match(/access\/(\d+)/)[1]);
     // по ID ЧЕЛОВЕКА, а не по месту карточки: исключаем ВТОРОГО ПО ОТРИСОВКЕ (это третий в ответе, Глеб 703)

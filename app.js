@@ -5853,8 +5853,15 @@ function bare() { return !!BARE[current]; }
 var current = 'home';
 var param = null;
 
+/* Какой экран нарисован последним: «тот же экран» сохраняет место прокрутки, другой — сверху.
+   Слово владельца 28.10.2026: «каждое действие и каждый клик дергает экран… после обновления
+   возвращайся где было» (Cafe13KPG#490). Раньше render() кончался безусловным scrollTo(0, 0). */
+var RENDERED = null;
 function render() {
   var view = document.getElementById('view');
+  var here = current + '|' + String(param), y = window.scrollY || 0;
+  var same = RENDERED === here;
+  RENDERED = here;
   view.innerHTML = (bare() ? '' : testStrip()) + SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
 
   var root = tabList().some(function (t) { return t[0] === current; });
@@ -5881,7 +5888,8 @@ function render() {
 
   sunButton();
   tgChrome();
-  window.scrollTo(0, 0);
+  // место берётся ДО подмены разметки: после неё высота страницы другая, и браузер уже сдвинул бы его
+  window.scrollTo(0, same ? y : 0);
 }
 
 /* ── рабочие экраны в демонстрации (Cafe13KPG#409) ─────
