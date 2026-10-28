@@ -638,12 +638,18 @@ if (grantsSet.length !== 1) {
       const op = q => { const e = document.querySelector(q); return e ? Number(getComputedStyle(e).opacity) : null; };
       const li = document.querySelector('#view .listitem[disabled]');
       const deco = q => { const e = document.querySelector(q); return e ? getComputedStyle(e).textDecorationLine : null; };
+      const col = q => { const e = document.querySelector(q); return e ? getComputedStyle(e).color : null; };
       return { off: deco('#tabs button[disabled]'), on: deco('#tabs [data-go="home"]'), op: op('#tabs button[disabled]'),
+               cOff: col('#tabs button[disabled]'), cOn: col('#tabs [data-go="manage"]:not([aria-current])'),
                chev: li && li.querySelector('.chev') ? getComputedStyle(li.querySelector('.chev')).display : null,
                why: li ? (li.querySelector('.grow .small') || {}).textContent || '' : null };
     });
     // «нельзя» у вкладки — зачёркивание, а не бледность (designer-55: прозрачность .38 давала контраст 1.74)
     if (!/line-through/.test(look.off || '') || /line-through/.test(look.on || '')) bad.push(`${n}: серая вкладка не зачёркнута или зачёркнута живая (${look.off} против ${look.on})`);
+    // цвет серой обязан СОВПАДАТЬ с живой невыбранной: различие несёт зачёркивание, а не цвет (designer-55) —
+    // «сделаю бледнее» правкой color прошло бы мимо двух признаков рядом
+    if (look.cOn === null) bad.push(`${n}: нет живой невыбранной вкладки «Управление» — цвет сравнить не с чем`);
+    else if (look.cOff !== look.cOn) bad.push(`${n}: цвет серой вкладки ${look.cOff} не равен цвету живой невыбранной ${look.cOn}`);
     if (look.op !== null && look.op < 1) bad.push(`${n}: серая вкладка погашена прозрачностью (${look.op}) — контраст ниже порога`);
     if (look.chev === null) bad.push(`${n}: на главной нет погашенной строки списка со стрелкой — облик строки не проверен`);
     else if (look.chev !== 'none') bad.push(`${n}: у погашенной строки осталась стрелка «туда»`);
