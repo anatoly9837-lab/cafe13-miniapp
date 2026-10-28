@@ -6810,6 +6810,35 @@ if (grantsSet.length !== 1) {
       if (!t2.includes('Просьбы не загрузились') || t2.includes('Ада Доступова')) bad.push(`${n}: битая строка не отвергла ответ целиком`);
       await s2.ctx.close();
     }
+    // вкладка «Управление» (E46): последней, только у главы; до ответа сервера — не ноль
+    {
+      const n = 'manage-tab';
+      let release;
+      const held = new Promise(r => { release = r; });
+      const s = await joinCase(OWNER, { list: held.then(() => json(200, JREQ)) });
+      const tabs = await s.p.evaluate(() => [...document.querySelectorAll('#tabs [data-go]')].map(b => b.getAttribute('data-go')));
+      if (tabs[tabs.length - 1] !== 'manage') bad.push(`${n}: «Управление» не последняя вкладка: ${JSON.stringify(tabs)} (кадр E46)`);
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click());
+      await s.p.waitForTimeout(250);
+      let t = await s.view();
+      // различитель: список ещё в пути — иначе случай не проверяет подпись «до счёта»
+      if (gets(s, /\/join\/requests$/).length !== 1) bad.push(`${n}: вкладка не спросила очередь — счёту неоткуда взяться`);
+      if (!t.includes('Кто просится в клуб')) bad.push(`${n}: пока счёт не пришёл, нет «Кто просится в клуб» (кадр E46)`);
+      if (/Ждут ответа: 0/.test(t)) bad.push(`${n}: до ответа сервера показан ноль — читается как «никто не просится»`);
+      for (const w of ['Кто в клубе', 'Заявки на доступ', 'Члены клуба', 'Кто в клубе и с какими уровнями'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}» (кадр E46)`);
+      release();
+      await s.p.waitForTimeout(400);
+      t = await s.view();
+      if (!t.includes('Ждут ответа: 2')) bad.push(`${n}: счёт ждущих с сервера не показан (ждали «Ждут ответа: 2»)`);
+      // на вкладке чеки не качаются: только счёт
+      if (gets(s, /\/receipt$/).length) bad.push(`${n}: вкладка скачала чеки`);
+      await s.ctx.close();
+      const MEM = clone(OWNER); MEM.roles = [];
+      const s2 = await joinCase(MEM);
+      if (await s2.p.$('#tabs [data-go="manage"]')) bad.push(`${n}: у члена клуба без роли есть вкладка «Управление»`);
+      await s2.ctx.close();
+    }
     // право: член без ролей — отказ без запроса; свидетели КАЖДОЙ половины права (#434)
     {
       const n = 'join-rights';
