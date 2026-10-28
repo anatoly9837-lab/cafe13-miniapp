@@ -2526,6 +2526,12 @@ if (grantsSet.length !== 1) {
     kind: 'paid', price: '400.00', about: 'Живой звук, место у сцены', filmed: false,
     organizer_id: 500, organizer_first_name: 'Образец', organizer_last_name: '',
     taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null,
+    // Оплата МОЕЙ записи: поля есть в КАЖДОЙ строке живого ответа (снимок
+    // `events-afisha-paid.json`, 24.10.2026), и `null` у них значит «моей
+    // записи здесь нет» — то же, что `booked_by_me: null` строкой выше.
+    // Строка без записи обязана нести именно null: иначе мутация, читающая
+    // «не оплачено» из отсутствия записи, останется зелёной.
+    my_booking_paid: null, my_amount_due: null,
     // Место есть в КАЖДОЙ строке живого ответа (снимок 23.10.2026), и оба
     // поля бывают null сразу: по умолчанию фикстура — мероприятие без места.
     place_id: null, place_name: null
