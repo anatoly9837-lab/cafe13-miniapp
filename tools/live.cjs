@@ -6463,8 +6463,10 @@ if (grantsSet.length !== 1) {
       const outs = await s.p.$$eval('[data-person] [data-action^="p-out:"]', es => es.map(e => ({
         w: Math.round(e.getBoundingClientRect().width),
         predok: e.parentElement.className || e.parentElement.tagName })));
-      const naKartochku = outs.length / (await s.p.$$eval('[data-person]', es => es.length));
-      if (naKartochku !== 1) bad.push(`${n}: кнопок исключения на карточку ${naKartochku}, ждали ровно одну`);
+      const kartochek = await s.p.$$eval('[data-person]', es => es.length);
+      // ⚠ числом, а не долей: «1,3333 кнопки на карточку» в отказе нечитаемо, а отчёт
+      // прибора — часть прибора (его же текст уедет в закрывающий комментарий карточки)
+      if (outs.length !== kartochek) bad.push(`${n}: кнопок исключения ${outs.length} на ${kartochek} карточек, ждали по одной`);
       const shirokie = outs.filter(o => o.w > 120);
       if (shirokie.length) bad.push(`${n}: «Исключить» вернулось СТРОКОЙ во всю ширину (${JSON.stringify(shirokie)}) — вход в исключение живёт в колонке, а не рядом`);
       const chuzhie = outs.filter(o => !/fold-wrap|namerow/.test(o.predok));
