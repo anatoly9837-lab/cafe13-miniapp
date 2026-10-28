@@ -44,6 +44,8 @@ const OWNER = {
   // их пока не читает — поле здесь, чтобы заглушка совпадала с боем по форме
   memberships: [{ level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }],
   membership_active: true,
+  // своя заявка на членство (Cafe13KPG#415): у члена клуба — null, как в снимке me-member (cafe13-miniapp#106)
+  membership_request: null,
   balance: 3170,                      // не 1250: 1250 — демонстрационный баланс, его не спутать
   roles: [{ role: 'head', direction_id: null }, { role: 'admin', direction_id: null },
           { role: 'god_mentor', direction_id: null }]
