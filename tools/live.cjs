@@ -5307,10 +5307,14 @@ if (grantsSet.length !== 1) {
       if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
       return undefined;
     });
+    // вход — с вкладки «Управление» (кадр E46, Cafe13KPG#413), а не с главной: путь
+    // проходится так, как его проходит глава клуба, — вкладка, потом строка
     const toPeople = async s => {
-      const entry = await s.p.$('[data-go="people"]');
-      if (!entry) return false;
-      await s.p.evaluate(() => document.querySelector('[data-go="people"]').click());
+      if (!(await s.p.$('#tabs [data-go="manage"]'))) return false;
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click());
+      await s.p.waitForTimeout(250);
+      if (!(await s.p.$('#view [data-go="people"]'))) return false;
+      await s.p.evaluate(() => document.querySelector('#view [data-go="people"]').click());
       await s.p.waitForTimeout(250);
       return true;
     };
@@ -5404,6 +5408,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(MASTER, {});
       if (await s.p.$('[data-go="people"]')) bad.push('people-master: у куратора направления есть вход «Люди»');
+      if (await s.p.$('#tabs [data-go="manage"]')) bad.push('people-master: у куратора направления есть вкладка «Управление»');
       await s.p.evaluate(() => go('people'));
       await s.p.waitForTimeout(200);
       if (!(await s.view()).includes('может глава клуба')) bad.push('people-master: экран «Люди» не отказал куратору');
@@ -6536,18 +6541,19 @@ if (grantsSet.length !== 1) {
       await s.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s.p.waitForTimeout(300);
       if (!(await s.p.$('#view [data-go="memberRequests"]'))) bad.push(`${n}: у главы клуба нет строки «Заявки на членство»`);
       else if (!(await s.view()).includes('Ждут ответа: 1')) bad.push(`${n}: в строке входа нет счёта ждущих с сервера (кадр E42g)`);
-      // кадр E42g: одна группа «Работа», «Заявки» перед «Людьми»; второй группы «Клуб» нет
+      // кадр E42g: одна группа «Работа»; второй группы «Клуб» нет. «Люди» в E42g стояли в той же
+      // группе — с решения владельца 28.10.2026 они во вкладке «Управление» (E46, Cafe13KPG#413),
+      // и на главной их быть не должно: рабочее не живёт внутри клиентского.
       const g = await s.p.evaluate(() => {
         const labels = [...document.querySelectorAll('#view .group > .label')].map(l => l.textContent);
-        const r = document.querySelector('#view [data-go="memberRequests"]'), p = document.querySelector('#view [data-go="people"]');
+        const r = document.querySelector('#view [data-go="memberRequests"]');
         return { work: labels.filter(l => l === 'Работа').length, club: labels.filter(l => l === 'Клуб').length,
-                 same: !!r && !!p && r.closest('.group') === p.closest('.group'),
-                 order: !!r && !!p && !!(r.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING),
+                 people: !!document.querySelector('#view [data-go="people"]'),
                  label: r && r.closest('.group') ? r.closest('.group').querySelector(':scope > .label').textContent : null };
       });
       if (g.work !== 1 || g.club !== 0) bad.push(`${n}: групп «Работа» ${g.work}, «Клуб» ${g.club} — ждали одну «Работа» (кадр E42g)`);
-      if (!g.same || g.label !== 'Работа') bad.push(`${n}: «Заявки» и «Люди» не в одной группе «Работа»: ${JSON.stringify(g)} (кадр E42g)`);
-      else if (!g.order) bad.push(`${n}: «Люди» стоят выше «Заявок» (кадр E42g)`);
+      if (g.label !== 'Работа') bad.push(`${n}: «Заявки на членство» не в группе «Работа»: ${JSON.stringify(g)} (кадр E42g)`);
+      if (g.people) bad.push(`${n}: на главной остался вход «Люди» — он во вкладке «Управление» (E46)`);
       await s.ctx.close();
       const MEM = clone(OWNER); MEM.roles = [];
       const s2 = await memCase(MEM);
