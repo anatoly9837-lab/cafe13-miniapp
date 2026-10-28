@@ -645,6 +645,14 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 
 var PASS = null;           // пропуск с сервера в этом запуске
 var PASS_FAIL = '';        // почему пропуска нет: текст для экрана
 var PASS_KEY = 'cafe13.pass';
+/* Адрес фото Telegram — ОТДЕЛЬНОЙ переменной, а не полем пропуска, и это не
+   вкус, а условие решения владельца 28.10.2026 («по аватарке делаем»): в
+   память телефона адрес фотографии человека не кладётся. Пропуск пишется в
+   `localStorage` из двух мест, и одно из них — `loadPass` — кладёт разобранный
+   объект ЦЕЛИКОМ; поле внутри пропуска уехало бы в хранилище само, без чьей-то
+   ошибки. Здесь запрет держится ПОСТРОЕНИЕМ: класть нечего. Живёт один
+   запуск — значит без сети адреса нет, и кружок берёт букву имени (кадр E50b). */
+var PASS_PHOTO = null;
 
 function fromPass(d) {
   if (!d || typeof d !== 'object') return null;
@@ -703,6 +711,13 @@ function loadPass() {
   PASS_FAIL = '';
   api('GET', '/pass').then(function (r) {
     var p = r.status === 200 ? fromPass(r.data) : null;
+    /* Адрес проверяется так же, как в списке людей: строка и только `https://`.
+       Чужая схема в `src` — не картинка, а вылазка; пустое поле у человека без
+       фото даёт букву. Адрес считается ДО ветвления и обнуляется вместе с
+       пропуском: когда сервер отказал, `p` пустой — значит и фото нет, и
+       прошлое на экране не остаётся. */
+    PASS_PHOTO = p && typeof r.data.photo_url === 'string' &&
+                 /^https:\/\//.test(r.data.photo_url) ? r.data.photo_url : null;
     if (p) {
       PASS = p;
       p.uid = tgUid();
@@ -739,10 +754,20 @@ function qrSvg(text) {
     '" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path fill="#15171A" d="' + out + '"/></svg>';
 }
 
-function passCard(p) {
+/* Фото — ВТОРЫМ доводом, а не из `PASS_PHOTO` изнутри: карточку рисуют два
+   места, и у второго — экрана сбоя — фото не бывает по сути, он показывает
+   запас с телефона, а в запасе фото нет. Довод делает это видимым в месте
+   вызова: «без сети — буква» выходит из того, что передать нечего, а не из
+   проверки сети, которой в клиенте нет и заводить её незачем.
+   Форма взята слот в слот у строки очереди бара: тот же `<img class="avatar">`,
+   тот же `referrerpolicy`, та же буква имени при пустом адресе — правило
+   семейства одно, второй его редакции здесь не появляется. Кадры E50, E50b. */
+function passCard(p, photo) {
   return '<div class="pass">' +
       '<div class="who">' +
-        '<span class="avatar">' + esc(p.name.slice(0, 1).toUpperCase()) + '</span>' +
+        (photo
+          ? '<img class="avatar photo" src="' + esc(photo) + '" alt="" referrerpolicy="no-referrer">'
+          : '<span class="avatar">' + esc(p.name.slice(0, 1).toUpperCase()) + '</span>') +
         '<span class="col"><b style="font-size:19px;font-family:Prata,Georgia,serif">' + esc(p.name) + '</b>' +
         '<span style="font-size:12px;color:#B8B6AE">' + esc(p.level) + ' · ' + esc(p.lifelong ? 'пожизненно' : 'до ' + ruDate(p.ends)) + '</span></span>' +
       '</div>' +
@@ -3963,7 +3988,7 @@ var SCREENS = {
 
   pass: function () {
     if (LIVE) {
-      if (PASS) return passCard(PASS) +
+      if (PASS) return passCard(PASS, PASS_PHOTO) +
         '<div class="note">' + svg(ICON.info) +
           '<span>Код постоянный и <b>сохранён на этом телефоне</b>: если у двери нет сети, приложение покажет его без сервера. Код — это номер, а не секрет: переслать его кому-то — всё равно что отдать пропуск.</span>' +
         '</div>';
