@@ -5311,7 +5311,9 @@ if (grantsSet.length !== 1) {
       if (u.endsWith('/people')) return r.people || json(200, ROSTER);
       // r.dirs бывает ФАБРИКОЙ: задержка ответа начинается в момент запроса, а не при заведении случая
       // (готовый промис истекал под нагрузкой раньше, чем случай доходил до проверки)
-      if (u.endsWith('/directions')) return typeof r.dirs === 'function' ? r.dirs() : r.dirs || json(200, DIRS);
+      // ⚠ r.dirs читается ОДИН раз: у people-late-dirs это геттер со счётчиком, и второе
+      // чтение съедало «медленный» первый ответ — гонки не возникало
+      if (u.endsWith('/directions')) { const d = r.dirs; return typeof d === 'function' ? d() : d || json(200, DIRS); }
       if (u.endsWith('/roles')) return r.grant || json(201, { id: 40, member_id: 702, role: 'x', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' });
       if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
       // исключение (v74): ответ — как у сервера (join.py, revoke_access): строка допуска плюс число оборванных
