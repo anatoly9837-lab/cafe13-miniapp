@@ -670,6 +670,7 @@ body.has-main .dup-main { display: none; }
    совпадает с задержкой»). С привратником число лучше полосы: человек
    знает, сколько у него времени. Без привратника — хуже. */
 .undo .sec { font-variant-numeric: tabular-nums; color: var(--muted);
+             font-size: 13px; white-space: nowrap; }
 /* v91, кадры E47f/E47h (Cafe13KPG#521), правила designer-55 дословно: «Отменить» у итога роли — справа
    ПРАВИЛОМ (у .note нет выравнивания, и на коротком итоге кнопка вставала в 154 px от края); в раскрытой
    карточке .note и .undo сливались с её фоном (оба --surface) — фон бумаги. */
@@ -677,4 +678,3 @@ body.has-main .dup-main { display: none; }
 .note.act .btn { margin-left: auto; }
 .card.dense.open .note { background: var(--paper); }
 .card.dense.open .undo { background: var(--paper); }
-             font-size: 13px; white-space: nowrap; }

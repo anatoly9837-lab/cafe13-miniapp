@@ -6607,7 +6607,13 @@ if (grantsSet.length !== 1) {
       await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
       if (!(await s.p.$('[data-action="p-back"]'))) bad.push(`${n}: «Отменить» нет и до выбора другой карточки — проверять нечего`);
       // своя карточка — «Отменить» живёт
-      await act(s, 'p-open:0'); await act(s, 'p-close'); await s.p.waitForTimeout(150);
+      // в РАСКРЫТОЙ своей карточке плашка не сливается с её фоном (designer-55: оба были --surface)
+      await act(s, 'p-open:0'); await s.p.waitForTimeout(150);
+      const bg = await s.p.evaluate(() => { const c = document.querySelector('[data-person="0"]'), n = c && c.querySelector('.note');
+        return c && n ? [getComputedStyle(c).backgroundColor, getComputedStyle(n).backgroundColor] : null; });
+      if (!bg) bad.push(`${n}: в раскрытой карточке нет плашки итога — фон проверить не на чем`);
+      else if (bg[0] === bg[1]) bad.push(`${n}: в раскрытой карточке плашка того же фона, что карточка (${bg[0]}) — её не видно`);
+      await act(s, 'p-close'); await s.p.waitForTimeout(150);
       if (!(await s.p.$('[data-action="p-back"]'))) bad.push(`${n}: действие у СВОЕЙ карточки погасило «Отменить»`);
       await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
       if (await s.p.$('[data-action="p-back"]')) bad.push(`${n}: выбрана другая карточка, а «Отменить» осталось`);
