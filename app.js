@@ -667,6 +667,9 @@ var FROZEN = { organizer: 1, guest: 1, events: 1, event: 1, eventNew: 1, booking
                bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1, barQueue: 1, barMoney: 1, barDay: 1,
                barCards: 1, barCard: 1, staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
+// куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
+// по слову владельца серым гаснет всё, кроме двух ролей, а не только то, что было включено
+function closed(screen) { return LIVE && (!!FROZEN[screen] || !WIRED[screen]); }
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -6085,7 +6088,7 @@ function render() {
   // вход на замороженный экран гаснет ПО СВОЙСТВУ, а не перечнем кнопок: любой [data-go] туда
   // (Cafe13KPG#510); облик — общий .btn[disabled]
   if (LIVE) [].forEach.call(view.querySelectorAll('[data-go]'), function (b) {
-    if (frozen(b.getAttribute('data-go'))) { b.disabled = true; b.setAttribute('aria-disabled', 'true'); }
+    if (closed(b.getAttribute('data-go'))) { b.disabled = true; b.setAttribute('aria-disabled', 'true'); }
   });
 
   var root = tabList().some(function (t) { return t[0] === current; });
@@ -6112,7 +6115,7 @@ function render() {
     var on = t[0] === current;
     // замороженная вкладка — серая и не нажимается, а не спрятана (буква владельца, Cafe13KPG#510)
     return '<button type="button" data-go="' + t[0] + '"' + (on ? ' aria-current="page"' : '') +
-      (frozen(t[0]) ? ' disabled aria-disabled="true"' : '') + '>' +
+      (closed(t[0]) ? ' disabled aria-disabled="true"' : '') + '>' +
       svg(t[2]) + '<span>' + t[1] + '</span></button>';
   }).join('');
 
