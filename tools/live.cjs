@@ -6369,7 +6369,10 @@ if (grantsSet.length !== 1) {
       const pp = lvPosts(s);
       if (pp.length !== 1 || !pp[0].url.endsWith('/memberships/703/revoke') || pp[0].body !== JSON.stringify({ level: 'partner' }))
         bad.push(`${n}: окно вышло — ушло ${JSON.stringify(pp.map(c => [c.url.replace(/^.*\/memberships/, ''), c.body]))}, ждали один запрос 703 {level: partner}`);
-      if (!(await note(s, 2)).includes('Снято: Бизнес-партнёр.')) bad.push(`${n}: в карточке нет итога «Снято: Бизнес-партнёр»`);
+      const done = await note(s, 2);
+      if (!done.includes('Снято: Бизнес-партнёр.')) bad.push(`${n}: в карточке нет итога «Снято: Бизнес-партнёр»`);
+      // необратимость названа человеку: ручка срок не хранит (обрыв `ends_at = now()`)
+      if (!done.includes('Вернуть прежний срок нечем')) bad.push(`${n}: итог не говорит, что срок вернуть нечем: ${done}`);
       if (posts(s, /\/roles\/\d+\/revoke$/).length || posts(s, /\/access\//).length) bad.push(`${n}: снятие уровня задело роль или доступ`);
       await s.ctx.close();
     }
