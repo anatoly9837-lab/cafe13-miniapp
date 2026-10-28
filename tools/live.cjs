@@ -123,6 +123,13 @@ if (grantsSet.length !== 1) {
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
   const bad = [];
+  // Заморозка словом владельца 29.10.2026 (Cafe13KPG#510): экраны вне двух ролей (член клуба и
+  // владелец) в живом режиме рисуют «временно недоступно» (FROZEN в app.js). Их случаи СНЯТЫ из
+  // прогона, а не удалены: вернём экран — вернём случаи (перенести экран в WIRED и снять приставку
+  // `if (thawed(…))` у его раздела). THAW=1 снимает только ПРОПУСК случаев, а приложение не размораживает:
+  // в живом режиме снятые случаи покраснеют на «временно недоступно». Снятые разделы печатаются в конце.
+  const SKIPPED = new Set();
+  const thawed = sec => { if (process.env.THAW === '1') return true; SKIPPED.add(sec); return false; };
   // Исключение посреди батареи не глотает уже найденное: без этого обрыв печатал
   // только стек, и красные строки всех пройденных случаев терялись (Cafe13KPG#415).
   process.on('unhandledRejection', e => {
@@ -253,6 +260,40 @@ if (grantsSet.length !== 1) {
       if (s.calls.length) bad.push(`${n}: витрина спросила сервер (${s.calls.length})`);
       await s.ctx.close();
     }
+  }
+
+  // ── баланс в шапке: скрыт по умолчанию, тап показывает и прячет; кошелёк — на пополнение (Cafe13KPG#500) ──
+  {
+    const n = 'balans-shapka';
+    const who = clone(OWNER); who.roles = [];        // член клуба без прав кассы: вид «у всех остальных»
+    const s = await open(true, true, json(200, who));
+    const head = () => s.p.evaluate(() => document.getElementById('bar-right').textContent);
+    const pressed = () => s.p.evaluate(() => { const b = document.getElementById('bal'); return b ? b.getAttribute('aria-pressed') : null; });
+    if (await pressed() === null) bad.push(`${n}: в шапке нет баланса`);
+    else {
+      if ((await head()).includes('3 170') || await pressed() !== 'false') bad.push(`${n}: баланс в шапке не скрыт по умолчанию`);
+      await s.p.click('#bal'); await s.p.waitForTimeout(100);
+      if (!(await head()).includes('3 170 ฿') || await pressed() !== 'true') bad.push(`${n}: тап не показал баланс`);
+      await s.p.click('#bal'); await s.p.waitForTimeout(100);
+      if ((await head()).includes('3 170') || await pressed() !== 'false') bad.push(`${n}: повторный тап не спрятал баланс`);
+    }
+    if (!(await s.p.$('#wallet'))) bad.push(`${n}: в шапке нет кошелька`);
+    else {
+      await s.p.click('#wallet'); await s.p.waitForTimeout(150);
+      if (await s.p.evaluate(() => current) !== 'topup') bad.push(`${n}: кошелёк не ведёт на пополнение`);
+      const t = await s.view();
+      for (const w of ['Онлайн', 'Касса', 'USDT', 'Пока только баты.', 'Приём онлайн-пополнений ещё не включён.'])
+        if (!t.includes(w)) bad.push(`${n}: на пополнении нет «${w}»`);
+      // у хостес пополнить МОЖНО (касса, POST /till вид topup): серая только кнопка, путь не отменён
+      if (!t.includes('Сейчас — у хостес клуба')) bad.push(`${n}: у «Кассы» не сказано, что у хостес пополнить можно уже сейчас`);
+      const live = await s.p.$$eval('#view .btn', bs => bs.filter(b => /^(Онлайн|Касса|USDT)$/.test(b.textContent.trim()) && !b.disabled).map(b => b.textContent.trim()));
+      if (live.length) bad.push(`${n}: пути пополнения нажимаются без серверных ручек: ${JSON.stringify(live)}`);
+    }
+    await s.ctx.close();
+    // экран входа: человека ещё нет — и баланса в шапке нет
+    const s2 = await open(true, true, json(403, { detail: 'доступа нет' }));
+    if (await s2.p.evaluate(() => document.getElementById('bar-right').innerHTML !== '')) bad.push(`${n}: баланс в шапке на экране входа`);
+    await s2.ctx.close();
   }
 
   // ── Telegram есть, подписи нет — витрина, а не вход (условие arhitector-47 на v69) ──
@@ -561,13 +602,85 @@ if (grantsSet.length !== 1) {
       // что партнёр увидит за вкладкой: partner вне WIRED, сервера за ним нет (Cafe13KPG#99) —
       // снимок для решения владельца, а не проверка
       // без вкладки снимать нечего: строка о составе уже стоит выше, а клик в пустоту оборвал бы батарею
-      if (name === 'tabs-dva-member-vyigral' && await s.p.$('#tabs [data-go="partner"]')) {
+      // с заморозкой (Cafe13KPG#510) вкладка «Моё дело» серая — снимать за ней нечего, и клик по ней оборвал бы батарею
+      if (name === 'tabs-dva-member-vyigral' && await s.p.$('#tabs [data-go="partner"]:not([disabled])')) {
         await s.p.click('#tabs [data-go="partner"]');
         await s.p.waitForTimeout(150);
         await s.p.screenshot({ path: `${OUT}/live-tabs-partner.png` });
       }
       await s.ctx.close();
     }
+  }
+
+  // ── заморозка (Cafe13KPG#510, слово владельца 29.10.2026): всё, кроме члена клуба и владельца ──
+  // Серое и не нажимается — вкладки и входы; экран — «временно недоступно», а не «ещё не подключено»
+  // (тот говорит «работает только в демонстрации», бывшему живому экрану это неправда). Демонстрация
+  // вне Telegram не меняется. Различитель «по свойству»: вход на главной ищется ПО СОСТОЯНИЮ кнопки,
+  // а не по перечню, и самоконтроль — что погашенные входы на главной вообще есть.
+  {
+    const n = 'freeze', KEEP = ['home', 'manage'];
+    const s = await open(true, true, json(200, OWNER));
+    const tabs = await s.p.$$eval('#tabs button', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
+    if (tabs.length < 4) bad.push(`${n}: вкладок ${tabs.length} — фикстура не та, проверять нечего`);
+    tabs.forEach(([g, off]) => {
+      if (KEEP.includes(g) && off) bad.push(`${n}: живая вкладка «${g}» погашена`);
+      if (!KEEP.includes(g) && !off) bad.push(`${n}: вкладка «${g}» не погашена — заморожено всё, кроме двух ролей`);
+    });
+    const off = tabs.filter(t => t[1]).map(t => t[0]);
+    if (off.length) {
+      // щелчок по подписи ВНУТРИ серой кнопки, изнутри страницы: событие всплывает к обработчику мимо
+      // `disabled` кнопки, и держит его только проверка в обработчике, а не то, что мышь не попала
+      await s.p.evaluate(g => document.querySelector(`#tabs [data-go="${g}"] span`).click(), off[0]);
+      await s.p.waitForTimeout(150);
+      if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: серая вкладка «${off[0]}» открылась`);
+    }
+    // облик: без своего правила погашенное выглядело живым (снимок 29.10.2026) — серость спрашивается у отрисовки
+    const look = await s.p.evaluate(() => {
+      const op = q => { const e = document.querySelector(q); return e ? Number(getComputedStyle(e).opacity) : null; };
+      const li = document.querySelector('#view .listitem[disabled]');
+      const deco = q => { const e = document.querySelector(q); return e ? getComputedStyle(e).textDecorationLine : null; };
+      const col = q => { const e = document.querySelector(q); return e ? getComputedStyle(e).color : null; };
+      return { off: deco('#tabs button[disabled]'), on: deco('#tabs [data-go="home"]'), op: op('#tabs button[disabled]'),
+               cOff: col('#tabs button[disabled]'), cOn: col('#tabs [data-go="manage"]:not([aria-current])'),
+               chev: li && li.querySelector('.chev') ? getComputedStyle(li.querySelector('.chev')).display : null,
+               why: li ? (li.querySelector('.grow .small') || {}).textContent || '' : null };
+    });
+    // «нельзя» у вкладки — зачёркивание, а не бледность (designer-55: прозрачность .38 давала контраст 1.74)
+    if (!/line-through/.test(look.off || '') || /line-through/.test(look.on || '')) bad.push(`${n}: серая вкладка не зачёркнута или зачёркнута живая (${look.off} против ${look.on})`);
+    // цвет серой обязан СОВПАДАТЬ с живой невыбранной: различие несёт зачёркивание, а не цвет (designer-55) —
+    // «сделаю бледнее» правкой color прошло бы мимо двух признаков рядом
+    if (look.cOn === null) bad.push(`${n}: нет живой невыбранной вкладки «Управление» — цвет сравнить не с чем`);
+    else if (look.cOff !== look.cOn) bad.push(`${n}: цвет серой вкладки ${look.cOff} не равен цвету живой невыбранной ${look.cOn}`);
+    if (look.op !== null && look.op < 1) bad.push(`${n}: серая вкладка погашена прозрачностью (${look.op}) — контраст ниже порога`);
+    if (look.chev === null) bad.push(`${n}: на главной нет погашенной строки списка со стрелкой — облик строки не проверен`);
+    else if (look.chev !== 'none') bad.push(`${n}: у погашенной строки осталась стрелка «туда»`);
+    if (look.why !== null && look.why !== 'временно недоступно') bad.push(`${n}: у погашенной строки нет причины в подстрочнике: «${look.why}»`);
+    const entries = await s.p.$$eval('#view [data-go]', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
+    if (!entries.some(e => e[1])) bad.push(`${n}: на главной владельца нет ни одного погашенного входа — проверять нечего (${JSON.stringify(entries)})`);
+    entries.forEach(([g, d]) => { if (g === 'pass' && d) bad.push(`${n}: вход «Пропуск» погашен`); });
+    entries.filter(e => e[1]).forEach(([g]) => { if (['pass', 'topup', 'manage', 'people', 'joinQueue', 'home'].includes(g)) bad.push(`${n}: погашен живой вход «${g}»`); });
+    // подпись у баланса называла кассу, а касса заморожена (Cafe13KPG#513): путь не называется
+    const home = await s.view();
+    if (!home.includes('Через кассу — позже') || home.includes('Пополняется в кассе'))
+      bad.push(`${n}: подпись у баланса обещает кассу, а «На счёт» в кассе заморожен`);
+    await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(200);
+    let t = await s.view();
+    if (!t.includes('Бар — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
+    if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
+    await s.p.evaluate(() => go('partner')); await s.p.waitForTimeout(200);
+    t = await s.view();
+    if (!t.includes('ещё не подключено')) bad.push(`${n}: никогда не подключённый экран потерял «ещё не подключено»: ${t.slice(0, 80)}`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(150);
+    await s.p.screenshot({ path: `${OUT}/live-freeze.png` });
+    await s.ctx.close();
+    // демонстрация вне Telegram: ни одной серой вкладки и ни одного погашенного входа по заморозке
+    const d = await open(false, false);
+    const dOff = await d.p.$$eval('#tabs button[disabled], #view [data-go][disabled]', b => b.map(x => x.getAttribute('data-go')));
+    // и обратная сторона подписи: где касса не заморожена, прежний текст на месте — иначе условие декоративно
+    if (!(await d.view()).includes('Пополняется в кассе')) bad.push(`${n}: в демонстрации пропало «Пополняется в кассе» — подпись снята, а не условна`);
+    if (dOff.length) bad.push(`${n}: в демонстрации погашено ${JSON.stringify(dOff)} — заморозка только для живого режима`);
+    await d.ctx.close();
   }
 
   // ── солнышко только у богов ──
@@ -654,6 +767,8 @@ if (grantsSet.length !== 1) {
   // Вкладка, ещё не стоящая на сервере, — «не подключено», а не демонстрационные записи.
   {
     const s = await open(true, true, json(200, OWNER));
+    // экран записей заморожен (Cafe13KPG#510) — его половина случая снята, половина «солнышка» ниже идёт
+    if (thawed('экран «Мои ивенты» (половина случая с солнышком)')) {
     await s.p.click('#tabs [data-go="bookings"]');
     const t = await s.view();
     /* Это и есть дозор по Cafe13KPG#259, и проверяет он ОДНО утверждение:
@@ -691,6 +806,7 @@ if (grantsSet.length !== 1) {
     if (await s.p.$('#view [data-action^="book-cancel"]'))
       bad.push('bookings: на экране записей второй путь к отмене — отмена живёт в карточке мероприятия (Cafe13KPG#360)');
     if (await s.p.evaluate(() => window.__main !== null)) bad.push('bookings: главная кнопка на неподключённом экране');
+    }
     if (await s.p.isVisible('#demo-btn')) await s.p.click('#demo-btn');
     else bad.push('demo: у владельца (god_mentor) нет видимого солнышка');
     const d = await s.view();
@@ -1050,7 +1166,7 @@ if (grantsSet.length !== 1) {
   }
   // Услуг у клуба нет (решение владельца, Cafe13KPG#102, со слов координатора): гость в живом режиме
   // видит бар и не видит обещания «Услуги острова — ещё не подключено».
-  {
+  if (thawed('экран гостя «Услуги»')) {
     const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = [];
     const s = await open(true, true, json(200, guest), null, null, null);
     const t = await s.view();
@@ -1138,7 +1254,7 @@ if (grantsSet.length !== 1) {
     await s.p.waitForTimeout(150);
   }
 
-  {
+  if (thawed('бар')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar());
     await toBar(s);
     const t = await s.view();
@@ -1169,7 +1285,7 @@ if (grantsSet.length !== 1) {
   // Поздний ответ опроса прежнего захода не откатывает состояние заказа
   // (гард поколения в pollMine). Первый опрос медленный — заказ ещё «новый»,
   // уход в меню и возврат дают второй, быстрый — «готов». Задержка — от запроса.
-  {
+  if (thawed('бар')) {
     let n = 0, landed = false;
     const slow = () => new Promise(r => setTimeout(() => { landed = true; r(json(200, [row('new')])); }, 1500));
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ list: () => ++n === 1 ? slow() : json(200, [row('ready')]) }));
@@ -1189,7 +1305,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Двойное нажатие, пока заказ в пути, — один заказ.
-  {
+  if (thawed('бар')) {
     const slow = () => new Promise(res => setTimeout(() => res(json(201, ORDER)), 600));
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: slow }));
     await toBar(s);
@@ -1201,7 +1317,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Состояние заказа подтягивается с сервера.
-  {
+  if (thawed('бар')) {
     let st = 'new';
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ list: () => json(200, [row(st)]) }));
     await toBar(s);
@@ -1216,7 +1332,7 @@ if (grantsSet.length !== 1) {
   // (макет E23б) и кнопка пополнения из неё. Член без права кассы видит,
   // куда идти; админ — форму внести себе.
   const NOTILL = clone(OWNER); NOTILL.roles = [];
-  for (const [who, name, want] of [[NOTILL, 'topup-409', 'пополняется у хостес'], [OWNER, 'topup-409-admin', null]]) {
+  if (thawed('бар')) for (const [who, name, want] of [[NOTILL, 'topup-409', 'Как пополнить'], [OWNER, 'topup-409-admin', null]]) {
     const s = await open(true, true, json(200, who), null, null, null,
       bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830' }) }));
     await toBar(s);
@@ -1233,17 +1349,17 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Кнопка «Не хватает» ведёт туда же без запроса.
-  {
+  if (thawed('бар')) {
     const s = await open(true, true, json(200, NOTILL), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-go="topup"]');
-    if (!(await s.view()).includes('пополняется у хостес')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
+    if (!(await s.view()).includes('Как пополнить')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
     if (posts(s).length) bad.push('topup: заказ ушёл при нехватке');
     await s.ctx.close();
   }
 
   // Связь оборвалась на заказе — не повторять вслепую, а спросить сервер.
-  {
+  if (thawed('бар')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: 'abort', list: json(200, [row('making')]) }));
     await toBar(s);
     await s.p.click('[data-action="buy:11"]');
@@ -1255,7 +1371,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Позиция снята с меню — причина на экране, меню перезапрошено.
-  {
+  if (thawed('бар')) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
       bar({ order: json(409, { detail: 'позиция снята с меню: Эспрессо' }) }));
     await toBar(s);
@@ -1270,7 +1386,7 @@ if (grantsSet.length !== 1) {
   // 409, поэтому признак — ТЕКСТ плашки, равный тексту сервера, а не код.
   // Каждый случай: корзина из двух позиций «к столу», отказ — плашка над
   // «Купить», состав и место на месте, нажатие снова возможно.
-  for (const [name, status, detail] of [
+  if (thawed('бар')) for (const [name, status, detail] of [
     ['deny-closed', 409, 'бар закрыт: смена не открыта, заказ принять некому'],
     ['deny-noitems', 400, 'нет таких позиций в этом меню: [12]'],
     ['deny-hidden', 409, 'позиция снята с меню: Флэт-уайт'],
@@ -1313,7 +1429,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Номер заказа — из ответа сервера, а не свой: ответ несёт другой номер.
-  {
+  if (thawed('бар')) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
       bar({ order: json(201, Object.assign({}, ORDER, { number: '261021-05' })), list: json(200, [Object.assign(row('new'), { number: '261021-05' })]) }));
     await toBar(s);
@@ -1325,7 +1441,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Меню: битое — отказ, пустое — честное «пусто».
-  for (const [name, menu, want, nope] of [
+  if (thawed('бар')) for (const [name, menu, want, nope] of [
     ['menu-bad', json(200, [{ id: 'x', title: 'Эспрессо' }]), 'не разобран', '[data-action^="buy:"]'],
     ['menu-500', json(500, {}), 'кодом 500', '[data-action^="buy:"]'],
     ['menu-empty', json(200, []), 'ни одной позиции', '[data-action^="buy:"]']]) {
@@ -1339,7 +1455,7 @@ if (grantsSet.length !== 1) {
 
   // 201, но без place и pay_method: не «undefined» и не «не создан» (гость заказал бы
   // второй), а то, что записал сервер, — из очереди.
-  {
+  if (thawed('бар')) {
     const bare = Object.assign({}, ORDER); delete bare.place; delete bare.pay_method;
     const srv = Object.assign(row('new'), { place: 'к столу', pay_method: 'cash' });
     const s = await open_(bar({ order: json(201, bare), list: json(200, [srv]) }));
@@ -1357,7 +1473,7 @@ if (grantsSet.length !== 1) {
   }
   // Очередь целиком (админ, бар): чужой открытый заказ своим не становится;
   // строка без суммы (так её видит работник бара) рисуется без суммы.
-  {
+  if (thawed('бар')) {
     const other = Object.assign(row('making'), { id: 9, number: '261018-02', member_id: 2 });
     const s = await open_(bar({ order: 'abort', list: json(200, [other]) }));
     await toBar(s);
@@ -1367,7 +1483,7 @@ if (grantsSet.length !== 1) {
     if (t.includes('261018-02')) bad.push('queue-other: чужой заказ показан своим');
     await s.ctx.close();
   }
-  {
+  if (thawed('бар')) {
     const nosum = row('making'); delete nosum.sum; nosum.items = [{ title: 'Эспрессо', qty: 1 }];
     const s = await open_(bar({ order: 'abort', list: json(200, [nosum]) }));
     await toBar(s);
@@ -1378,7 +1494,7 @@ if (grantsSet.length !== 1) {
     if (/NaN|undefined|null ฿/.test(t)) bad.push('queue-nosum: мусор вместо суммы');
     await s.ctx.close();
   }
-  {
+  if (thawed('бар')) {
     const noplace = row('making'); delete noplace.place;
     const s = await open_(bar({ order: 'abort', list: json(200, [noplace]) }));
     await toBar(s);
@@ -1408,7 +1524,7 @@ if (grantsSet.length !== 1) {
   // Поздний ответ прежнего захода не ложится на свежую очередь (Cafe13KPG#214):
   // гард у ответа /bar/orders и гард у колбэка loadBar — каждый своим случаем.
   // Первый ответ медленный (задержка — от запроса), уход и возврат дают второй.
-  for (const [name, step, stale, look, why] of [
+  if (thawed('очередь на баре')) for (const [name, step, stale, look, why] of [
     ['queue-late', 'list', json(200, [worker(9, '261018-09', 'new', { first_name: 'qzx-очередь-qzx' })]), 'qzx',
       'на экране очереди заказы прежнего захода'],
     ['queue-late-bar', 'dirs', json(503, {}), '503',
@@ -1436,7 +1552,7 @@ if (grantsSet.length !== 1) {
   // (pollMine выходит на !BAR до перевооружения таймера). Путь — работник бара
   // заказывает сам: второй заход в очередь уходит с медленным /directions,
   // человек идёт в меню и покупает; отказ приходит уже на экран заказа.
-  {
+  if (thawed('очередь на баре')) {
     let dn = 0, ordered = false, landedAfterOrder = null, polls = 0;
     const slow = () => new Promise(r => setTimeout(() => { landedAfterOrder = ordered; r(json(503, {})); }, 2500));
     const s = await open(true, true, json(200, BARMAN), null, null, null, bar({
@@ -1460,7 +1576,7 @@ if (grantsSet.length !== 1) {
     await s.p.waitForTimeout(250);
   }
   const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-  {
+  if (thawed('очередь на баре')) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
     await s.p.route('https://t.me/**', r => r.fulfill({ contentType: 'image/png', body: PNG }));
     if (!(await s.view()).includes('Заказы на баре')) bad.push('queue: нет входа на главной у роли bar');
@@ -1485,7 +1601,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Фото не загрузилось — сказано явно, а не пустой кружок.
-  {
+  if (thawed('очередь на баре')) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
     await s.p.route('https://t.me/**', r => r.fulfill({ status: 404, body: '' }));
     await toQueue(s);
@@ -1494,7 +1610,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Строка без member_id — отказ целиком.
-  {
+  if (thawed('очередь на баре')) {
     const nomid = worker(3, '261018-03', 'new'); delete nomid.member_id;
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ list: json(200, [nomid]) }));
     await toQueue(s);
@@ -1503,7 +1619,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Отмена — в два нажатия; первое ничего не отправляет.
-  {
+  if (thawed('очередь на баре')) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
     await toQueue(s);
     await s.p.click('[data-action="q-ask:3"]');
@@ -1519,7 +1635,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Двойное нажатие — одна смена состояния.
-  {
+  if (thawed('очередь на баре')) {
     const slow = () => new Promise(res => setTimeout(() => res(json(200, { id: 3, state: 'making' })), 500));
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ state: slow }));
     await toQueue(s);
@@ -1529,7 +1645,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Сервер отказал — причина как есть, не «готово».
-  {
+  if (thawed('очередь на баре')) {
     const s = await open(true, true, json(200, BARMAN), null, null, null,
       queue({ state: json(409, { detail: 'на счёте гостя не хватает — он пополняет у хостес' }) }));
     await toQueue(s);
@@ -1539,7 +1655,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Куратор/админ: суммы, если пришли, видны построчно.
-  {
+  if (thawed('очередь на баре')) {
     const withSum = QUEUE.map(r => Object.assign({}, r, { sum: '140.00' }));
     const s = await open(true, true, json(200, OWNER), null, null, null, queue({ list: json(200, withSum) }));
     await toQueue(s);
@@ -1547,13 +1663,13 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Без роли бара — входа нет; сервер 403 — сказано почему; битая строка — отказ целиком.
-  {
+  if (thawed('очередь на баре')) {
     const plain = clone(OWNER); plain.roles = [];
     const s = await open(true, true, json(200, plain), null, null, null, queue());
     if ((await s.view()).includes('Заказы на баре')) bad.push('queue-norole: вход есть у человека без роли');
     await s.ctx.close();
   }
-  for (const [name, list, want] of [
+  if (thawed('очередь на баре')) for (const [name, list, want] of [
     ['queue-403', json(403, { detail: 'нет' }), 'Очередь видна бару и куратору'],
     ['queue-bad', json(200, [Object.assign(worker(3, '261018-03', 'new'), { place: undefined })]), 'не разобран']]) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ list }));
@@ -1565,7 +1681,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Отменённый бар заказ: деньги вернулись — экран говорит это и показывает свежий баланс.
-  {
+  if (thawed('очередь на баре')) {
     let mes = 0;
     const s = await open(true, true, () => { mes += 1; return json(200, OWNER); },
       null, null, null, bar({ list: json(200, [row('cancelled')]) }));
@@ -1579,7 +1695,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Бар закрыт (смена не открыта): меню видно, заказ не уходит, причина названа.
-  {
+  if (thawed('очередь на баре')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(false) }));
     await toBar(s);
     const t = await s.view();
@@ -1593,7 +1709,7 @@ if (grantsSet.length !== 1) {
   }
   // Экран думал «открыт», а смену успели закрыть: сервер отказал — причина как есть,
   // направления перезапрошены, и экран становится «закрыт».
-  {
+  if (thawed('очередь на баре')) {
     let open = true;
     const s = await open_(bar({ dirs: () => DIR(open),
       order: () => { open = false; return json(409, { detail: 'бар закрыт: смена не открыта, заказ принять некому' }); } }));
@@ -1607,7 +1723,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Направление не найдено / найдено дважды / ответ битый — отказ, а не пустое меню.
-  for (const [name, dirs, want] of [
+  if (thawed('очередь на баре')) for (const [name, dirs, want] of [
     ['dirs-none', json(200, [{ id: 3, title: 'Кухня', is_active: true, is_open: true }]), 'не нашлось направления'],
     ['dirs-two', DIR(true, [{ id: 8, title: 'Бар', is_active: true, is_open: true }]), 'не нашлось направления'],
     ['dirs-inactive', json(200, [{ id: 7, title: 'Бар', is_active: false, is_open: true }]), 'не нашлось направления'],
@@ -1624,7 +1740,7 @@ if (grantsSet.length !== 1) {
 
   // Корзина: несколько позиций и место — как выбрал гость; оплата только со счёта
   // (cafe13-api#13: наличные на баре сервер отклоняет), выбора «наличными» нет.
-  {
+  if (thawed('очередь на баре')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-action="cart-add:11"]');
@@ -1643,7 +1759,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Карточка напитка: главная кнопка — «Купить», при нехватке её нет.
-  {
+  if (thawed('очередь на баре')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-drink="11"]');
@@ -1657,7 +1773,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Сети нет — сохранённый пропуск этого человека виден на экране сбоя.
-  for (const [name, me, saved, show] of [
+  if (thawed('очередь на баре')) for (const [name, me, saved, show] of [
     ['offline-pass', 'abort', SAVED, true],
     ['offline-other-user', 'abort', Object.assign({}, SAVED, { uid: 2 }), false],
     ['server-500-saved', json(500, {}), SAVED, false],
@@ -1710,7 +1826,7 @@ if (grantsSet.length !== 1) {
   const shiftPosts = s => s.calls.filter(c => c.method === 'POST' && c.url.includes('/shifts/'));
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   // Админ открывает смену на себя; двойное нажатие — один запрос.
-  {
+  if (thawed('смена')) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
       (() => { const f = shift(); return r => r.method() === 'POST' && r.url().includes('/shifts/open')
         ? sleep(400).then(() => f(r)) : f(r); })());
@@ -1736,7 +1852,7 @@ if (grantsSet.length !== 1) {
   //    прежний BAR); перечитанная смена всё равно должна лечь.
   //  shift-stale-empty: новее — успех и затем отказ меню (BAR пуст); поздний
   //    успех перечитывания обязан заполнить BAR, иначе колбэк смены читает BAR.open у null.
-  for (const [name, fail, why] of [
+  if (thawed('смена')) for (const [name, fail, why] of [
     ['shift-stale-ok', [3], 'перечитанная смена потеряна — на экране не «Смена открыта»'],
     ['shift-stale-empty', [4], 'поздний успех не заполнил пустой BAR'],
   ]) {
@@ -1759,7 +1875,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Бармен: открыть не может (это куратор), закрыть — в два нажатия.
-  {
+  if (thawed('смена')) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, shift({ open: true }));
     await toQueue(s);
     const has = sel => s.p.$(sel).then(Boolean);
@@ -1787,7 +1903,7 @@ if (grantsSet.length !== 1) {
     }
   }
   // Куратор ДРУГОГО направления — не куратор бара: ни открыть, ни закрыть.
-  {
+  if (thawed('смена')) {
     const other = clone(OWNER); other.roles = [{ role: 'curator', direction_id: 8 }, { role: 'bar', direction_id: 8 }];
     const s = await open(true, true, json(200, other), null, null, null, shift());
     await toQueue(s);
@@ -1797,7 +1913,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Сервер отказал — его причина на экране, бар остаётся закрытым.
-  {
+  if (thawed('смена')) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
       shift({ openReply: 403, detail: 'нужна роль curator в направлении 7' }));
     await toQueue(s);
@@ -1809,7 +1925,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // «Принято», а бар по-прежнему закрыт — верим перечитанному, а не ответу.
-  {
+  if (thawed('смена')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, shift({ flips: false }));
     await toQueue(s);
     await s.p.click('[data-action="shift-open"]');
@@ -1820,7 +1936,7 @@ if (grantsSet.length !== 1) {
   }
   // Смену открыли с другого телефона — экран узнаёт при опросе; сбой
   // опроса не стирает известное состояние, а помечает его.
-  {
+  if (thawed('смена')) {
     const f = shift({ dirs: (n, st) => { if (n === 2) st.open = true; if (n >= 3) return 'abort'; } });
     const s = await open(true, true, json(200, BARMAN), null, null, null, f);
     await toQueue(s);
@@ -1932,8 +2048,9 @@ if (grantsSet.length !== 1) {
     }
     await s.ctx.close();
   }
-  // Без права кассы — прежний текст и никакой формы.
-  {
+  // Без права кассы — ветка «у всех остальных» (с #500: «Как пополнить», три серых пути) и никакой формы.
+  // Путь — через бар, а он заморожен (Cafe13KPG#510).
+  if (thawed('пополнение из бара (бармен без права кассы)')) {
     const poor = clone(BARMAN); poor.balance = 0;
     const s = await open(true, true, json(200, poor), null, null, null, bar());
     if (await s.p.$('#view [data-go="topup"]')) bad.push('topup-norole: бармену предложено вносить');
@@ -1943,7 +2060,7 @@ if (grantsSet.length !== 1) {
       await s.p.click('#view [data-go="topup"]');
       await s.p.waitForTimeout(100);
       if (await s.p.$('#t-amount')) bad.push('topup-norole: форма внесения у бармена');
-      if (!(await s.view()).includes('у хостес')) bad.push('topup-norole: нет прежнего текста');
+      if (!(await s.view()).includes('Как пополнить')) bad.push('topup-norole: нет ветки «Как пополнить»');
     }
     await s.ctx.close();
   }
@@ -2069,7 +2186,7 @@ if (grantsSet.length !== 1) {
   // День кассы (E36): у каждой живой строки «Отменить» — и у чужой: у строки
   // с хозяином сервер назовёт путь исправления (designer-55); отменённая и её
   // отмена видны без кнопки, итог — числом сервера, по способам — из строк.
-  {
+  if (thawed('касса')) {
     const s = await open(true, true, json(200, STAFF), null, null, null, tday({}));
     if (await toTillDay(s, 'till-day')) {
       const t = await s.view();
@@ -2099,7 +2216,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Отмена: спрос → «Не отменять» ничего не шлёт → «Точно отменить» → POST → день перечитан.
-  {
+  if (thawed('касса')) {
     const after = clone(DAY_OK);
     after.rows[0].cancelled_by = 15;
     after.rows.push(DROW({ id: 15, at: '2026-10-25T12:00:00+00:00', cancels_id: 10, note: 'отмена строки 10' }));
@@ -2129,7 +2246,7 @@ if (grantsSet.length !== 1) {
   // Тексты — боевого api 02f0ac6 (till.py: шапка «строку держит», хвост по виду
   // хозяина). Подмены в клиенте больше нет (Cafe13KPG#340): у ЗАПИСИ сервер сам
   // говорит, что возврата нет, и случай держит, что обещание не вернулось.
-  for (const [name, code, detail, want, never] of [
+  if (thawed('касса')) for (const [name, code, detail, want, never] of [
     ['till-cancel-403', 403, 'эту строку принял другой человек: отменяет он сам или администратор клуба',
      'Эту строку принял другой человек: отменяет он сам или администратор клуба', null],
     // обещание у ЗАКАЗА — правда (встречная строка, BALANCE_SQL), не подменяется
@@ -2156,7 +2273,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Ответ не дошёл: день перечитывается, человек не остаётся с «неизвестно».
-  {
+  if (thawed('касса')) {
     const s = await open(true, true, json(200, STAFF), null, null, null, tday({ cancel: 'abort' }));
     if (await toTillDay(s, 'till-cancel-lost')) {
       if (await askFirst(s, 'till-cancel-lost')) await s.p.click('[data-action="td-cancel:0"]');
@@ -2169,7 +2286,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Пустой день (E36b), неразобранный и не сходящийся — каждый своими словами.
-  for (const [name, reply, want, never] of [
+  if (thawed('касса')) for (const [name, reply, want, never] of [
     ['till-day-empty', json(200, Object.assign({}, DAY_OK, { rows: [], total_live: '0.00', count_live: 0 })), 'Сегодня через кассу ничего не прошло', 'Строки за сегодня'],
     ['till-day-bad', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 'expense' })] })), 'Ответ сервера не разобран', 'Через книгу за день'],
     // E36g: расхождение снимает числа, а строки (дословно из ответа) остаются
@@ -2210,7 +2327,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Продать членство: скан → карточка → форма → итог по ответу и перечитанной карточке.
-  {
+  if (thawed('касса')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({ after: { balance: 0 } }));
     if (await toPerson(s, 'till-sell')) {
       let t = await s.view();
@@ -2252,7 +2369,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Внести на счёт: у пополнения нет «со счёта», остаток — из перечитанной карточки.
-  {
+  if (thawed('касса')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({ after: { balance: '500.00' } }));
     if (await toPerson(s, 'till-topup') && await toForm(s, 'till-topup', 'topup')) {
       if (await s.p.$('[data-action="tp-method:account"]')) bad.push('till-topup: у пополнения есть «со счёта» — кнопка к верному отказу 409');
@@ -2279,7 +2396,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Отказы поиска — словами сервера, на скане, без перехода к карточке.
-  for (const [name, find, want] of [
+  if (thawed('касса')) for (const [name, find, want] of [
     ['till-422', () => json(422, { detail: 'код пропуска — четыре цифры, с «XIII-» или без' }), 'Код пропуска — четыре цифры, с «XIII-» или без'],
     ['till-404', () => json(404, { detail: 'пропуск не найден' }), 'Пропуск не найден'],
     ['till-noname', () => json(200, Object.assign({}, PERSON, { first_name: null })), 'Ответ сервера не разобран'],
@@ -2295,7 +2412,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Пожизненное членство — словом стандарта, а не датой.
-  {
+  if (thawed('касса')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, Object.assign({}, PERSON,
       { membership_active: true, membership: { level: 'partner', starts_at: ENDS, ends_at: null, lifelong: true } })) }));
     if (await toPerson(s, 'till-lifelong')) {
@@ -2305,7 +2422,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Срок и сумма не те — не отправляется.
-  for (const [months, amount, want] of [['0', '100', 'от 1 до 24'], ['25', '100', 'от 1 до 24'], ['abc', '100', 'от 1 до 24'],
+  if (thawed('касса')) for (const [months, amount, want] of [['0', '100', 'от 1 до 24'], ['25', '100', 'от 1 до 24'], ['abc', '100', 'от 1 до 24'],
                                         ['6', '0', 'Сумма — число больше нуля']]) {
     const name = `till-form-${months}-${amount}`;
     const s = await open(true, true, json(200, OWNER), null, null, null, cash());
@@ -2319,7 +2436,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Приём: отказ сервера, потерянный ответ, чужая строка, карточка не перечиталась.
-  for (const [name, kind, o, want, nowant] of [
+  if (thawed('касса')) for (const [name, kind, o, want, nowant] of [
     ['till-409', 'membership', { post: () => json(409, { detail: 'на счёте 0, не хватает 3000' }) }, ['На счёте 0, не хватает 3000'], ['Принято']],
     // Ответа не было (E34zh): «неизвестно» верно, совет — перечитать, подождать, позвать.
     ['till-lost', 'membership', { post: 'abort' }, ['Неизвестно, принято ли', 'Ответ сервера не дошёл.',
@@ -2400,7 +2517,7 @@ if (grantsSet.length !== 1) {
   // E34l, словом, без значений (member_id — это tg_user_id); печатать нечего
   // (срок не дата, вид незнаком) → E34z как есть. Прежде till-alien и
   // till-level ждали здесь текст E34z — то самое слияние состояний из #351.
-  {
+  if (thawed('касса')) {
     const ALIEN = 200000004;
     const bent = f => q => { const x = JSON.parse(q.postData());
       const row = { id: 95, at: '2026-10-24T10:00:00+00:00', kind: x.kind, amount: Number(x.amount).toFixed(2), method: x.method,
@@ -2490,7 +2607,7 @@ if (grantsSet.length !== 1) {
     }
   }
   // Без права кассы — вкладки нет.
-  {
+  if (thawed('касса')) {
     const plain = clone(OWNER); plain.roles = [];
     const s = await open(true, true, json(200, plain), null, null, null, cash());
     if (await s.p.$('#tabs [data-go="staff"]')) bad.push('till-norole: вкладка «Касса» у члена клуба без права кассы');
@@ -2561,7 +2678,7 @@ if (grantsSet.length !== 1) {
     return true;
   }
   // Расход: без выбора не уходит; подтверждение; одно тело; итог из ответа.
-  {
+  if (thawed('доход и расход бара')) {
     const s = await open(true, true, json(200, CURATOR), null, null, null, book()); s.name = 'book-curator';
     if (await toBook(s, 'book-expense') && await fillExpense(s, 'book-expense', '240', [])) {
       // признак «не подставлено молча»: ни одна категория/вид/оплата не нажата
@@ -2600,7 +2717,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Доход: админ с главной; «со счёта» нет; без способа не уходит.
-  {
+  if (thawed('доход и расход бара')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, book()); s.name = 'book-owner';
     if (!(await s.p.$('#view [data-go="barMoney"]'))) bad.push('book-income: на главной у админа нет «Доход и расход бара»');
     else {
@@ -2629,7 +2746,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Подсказка — только при закупе и расходниках, не при ремонте: иначе она шум.
-  {
+  if (thawed('доход и расход бара')) {
     const s = await open(true, true, json(200, CURATOR), null, null, null, book()); s.name = 'book-hint';
     if (await toBook(s, 'book-hint') && await fillExpense(s, 'book-hint', '240', ['b-cat:ремонт'])) {
       if ((await s.view()).includes('обычно текущая трата')) bad.push('book-hint: подсказка «обычно текущая» при ремонте');
@@ -2645,7 +2762,7 @@ if (grantsSet.length !== 1) {
   // расчёт, что в клиенте: иначе замер совпал бы сам с собой. Два мгновения,
   // потому что у границы суток три состояния: днём даты острова и UTC
   // совпадают, в 00:30 по острову (17:30Z) UTC ещё во вчера.
-  for (const M of [
+  if (thawed('доход и расход бара')) for (const M of [
     { tag: 'день', now: '2026-12-02T01:00:00Z', today: '2026-12-02', min: '2026-09-03', back: '2026-11-30', words: '30 ноября' },
     { tag: '00:30 на острове', now: '2026-12-02T17:30:00Z', today: '2026-12-03', min: '2026-09-04', back: '2026-12-02', words: '2 декабря' }]) {
     const NOW = Date.parse(M.now);
@@ -2711,7 +2828,7 @@ if (grantsSet.length !== 1) {
     }
   }
   // Не сумма — не уходит.
-  for (const v of ['0', 'abc', '1.234']) {
+  if (thawed('доход и расход бара')) for (const v of ['0', 'abc', '1.234']) {
     const s = await open(true, true, json(200, CURATOR), null, null, null, book()); s.name = 'book-curator';
     if (await toBook(s, 'book-amount') && await fillExpense(s, 'book-amount', v, ALL_PICKS)) {
       await tap(s, '[data-action="b-ask"]');
@@ -2721,7 +2838,7 @@ if (grantsSet.length !== 1) {
   }
   // Ответ не тот или потерян — «неизвестно» и «не записывайте снова», не «записан».
   const alt = (row, k, v) => q => json(201, Object.assign({}, row, JSON.parse(q.postData()), { [k]: v }, k === 'amount' ? {} : { amount: money2(JSON.parse(q.postData()).amount) }));
-  for (const [name, o, want, inc] of [
+  if (thawed('доход и расход бара')) for (const [name, o, want, inc] of [
     ['book-lost', { exp: 'abort' }, 'Сервер не ответил'],
     ['book-sum', { exp: alt(EXP_ROW, 'amount', '2400.00') }, 'Ответ сервера не разобран'],
     ['book-cat', { exp: alt(EXP_ROW, 'expense_cat', 'ремонт') }, 'Ответ сервера не разобран'],
@@ -2752,7 +2869,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Без права: бармен не видит входа; куратор другого направления получает отказ, а не форму.
-  {
+  if (thawed('доход и расход бара')) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, book()); s.name = 'book-barman';
     if (await s.p.$('#view [data-go="barMoney"]')) bad.push('book-norole: бармену на главной предложено вносить');
     await toQueue(s);
@@ -2762,7 +2879,7 @@ if (grantsSet.length !== 1) {
     if (await s.p.$('#b-amount') || await s.p.$('[data-action="b-new:expense"]')) bad.push('book-norole: форма у бармена');
     await s.ctx.close();
   }
-  {
+  if (thawed('доход и расход бара')) {
     const tea = clone(CURATOR); tea.roles = [{ role: 'curator', direction_id: 2 }];
     const s = await open(true, true, json(200, tea), null, null, null, book()); s.name = 'book-tea';
     await s.p.evaluate(() => go('barMoney'));
@@ -2800,7 +2917,7 @@ if (grantsSet.length !== 1) {
     await s.p.waitForTimeout(300);
     return true;
   }
-  {
+  if (thawed('отчёт за день')) {
     const s = await open(true, true, json(200, CURATOR), null, null, null, dayApi()); s.name = 'day';
     if (await toDay(s)) {
       const t = await s.view();
@@ -2820,7 +2937,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   const dayWith = o => json(200, Object.assign({}, DAY_ROW, o));
-  for (const [name, reply, want, hasnt] of [
+  if (thawed('отчёт за день')) for (const [name, reply, want, hasnt] of [
     ['day-income-sum', dayWith({ income_total: '1600.00' }), 'Суммы отчёта не сходятся', '1 600'],
     ['day-expense-sum', dayWith({ expense_total: '240.00' }), 'Суммы отчёта не сходятся', 'кофемашина'],
     // каждый итог ломается в одиночку: две поломки сразу прикрыли бы проверки друг другом
@@ -2842,7 +2959,7 @@ if (grantsSet.length !== 1) {
   // loadDay). Первый отчёт медленный (задержка — от самого запроса), уход на
   // «Заказы» и возврат дают второй, быстрый. Выручка прежнего среза
   // другая (1 470 вместо 1 570) и помечена нечитаемой строкой.
-  {
+  if (thawed('отчёт за день')) {
     let n = 0, landed = false;
     const OLD = Object.assign({}, DAY_ROW, {
       income: [Object.assign({}, DAY_ROW.income[0], { amount: '1400.00', note: 'qzx-срез-qzx' }), DAY_ROW.income[1]],
@@ -2863,7 +2980,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Сбой обновления не стирает отчёт, а помечает.
-  {
+  if (thawed('отчёт за день')) {
     let n = 0;
     const s = await open(true, true, json(200, CURATOR), null, null, null, dayApi(() => ++n === 1 ? json(200, DAY_ROW) : json(500, { detail: 'x' }))); s.name = 'day-stale';
     if (await toDay(s) && await tap(s, '[data-action="day-reload"]')) {
@@ -2874,7 +2991,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   // Бармену — ни входа, ни запроса.
-  {
+  if (thawed('отчёт за день')) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, dayApi()); s.name = 'day-barman';
     await toQueue(s);
     if (await s.p.$('#view [data-go="barDay"]')) bad.push('day-barman: бармену предложен отчёт с деньгами');
@@ -2945,7 +3062,9 @@ if (grantsSet.length !== 1) {
         if (!(await s.p.isVisible('#demo-btn'))) bad.push('test-path: в просмотре пропало солнышко — к панели не вернуться');
         // Куратор без членства: путь к записи через «Заказы»; запись идёт с обоими заголовками
         const before = s.calls.length;
-        if (await toBook(s, 'test-path') && await fillExpense(s, 'test-path', '240', ALL_PICKS) && await askSend(s, 'test-path')) {
+        // запись в тестовой базе шла через «Доход и расход» бара — он заморожен (Cafe13KPG#510); заголовки
+        // у ЧТЕНИЙ в просмотре держит проверка `after` ниже, у записи — снята вместе с экраном
+        if (thawed('запись в тестовом режиме через «Доход и расход» бара') && await toBook(s, 'test-path') && await fillExpense(s, 'test-path', '240', ALL_PICKS) && await askSend(s, 'test-path')) {
           const w = s.calls.slice(before).filter(c => c.method === 'POST');
           if (w.length !== 1 || w[0].test !== '1' || w[0].as !== '501') bad.push('test-path: запись ушла не в тестовую базу глазами выбранного человека: ' + JSON.stringify(w.map(c => [c.url, c.test, c.as])));
           if (!((await strip(s)) || '').includes('Смотрите как Образец')) bad.push('test-path: на экране записи нет полосы');
@@ -2966,7 +3085,9 @@ if (grantsSet.length !== 1) {
             if ((await strip(s)) !== null) bad.push('test-path: после выхода из теста полоса осталась');
             const me3 = s.calls.filter(c => c.url.endsWith('/me')).pop();
             if (me3.test || me3.as) bad.push('test-path: выход из теста перечитал /me с тестовыми заголовками');
-            await s.p.click('#tabs [data-go="barQueue"]').catch(() => {}); await s.p.waitForTimeout(300);
+            // была вкладка «Заказы» — заморожена (Cafe13KPG#510); «Управление» тоже шлёт запрос (очередь просьб)
+            await s.p.click('#tabs [data-go="manage"]').catch(() => {}); await s.p.waitForTimeout(300);
+            if (s.calls.length === n0) bad.push('test-path: после выхода из теста ни одного запроса — проверять заголовки не на чем');
             if (s.calls.slice(n0).some(c => c.test || c.as)) bad.push('test-path: после выхода запросы с тестовыми заголовками');
           }
         }
@@ -3028,7 +3149,7 @@ if (grantsSet.length !== 1) {
   // ── вход в очередь по роли, а не по уровню членства ──
   // Бармен без членства и бармен с членством — обе ветки уровня; оба
   // обязаны дойти до очереди за нажатия, без знания адресов.
-  for (const [name, member] of [['barman-guest', false], ['barman-member', true]]) {
+  if (thawed('вход в очередь по роли, а не по уровню членства')) for (const [name, member] of [['barman-guest', false], ['barman-member', true]]) {
     const who = clone(OWNER); who.roles = [{ role: 'bar', direction_id: 7 }];
     if (!member) { who.membership_active = false; who.membership = null; who.memberships = []; }
     const s = await open(true, true, json(200, who), null, null, null, queue());
@@ -3115,7 +3236,7 @@ if (grantsSet.length !== 1) {
      Фикстура своя, а не общая `AFISHA`: нужна строка, на которую человек
      записан И которая уже кончилась — в общей такой нет, а дописать её туда
      значило бы сдвинуть числа соседним случаям. */
-  {
+  if (thawed('афиша на живых данных')) {
     const MOI = [
       EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
            price: '0.00', seats: 6, taken: 6, seats_left: 0, booked_by_me: false }),
@@ -3260,7 +3381,7 @@ if (grantsSet.length !== 1) {
      экран, и случай перестанет доказывать что-либо МОЛЧА, оставшись зелёным.
      Поэтому «гость начинает не с „Клуба“» стоит здесь отдельным отказом.
      Условие назвал координатор, Cafe13KPG#360. */
-  {
+  if (thawed('афиша на живых данных')) {
     const GOST = clone(OWNER);
     // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
@@ -3310,7 +3431,7 @@ if (grantsSet.length !== 1) {
      Фикстура своя: `MOI` объявлена в чужом блоке, а общая `AFISHA` несёт
      вперемешку своё и чужое — здесь нужны ровно записи гостя, и их ДВЕ,
      чтобы кнопка судилась под списком, а не под одной строкой. */
-  {
+  if (thawed('афиша на живых данных')) {
     const GOST = clone(OWNER);
     // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
@@ -3352,7 +3473,7 @@ if (grantsSet.length !== 1) {
   }
 
 
-  {
+  if (thawed('афиша на живых данных')) {
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, AFISHA)), null, NOWFIX);
     const home = await s.view();
     ['Афиша', 'Вся афиша', SOON[0], SOON[1]].forEach(x => {
@@ -3433,7 +3554,7 @@ if (grantsSet.length !== 1) {
 
   // Пустая афиша, отказы и битый ответ — каждый своим экраном, и ни в одном
   // не всплывают демонстрационные события.
-  for (const [name, reply, has, hasnt] of [
+  if (thawed('афиша на живых данных')) for (const [name, reply, has, hasnt] of [
     ['events-empty', json(200, []), ['В афише пока ничего нет'], ['Звуковая практика', 'Загружаем афишу']],
     ['events-500', json(500, { detail: 'x' }),
       ['Афиша не открылась', 'Сервер ответил кодом 500', 'Попробовать снова'], ['Звуковая практика']],
@@ -3460,7 +3581,7 @@ if (grantsSet.length !== 1) {
   }
 
   // «Попробовать снова»: сервер ожил — афиша появилась, а не осталась отказом.
-  {
+  if (thawed('афиша на живых данных')) {
     let up = false;
     const s = await open(true, true, json(200, OWNER), null, null, null,
       q => q.url().endsWith('/events') ? (up ? json(200, AFISHA) : json(502, {})) : undefined,
@@ -3538,7 +3659,7 @@ if (grantsSet.length !== 1) {
      обязан назвать её ровно один раз. Не найдена — значит не сработал обход,
      роль, реестр или детектор, и зелёное ничего не значит. Зонд снимается в
      том же шаге и в отказы не попадает. */
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const m = src.match(/closest\('(\[data-[^']+)'\)/);
     if (!m) bad.push('knopki-bez-dela: селектор делегирования в app.js не найден — признак строить не из чего');
     else {
@@ -3602,7 +3723,7 @@ if (grantsSet.length !== 1) {
      КОМУ фраза не даётся: «Оплата — на месте» у бесплатного обещает платёж,
      которого нет, а у донейшна своя строка точнее. Без этой половины случай
      подтверждал бы наличие и молчал бы о лишнем. */
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const ROWS = [
       EV({ id: 4 }),
       EV({ id: 10, title: 'Утро без денег', kind: 'free', price: '0.00',
@@ -3633,7 +3754,7 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     let booked = false;
     const posts = [];
     const s = await openCard(q => {
@@ -3715,7 +3836,7 @@ if (grantsSet.length !== 1) {
 
   // Отказ сервера — его текстом, а не «успешно». Афиша перечитывается и
   // после отказа: «мест нет» могло прийти потому, что экран устарел.
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const s = await openCard(q => {
       if (q.url().endsWith('/bookings')) return json(409, { detail: 'мест нет' });
       if (q.url().endsWith('/events')) return json(200, [freeRow()]);
@@ -3732,7 +3853,7 @@ if (grantsSet.length !== 1) {
   }
 
   // 201 есть, а в афише записи нет — это не успех.
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const s = await openCard(q => {
       if (q.url().endsWith('/bookings')) return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' });
       if (q.url().endsWith('/events')) return json(200, [freeRow()]);
@@ -3749,7 +3870,7 @@ if (grantsSet.length !== 1) {
   // До записи карточка не обещает отмены НИ ОДНИМ словом — ни у платного,
   // ни у бесплатного, ни у донейшна. Обещание, данное до нажатия, человек
   // прочитает как право, которого у него сегодня нет: отменять нечем.
-  for (const [kind, price] of [['paid', '400.00'], ['free', '0.00'], ['donation', '0.00']]) {
+  if (thawed('запись на событие и отмена своей записи')) for (const [kind, price] of [['paid', '400.00'], ['free', '0.00'], ['donation', '0.00']]) {
     const s = await openCard(q => q.url().endsWith('/events')
       ? json(200, [EV({ id: 4, kind: kind, price: price, taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null })])
       : undefined);
@@ -3763,7 +3884,7 @@ if (grantsSet.length !== 1) {
 
   // Поздний ответ афиши, начатой ДО записи, не возвращает карточку в «Записаться».
   // Без охраны по поколению второе нажатие получило бы 409 «вы уже записаны».
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     let n = 0, booked = false;
     // Различитель: без него код 0 несёт ТРИ смысла — «гард сработал»,
     // «поздний ответ пришёл раньше перечитывания» и «не пришёл вовсе за
@@ -3800,7 +3921,7 @@ if (grantsSet.length !== 1) {
 
   // У кончившегося события отмены нет: сервер её примет и сотрёт сам факт
   // записи, а подтверждение обещало бы вернуть место в афишу — ложно.
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const doneRow = () => EV({ id: 4, title: 'Уже закончился',
       starts_at: new Date(NOWFIX - 9000e3).toISOString(), duration_min: 60,
       taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 });
@@ -3822,7 +3943,7 @@ if (grantsSet.length !== 1) {
   // «перестали предлагать отмену на идущем» прошла бы зелёной: запрет закрыт,
   // разрешение — нет. Первая проверка здесь сторожит саму фикстуру: событие
   // обязано ИДТИ, иначе случай судит кончившееся и доказывает запрет второй раз.
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const START = NOWFIX - 1800e3, DUR = 180, ENDS = START + DUR * 60e3;
     const liveRow = () => EV({ id: 4, title: 'Уже начался',
       starts_at: new Date(START).toISOString(), duration_min: DUR,
@@ -3854,7 +3975,7 @@ if (grantsSet.length !== 1) {
      Случай сторожит ОБЕ стороны: прежние слова не вернулись, и демонстрация
      говорит ровно то, что живой экран. Сторож фикстуры считает из самой
      демонстрации: событие обязано быть платным, иначе ветка не та. */
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const s = await open(true, false, json(200, OWNER), null, null, null, null, null, NOWFIX);
     const kind = await s.p.evaluate(() => {
       const e = (window.DATA && DATA.events || []).filter(x => x.id === 'sound')[0];
@@ -3884,7 +4005,7 @@ if (grantsSet.length !== 1) {
      отсутствие места — ОТСУТСТВИЕ строки, а не слово «не указано»: правки
      места на сервере нет, обещать её нечем. Три случая: место есть, места
      нет, пришла половина места. */
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const s = await openCard(q => q.url().endsWith('/events')
       ? json(200, [EV({ id: 4, place_id: 1, place_name: 'Зал', taken: 1, seats_left: 11 })]) : undefined);
     const t = await s.view();
@@ -3894,7 +4015,7 @@ if (grantsSet.length !== 1) {
     await s.p.screenshot({ path: `${OUT}/live-place-kartochka.png` });
     await s.ctx.close();
   }
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const s = await openCard(q => q.url().endsWith('/events')
       ? json(200, [EV({ id: 4, place_id: null, place_name: null, taken: 1, seats_left: 11 })]) : undefined);
     const t = await s.view();
@@ -3907,7 +4028,7 @@ if (grantsSet.length !== 1) {
     await s.p.screenshot({ path: `${OUT}/live-place-net.png` });
     await s.ctx.close();
   }
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     // Половина места — номер без имени. Афиша отказывается ЦЕЛИКОМ: строка с
     // выдуманным местом отправила бы человека не туда ногами.
     const s = await open(true, true, json(200, OWNER), null, null, null,
@@ -3923,7 +4044,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Отказ на отмену — словами сервера, а не «успешно».
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const s = await openCard(q => {
       const u = q.url();
       if (/\/cancel$/.test(u)) return json(409, { detail: 'мероприятие отменено' });
@@ -3941,7 +4062,7 @@ if (grantsSet.length !== 1) {
 
   // 200 есть, а запись в афише осталась — это не отмена. Дыру нашла мутация
   // «успех по коду», которая на прежнем наборе случаев оставалась зелёной.
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const s = await openCard(q => {
       const u = q.url();
       if (/\/cancel$/.test(u)) return json(200, { id: 6, state: 'cancelled' });
@@ -3958,7 +4079,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Второе нажатие, пока первое в пути, второй отмены не делает.
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const s = await openCard(q => {
       const u = q.url();
       if (/\/cancel$/.test(u)) return new Promise(r => setTimeout(() => r(json(200, { id: 6, state: 'cancelled' })), 800));
@@ -3982,7 +4103,7 @@ if (grantsSet.length !== 1) {
 
   // Боевая форма ответа: поля my_booking_id в ней нет вовсе. Карточка обязана
   // работать так же — запись видна, отмена не предлагается, ошибок страницы нет.
-  {
+  if (thawed('запись на событие и отмена своей записи')) {
     const noId = () => { const r = mineRow(); delete r.my_booking_id; return r; };
     const s = await openCard(q => q.url().endsWith('/events') ? json(200, [noId()]) : undefined);
     const t = await s.view();
@@ -3995,7 +4116,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Кончившемуся и заполненному событию записи не предлагают вовсе.
-  for (const [name, row, has, hasnt] of [
+  if (thawed('запись на событие и отмена своей записи')) for (const [name, row, has, hasnt] of [
     ['book-konchilos', EV({ id: 4, title: 'Уже закончился', starts_at: new Date(NOWFIX - 9000e3).toISOString(),
                             duration_min: 60, seats_left: 9, taken: 1 }),
       ['завершилось'], ['Записаться', FRAZA_271]],
@@ -4013,7 +4134,7 @@ if (grantsSet.length !== 1) {
   // ── управление своим мероприятием (#98): видно ТОЛЬКО ведущему ──
   // Чужое событие в фикстуре стоит ПОСЛЕ своего: иначе снятый фильтр «своё»
   // остался бы зелёным — первая карточка и так своя.
-  {
+  if (thawed('управление своим мероприятием')) {
     const MINE = over => EV(Object.assign({ id: 4, title: 'Мой вечер', organizer_id: 1,
       starts_at: atBkk(1, 19), seats: 12, taken: 3, seats_left: 9 }, over || {}));
     const FOREIGN = EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) });
@@ -4207,7 +4328,7 @@ if (grantsSet.length !== 1) {
      `recipe-net.json`, `recipe-denied-guest.json` (прогон координатора на
      `2dedaa9`): `lang` — язык ПОКАЗАННОГО, `asked_lang` — запрошенный,
      `exact` — совпали ли; «рецепта нет» — 404 с текстом, а не пустое тело. */
-  {
+  if (thawed('управление своим мероприятием')) {
     const R_TH = { product_id: 11, lang: 'th', asked_lang: 'th', exact: true,
                    body: 'ชา: ใบชา 5 กรัม, น้ำ 90 องศา, 3 นาที', created_at: '2026-10-22T05:29:11.317057Z' };
     const R_RU = { product_id: 11, lang: 'ru', asked_lang: 'en', exact: false,
@@ -4375,7 +4496,7 @@ if (grantsSet.length !== 1) {
   // Право даёт либо роль клуба, либо купленный уровень — две независимые
   // ветки, и у каждой свой случай: фикстура с одной ветвью оставила бы
   // мутацию, снявшую вторую, зелёной (так было с разбором баланса строкой).
-  {
+  if (thawed('завести мероприятие')) {
     const member = clone(OWNER); member.roles = [];                       // уровень member, ролей нет
     const levelOrg = clone(OWNER); levelOrg.roles = []; levelOrg.membership.level = 'organizer';
     const curatorOnly = clone(OWNER); curatorOnly.roles = [{ role: 'curator', direction_id: 1 }];
@@ -4970,7 +5091,7 @@ if (grantsSet.length !== 1) {
      не открывал ни один прогон: строку можно было переписать любым
      словом, и батарея осталась бы зелёной. Сторож фикстуры здесь — сам
      факт, что открылся кабинет, и говорит он ОДИН. */
-  {
+  if (thawed('завести мероприятие')) {
     const s = await open(true, false, json(200, OWNER), null, null, null, null, null, NOWFIX);
     await s.p.evaluate(() => go('organizer'));
     await s.p.waitForTimeout(150);
@@ -4993,7 +5114,7 @@ if (grantsSet.length !== 1) {
      строки: две свои (платная с двумя записями и бесплатная с одной) и одну
      ЧУЖУЮ — без чужой строки проверка «только свои» была бы зелёной при
      любом отборе, и это условие случая, а не украшение. */
-  {
+  if (thawed('завести мероприятие')) {
     const org = clone(OWNER); org.roles = []; org.membership.level = 'organizer';
     const MOI = [
       EV({ id: 21, title: 'Своё платное', organizer_id: 1, starts_at: atBkk(1, 19),
@@ -5088,7 +5209,7 @@ if (grantsSet.length !== 1) {
 
      Случай судит ОБЕ стороны — есть у кончившегося и НЕТ у будущего: иначе
      пометка, прибитая ко всем строкам, прошла бы за верную. */
-  {
+  if (thawed('завести мероприятие')) {
     const org = clone(OWNER); org.roles = []; org.membership.level = 'organizer';
     const ROWS = [
       EV({ id: 41, title: 'Своё завтра', organizer_id: 1, starts_at: atBkk(1, 19),
@@ -5120,7 +5241,7 @@ if (grantsSet.length !== 1) {
   // ── кто записался (#178, вторая половина) ──
   // Список спрашивается только на СВОЁМ мероприятии: на чужое запроса нет
   // вовсе. Обратная проверка обязательна — иначе доказана половина.
-  {
+  if (thawed('кто записался')) {
     const MY = over => EV(Object.assign({ id: 4, title: 'Мой вечер', organizer_id: 1,
       starts_at: atBkk(1, 19), seats: 12, taken: 3, seats_left: 9 }, over || {}));
     const ALIEN = EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) });
@@ -5411,7 +5532,7 @@ if (grantsSet.length !== 1) {
   }
 
   // Второе нажатие, пока первое в пути, второй записи не делает.
-  {
+  if (thawed('кто записался')) {
     const posts = [];
     const s = await openCard(q => {
       const u = q.url();
@@ -5438,7 +5559,7 @@ if (grantsSet.length !== 1) {
   //   Бангкок  — воскресенье 6 декабря, 01:30
   //   Нью-Йорк — суббота 5 декабря, 13:30
   //   UTC      — суббота 5 декабря, 18:30
-  {
+  if (thawed('время события — в поясе клуба, а не телефона и не UTC')) {
     const iso = '2026-12-05T18:30:00Z';
     const wall = new Date(Date.parse(iso) + 7 * 3600e3);
     const hm = wall.toISOString().slice(11, 16);                       // 19:00 по Бангкоку
@@ -5467,7 +5588,7 @@ if (grantsSet.length !== 1) {
   // ── поздний ответ прежнего запроса не затирает свежий ──
   // Второй запрос нарочно медленный, третий уходит, пока он в пути: без
   // охраны по номеру поколения афиша откатилась бы на старые данные.
-  {
+  if (thawed('поздний ответ прежнего запроса не затирает свежий')) {
     let n = 0;
     const s = await open(true, true, json(200, OWNER), null, null, null, q => {
       if (!q.url().endsWith('/events')) return undefined;
@@ -6294,7 +6415,7 @@ if (grantsSet.length !== 1) {
   // очереди — по снимку координатора (19 ключей, причина без возврата — "",
   // не null; поля снимка — null). Ответ очереди нарочно в ОБРАТНОМ
   // порядке: группы обязаны раскладываться экраном, а не порядком сервера.
-  {
+  if (thawed('карточки меню')) {
     const P = (id, state, title, group, recipes, note) => ({ id, direction_id: 7, group, title, about: '', full_text: '',
       price: '180.00', mins: 5, is_alcohol: false, sort: 0, state, created_by: 1, created_at: '2026-10-21T10:00:00+00:00',
       decided_by: null, decided_at: null, decision_note: note === undefined ? '' : note, recipes,
@@ -7574,6 +7695,8 @@ if (grantsSet.length !== 1) {
       const nobody = clone(OWNER); nobody.roles = [];
       const s = await open(true, true, json(200, nobody), null, null, null, book());
       for (const [scr, q, mark, deny] of WORK) {
+        // замороженный экран рисует «временно недоступно» раньше любого отказа по праву (Cafe13KPG#510)
+        if (await s.p.evaluate(x => !!FROZEN[x], scr) && !thawed('отказ по праву на замороженных рабочих экранах')) continue;
         await s.p.evaluate(([x, y]) => go(x, y), [scr, q]); await s.p.waitForTimeout(250);
         const t = await s.view();
         if (!t.includes(deny)) bad.push(`live-norights ${scr}: в живом режиме без прав нет отказа «${deny}» (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
@@ -7591,6 +7714,7 @@ if (grantsSet.length !== 1) {
 
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
+  if (SKIPPED.size) console.log('СНЯТО — экраны заморожены словом владельца 29.10.2026 (Cafe13KPG#510): ' + [...SKIPPED].join('; '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
   console.log('зелёное: ' + ran + ' прогонов экрана (из них ' + CASES.length + ' табличных)');
 })();
