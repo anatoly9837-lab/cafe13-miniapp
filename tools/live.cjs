@@ -5827,10 +5827,17 @@ if (grantsSet.length !== 1) {
       const after = await s.p.evaluate(() => window.scrollY);
       if (before < 500) bad.push(`${n}: прокрутка не встала (${before}) — сравнивать нечего`);
       else if (Math.abs(after - before) > 2) bad.push(`${n}: после действия на том же экране место уехало: было ${before}, стало ${after}`);
-      // другой экран — сверху
-      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click()); await s.p.waitForTimeout(200);
+      // другой экран — сверху. ⚠ Цель обязана быть ДЛИННОЙ: короткий экран (вкладка «Управление»)
+      // браузер сам прижимает к нулю, и мутация «никогда наверх» проходила зелёной (mk2 на a4d35ed).
+      // Тот же длинный список под другим параметром — другой экран для render(), место ему не своё.
+      await s.p.evaluate(() => window.scrollTo(0, 600)); await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => go('people', 'другой')); await s.p.waitForTimeout(200);
+      const room2 = await s.p.evaluate(() => document.documentElement.scrollHeight - innerHeight);
       const other = await s.p.evaluate(() => window.scrollY);
-      if (other !== 0) bad.push(`${n}: другой экран открылся не сверху (${other})`);
+      if (room2 < 400) bad.push(`${n}: экрану-цели некуда прокручиваться (${room2} px) — «сверху» не различить`);
+      else if (other !== 0) bad.push(`${n}: другой экран открылся не сверху (${other})`);
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click()); await s.p.waitForTimeout(200);
+      if (await s.p.evaluate(() => window.scrollY) !== 0) bad.push(`${n}: вкладка открылась не сверху`);
       await s.ctx.close();
     }
 
