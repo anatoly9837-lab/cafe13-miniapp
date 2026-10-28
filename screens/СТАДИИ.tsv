@@ -36,6 +36,7 @@ pass	—	в тесте	—	2026-10-27
 membership	E38	не готов	—	2026-10-27
 memberRequests	E42	не готов	Cafe13KPG#415	2026-10-27
 joinQueue	E45	не готов	Cafe13KPG#413	2026-10-28
+manage	E46	не готов	Cafe13KPG#413	2026-10-28
 events	—	в тесте	—	2026-10-27
 event	E37	в тесте	—	2026-10-27
 bookings	E40	в тесте	—	2026-10-27
@@ -69,6 +70,7 @@ people	—	в тесте	—	2026-10-27
 loading	—	в тесте	—	2026-10-27
 noSign	—	в тесте	—	2026-10-27
 noAccess	—	в тесте	—	2026-10-27
+joinAbout	E49	в тесте	Cafe13KPG#324	2026-10-28
 apiDown	—	в тесте	—	2026-10-27
 demo	—	в тесте	—	2026-10-27
 soon	—	служебный	Cafe13KPG#405	2026-10-28

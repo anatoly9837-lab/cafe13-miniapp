@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v71 · 28.10.2026';
+var VERSION = 'v81 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -604,6 +604,31 @@ function attachReceipt(file) {
   });
 }
 
+/* Тетрадь клуба в рамке. Отказ сервера приходит JSON-ом (403 на устаревшем
+   токене), а у кросс-доменной рамки нет события «не загрузилось»: onload
+   срабатывает и на странице отказа. Поэтому решение — ДО рамки: перечитать
+   GET /join за свежим токеном (живёт час) и вставлять рамку только по нему;
+   нет токена — отказ нашими словами, а не голый JSON в рамке (designer-55). */
+var ABOUT = { url: '', fail: '', gen: 0, loaded: false };
+// рамка дочитала страницу — убрать «Открываем…» (E49b); перерисовка помнит это через loaded
+function aboutLoaded() {
+  ABOUT.loaded = true;
+  var f = document.querySelector('iframe.about'), w = document.querySelector('.paper .wait');
+  if (f) f.hidden = false;
+  if (w) w.hidden = true;
+}
+function loadAbout() {
+  var gen = ++ABOUT.gen;
+  ABOUT.url = ''; ABOUT.fail = ''; ABOUT.loaded = false;
+  api('GET', '/join').then(function (r) {
+    if (gen !== ABOUT.gen) return;
+    var got = r.status === 200 ? fromJoin(r.data) : null;
+    if (got) { JOIN.info = got; ABOUT.url = API + '/join/about?t=' + encodeURIComponent(got.token); }
+    else ABOUT.fail = r.status === 200 ? failText(r) : denyText(r);
+    if (current === 'joinAbout') render();
+  });
+}
+
 function sendJoin() {
   if (JOIN.busy || !JOIN.file) return;
   var said = document.getElementById('join-said');
@@ -634,8 +659,8 @@ function sendJoin() {
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, bookings: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
-              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1, joinQueue: 1,
-              loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
+              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1, joinQueue: 1, manage: 1,
+              loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -645,6 +670,14 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 
 var PASS = null;           // пропуск с сервера в этом запуске
 var PASS_FAIL = '';        // почему пропуска нет: текст для экрана
 var PASS_KEY = 'cafe13.pass';
+/* Адрес фото Telegram — ОТДЕЛЬНОЙ переменной, а не полем пропуска, и это не
+   вкус, а условие решения владельца 28.10.2026 («по аватарке делаем»): в
+   память телефона адрес фотографии человека не кладётся. Пропуск пишется в
+   `localStorage` из двух мест, и одно из них — `loadPass` — кладёт разобранный
+   объект ЦЕЛИКОМ; поле внутри пропуска уехало бы в хранилище само, без чьей-то
+   ошибки. Здесь запрет держится ПОСТРОЕНИЕМ: класть нечего. Живёт один
+   запуск — значит без сети адреса нет, и кружок берёт букву имени (кадр E50b). */
+var PASS_PHOTO = null;
 
 function fromPass(d) {
   if (!d || typeof d !== 'object') return null;
@@ -703,6 +736,23 @@ function loadPass() {
   PASS_FAIL = '';
   api('GET', '/pass').then(function (r) {
     var p = r.status === 200 ? fromPass(r.data) : null;
+    /* Адрес: строка, только `https://` — и НАБОР ЗНАКОВ УЖЕ, чем у списка
+       людей. Причина не в осторожности, а в месте употребления: в списке
+       адрес идёт в `src`, и разметочного экранирования там довольно, а здесь
+       он попадает в `url()` ВНУТРИ атрибута `style`, то есть в чужой язык.
+       Экранирование разметки от этого не спасает: `esc` превратит кавычку в
+       `&quot;`, а разборщик атрибута вернёт её обратно, и `url("…")` можно
+       закрыть, дописав своё правило. Замер мой, отрисовкой, шесть входов:
+       опасна РОВНО двойная кавычка — на ней `color:red` применяется
+       (вычисленный цвет `rgb(255,0,0)`); апостроф, обратный слэш, пробел и
+       скобка внутри `url("…")` наружу НЕ выходят. Запрет шире измеренного
+       НАРОЧНО: у законного адреса этих знаков не бывает, а гадать, какой
+       знак окажется ограничителем после чьей-то правки шаблона, дороже.
+       Адрес считается ДО ветвления и обнуляется вместе с пропуском: когда
+       сервер отказал, `p` пустой — значит и фото нет, и прошлое не остаётся. */
+    PASS_PHOTO = p && typeof r.data.photo_url === 'string' &&
+                 /^https:\/\/[^\s"'()\\<>]+$/.test(r.data.photo_url)
+               ? r.data.photo_url : null;
     if (p) {
       PASS = p;
       p.uid = tgUid();
@@ -739,10 +789,27 @@ function qrSvg(text) {
     '" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path fill="#15171A" d="' + out + '"/></svg>';
 }
 
-function passCard(p) {
+/* Фото — ВТОРЫМ доводом, а не из `PASS_PHOTO` изнутри: карточку рисуют два
+   места, и у второго — экрана сбоя — фото не бывает по сути, он показывает
+   запас с телефона, а в запасе фото нет. Довод делает это видимым в месте
+   вызова: «без сети — буква» выходит из того, что передать нечего, а не из
+   проверки сети, которой в клиенте нет и заводить её незачем.
+
+   БУКВА СТОИТ В РАЗМЕТКЕ ВСЕГДА, а фото накрывает её псевдоэлементом —
+   правило семейства `.avatar` из кадров E50/E50b (`designer-55`, замер
+   отрисовкой трёх случаев рядом). Состояний у кружка не два, а три, и третье
+   — «сеть есть, адрес есть, картинка не пришла»: картинка тегом даёт в кружке
+   значок битого изображения, а псевдоэлемент не даёт ничего, и под ним
+   остаётся буква. Поэтому ни `onerror`, ни второй ветки здесь нет: все три
+   состояния закрывает одно правило. Адрес уходит в своё свойство `--photo`,
+   потому что он у каждого свой и в таблице стилей ему места нет. */
+function passCard(p, photo) {
+  var буква = esc(p.name.slice(0, 1).toUpperCase());
   return '<div class="pass">' +
       '<div class="who">' +
-        '<span class="avatar">' + esc(p.name.slice(0, 1).toUpperCase()) + '</span>' +
+        (photo
+          ? '<span class="avatar photo" style="--photo:url(&quot;' + esc(photo) + '&quot;)">' + буква + '</span>'
+          : '<span class="avatar">' + буква + '</span>') +
         '<span class="col"><b style="font-size:19px;font-family:Prata,Georgia,serif">' + esc(p.name) + '</b>' +
         '<span style="font-size:12px;color:#B8B6AE">' + esc(p.level) + ' · ' + esc(p.lifelong ? 'пожизненно' : 'до ' + ruDate(p.ends)) + '</span></span>' +
       '</div>' +
@@ -1876,10 +1943,43 @@ function testStrip() {
    сверху: изменение видно там, где оно произошло.
    Отказы 403 и 409 показываются текстом сервера: «последнего главу не снять»
    и «админа выдаёт только админ» — правила сервера, пересказ завёл бы копию. */
-var ROLE_PICK = ['head', 'ops_director', 'art_director', 'director', 'staff', 'curator', 'bar', 'admin'];
+// Что выдаётся ОТСЮДА. «Главы клуба» здесь нет НИКОГДА (слово владельца 28.10.2026: не выдаётся
+// из приложения); «Администратор» и «Чужими глазами» — в ROLE_GREY: видны СЕРЫМИ, не выдаются.
+var ROLE_PICK = ['ops_director', 'art_director', 'director', 'staff', 'curator', 'bar'];
+var ROLE_GREY = [['god_mentor', 'Чужими глазами'], ['admin', 'Администратор']];
+// head, god_mentor и admin на карточке — ОДИН бейдж «Глава клуба» без крестика (слово владельца
+// 28.10.2026, кадр E47z `.chip.fixed`). Общий ROLE_NAME не трогается: им живёт кабинет.
+var HEAD_ROLES = ['head', 'god_mentor', 'admin'];
 var DIR_ROLES = ['curator', 'bar'];
 var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
-               open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '' };
+               open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '',
+               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null };
+/* Окно отмены вместо второго подтверждения (слово владельца 28.10.2026: «убери двойное
+   подтверждение… оставь кнопку отмены на несколько секунд»; 5 секунд — число координатора,
+   кадр E47l). Цифра в полосе считается ОТСЮДА ЖЕ — разойтись с задержкой ей нечем. */
+var UNDO_MS = 5000;
+function undoStop() {
+  if (PEOPLE.askTimer) clearTimeout(PEOPLE.askTimer);
+  if (PEOPLE.askTick) clearInterval(PEOPLE.askTick);
+  PEOPLE.askTimer = PEOPLE.askTick = null;
+}
+function undoLeft() { return Math.max(0, Math.ceil((PEOPLE.askAt + UNDO_MS - Date.now()) / 1000)); }
+function undoStart(rid) {
+  undoStop();
+  PEOPLE.ask = rid; PEOPLE.askAt = Date.now(); PEOPLE.deny = null;
+  PEOPLE.askTimer = setTimeout(function () {
+    if (PEOPLE.ask !== rid) return;
+    undoStop(); PEOPLE.ask = null;
+    // окно вышло — ровно один запрос, через общий вход действий: там защита от двойного нажатия
+    // и демонстрация (в ней снятие не уходит). Ушли с экрана до конца окна — не уходит тоже.
+    doAction('p-revoke:' + rid);
+  }, UNDO_MS);
+  // отсчёт меняет только цифру, экран не перерисовывается
+  PEOPLE.askTick = setInterval(function () {
+    var el = document.querySelector('.undo .sec');
+    if (el) el.textContent = String(undoLeft());
+  }, 250);
+}
 
 function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
 /* Блокировка снимается вместе с состоянием экрана: вход на экран и смена роли
@@ -1888,6 +1988,12 @@ function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
 function peopleReset() {
   PEOPLE.busy = false;
   PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.dir = null; PEOPLE.ask = null; PEOPLE.deny = null; PEOPLE.done = null;
+  PEOPLE.out = null; PEOPLE.gone = null;
+  // окно отмены, открытое на прежнем заходе, закрывается БЕЗ отправки: снятие не случается само
+  undoStop();
+  // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
+  // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
+  PEOPLE.sending = null;
 }
 function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }
 
@@ -1907,14 +2013,29 @@ function fromRoster(d) {
       roles.push({ id: r.id, role: r.role, dir: typeof r.direction_id === 'number' ? r.direction_id : null,
                    name: ROLE_NAME[r.role] || r.role, dirTitle: dt, words: roleWords(r.role, dt) });
     }
+    // Остаток (требование владельца 28.10.2026, кадры E47/E47e): поля НЕТ — «не спросили»,
+    // undefined; поле есть, но не число — ответ битый целиком. Признак — наличие ключа, а не
+    // `!p.balance`: у настоящего нуля остаток тоже ложный. null сервер не отдаёт (ноль ставит сам).
+    var bal;
+    if ('balance' in p) { bal = num(p.balance); if (!isFinite(bal)) return null; }
     out.push({
       uid: p.tg_user_id,
       name: [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Без имени',
-      levels: p.memberships.map(function (l) { return LEVEL[l] || l; }).join(', '),
+      // уровни через « · », в порядке сервера: виды не старше друг друга (кадр E47)
+      levels: p.memberships.map(function (l) { return LEVEL[l] || l; }).join(' · '),
+      lv: p.memberships.map(function (l) { return LEVEL[l] || l; }),
+      bal: bal,
       roles: roles
     });
   }
   return out;
+}
+/* Живые членства — наверх (решение по #413), внутри групп порядок сервера. Сортируется
+   ПОРЯДОК ОТРИСОВКИ, а не список: карточка знает номер строки в ответе (k), и все действия
+   (p-open:k, data-person) указывают на того же человека, как бы строки ни стояли. */
+function peopleOrder(list) {
+  return list.map(function (x, i) { return i; })
+    .sort(function (a, b) { return (!list[a].levels - !list[b].levels) || a - b; });
 }
 function fromDirList(d) {
   if (!Array.isArray(d)) return null;
@@ -1981,10 +2102,12 @@ function revokeSend(rid) {
   if (!p || PEOPLE.busy) return;
   var role = p.roles.filter(function (y) { return y.id === rid; })[0];
   var gen = PEOPLE.gen;
-  PEOPLE.busy = true; PEOPLE.deny = null; render();
+  // отправка закрывает окно отмены сама — кто бы её ни позвал
+  undoStop(); PEOPLE.ask = null;
+  PEOPLE.busy = true; PEOPLE.deny = null; PEOPLE.sending = rid; render();
   api('POST', '/roles/' + rid + '/revoke').then(function (r) {
     if (gen !== PEOPLE.gen) return;
-    PEOPLE.busy = false; PEOPLE.ask = null;
+    PEOPLE.busy = false; PEOPLE.ask = null; PEOPLE.sending = null;
     var ok = r.status === 200 && r.data && r.data.id === rid && !!r.data.revoked_at;
     if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
     haptic('ok');
@@ -1993,26 +2116,59 @@ function revokeSend(rid) {
     loadRoster(); render();
   });
 }
+/* «Исключить» (кадры E47v, E47d, E47g, E47zh; Cafe13KPG#413, v74). Человек берётся по НОМЕРУ
+   СТРОКИ ОТВЕТА (k), а не по месту карточки на экране: порядок отрисовки свой (peopleOrder),
+   и «исключили не того» стоило бы человеку входа и членства. tg_user_id живёт только в адресе
+   запроса — в разметку не попадает. Итог выбирается по `memberships_ended` из ответа, не догадкой.
+   Слова без рода («больше не в клубе», «живого членства нет»): пола человека клиент не знает. */
+function outSend(k) {
+  var p = PEOPLE.list && PEOPLE.list[k];
+  if (!p || PEOPLE.busy) return;
+  var gen = PEOPLE.gen;
+  PEOPLE.busy = true; PEOPLE.deny = null; render();
+  api('POST', '/access/' + p.uid + '/revoke', { note: '' }).then(function (r) {
+    if (gen !== PEOPLE.gen) return;
+    PEOPLE.busy = false; PEOPLE.out = null;
+    var ok = r.status === 200 && r.data && typeof r.data.memberships_ended === 'number';
+    if (!ok) {
+      PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn');
+      // «этого человека в клубе нет» — список устарел: его исключил кто-то другой (E47d)
+      if (r.status === 409) loadRoster();
+      render(); return;
+    }
+    haptic('ok');
+    peopleReset();
+    PEOPLE.gone = { uid: p.uid, text: r.data.memberships_ended > 0
+      ? p.name + ' больше не в клубе. Вход закрыт, живое членство оборвано сегодняшним днём.'
+      : p.name + ' больше не в клубе. Вход закрыт; живых членств не было — обрывать было нечего.' };
+    loadRoster(); render();
+  });
+}
 /* Карточка знает номер строки списка (k), а не tg_user_id: id в разметке
    уехал бы в снимок экрана и дальше. */
 function personCard(p, k) {
   var lock = PEOPLE.busy ? ' disabled' : '';
   var open = PEOPLE.open === k;
-  var heads = PEOPLE.list.filter(function (x) { return holds(x, 'head'); }).length;
-  var rows = p.roles.map(function (r) {
-    var asking = PEOPLE.ask === r.id;
-    // админа снимает только админ (roles.py _may_touch_admin) — кнопки, которая
-    // гарантированно кончится отказом, нет; вместо неё — кто может
-    var btn = r.role === 'admin' && !grant('admin') ? '<span class="small">снимает только администратор</span>'
-      : asking ? '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="p-keep"' + lock + '>Не снимать</button>' +
-                 '<button type="button" class="btn quiet" data-action="p-revoke:' + r.id + '"' + lock + '>Точно снять</button></span>'
-      : '<button type="button" class="btn quiet" data-action="p-ask:' + r.id + '"' + lock + '>Снять</button>';
-    // роль и направление — два факта: длинное название направления не рвёт имя роли
-    var under = [r.dirTitle, r.role === 'head' && heads === 1 ? 'единственный глава клуба' : ''].filter(Boolean).join(' · ');
-    return '<div class="row role-row"><span class="col"><span>' + esc(r.name) + '</span>' +
-        (under ? '<span class="small">' + esc(under) + '</span>' : '') + '</span>' + btn + '</div>' +
-      (asking ? '<span class="small">Снять «' + esc(r.words) + '» у ' + esc(p.name) + '? Права пропадут сразу.</span>' : '');
-  }).join('');
+  var X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  // Кадры E47z/E47k/E47l: доступ — надпись-кнопка («размер оставить»), крестик снимает без вопроса.
+  // Уровень членства — чип БЕЗ крестика и не нажимается НАРОЧНО: ручки снятия уровня на бою нет
+  // (POST /memberships/{id}/revoke — ещё и не в стволе api: cafe13-api#85 открыт, 28.10.2026).
+  // Кнопка не обещает того, чего сервер не делает.
+  var rows = '<div class="chips">' +
+    p.lv.map(function (l) { return '<span class="chip paid">' + esc(l) + '</span>'; }).join('') +
+    (p.roles.some(function (r) { return HEAD_ROLES.indexOf(r.role) !== -1; }) ? '<span class="chip fixed">Глава клуба</span>' : '') +
+    p.roles.filter(function (r) { return HEAD_ROLES.indexOf(r.role) === -1; }).map(function (r) {
+      if (PEOPLE.ask === r.id) return '';                  // в окне отмены надписи нет (E47l)
+      if (PEOPLE.sending === r.id) return '<span class="chip busy">' + esc(r.words) + X + '</span>';  // E47k
+      return '<button type="button" class="chip" data-action="p-ask:' + r.id + '"' + lock + '>' + esc(r.words) + X + '</button>';
+    }).join('') +
+    (open ? '' : '<button type="button" class="chip add" data-action="p-open:' + k + '"' + lock + '>' +
+      '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>ответственность</button>') +
+  '</div>';
+  var askRole = null;
+  p.roles.forEach(function (r) { if (PEOPLE.ask === r.id) askRole = r; });
+  var undo = askRole ? '<div class="undo" data-undo-of="' + k + '"><span class="small">Снимаем: ' + esc(askRole.words) + '</span>' +
+    '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="p-keep">Отменить</button></div>' : '';
   var form = '';
   if (open) {
     var seg = function (label, list, cur, act) {
@@ -2030,14 +2186,16 @@ function personCard(p, k) {
     // грузится или не пришёл — роль открыта, под ней причина словами; пришёл
     // ПУСТЫМ (все направления сняты) — роль закрыта «· направлений нет»: выбрать
     // нечего никогда. «Заняты все» на пустом перечне не считаем: [].every истинно.
-    var picks = ROLE_PICK.filter(function (r) { return r !== 'admin' || grant('admin'); })
+    var picks = ROLE_PICK
       .map(function (r) {
         var dirRole = DIR_ROLES.indexOf(r) !== -1;
         var none = dirRole && !!PEOPLE.dirs && PEOPLE.dirs.length === 0;
         var have = !dirRole ? holds(p, r)
           : !!PEOPLE.dirs && PEOPLE.dirs.length > 0 && PEOPLE.dirs.every(function (d) { return holds(p, r, d.id); });
         return [r, (ROLE_NAME[r] || r) + (have ? ' · уже есть' : none ? ' · направлений нет' : ''), have || none];
-      });
+      })
+      // серые: «есть, но не сейчас» — отличие от отсутствующей «Главы клуба» (слово владельца)
+      .concat(ROLE_GREY.map(function (g) { return [g[0], g[1] + ' · выдаётся не из приложения', true]; }));
     var needDir = DIR_ROLES.indexOf(PEOPLE.role) !== -1;
     var miss = grantMissing();
     form = seg('Что поручить', picks, PEOPLE.role, 'p-role') +
@@ -2058,12 +2216,56 @@ function personCard(p, k) {
   var deny = mine(PEOPLE.deny) ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(PEOPLE.deny.text) + '</span></div>' : '';
   var done = mine(PEOPLE.done) ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(PEOPLE.done.text) + '</span></div>' : '';
   var q = PEOPLE.find.trim().toLowerCase();
-  return '<div class="card" data-person="' + k + '"' +
+  // E47g/E47zh: исключённый — итогом на месте своей карточки
+  if (PEOPLE.gone && PEOPLE.gone.uid === p.uid)
+    return '<div class="card quiet" data-person="' + k + '" role="status"><span class="small">' + esc(PEOPLE.gone.text) + '</span></div>';
+  var outAsk = PEOPLE.out === k;
+  return '<div class="card dense' + (open || outAsk ? ' open' : '') + '" data-person="' + k + '"' +
     (q && p.name.toLowerCase().indexOf(q) === -1 ? ' hidden' : '') + '>' +
-    '<div class="row top"><b>' + esc(p.name) + '</b><span class="small">' + esc(p.levels || 'без членства') + '</span></div>' +
-    (rows || '<span class="small">Ролей нет</span>') + done + deny + form +
-    (open ? '' : '<button type="button" class="btn ghost" data-action="p-open:' + k + '"' + lock + '>Выдать ответственность</button>') +
-  '</div>';
+    // Кадр E47: уровень — предмет строки, остаток справа. Стили встроены — долг Cafe13KPG#484
+    // (классов .level и .money в styles.css нет; styles.css — не зона этой правки).
+    // E47z: в строке имени — имя и остаток; уровень ушёл в надписи ниже (чип «paid»)
+    '<div class="row"><div class="col"><b>' + esc(p.name) + '</b></div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
+      (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></div>' +
+    rows + done + deny + form +
+    // E47v: вопрос во всю карточку, с ИМЕНЕМ; «себя нельзя» — отказом сервера, кнопку не прячем (E47)
+    (outAsk ? '<span class="small">' + esc(p.levels
+        ? p.name + ' потеряет вход в приложение и живое членство разом: оплаченное членство обрывается сегодняшним днём. Обратного действия у этой кнопки нет.'
+        : p.name + ' потеряет вход в приложение; живого членства нет — обрывать нечего. Обратного действия у этой кнопки нет.') + '</span>' +
+      '<div class="row" style="justify-content:flex-start;gap:8px"><button type="button" class="btn quiet" data-action="p-outkeep"' + lock + '>Не исключать</button>' +
+      '<button type="button" class="btn quiet" data-action="p-outyes:' + k + '"' + lock + '>Точно исключить</button></div>'
+    // ⚠ ЧТО открывает «Исключить» в плотной карточке, кадры не рисуют (вопрос у дизайнера) —
+    // до ответа кнопка стоит, как в v74, одна в ряд
+    : open ? '' : '<div class="row" style="justify-content:flex-start;gap:8px">' +
+      '<button type="button" class="btn quiet" data-action="p-out:' + k + '"' + lock + '>Исключить</button></div>') +
+  '</div>' + undo;
+}
+/* Частичная перерисовка (слово владельца 28.10.2026: «перерисовывай только элемент»,
+   Cafe13KPG#490). Действия ВНУТРИ карточки — открыть форму, выбрать роль и направление,
+   вопрос «Снять» и «Исключить» — меняют только те карточки, у которых было или стало своё
+   состояние; их и перерисовываем, а экран целиком — нет: соседняя карточка, поле поиска и
+   место прокрутки остаются как были. */
+function peopleTouched() {
+  var ks = [], L = PEOPLE.list || [];
+  var at = function (uid) { for (var i = 0; i < L.length; i++) if (L[i].uid === uid) return i; return null; };
+  [PEOPLE.open, PEOPLE.out,
+   PEOPLE.ask !== null ? (function () { for (var i = 0; i < L.length; i++) if (L[i].roles.some(function (r) { return r.id === PEOPLE.ask; })) return i; return null; })() : null,
+   PEOPLE.deny && at(PEOPLE.deny.uid), PEOPLE.done && at(PEOPLE.done.uid), PEOPLE.gone && at(PEOPLE.gone.uid)]
+    .forEach(function (k) { if (typeof k === 'number' && ks.indexOf(k) === -1) ks.push(k); });
+  return ks;
+}
+function peopleRedraw(before) {
+  var ks = before.slice();
+  peopleTouched().forEach(function (k) { if (ks.indexOf(k) === -1) ks.push(k); });
+  for (var i = 0; i < ks.length; i++) {
+    var el = document.querySelector('[data-person="' + ks[i] + '"]');
+    // карточки нет на экране (список перечитан, экран другой) — честная полная перерисовка
+    if (!el || !PEOPLE.list || !PEOPLE.list[ks[i]] || current !== 'people') { render(); return; }
+    var tail = el.nextElementSibling;
+    if (tail && tail.getAttribute('data-undo-of') === String(ks[i])) tail.remove();   // полоса отмены — сосед карточки (E47l)
+    el.outerHTML = personCard(PEOPLE.list[ks[i]], ks[i]);
+  }
+  tgChrome();   // главная кнопка Telegram («Выдать») зависит от открытой формы
 }
 function peopleFilter() {
   var q = PEOPLE.find.trim().toLowerCase();
@@ -2119,9 +2321,11 @@ function loadJoinQueue() {
     var list = r.status === 200 ? fromJoinQueue(r.data) : null;
     if (list) JOINQ.list = list;
     else { JOINQ.list = null; JOINQ.fail = r.status === 403 ? denyText(r) : failText(r); }
-    // чек нужен только тому, о ком ещё решают; PDF показать нечем — его байты не берутся вовсе
-    (JOINQ.list || []).forEach(function (q) { if (q.status === 'pending' && q.mime !== 'application/pdf') joinShot(q.id); });
-    if (current === 'joinQueue') render();
+    // чек нужен только тому, о ком ещё решают, и только на самой очереди (на «Управлении» —
+    // один счёт); PDF показать нечем — его байты не берутся вовсе
+    if (current === 'joinQueue')
+      (JOINQ.list || []).forEach(function (q) { if (q.status === 'pending' && q.mime !== 'application/pdf') joinShot(q.id); });
+    if (current === 'joinQueue' || current === 'manage') render();
   });
 }
 function joinDropShots() {
@@ -2193,7 +2397,7 @@ function joinCard(q) {
           '<button type="button" class="btn quiet" data-action="j-no:' + q.id + '"' + busy + '>Отказать и отправить</button></div>'
       : JOINQ.ok === q.id
       // E45d: имени в вопросе нет нарочно — оно строкой выше, в той же карточке
-      ? '<span class="small">Согласие впустит человека в приложение и создаст членство — одним действием. Отменить в приложении будет нечем.</span>' + row +
+      ? '<span class="small">Согласие впустит человека в приложение и создаст членство — одним действием. Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба — кнопкой на «Членах клуба», и тогда он теряет вход и живое членство разом.</span>' + row +
           '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>Не соглашаться</button>' +
           '<button type="button" class="btn quiet" data-action="j-yes:' + q.id + '"' + busy + '>Точно согласиться</button></div>'
       : row +
@@ -3750,7 +3954,9 @@ var ICON = {
   // Та же стрелка, что у кнопки «Назад» в шапке (`index.html`): у подписи
   // «Назад» стрелка вперёд читается как «дальше», и увидеть это можно только
   // ОТРИСОВАННЫМ — в исходнике `ICON.chev` ничем себя не выдаёт.
-  chevBack: '<path d="M15 6l-6 6 6 6"/>'
+  chevBack: '<path d="M15 6l-6 6 6 6"/>',
+  // вкладка «Управление» (кадр E46): две фигуры — не портфель «Моего дела», разделы разные
+  people: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0111 0"/><path d="M16 6.3a3 3 0 010 5.4M17.5 14.2A5.5 5.5 0 0120.5 19"/>'
 };
 function svg(paths, cls) { return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + paths + '</svg>'; }
 
@@ -3867,10 +4073,11 @@ var SCREENS = {
 
       (LIVE ? myRoles() +
         (canTopup() ? '<button type="button" class="btn ghost" data-go="topup">Внести себе на счёт</button>' : '') +
-        // Одна группа «Работа»: бар и управление клубом (кадр E42g, Cafe13KPG#428) —
-        // у «Заявок» и «Людей» одно право, и подпись у них одна; при барной роли
-        // строки главы клуба встают в ту же группу, а не во вторую «Работу».
-        (DATA.barSide || mayPeople() || mayRequests() && WIRED.memberRequests ? '<div class="group"><span class="label">Работа</span>' +
+        // Одна группа «Работа»: бар и «Заявки на членство» (кадр E42g, Cafe13KPG#428) —
+        // при барной роли строка главы клуба встаёт в ту же группу, а не во вторую «Работу».
+        // «Люди» отсюда уехали во вкладку «Управление» (E46, Cafe13KPG#413): рабочее
+        // не живёт внутри клиентского; в E42g они стояли здесь — кадр старше решения.
+        (DATA.barSide || mayRequests() && WIRED.memberRequests ? '<div class="group"><span class="label">Работа</span>' +
           (DATA.barSide ? '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' +
@@ -3885,9 +4092,6 @@ var SCREENS = {
           (mayRequests() && WIRED.memberRequests ? '<button type="button" class="listitem" data-go="memberRequests">' +
             '<span class="grow"><b>Заявки на членство</b><span class="small">' +
               (MREQS.pending !== null ? 'Ждут ответа: ' + MREQS.pending : 'Согласие или отказ, со словом заявителю') + '</span></span>' +
-            svg(ICON.chev, 'chev') + '</button>' : '') +
-          (mayPeople() ? '<button type="button" class="listitem" data-go="people">' +
-            '<span class="grow"><b>Люди и ответственность</b><span class="small">Кто за что отвечает: выдать и снять</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' : '') +
           '</div>' : '') +
         afishaHome() :
@@ -3942,7 +4146,7 @@ var SCREENS = {
 
   pass: function () {
     if (LIVE) {
-      if (PASS) return passCard(PASS) +
+      if (PASS) return passCard(PASS, PASS_PHOTO) +
         '<div class="note">' + svg(ICON.info) +
           '<span>Код постоянный и <b>сохранён на этом телефоне</b>: если у двери нет сети, приложение покажет его без сервера. Код — это номер, а не секрет: переслать его кому-то — всё равно что отдать пропуск.</span>' +
         '</div>';
@@ -4587,7 +4791,8 @@ var SCREENS = {
       '<div class="rows">' +
         '<div><span>Данные остаются внутри клуба</span><span class="pill on">не передаём</span></div>' +
         '<div><span>Реклама и продажа данных</span><span class="pill">нет</span></div>' +
-        '<div><span>Посмотреть и удалить о себе</span><span class="pill gold">в любой момент</span></div>' +
+        // «и удалить» снято словом владельца 28.10: удаления себя на сервере нет — обещание было ложным
+        '<div><span>Посмотреть о себе</span><span class="pill gold">в любой момент</span></div>' +
       '</div>' +
       '<button type="button" class="btn dup-main" data-action="accept-consent">Принимаю</button>' +
       '<button type="button" class="btn ghost" data-go="consentFull">Подробно</button>' +
@@ -5281,6 +5486,22 @@ var SCREENS = {
       '<div class="group"><span class="label">Решение</span>' + deny + (acts || '<span class="small">Действий нет.</span>') + '</div>';
   },
 
+  // E46: ровно два входа — решение владельца 28.10.2026 (#413). «Заявки на членство» (E42)
+  // остаются на главной: это другая очередь, для уже допущенных.
+  manage: function () {
+    if (!mayPeople()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
+    // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46)
+    var wait = JOINQ.list ? JOINQ.list.filter(function (q) { return q.status === 'pending'; }).length : null;
+    return '<div class="group"><span class="label">Кто в клубе</span>' +
+      '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
+        '<span class="small">' + (wait !== null ? 'Ждут ответа: ' + wait : 'Кто просится в клуб') + '</span></span>' +
+        svg(ICON.chev, 'chev') + '</button>' +
+      '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
+        '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
+    '</div>';
+  },
+
   // E45 очередь, E45b пусто, E45g только решённые, E45v отказ со словом
   joinQueue: function () {
     // E45zh: слова — отказа сервера (_may_decide, 403) буквой; кнопок нет — идти отсюда некуда
@@ -5306,10 +5527,13 @@ var SCREENS = {
       ? '<div class="card quiet"><span class="small">' + esc(PEOPLE.fail) + '</span></div>' +
         '<button type="button" class="btn ghost" data-action="p-reload">Повторить</button>'
       : '<div class="card quiet"><span class="small">Загружаем людей…</span></div>';
+    // E47e: поля остатка нет у сервера — прочерк объясняется ОДИН раз, над списком
+    var noBal = PEOPLE.list.some(function (x) { return x.bal === undefined; });
     return (!LIVE && FLASH ? flash() : '') +
       '<div class="field"><label for="p-find">Найти по имени</label>' +
         '<input id="p-find" type="search" value="' + esc(PEOPLE.find) + '" placeholder="Имя"></div>' +
-      (PEOPLE.list.length ? PEOPLE.list.map(personCard).join('')
+      (noBal && PEOPLE.list.length ? '<div class="card quiet"><span class="small">Остаток сервер не отдаёт — у этой ручки поля ещё нет. Прочерк здесь значит «не спросили», а не «ноль».</span></div>' : '') +
+      (PEOPLE.list.length ? peopleOrder(PEOPLE.list).map(function (k) { return personCard(PEOPLE.list[k], k); }).join('')
                           : '<div class="card quiet"><span class="small">Сервер не вернул ни одного человека.</span></div>');
   },
 
@@ -5324,6 +5548,20 @@ var SCREENS = {
     return '<div class="card strong"><h2>Подпись не принята</h2>' +
       '<p>Сервер клуба не смог убедиться, что вход идёт из Telegram. Так бывает, если приложение открыто давно или не через бота.</p>' +
       '<p class="small">Закройте приложение и откройте его снова кнопкой меню в чате с ботом.</p></div>';
+  },
+
+  // Тетрадь клуба внутри приложения (v74): рамка только по свежему токену
+  // кадры E49 (тетрадь), E49b (пока грузится), E49v (отказ — листа нет вовсе: отказ приходит JSON-ом)
+  joinAbout: function () {
+    if (ABOUT.fail) return '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(ABOUT.fail) + '</span></div>' +
+        '<button type="button" class="btn" data-action="about-retry">Попробовать снова</button>' +
+        '<span class="small" style="text-align:center">Тетрадь живёт на сервере клуба — без него её не показать.</span>';
+    return '<div class="paper">' +
+        '<div class="wait"' + (ABOUT.loaded ? ' hidden' : '') + '><span>Открываем тетрадь клуба</span>' +
+          '<span class="small" style="text-align:center">Страница большая — это занимает секунду</span></div>' +
+        (ABOUT.url ? '<iframe class="about" src="' + esc(ABOUT.url) + '" title="О клубе"' + (ABOUT.loaded ? '' : ' hidden') +
+          ' onload="aboutLoaded()"></iframe>' : '') +
+      '</div>';
   },
 
   // Кого нет в списке: просьба о вступлении (кадры E44*, Cafe13KPG#459)
@@ -5355,7 +5593,7 @@ var SCREENS = {
     // E44, E44b, E44v: просьбы нет — форма
     var m = JOIN_PAY[JOIN.pay], img = JOIN.img[JOIN.pay], f = JOIN.file, gone = img === 'fail';
     return '<div class="card strong">' + head +
-        '<button type="button" class="btn quiet" data-action="join-about">О клубе — презентация</button></div>' +
+        '<button type="button" class="btn quiet" data-action="join-about">О клубе</button></div>' +
       '<div class="group"><span class="label">Чем платить</span><div class="seg">' +
         Object.keys(JOIN_PAY).map(function (k) {
           return '<button type="button" data-action="join-pay:' + k + '" aria-pressed="' + (JOIN.pay === k) + '">' + JOIN_PAY[k].name + '</button>';
@@ -5672,12 +5910,12 @@ function queueCard(o) {
 /* ── навигация ───────────────────────────────────────── */
 
 var TABS = {
-  guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
-  member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
+  guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Ивенты', ICON.cal]],
+  member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Ивенты', ICON.cal]],
   organizer: [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
-              ['organizer', 'События', ICON.star], ['bookings', 'Записи', ICON.cal]],
+              ['organizer', 'События', ICON.star], ['bookings', 'Ивенты', ICON.cal]],
   partner:   [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
-              ['partner', 'Моё дело', ICON.case], ['bookings', 'Записи', ICON.cal]],
+              ['partner', 'Моё дело', ICON.case], ['bookings', 'Ивенты', ICON.cal]],
   staff:     [['staff', 'Касса', ICON.till], ['home', 'Клуб', ICON.home]],
   bar:       [['barQueue', 'Заказы', ICON.bell], ['barShot', 'Съёмка', ICON.cam],
               ['barDay', 'День', ICON.chart], ['barExpense', 'Затраты', ICON.coin]],
@@ -5688,14 +5926,14 @@ var TABS = {
 var TAB_ORDER = ['home', 'guest', 'organizer', 'partner', 'bookings'];
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
-  event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
-  consentFull: 'Подробно',
+  event: 'Мероприятие', bookings: 'Мои ивенты', staff: 'Касса', demo: 'Демо-режим',
+  consentFull: 'Подробно', joinAbout: 'О клубе',
   bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Люди', joinQueue: 'Заявки на доступ', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы'
 };
@@ -5722,6 +5960,9 @@ function tabList() {
   // касса — от права, а не от уровня: кассир с членством — член клуба по уровню
   if (canTopup() && !t.some(function (x) { return x[0] === 'staff'; }))
     t.unshift(['staff', 'Касса', ICON.till]);
+  // «Управление» — от права главы клуба, а не от уровня; последней, как в кадре E46 (Cafe13KPG#413)
+  if (mayPeople() && !t.some(function (x) { return x[0] === 'manage'; }))
+    t.push(['manage', 'Управление', ICON.people]);
   return t;
 }
 
@@ -5741,12 +5982,14 @@ var BACK = {
   // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
-  people: 'home', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', memberRequests: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
   barCards: function () { return CARDS.from || homeOf(); }, barCard: 'barCards',
   serviceNew: 'partner', consentFull: 'consent',
+  // тетрадь клуба открыта с экрана просьбы — туда и возврат (решение владельца 28.10, Cafe13KPG#324 v74)
+  joinAbout: 'noAccess',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   barRecipe: function () { return 'drink'; },
   topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
@@ -5762,21 +6005,30 @@ function backTo() {
 }
 
 /* Экраны без вкладок: уйти с них можно решением, а не переключением. */
-var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
+var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 function bare() { return !!BARE[current]; }
 
 var current = 'home';
 var param = null;
 
+/* Какой экран нарисован последним: «тот же экран» сохраняет место прокрутки, другой — сверху.
+   Слово владельца 28.10.2026: «каждое действие и каждый клик дергает экран… после обновления
+   возвращайся где было» (Cafe13KPG#490). Раньше render() кончался безусловным scrollTo(0, 0). */
+var RENDERED = null;
 function render() {
   var view = document.getElementById('view');
+  var here = current + '|' + String(param), y = window.scrollY || 0;
+  var same = RENDERED === here;
+  RENDERED = here;
   view.innerHTML = (bare() ? '' : testStrip()) + SCREENS[LIVE && !WIRED[current] ? 'soon' : current](param);
 
   var root = tabList().some(function (t) { return t[0] === current; });
-  document.getElementById('back').hidden = root || bare() && current !== 'consentFull';
+  // экран входа без вкладок, но со своим «назад» (consentFull, joinAbout) — стрелка и своё имя в шапке
+  var away = bare() && !BACK[current];
+  document.getElementById('back').hidden = root || away;
 
   var title = document.getElementById('title');
-  if (current === 'home' || current === 'guest' || bare() && current !== 'consentFull') {
+  if (current === 'home' || current === 'guest' || away) {
     title.textContent = 'Café XIII';
     title.className = 'wordmark';
   } else {
@@ -5796,7 +6048,8 @@ function render() {
 
   sunButton();
   tgChrome();
-  window.scrollTo(0, 0);
+  // место берётся ДО подмены разметки: после неё высота страницы другая, и браузер уже сдвинул бы его
+  window.scrollTo(0, same ? y : 0);
 }
 
 /* ── рабочие экраны в демонстрации (Cafe13KPG#409) ─────
@@ -5815,11 +6068,11 @@ function render() {
 DATA.work = {
   dirs: [{ id: 1, title: 'Бар', is_active: true }],
   people: { people: [
-    { tg_user_id: 200000001, first_name: '[глава клуба]', roles: [{ id: 11, role: 'head' }], memberships: ['partner'] },
-    { tg_user_id: 200000002, first_name: '[куратор бара]', roles: [{ id: 12, role: 'curator', direction_id: 1, direction: 'Бар' }], memberships: ['member'] },
-    { tg_user_id: 200000003, first_name: '[исполнитель на баре]', roles: [{ id: 13, role: 'bar', direction_id: 1, direction: 'Бар' }], memberships: ['member'] },
-    { tg_user_id: 200000004, first_name: '[кассир]', roles: [{ id: 14, role: 'staff' }], memberships: [] },
-    { tg_user_id: 200000005, first_name: '[имя члена]', roles: [], memberships: ['member'] }
+    { tg_user_id: 200000001, first_name: '[глава клуба]', roles: [{ id: 11, role: 'head' }], memberships: ['partner'], balance: '3170.00' },
+    { tg_user_id: 200000002, first_name: '[куратор бара]', roles: [{ id: 12, role: 'curator', direction_id: 1, direction: 'Бар' }], memberships: ['member'], balance: '0.00' },
+    { tg_user_id: 200000003, first_name: '[исполнитель на баре]', roles: [{ id: 13, role: 'bar', direction_id: 1, direction: 'Бар' }], memberships: ['member'], balance: '420.00' },
+    { tg_user_id: 200000004, first_name: '[кассир]', roles: [{ id: 14, role: 'staff' }], memberships: [], balance: '0.00' },
+    { tg_user_id: 200000005, first_name: '[имя члена]', roles: [], memberships: ['member'], balance: '640.00' }
   ] },
   cards: [
     { id: 301, title: 'Тыквенный латте', group: 'Кофе', price: '135.00', mins: 4, about: 'Тыква, корица, двойной эспрессо', is_alcohol: false,
@@ -5885,7 +6138,7 @@ function demoWork(screen, p) {
 /* Отправки и перечитывания рабочих экранов. В демонстрации они не уходят:
    сервера нет, а «ничего не случилось» на нажатие — дефект, уже бывший у нас
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
-var DEMO_SENDS = ['p-grant', 'p-revoke', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
+var DEMO_SENDS = ['p-grant', 'p-revoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
                   'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
 
@@ -5893,6 +6146,7 @@ function go(screen, p) {
   if (!SCREENS[screen]) return;
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
   if (screen === 'noAccess' && current !== 'noAccess') { JOIN.err = ''; JOIN.fileErr = ''; loadJoin(); }
+  if (screen === 'joinAbout' && current !== 'joinAbout') loadAbout();
   if (screen === 'demo' && LIVE && !isGod()) return;
   if (screen === 'demo' && LIVE && !TEST.on && TEST.health !== 'configured' && TEST.health !== 'loading') loadHealth();
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
@@ -5907,6 +6161,7 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
+  if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoinQueue(); }
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
@@ -6146,9 +6401,13 @@ function doAction(a) {
       // Cafe13KPG#214, 22.10.2026). Снимать можно одну, не обе. Эта ещё и
       // держит p-open/p-close: peopleReset снимает блокировку.
       if (PEOPLE.busy) return;
+      var before = peopleTouched();
       if (a === 'p-reload') { loadRoster(); render(); return; }
       if (a === 'p-grant') { grantSend(); return; }
       if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
+      if (a === 'p-outyes') { if (PEOPLE.out === Number(arg)) outSend(Number(arg)); return; }
+      if (a === 'p-out') { peopleReset(); PEOPLE.out = Number(arg); }
+      if (a === 'p-outkeep') PEOPLE.out = null;
       if (a === 'p-open') { peopleReset(); PEOPLE.open = Number(arg); }
       if (a === 'p-close') peopleReset();
       if (a === 'p-role' && ROLE_PICK.indexOf(arg) !== -1) {
@@ -6158,9 +6417,10 @@ function doAction(a) {
         if (DIR_ROLES.indexOf(arg) !== -1 && PEOPLE.dirs && PEOPLE.dirs.length === 1) PEOPLE.dir = PEOPLE.dirs[0].id;
       }
       if (a === 'p-dir') PEOPLE.dir = Number(arg);
-      if (a === 'p-ask') { PEOPLE.ask = Number(arg); PEOPLE.deny = null; }
-      if (a === 'p-keep') PEOPLE.ask = null;
-      haptic(); render();
+      // крестик у роли: окно отмены вместо вопроса; второе окно поверх первого не открывается
+      if (a === 'p-ask') { if (PEOPLE.ask !== null) return; undoStart(Number(arg)); }
+      if (a === 'p-keep') { undoStop(); PEOPLE.ask = null; }
+      haptic(); peopleRedraw(before);
       // раскрытая форма — в вид: иначе она открылась бы за нижним краем
       var f = a === 'p-open' && document.querySelector('[data-person="' + PEOPLE.open + '"]');
       if (f && f.scrollIntoView) f.scrollIntoView({ block: 'start' });
@@ -6282,11 +6542,9 @@ function doAction(a) {
     if (a === 'join-again') { JOIN.again = true; JOIN.err = ''; render(); return; }
     if (a === 'join-send') { sendJoin(); return; }
     // тетрадь клуба — браузером по токену на час: заголовка подписи браузер не шлёт
-    if (a === 'join-about' && JOIN.info) {
-      var about = API + '/join/about?t=' + encodeURIComponent(JOIN.info.token);
-      if (tg.openLink) tg.openLink(about); else window.open(about, '_blank');
-      return;
-    }
+    // тетрадь — внутри приложения, со стрелкой назад на экран просьбы (слово владельца 28.10)
+    if (a === 'join-about') { go('joinAbout'); return; }
+    if (a === 'about-retry') { loadAbout(); render(); return; }
     if (a === 'retry-pass') { loadPass(); render(); return; }
     if (a === 'mr-send' && LIVE) { sendRequest(arg); return; }
     if (a === 'mr-retry' && LIVE) { loadTiers(); render(); return; }
@@ -6517,7 +6775,8 @@ function tgChrome() {
   if (tg.BackButton && tgHas('6.1')) {
     document.getElementById('back').hidden = true;
     if (backHandler) { tg.BackButton.offClick(backHandler); backHandler = null; }
-    if (!noEntry() && (BACK[current] || !tabList().some(function (t) { return t[0] === current; }))) {
+    // до входа «назад» есть, только если она ведёт на экран входа: свойство, а не список экранов (#458, v74)
+    if ((!noEntry() || BARE[backTo()]) && (BACK[current] || !tabList().some(function (t) { return t[0] === current; }))) {
       backHandler = function () { go(backTo()); };
       tg.BackButton.onClick(backHandler);
       tg.BackButton.show();

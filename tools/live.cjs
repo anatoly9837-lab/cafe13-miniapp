@@ -324,10 +324,6 @@ if (grantsSet.length !== 1) {
       t = await s.view();
       for (const w of ['130 USDT', 'сеть TRC20']) if (!t.includes(w)) bad.push(`${n}: USDT — нет «${w}»`);
       if (t.includes('3 600 USDT')) bad.push(`${n}: в USDT показана сумма в батах`);
-      await tap(s, '[data-action="join-about"]');
-      const link = await s.p.evaluate(() => window.__link);
-      if (link !== 'https://api.cafe13.club/join/about?t=' + encodeURIComponent('tok-проверка'))
-        bad.push(`${n}: «О клубе» открыло ${JSON.stringify(link)}`);
       await s.p.fill('#join-said', 'хочу на вечера');
       await attach(s, n, pdf(1500));
       await s.p.waitForTimeout(300);
@@ -419,6 +415,53 @@ if (grantsSet.length !== 1) {
       if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
       await s.ctx.close();
     }
+    // «О клубе» — внутри приложения (v74): рамка по СВЕЖЕМУ токену, «назад» — на экран просьбы
+    {
+      const n = 'about-vnutri';
+      let k = 0;
+      const s = await joinCase(() => json(200, Object.assign(clone(JOIN0), { about_token: ++k > 1 ? 'tok-svezhiy' : 'tok-staryy' })));
+      await tap(s, '[data-action="join-about"]');
+      await s.p.waitForTimeout(200);
+      if (await s.p.evaluate(() => window.__link)) bad.push(`${n}: «О клубе» открыло ссылку наружу`);
+      if (await s.p.evaluate(() => current) !== 'joinAbout') bad.push(`${n}: «О клубе» не открыло экран тетради`);
+      else {
+        const src = await s.p.evaluate(() => { const f = document.querySelector('iframe.about'); return f ? f.getAttribute('src') : null; });
+        if (src === null) bad.push(`${n}: рамки тетради нет при свежем токене`);
+        else if (src !== 'https://api.cafe13.club/join/about?t=tok-svezhiy') bad.push(`${n}: рамка открыта не по свежему токену: ${src}`);
+        if (await s.p.evaluate(() => document.getElementById('title').textContent) !== 'О клубе') bad.push(`${n}: в шапке не «О клубе»`);
+        // E49b → E49: после загрузки страницы «Открываем тетрадь клуба» уходит, рамка видна
+        await s.p.waitForTimeout(300);
+        if (!(await s.p.isVisible('iframe.about'))) bad.push(`${n}: рамка не показана после загрузки страницы`);
+        if (await s.p.isVisible('.paper .wait')) bad.push(`${n}: «Открываем тетрадь клуба» осталось после загрузки`);
+        // системная «назад» — на экран просьбы, не в кабинет
+        if (!(await s.p.evaluate(() => window.__backShown === true))) bad.push(`${n}: у тетради нет системной «назад»`);
+        await s.p.evaluate(() => window.__back && window.__back());
+        await s.p.waitForTimeout(200);
+        if (!(await s.view()).includes('Отправить запрос')) bad.push(`${n}: системная «назад» увела не на экран с «Отправить запрос»`);
+        // Telegram старше 6.1: нарисованная «назад» ведёт туда же
+        await tap(s, '[data-action="join-about"]');
+        await s.p.evaluate(() => { Telegram.WebApp.isVersionAtLeast = () => false; render(); });
+        if (!(await s.p.isVisible('#back'))) bad.push(`${n}: у тетради нет нарисованной «назад»`);
+        else { await s.p.click('#back'); await s.p.waitForTimeout(200);
+          if (!(await s.view()).includes('Отправить запрос')) bad.push(`${n}: нарисованная «назад» увела не на экран с «Отправить запрос»`); }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // отказ GET /join при входе на тетрадь — нашими словами и без рамки (иначе в рамке голый JSON 403)
+    {
+      const n = 'about-otkaz';
+      let k = 0;
+      // настоящий отказ /join: 503, когда токен тетради нечем подписать (join.py, _about_token)
+      const s = await joinCase(() => ++k > 1 ? json(503, { detail: 'ключ бота не задан' }) : json(200, JOIN0));
+      await tap(s, '[data-action="join-about"]');
+      await s.p.waitForTimeout(200);
+      if (await s.p.$('iframe.about')) bad.push(`${n}: при отказе сервера рамка вставлена`);
+      if (!(await s.view()).includes('Ключ бота не задан.')) bad.push(`${n}: отказ сервера не показан его словами`);
+      if (!(await s.p.$('[data-action="about-retry"]'))) bad.push(`${n}: нет «Попробовать снова»`);
+      if (await s.p.$('.paper')) bad.push(`${n}: при отказе показан лист тетради (E49v: листа нет)`);
+      await s.ctx.close();
+    }
     // реквизиты не пришли — не тупик: сказано и есть «Повторить», второй заход их показывает
     {
       const n = 'join-rekvizity';
@@ -469,19 +512,26 @@ if (grantsSet.length !== 1) {
       m.memberships = levels.map(l => lv(l, END)); m.roles = roles || [];
       return m;
     };
-    const ALL = ['staff', 'barQueue', 'home', 'guest', 'organizer', 'partner', 'bookings'];
+    // ⚠ ЧУЖОЙ случай (frontend-11, Cafe13KPG#410), ожидание правит frontend-upravlenie по решению
+    // координатора 28.10.2026. Прежняя редакция — семь вкладок, без 'manage': до v72 вкладки
+    // «Управление» не было. С v72 глава клуба (роли OWNER) получает восьмую, последней
+    // (Cafe13KPG#413, кадр E46). Что она появляется только у главы и только последней, держат
+    // `manage-tab` и мутация «вкладка без права», а не это ожидание.
+    const ALL = ['staff', 'barQueue', 'home', 'guest', 'organizer', 'partner', 'bookings', 'manage'];
     for (const [name, me, want] of [
       ['tabs-dva-member-vyigral', who('member', ['member', 'partner']), ['home', 'guest', 'partner', 'bookings']],
       ['tabs-dva-partner-vyigral', who('partner', ['member', 'partner']), ['home', 'guest', 'partner', 'bookings']],
       ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'bookings']],
       ['tabs-tolko-member', who('member', ['member']), ['home', 'guest', 'bookings']],
       ['tabs-gost', who(null, []), ['guest', 'bookings']],
-      ['tabs-vse-sem', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
+      // было `tabs-vse-sem` («все семь»): до v72 вкладок было семь. Имя без числа нарочно —
+      // число в имени проверки стареет на следующей вкладке (решение координатора 28.10.2026)
+      ['tabs-vse', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
       const s = await open(true, true, json(200, me));
       const got = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
       if (JSON.stringify(got) !== JSON.stringify(want))
         bad.push(`${name}: вкладки ${JSON.stringify(got)}, ждали ${JSON.stringify(want)}`);
-      // семь вкладок в 390 px: ни одна не вылезла за край и не съела соседнюю
+      // все вкладки в 390 px (до v72 — семь, с v72 у главы клуба восемь): ни одна не вылезла за край и не съела соседнюю
       const over = await s.p.evaluate(() => {
         const t = document.getElementById('tabs'), w = document.documentElement.clientWidth;
         return [...t.querySelectorAll('button')].filter(b => {
@@ -507,7 +557,7 @@ if (grantsSet.length !== 1) {
         }).map(b => b.textContent));
       if (wrapped.length) bad.push(`${name}: подпись вкладки переносится на вторую строку: ${JSON.stringify(wrapped)}`);
       if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
-      if (name === 'tabs-vse-sem') await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
+      if (name === 'tabs-vse') await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
       // что партнёр увидит за вкладкой: partner вне WIRED, сервера за ним нет (Cafe13KPG#99) —
       // снимок для решения владельца, а не проверка
       // без вкладки снимать нечего: строка о составе уже стоит выше, а клик в пустоту оборвал бы батарею
@@ -669,6 +719,12 @@ if (grantsSet.length !== 1) {
   {
     const s = await open(true, true, json(200, noConsent), json(200, { consent_data_at: '2026-10-18T12:00:00+00:00', consent_filming_at: null }));
     if (!(await s.view()).includes('Клуб запомнит вас')) bad.push('consent: экран согласия не показан');
+    // приветственный экран не обещает удаления себя: на сервере его нет (слово владельца 28.10)
+    {
+      const rows = await s.p.evaluate(() => [...document.querySelectorAll('#view .rows')].map(e => e.textContent).join(' '));
+      if (/удал/i.test(rows)) bad.push('consent: строки согласия обещают удаление себя, а на сервере его нет');
+      if (!rows.includes('Посмотреть о себе')) bad.push('consent: нет строки «Посмотреть о себе»');
+    }
     await s.p.screenshot({ path: `${OUT}/live-consent.png` });
     await s.p.evaluate(() => window.__main && window.__main());
     await s.p.waitForTimeout(150);
@@ -732,6 +788,144 @@ if (grantsSet.length !== 1) {
     await s.p.click('[data-go="home"]'); await s.p.click('[data-go="pass"]'); await s.p.waitForTimeout(100);
     if (s.calls.filter(c => c.url.endsWith('/pass')).length !== 1) bad.push('pass: повторный запрос при втором заходе');
     if (s.errs.length) bad.push('pass: ошибки страницы ' + s.errs.join('; '));
+    // Фикстура несёт `photo_url: null` — значит здесь кружок обязан быть буквой.
+    // Без этой строки «фото никогда не рисуется» было бы зелено и тогда, когда
+    // клиент рисует его всегда.
+    if (await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
+      bad.push('pass: фото при пустом photo_url');
+    await s.ctx.close();
+  }
+
+  /* ── аватарка Telegram на пропуске (кадры E50, E50b) ──
+     Решение владельца 28.10.2026 («по аватарке делаем»), три условия: фото
+     только при сети, адрес НЕ кладётся в память телефона, без сети — буква.
+     Второе условие проверяется не видом кружка, а СОСТАВОМ записи в
+     `cafe13.pass`: экран с правильным кружком и экран, заодно сохранивший
+     адрес, выглядят одинаково. Адрес в фикстуре — нули, как номера в базе
+     кадров: ничьё фото, и живого адреса в публичный репозиторий не уезжает. */
+  const PHOTO = 'https://t.me/i/userpic/320/obrazec.jpg';
+  {
+    const s = await open(true, true, json(200, OWNER), null,
+                         json(200, Object.assign({}, PASS, { photo_url: PHOTO })));
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    /* Что мерим: признак `photo` на кружке, адрес в своём свойстве, и —
+       главное — что ПРАВИЛО КАДРА действительно применилось: фон у
+       псевдоэлемента `::after`, а не у самого кружка (фоном кружка буква
+       проступила бы на лице; это первая редакция кадра, отвергнутая
+       отрисовкой). Картинку в docker не загрузить — сети нет, Telegram CDN
+       не ответит, — поэтому мерится РАЗМЕТКА и ПРАВИЛО, а не пиксели лица. */
+    const face = await s.p.evaluate(() => {
+      const el = document.querySelector('.pass .avatar');
+      if (!el) return null;
+      const c = getComputedStyle(el), a = getComputedStyle(el, '::after');
+      const r = el.getBoundingClientRect();
+      return { tag: el.tagName, cls: el.className, letter: el.textContent,
+               prop: el.style.getPropertyValue('--photo'),
+               after: a.backgroundImage, afterSize: a.backgroundSize,
+               own: c.backgroundImage, pos: c.position, style: c.borderTopStyle,
+               radius: c.borderRadius, w: Math.round(r.width), h: Math.round(r.height),
+               imgs: document.querySelectorAll('.pass img').length };
+    });
+    if (!face) bad.push('pass-photo: кружка нет вовсе');
+    else {
+      if (!/(^| )photo( |$)/.test(face.cls)) bad.push('pass-photo: кружок без признака фото: ' + face.cls);
+      if (face.prop.indexOf(PHOTO) === -1) bad.push('pass-photo: адрес не в свойстве кружка: ' + face.prop);
+      if (face.after.indexOf(PHOTO) === -1) bad.push('pass-photo: правило кадра не применилось, фона у ::after нет: ' + face.after);
+      if (face.afterSize !== 'cover') bad.push('pass-photo: фото не обрезается, а тянется: ' + face.afterSize);
+      if (face.own !== 'none') bad.push('pass-photo: фон у САМОГО кружка — буква проступит на лице: ' + face.own);
+      if (face.letter !== 'Т') bad.push('pass-photo: буквы под фото нет, терять её незачем: ' + face.letter);
+      if (face.pos !== 'relative') bad.push('pass-photo: кружок не держит псевдоэлемент: ' + face.pos);
+      if (face.style !== 'solid') bad.push('pass-photo: обводка фото пунктиром (заполнитель): ' + face.style);
+      if (!/50%/.test(face.radius)) bad.push('pass-photo: кружок не круглый: ' + face.radius);
+      if (face.w !== 54 || face.h !== 54) bad.push(`pass-photo: коробка ${face.w}x${face.h}, в кадре 54x54`);
+      if (face.imgs) bad.push('pass-photo: фото вставлено тегом — при неудаче в кружке значок битого изображения');
+    }
+    const kept = await s.p.evaluate(() => localStorage.getItem('cafe13.pass'));
+    if (!kept) bad.push('pass-photo: пропуск не сохранён — условие проверять не на чем');
+    else {
+      if (kept.indexOf('obrazec') !== -1 || /photo/i.test(kept))
+        bad.push('pass-photo: адрес фото уехал в память телефона: ' + kept);
+      if (JSON.parse(kept).code !== 'XIII-0042') bad.push('pass-photo: сохранён не тот код: ' + kept);
+    }
+    if (!(await s.view()).includes('XIII · 0042')) bad.push('pass-photo: код не показан рядом с фото');
+    await s.p.screenshot({ path: `${OUT}/live-pass-photo.png` });
+    if (s.errs.length) bad.push('pass-photo: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Негодный адрес — буква, а не `src`, которому клиент поверил. `http://`
+  // здесь главный: картинка по нему пошла бы открытой сетью с устройства.
+  /* ⚠ Три последних — про набор знаков, и ВЫЛАЗКА из них одна: `закрыть url`.
+     Замер мой, отрисовкой: двойная кавычка выходит из `url("…")` и чужое
+     правило применяется (вычисленный цвет `rgb(255,0,0)`), а апостроф и
+     пробел — нет (`url("x.jpg';…")` и `%20`). Стоят они здесь потому, что
+     запрет в клиенте шире измеренного нарочно, и случай сторожит ЗАПРЕТ, а
+     не мою догадку об опасности каждого знака.
+     ⚠ И адрес-образец БЕЗ длинного ряда цифр: первая редакция несла на
+     месте номера десять нулей (сам ряд здесь не привожу — страж читает и
+     эту строку), и страж номеров людей (`tools/ids-clean.cjs`)
+     покраснел — верно покраснел. Он ищет СВОЙСТВО, «7 и больше цифр в одной
+     лексеме», а нули от настоящего Telegram-номера по этому свойству не
+     отличаются. Лечение — снять свойство, а не внести исключение в
+     разрешающий список: у адреса-образца форма свободна (его никто не
+     загружает), а каждое исключение в списке — дыра на будущее. */
+  for (const [name, photo] of [['http', 'http://t.me/i/userpic/320/obrazec.jpg'],
+                               ['пусто', ''], ['число', 7], ['null', null],
+                               ['нет поля', undefined],
+                               ['закрыть url', 'https://t.me/0.jpg");color:red;x:url("y'],
+                               ['кавычка', "https://t.me/0'.jpg"],
+                               ['пробел', 'https://t.me/0 .jpg']]) {
+    const d = Object.assign({}, PASS);
+    if (photo === undefined) delete d.photo_url; else d.photo_url = photo;
+    const s = await open(true, true, json(200, OWNER), null, json(200, d));
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    const кружок = await s.p.evaluate(() => {
+      const el = document.querySelector('.pass .avatar');
+      if (!el) return null;
+      return { cls: el.className, letter: el.textContent, html: el.outerHTML,
+               after: getComputedStyle(el, '::after').backgroundImage };
+    });
+    if (!кружок) bad.push(`pass-photo-bad(${name}): кружка нет вовсе`);
+    else {
+      if (/(^| )photo( |$)/.test(кружок.cls)) bad.push(`pass-photo-bad(${name}): клиент поверил адресу: ` + кружок.html);
+      if (кружок.after !== 'none') bad.push(`pass-photo-bad(${name}): фон у ::after есть: ` + кружок.after);
+      if (кружок.letter !== 'Т') bad.push(`pass-photo-bad(${name}): в кружке не буква имени: ` + кружок.letter);
+      if (/color *: *red/.test(кружок.html)) bad.push(`pass-photo-bad(${name}): чужое правило попало в разметку: ` + кружок.html);
+    }
+    if (!(await s.view()).includes('XIII · 0042')) bad.push(`pass-photo-bad(${name}): код не показан`);
+    await s.ctx.close();
+  }
+  /* ⚠ ПРЕДЕЛ запрета «адрес не кладётся в память» — и случай, который его
+     называет. Запрет закрывает ХРАНИЛИЩЕ, а внутри ОДНОГО запуска адрес в
+     памяти приложения есть, и если карточку рисовать из него, а не из довода,
+     то экран сбоя покажет фото там, где сети уже нет. Путь: вход удался, фото
+     приехало, сервер умер, человек выходит из просмотра — `switchTo` уводит на
+     экран сбоя с сохранённым пропуском. Без этого случая довод у `passCard`
+     неотличим от чтения переменной изнутри. */
+  {
+    let мёртв = false;
+    const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      if (q.url().endsWith('/pass')) return json(200, Object.assign({}, PASS, { photo_url: PHOTO }));
+      if (q.url().endsWith('/events')) return json(200, []);
+      // Остальное отдаётся как в обычном случае: `undefined` — это «решай сам».
+      // Умирает только `/me`, потому что на нём и стоит путь к экрану сбоя.
+      if (q.url().endsWith('/me')) return мёртв ? 'abort' : json(200, OWNER);
+      return undefined;
+    });
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    if (!(await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length)))
+      bad.push('pass-photo-offline: фото не приехало — предел проверять не на чем');
+    мёртв = true;
+    await s.p.evaluate(() => switchTo(false, null));
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    if (!t.includes('Сервер клуба недоступен')) bad.push('pass-photo-offline: не экран сбоя: ' + t.slice(0, 80));
+    if (!t.includes('Пропуск, сохранённый на телефоне')) bad.push('pass-photo-offline: сохранённый пропуск не показан');
+    if (await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
+      bad.push('pass-photo-offline: фото на экране сбоя — без сети оно не загрузится, а кружок обещает человека');
+    await s.p.screenshot({ path: `${OUT}/live-pass-photo-offline.png`, fullPage: true });
     await s.ctx.close();
   }
   const SAVED = { code: 'XIII-0042', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 };
@@ -1477,6 +1671,9 @@ if (grantsSet.length !== 1) {
     const has = t.includes('Пропуск, сохранённый на телефоне');
     if (has !== show) bad.push(`${name}: сохранённый пропуск ${has ? 'показан' : 'не показан'}`);
     if (show && !t.includes('XIII · 0042')) bad.push(`${name}: показан не тот код`);
+    // В запасе адреса фото нет и не бывает — значит кружок здесь всегда буква.
+    if (show && await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
+      bad.push(`${name}: в сохранённом пропуске фото`);
     if (!t.includes('Сервер клуба недоступен')) bad.push(`${name}: нет экрана сбоя`);
     if (name === 'offline-pass') await s.p.screenshot({ path: `${OUT}/live-offline-pass.png`, fullPage: true });
     await s.ctx.close();
@@ -5313,15 +5510,26 @@ if (grantsSet.length !== 1) {
     const peopleCase = (me, r) => open(true, true, json(200, me), null, null, null, q => {
       const u = q.url();
       if (u.endsWith('/people')) return r.people || json(200, ROSTER);
-      if (u.endsWith('/directions')) return r.dirs || json(200, DIRS);
+      // r.dirs бывает ФАБРИКОЙ: задержка ответа начинается в момент запроса, а не при заведении случая
+      // (готовый промис истекал под нагрузкой раньше, чем случай доходил до проверки)
+      // ⚠ r.dirs читается ОДИН раз: у people-late-dirs это геттер со счётчиком, и второе
+      // чтение съедало «медленный» первый ответ — гонки не возникало
+      if (u.endsWith('/directions')) { const d = r.dirs; return typeof d === 'function' ? d() : d || json(200, DIRS); }
       if (u.endsWith('/roles')) return r.grant || json(201, { id: 40, member_id: 702, role: 'x', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' });
       if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
+      // исключение (v74): ответ — как у сервера (join.py, revoke_access): строка допуска плюс число оборванных
+      if (/\/access\/\d+\/revoke$/.test(u)) return r.out || json(200, { tg_user_id: Number(u.match(/access\/(\d+)/)[1]),
+        revoked_at: '2026-10-28T13:00:00+00:00', memberships_ended: 1, note: '' });
       return undefined;
     });
+    // вход — с вкладки «Управление» (кадр E46, Cafe13KPG#413), а не с главной: путь
+    // проходится так, как его проходит глава клуба, — вкладка, потом строка
     const toPeople = async s => {
-      const entry = await s.p.$('[data-go="people"]');
-      if (!entry) return false;
-      await s.p.evaluate(() => document.querySelector('[data-go="people"]').click());
+      if (!(await s.p.$('#tabs [data-go="manage"]'))) return false;
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click());
+      await s.p.waitForTimeout(250);
+      if (!(await s.p.$('#view [data-go="people"]'))) return false;
+      await s.p.evaluate(() => document.querySelector('#view [data-go="people"]').click());
       await s.p.waitForTimeout(250);
       return true;
     };
@@ -5339,16 +5547,20 @@ if (grantsSet.length !== 1) {
       if (!(await toPeople(s))) bad.push('people-head: у главы клуба нет входа «Люди»');
       else {
         const t = await s.view();
-        ['Алевтина Тестова', 'Куратор направления', 'Сомчай', 'Ролей нет', 'без членства', 'Член клуба, Бизнес-партнёр', 'Глава клуба',
-         'единственный глава клуба']
+        // v78 (E47z): уровни и роли — надписи-кнопки; «Ролей нет», «без членства» и «единственный глава
+        // клуба» кадр не рисует (последнего главу снять не даст сервер — его отказ словами)
+        ['Алевтина Тестова', 'Куратор направления · Бар', 'Сомчай', 'Член клуба', 'Бизнес-партнёр', 'Глава клуба']
           .forEach(x => { if (!t.includes(x)) bad.push(`people-head: нет «${x}»`); });
-        // роль и направление — разные строки: длинное направление не рвёт имя роли
-        const under = await s.p.$eval(`${card(s, 0)} .role-row .small`, e => e.textContent).catch(() => null);
-        if (under !== 'Бар') bad.push(`people-head: направление под ролью «${under}», ждали «Бар»`);
+        const chips = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]));
+        if (!chips.some(c => c[0] === 'SPAN' && /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')) bad.push(`people-head: уровень не чипом «paid» без крестика: ${JSON.stringify(chips)}`);
+        if (chips.some(c => c[0] === 'BUTTON' && /paid/.test(c[1]))) bad.push('people-head: уровень нажимается, а ручки снятия уровня на бою нет');
         // tg_user_id — ни текстом, ни в атрибутах разметки
         if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push('people-head: tg_user_id в разметке');
         // у админа «Снять» у админа есть
-        if (!(await s.p.$('[data-action="p-ask:6"]'))) bad.push('people-head: админу нечем снять администратора');
+        // v79: head и admin у главы — ОДИН бейдж «Глава клуба» без крестика (слово владельца 28.10.2026)
+        const fixed = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]).filter(x => /Глава клуба|Администратор/.test(x[2])));
+        if (JSON.stringify(fixed) !== JSON.stringify([['SPAN', 'chip fixed', 'Глава клуба']])) bad.push(`people-head: у главы ждали ровно один бейдж «Глава клуба» без крестика, есть ${JSON.stringify(fixed)}`);
+        if (await s.p.$('[data-action="p-ask:6"]') || await s.p.$('[data-action="p-ask:5"]')) bad.push('people-head: главу или админа можно снять с экрана');
         const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
         if (/70[123]|Алевтина/.test(stored)) bad.push('people-head: люди из /people легли в хранилище браузера');
         if (s.calls.filter(c => c.url.endsWith('/people')).length !== 1) bad.push('people-head: /people запрошен не один раз');
@@ -5415,6 +5627,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(MASTER, {});
       if (await s.p.$('[data-go="people"]')) bad.push('people-master: у куратора направления есть вход «Люди»');
+      if (await s.p.$('#tabs [data-go="manage"]')) bad.push('people-master: у куратора направления есть вкладка «Управление»');
       await s.p.evaluate(() => go('people'));
       await s.p.waitForTimeout(200);
       if (!(await s.view()).includes('может глава клуба')) bad.push('people-master: экран «Люди» не отказал куратору');
@@ -5422,17 +5635,19 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
-    // админа выдаёт только админ: у главы без admin такой кнопки нет, у админа — есть
-    for (const [name, me, want] of [['people-pick-head', HEAD_ONLY, false], ['people-pick-admin', OWNER, true]]) {
+    // v79 (слово владельца 28.10.2026): «Администратор» и «Чужими глазами» в выдаче — СЕРЫЕ у всех,
+    // с «выдаётся не из приложения»; «Главы клуба» в выдаче нет; снять админа с экрана нельзя никому.
+    // Прежняя редакция: админа выдавал и снимал только админ (у главы без admin кнопки не было).
+    for (const [name, me] of [['people-pick-head', HEAD_ONLY], ['people-pick-admin', OWNER]]) {
       const s = await peopleCase(me, {});
       if (!(await toPeople(s))) { bad.push(`${name}: нет входа «Люди»`); await s.ctx.close(); continue; }
-      // админа снимает только админ: у главы на строке администратора кнопки нет, есть подпись
-      const ask = !!(await s.p.$('[data-action="p-ask:6"]'));
-      if (ask !== want) bad.push(`${name}: «Снять» у администратора ${ask ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
-      if (!want && !(await s.view()).includes('снимает только администратор')) bad.push(`${name}: нет подписи «снимает только администратор»`);
+      if (await s.p.$('[data-action="p-ask:6"]')) bad.push(`${name}: администратора можно снять с экрана`);
       await act(s, 'p-open:1');
-      const has = !!(await s.p.$(`${card(s, 1)} [data-action="p-role:admin"]`));
-      if (has !== want) bad.push(`${name}: выбор «Администратор» ${has ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
+      for (const [role, word] of [['admin', 'Администратор'], ['god_mentor', 'Чужими глазами']]) {
+        const b = await s.p.$eval(`${card(s, 1)} [data-action="p-role:${role}"]`, e => [e.disabled, e.textContent]).catch(() => null);
+        if (!b || !b[0] || b[1] !== word + ' · выдаётся не из приложения') bad.push(`${name}: «${word}» не серая с причиной: ${JSON.stringify(b)}`);
+      }
+      if (await s.p.$(`${card(s, 1)} [data-action="p-role:head"]`)) bad.push(`${name}: «Глава клуба» в списке выдачи — её здесь нет никогда`);
       await s.ctx.close();
     }
 
@@ -5479,22 +5694,24 @@ if (grantsSet.length !== 1) {
     for (const [name, step, reply, detail] of [
       ['people-grant-409', 'grant', json(409, { detail: 'такая живая роль у человека уже есть' }), 'Такая живая роль у человека уже есть.'],
       ['people-grant-403', 'grant', json(403, { detail: 'системного администратора выдаёт и снимает только администратор' }), 'Системного администратора выдаёт и снимает только администратор.'],
-      ['people-revoke-last-head', 'revoke', json(409, { detail: 'это последний глава клуба: сначала назначьте другого, иначе выдавать роли станет некому' }),
-        'Это последний глава клуба: сначала назначьте другого, иначе выдавать роли станет некому.']]) {
+      // с v79 «Главу клуба» с экрана не снять (бейдж без крестика, слово владельца) — отказ
+      // «последний глава клуба» недостижим отсюда; отказ снятия проверяется на роли куратора
+      ['people-revoke-409', 'revoke', json(409, { detail: 'эта роль уже снята' }), 'Эта роль уже снята.']]) {
       const s = await peopleCase(OWNER, { [step]: reply });
       await toPeople(s);
-      const uid = step === 'grant' ? 1 : 2;
+      const uid = step === 'grant' ? 1 : 0;
       if (step === 'grant') {
         await act(s, 'p-open:1'); await act(s, 'p-role:director');
         await s.p.evaluate(() => window.__main && window.__main());
       } else {
-        await act(s, 'p-ask:5');
-        if (posts(s, /revoke/).length) bad.push(`${name}: снятие ушло без подтверждения`);
-        if (!(await s.view()).includes('Снять «Глава клуба» у Глеб Главный?')) bad.push(`${name}: нет вопроса перед снятием`);
-        await act(s, 'p-revoke:5');
+        // окно отмены вместо вопроса (E47l): сначала полоса и ни одного запроса, потом — ровно один
+        await s.p.evaluate(() => { UNDO_MS = 150; });
+        await act(s, 'p-ask:31');
+        if (posts(s, /revoke/).length) bad.push(`${name}: снятие ушло сразу, окна отмены нет`);
+        if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${name}: нет полосы «Снимаем: Куратор направления · Бар»`);
       }
       await s.p.waitForTimeout(300);
-      if (step === 'revoke' && (posts(s, /\/roles\/5\/revoke$/).length !== 1)) bad.push(`${name}: снятие не ушло ровно один раз`);
+      if (step === 'revoke' && (posts(s, /\/roles\/31\/revoke$/).length !== 1)) bad.push(`${name}: снятие не ушло ровно один раз`);
       const deny = await s.p.$eval(`${card(s, uid)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== detail) bad.push(`${name}: плашка «${deny}», ждали «${detail}»`);
       if ((await s.view()).match(/Выдано:|Снято:/)) bad.push(`${name}: отказ показан успехом`);
@@ -5572,7 +5789,7 @@ if (grantsSet.length !== 1) {
 
     // направления ещё грузятся: роль открыта, «Загружаем…», и ни слова о том, что их нет
     {
-      const s = await peopleCase(OWNER, { dirs: new Promise(r => setTimeout(() => r(json(200, DIRS)), 2000)) });
+      const s = await peopleCase(OWNER, { dirs: () => new Promise(r => setTimeout(() => r(json(200, DIRS)), 2000)) });
       await toPeople(s);
       await act(s, 'p-open:1');
       if (await s.p.$(`${card(s, 1)} [data-action="p-role:curator"][disabled]`)) bad.push('people-dirs-loading: роль куратора закрыта, пока перечень грузится');
@@ -5611,7 +5828,7 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       const k = step === 'grant' ? 1 : 0;
       if (step === 'grant') { await act(s, 'p-open:1'); await act(s, 'p-role:ops_director'); await s.p.evaluate(() => window.__main && window.__main()); }
-      else { await act(s, 'p-ask:31'); await act(s, 'p-revoke:31'); }
+      else { await s.p.evaluate(() => { UNDO_MS = 50; }); await act(s, 'p-ask:31'); }
       await s.p.waitForTimeout(300);
       const deny = await s.p.$eval(`${card(s, k)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== 'Ответ сервера не разобран.') bad.push(`${name}: плашка «${deny}», ждали «Ответ сервера не разобран.»`);
@@ -5625,7 +5842,8 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
       await act(s, 'p-open:2');
-      if (!(await s.p.$(`${card(s, 2)} [data-action="p-role:head"][disabled]`))) bad.push('people-held: «Глава клуба» у главы не закрыта');
+      // v79: «Главы клуба» в списке выдачи нет вовсе (была закрытой «уже есть» у главы)
+      if (await s.p.$(`${card(s, 2)} [data-action="p-role:head"]`)) bad.push('people-held: «Глава клуба» в списке выдачи');
       if (await s.p.$(`${card(s, 2)} [data-action="p-role:director"][disabled]`)) bad.push('people-held: «Директор» закрыт без причины');
       await act(s, 'p-open:0'); await act(s, 'p-role:curator');
       await s.p.waitForTimeout(100);
@@ -5639,7 +5857,7 @@ if (grantsSet.length !== 1) {
     // медленный, второй быстрый; тело медленного — нечитаемый маркер.
     for (const [name, step, start, again, re] of [
       ['people-late-grant', 'grant', ['p-open:1', 'p-role:ops_director', 'main'], ['p-open:1', 'p-role:ops_director', 'main'], /\/roles$/],
-      ['people-late-revoke', 'revoke', ['p-ask:31', 'p-revoke:31'], ['p-ask:31', 'p-revoke:31'], /\/roles\/31\/revoke$/],
+      ['people-late-revoke', 'revoke', ['short', 'p-ask:31'], ['short', 'p-ask:31'], /\/roles\/31\/revoke$/],
     ]) {
       // задержка считается от самого запроса: таймер, заведённый при создании
       // случая, истекал ещё до ухода с экрана, и мутация на гард оставалась зелёной
@@ -5648,7 +5866,9 @@ if (grantsSet.length !== 1) {
       const r = { get [step]() { n++; return n === 1 ? slow() : undefined; } };
       const s = await peopleCase(OWNER, r);
       await toPeople(s);
-      const run = async steps => { for (const a of steps) { if (a === 'main') await s.p.evaluate(() => window.__main && window.__main()); else await act(s, a); } };
+      // 'short' — окно отмены в 50 мс: снятие уходит по таймеру окна, а не вторым нажатием (v78)
+      const run = async steps => { for (const a of steps) { if (a === 'main') await s.p.evaluate(() => window.__main && window.__main());
+        else if (a === 'short') await s.p.evaluate(() => { UNDO_MS = 50; }); else await act(s, a); } };
       await run(start);
       await s.p.waitForTimeout(100);
       await s.p.evaluate(() => { go('home'); go('people'); });
@@ -5730,6 +5950,9 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles\/31\/revoke$/).length;
       if (pp !== 1) bad.push(`people-double-revoke: двойное «Точно снять» отправило ${pp} запросов, а не один`);
+      // E47k: пока сервер отвечает, надпись на месте, но погашена и не нажимается
+      const busy = await s.p.$eval('[data-person="0"] .chip.busy', e => [e.tagName, e.textContent]).catch(() => null);
+      if (!busy || busy[0] !== 'SPAN' || !/Куратор направления/.test(busy[1])) bad.push(`people-chip-busy: снимаемая надпись не погашена на время ответа (E47k): ${JSON.stringify(busy)}`);
       await s.ctx.close();
     }
 
@@ -5737,12 +5960,14 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 150; });
       await act(s, 'p-ask:31');
       await act(s, 'p-keep');
-      if (posts(s, /revoke/).length) bad.push('people-revoke: «Не снимать» отправило снятие');
+      await s.p.waitForTimeout(300);              // окно истекло бы — но «Отменить» его снял
+      if (posts(s, /revoke/).length) bad.push('people-revoke: «Отменить» не снял окно — снятие ушло');
       await act(s, 'p-ask:31');
-      await act(s, 'p-revoke:31');
-      await s.p.waitForTimeout(300);
+      if (posts(s, /revoke/).length) bad.push('people-revoke: снятие ушло сразу, без окна отмены');
+      await s.p.waitForTimeout(400);
       if (posts(s, /\/roles\/31\/revoke$/).length !== 1) bad.push('people-revoke: снятие не ушло ровно один раз');
       if (!(await note(s, 0)).includes('Снято: Куратор направления · Бар.')) bad.push('people-revoke: в карточке нет итога «Снято»');
       if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-revoke: список не перечитан');
@@ -5759,6 +5984,183 @@ if (grantsSet.length !== 1) {
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
       if (await s.p.$('[data-person]')) bad.push(`${name}: при отказе нарисован список`);
+      await s.ctx.close();
+    }
+
+    // ── «Члены клуба»: уровень, остаток, порядок (кадры E47, E47e; Cafe13KPG#413, v73) ──
+    // Остатки ВЫДУМАНЫ и разные, один нулевой строкой: «0.00» — настоящий ноль, его не прячут.
+    const withBal = clone(ROSTER);
+    withBal.people[0].balance = '9950.00'; withBal.people[1].balance = '0.00'; withBal.people[2].balance = '250.50';
+    const moneyOf = s => s.p.evaluate(() => [...document.querySelectorAll('[data-person]')]
+      .map(c => [c.getAttribute('data-person'), (c.querySelector('[data-money]') || {}).textContent]));
+    const BANNER = 'Остаток сервер не отдаёт';
+    {
+      const n = 'members-balance', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      const m = Object.fromEntries(await moneyOf(s));
+      if (m['0'] !== '9 950 ฿' || m['1'] !== '0 ฿' || m['2'] !== '250.50 ฿') bad.push(`${n}: остатки ${JSON.stringify(m)}, ждали 9 950 ฿ / 0 ฿ / 250.50 ฿`);
+      const t = await s.view();
+      if (t.includes(BANNER)) bad.push(`${n}: плашка «сервер не отдаёт» при остатках с сервера — ноль прочитан как отсутствие`);
+      // порядок: живые членства наверх, внутри — как у сервера. Сервер даёт 0 Алевтина (член),
+      // 1 Сомчай (без членства), 2 Глеб (член и партнёр) — экран обязан 0, 2, 1.
+      const order = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')].map(c => c.getAttribute('data-person')));
+      if (JSON.stringify(order) !== '["0","2","1"]') bad.push(`${n}: порядок карточек ${JSON.stringify(order)}, ждали ["0","2","1"] — живые членства наверх`);
+      // (в v73 здесь стоял запрет «Исключить» на экране — с v74 кнопка есть, её держат случаи out-*)
+      await s.p.screenshot({ path: `${OUT}/live-members.png` });
+      await s.ctx.close();
+    }
+    {
+      const n = 'members-no-balance', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      const t = await s.view();
+      if (!t.includes(BANNER)) bad.push(`${n}: поля остатка нет, а плашки «${BANNER}» нет (кадр E47e)`);
+      const m = await moneyOf(s);
+      if (m.length !== 3 || m.some(x => x[1] !== '—')) bad.push(`${n}: без поля остатка ждали «—» у всех трёх, есть ${JSON.stringify(m)}`);
+      if (/฿/.test(m.map(x => x[1]).join(''))) bad.push(`${n}: без поля остатка показаны деньги — отсутствие стало правдоподобным нулём`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'members-bad-balance', bad1 = clone(withBal); bad1.people[1].balance = 'много';
+      const s = await peopleCase(OWNER, { people: json(200, bad1) });
+      await toPeople(s);
+      if (!(await s.view()).includes('Ответ сервера не разобран.') || await s.p.$('[data-person]')) bad.push(`${n}: остаток не числом принят — ответ обязан отвергнуться целиком`);
+      await s.ctx.close();
+    }
+
+    // ── место при перерисовке (Cafe13KPG#490): тот же экран — место сохраняется, другой — сверху ──
+    // Список длинный нарочно: в короткий экран прокрутке нечего беречь, и случай прошёл бы по построению.
+    {
+      const n = 'keep-place', long = clone(ROSTER);
+      for (let i = 0; i < 12; i++) long.people.push({ tg_user_id: 710 + i, first_name: 'Запасной ' + (i + 1), last_name: null, lang: 'ru',
+        roles: [{ id: 60 + i, role: 'staff', direction_id: null, direction: null, granted_at: '2026-10-20T10:00:00+00:00' }], memberships: [] });
+      const s = await peopleCase(OWNER, { people: json(200, long) });
+      await toPeople(s);
+      const room = await s.p.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+      if (room < 400) bad.push(`${n}: прокручивать некуда (${room} px) — случай не проверяет место`);
+      await s.p.evaluate(() => window.scrollTo(0, 600)); await s.p.waitForTimeout(100);
+      const before = await s.p.evaluate(() => window.scrollY);
+      // перерисовка экрана ЦЕЛИКОМ на том же экране. С v78 действия внутри карточки render() не зовут
+      // (частичная перерисовка), поэтому render() зовётся прямо — иначе случай проверял бы не его
+      await s.p.evaluate(() => render()); await s.p.waitForTimeout(150);
+      const after = await s.p.evaluate(() => window.scrollY);
+      if (before < 500) bad.push(`${n}: прокрутка не встала (${before}) — сравнивать нечего`);
+      else if (Math.abs(after - before) > 2) bad.push(`${n}: после действия на том же экране место уехало: было ${before}, стало ${after}`);
+      // другой экран — сверху. ⚠ Цель обязана быть ДЛИННОЙ: короткий экран (вкладка «Управление»)
+      // браузер сам прижимает к нулю, и мутация «никогда наверх» проходила зелёной (mk2 на a4d35ed).
+      // Тот же длинный список под другим параметром — другой экран для render(), место ему не своё.
+      await s.p.evaluate(() => window.scrollTo(0, 600)); await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => go('people', 'другой')); await s.p.waitForTimeout(200);
+      const room2 = await s.p.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+      const other = await s.p.evaluate(() => window.scrollY);
+      if (room2 < 400) bad.push(`${n}: экрану-цели некуда прокручиваться (${room2} px) — «сверху» не различить`);
+      else if (other !== 0) bad.push(`${n}: другой экран открылся не сверху (${other})`);
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click()); await s.p.waitForTimeout(200);
+      if (await s.p.evaluate(() => window.scrollY) !== 0) bad.push(`${n}: вкладка открылась не сверху`);
+      await s.ctx.close();
+    }
+
+    // ── частичная перерисовка (Cafe13KPG#490, v78): действие в карточке не трогает соседние ──
+    // Различитель — метка, поставленная в СОСЕДНЮЮ карточку и в поле поиска: полная перерисовка её стирает.
+    {
+      const n = 'people-partial', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      await s.p.evaluate(() => { document.querySelector('[data-person="1"]').setAttribute('data-mark', 'x');
+                                 document.getElementById('p-find').setAttribute('data-mark', 'x'); });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${n}: полоса отмены у своей карточки не появилась`);
+      const marks = await s.p.evaluate(() => [!!document.querySelector('[data-person="1"][data-mark]'), !!document.querySelector('#p-find[data-mark]')]);
+      if (!marks[0] || !marks[1]) bad.push(`${n}: действие в одной карточке перерисовало экран целиком (соседняя ${marks[0]}, поиск ${marks[1]})`);
+      // и обратный ход: открыли форму у другой — у первой вопрос закрылся (перерисованы ОБЕ)
+      await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
+      if ((await s.view()).includes('Снимаем: Куратор')) bad.push(`${n}: полоса отмены прежней карточки осталась — перерисована только новая`);
+      if (!(await s.p.$('[data-person="2"] [data-action="p-close"]'))) bad.push(`${n}: форма во второй карточке не открылась`);
+      await s.ctx.close();
+    }
+
+    // ── окно отмены (E47l, v78): цифра в полосе = задержка в коде; «Отменить» — запроса нет; вышло — ровно один ──
+    // Задержка в случае НЕ равна 5 нарочно: при цифре, вписанной в разметку руками, «5 == 5» прошло бы по построению.
+    {
+      const n = 'people-undo', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 3000; });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
+      const sec = await s.p.$eval('.undo .sec', e => e.textContent).catch(() => null);
+      if (sec !== '3') bad.push(`${n}: в полосе «${sec}», а задержка 3 с — цифра и задержка разошлись`);
+      if (posts(s, /revoke/).length) bad.push(`${n}: снятие ушло сразу, окна нет`);
+      if (await s.p.$('[data-person="0"] [data-action="p-ask:31"]')) bad.push(`${n}: в окне отмены надпись роли осталась нажимаемой (E47l)`);
+      await act(s, 'p-keep');
+      if (await s.p.$('.undo')) bad.push(`${n}: «Отменить» не убрал полосу`);
+      if (!(await s.p.$('[data-person="0"] [data-action="p-ask:31"]'))) bad.push(`${n}: после «Отменить» надпись роли не вернулась`);
+      await s.p.evaluate(() => { UNDO_MS = 200; });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(600);
+      const pp = posts(s, /\/roles\/31\/revoke$/).length;
+      if (pp !== 1) bad.push(`${n}: окно вышло — запросов ${pp}, ждали ровно 1`);
+      await s.ctx.close();
+    }
+
+    // ── «Исключить» (кадры E47v, E47d, E47g, E47zh; v74) ──
+    const outs = s => s.calls.filter(c => c.method === 'POST' && /\/access\/\d+\/revoke$/.test(c.url)).map(c => c.url.match(/access\/(\d+)/)[1]);
+    // по ID ЧЕЛОВЕКА, а не по месту карточки: исключаем ВТОРОГО ПО ОТРИСОВКЕ (это третий в ответе, Глеб 703)
+    {
+      const n = 'out-by-id', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      const second = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')][1].getAttribute('data-person'));
+      if (second !== '2') bad.push(`${n}: второй по отрисовке ${second}, ждали 2 — порядок не тот, случай спрашивает не того человека`);
+      await act(s, 'p-out:2');
+      // ждать, а не смотреть сразу: запрос уходит асинхронно, и мгновенный счёт был бы нулём всегда
+      await s.p.waitForTimeout(300);
+      if (outs(s).length) bad.push(`${n}: исключение ушло с первого нажатия — вопроса нет (E47v)`);
+      const t = await s.view();
+      if (!t.includes('Глеб Главный потеряет вход в приложение и живое членство разом')) bad.push(`${n}: в вопросе нет имени человека (E47v)`);
+      await act(s, 'p-outkeep');
+      if (outs(s).length || (await s.view()).includes('потеряет вход')) bad.push(`${n}: «Не исключать» не закрыл вопрос или отправил`);
+      await act(s, 'p-out:2'); await act(s, 'p-outyes:2'); await s.p.waitForTimeout(300);
+      if (JSON.stringify(outs(s)) !== '["703"]') bad.push(`${n}: исключение ушло на ${JSON.stringify(outs(s))}, ждали ["703"] — исключили не того`);
+      const card = await s.p.$eval('[data-person="2"]', e => e.textContent).catch(() => '');
+      if (!/Глеб Главный/.test(card) || !/оборвано сегодняшним днём/.test(card)) bad.push(`${n}: итога с оборванным членством нет на месте карточки (E47g): «${card}»`);
+      if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push(`${n}: после исключения список не перечитан`);
+      if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push(`${n}: tg_user_id в разметке`);
+      await s.ctx.close();
+    }
+    // без членства: итог по memberships_ended = 0 (E47zh), а не по догадке
+    {
+      const n = 'out-nomember', s = await peopleCase(OWNER, { people: json(200, withBal),
+        out: json(200, { tg_user_id: 702, revoked_at: '2026-10-28T13:00:00+00:00', memberships_ended: 0, note: '' }) });
+      await toPeople(s);
+      await act(s, 'p-out:1');
+      // вопрос без членства — без «живое членство разом», и без рода (пола клиент не знает)
+      const q = await s.view();
+      if (!q.includes('Сомчай потеряет вход в приложение; живого членства нет — обрывать нечего.')) bad.push(`${n}: вопрос человеку без членства не тот`);
+      if (/членство разом/.test(q)) bad.push(`${n}: человеку без членства обещан обрыв членства`);
+      await act(s, 'p-outyes:1'); await s.p.waitForTimeout(300);
+      if (/исключена|исключён/.test(await s.view())) bad.push(`${n}: итог с родом — пола клиент не знает`);
+      if (JSON.stringify(outs(s)) !== '["702"]') bad.push(`${n}: исключение ушло на ${JSON.stringify(outs(s))}, ждали ["702"]`);
+      const card = await s.p.$eval('[data-person="1"]', e => e.textContent).catch(() => '');
+      if (!/обрывать было нечего/.test(card) || /оборвано сегодняшним/.test(card)) bad.push(`${n}: итог не по memberships_ended=0 (E47zh): «${card}»`);
+      await s.ctx.close();
+    }
+    // подтверждение без вопроса не проходит: «Точно исключить» по чужому номеру
+    {
+      const n = 'out-forged', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      await act(s, 'p-out:0');
+      await s.p.evaluate(() => { const b = document.querySelector('[data-action="p-outyes:0"]'); if (b) { b.setAttribute('data-action', 'p-outyes:2'); b.click(); } });
+      await s.p.waitForTimeout(300);
+      if (outs(s).length) bad.push(`${n}: исключение ушло по человеку, о котором не спрашивали: ${JSON.stringify(outs(s))}`);
+      await s.ctx.close();
+    }
+    // три отказа — словами сервера (E47d); на 409 список перечитывается
+    for (const [n, reply, want, reread] of [
+      ['out-403', json(403, { detail: 'исключать из клуба вправе глава клуба' }), 'Исключать из клуба вправе глава клуба.', false],
+      ['out-self', json(409, { detail: 'себя исключить нельзя' }), 'Себя исключить нельзя.', true],
+      ['out-gone', json(409, { detail: 'этого человека в клубе нет' }), 'Этого человека в клубе нет.', true]]) {
+      const s = await peopleCase(OWNER, { people: json(200, withBal), out: reply });
+      await toPeople(s);
+      await act(s, 'p-out:0'); await act(s, 'p-outyes:0'); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes(want)) bad.push(`${n}: отказ не словами сервера (ждали «${want}»)`);
+      const gets = s.calls.filter(c => c.url.endsWith('/people')).length;
+      if (reread && gets !== 2) bad.push(`${n}: после 409 список не перечитан (запросов /people ${gets})`);
+      if (await s.p.$('[data-person] [disabled]')) bad.push(`${n}: после отказа экран заперт`);
       await s.ctx.close();
     }
   }
@@ -6548,18 +6950,19 @@ if (grantsSet.length !== 1) {
       await s.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s.p.waitForTimeout(300);
       if (!(await s.p.$('#view [data-go="memberRequests"]'))) bad.push(`${n}: у главы клуба нет строки «Заявки на членство»`);
       else if (!(await s.view()).includes('Ждут ответа: 1')) bad.push(`${n}: в строке входа нет счёта ждущих с сервера (кадр E42g)`);
-      // кадр E42g: одна группа «Работа», «Заявки» перед «Людьми»; второй группы «Клуб» нет
+      // кадр E42g: одна группа «Работа»; второй группы «Клуб» нет. «Люди» в E42g стояли в той же
+      // группе — с решения владельца 28.10.2026 они во вкладке «Управление» (E46, Cafe13KPG#413),
+      // и на главной их быть не должно: рабочее не живёт внутри клиентского.
       const g = await s.p.evaluate(() => {
         const labels = [...document.querySelectorAll('#view .group > .label')].map(l => l.textContent);
-        const r = document.querySelector('#view [data-go="memberRequests"]'), p = document.querySelector('#view [data-go="people"]');
+        const r = document.querySelector('#view [data-go="memberRequests"]');
         return { work: labels.filter(l => l === 'Работа').length, club: labels.filter(l => l === 'Клуб').length,
-                 same: !!r && !!p && r.closest('.group') === p.closest('.group'),
-                 order: !!r && !!p && !!(r.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING),
+                 people: !!document.querySelector('#view [data-go="people"]'),
                  label: r && r.closest('.group') ? r.closest('.group').querySelector(':scope > .label').textContent : null };
       });
       if (g.work !== 1 || g.club !== 0) bad.push(`${n}: групп «Работа» ${g.work}, «Клуб» ${g.club} — ждали одну «Работа» (кадр E42g)`);
-      if (!g.same || g.label !== 'Работа') bad.push(`${n}: «Заявки» и «Люди» не в одной группе «Работа»: ${JSON.stringify(g)} (кадр E42g)`);
-      else if (!g.order) bad.push(`${n}: «Люди» стоят выше «Заявок» (кадр E42g)`);
+      if (g.label !== 'Работа') bad.push(`${n}: «Заявки на членство» не в группе «Работа»: ${JSON.stringify(g)} (кадр E42g)`);
+      if (g.people) bad.push(`${n}: на главной остался вход «Люди» — он во вкладке «Управление» (E46)`);
       await s.ctx.close();
       const MEM = clone(OWNER); MEM.roles = [];
       const s2 = await memCase(MEM);
@@ -6709,7 +7112,13 @@ if (grantsSet.length !== 1) {
       if (!img || !img.startsWith('blob:')) bad.push(`${n}: чек не показан картинкой из ответа сервера (${img})`);
       // подпись — та же, что у остальных ручек: без неё сервер чек не отдаст
       if (gets(s, /\/receipt$/).some(c => c.init !== INIT)) bad.push(`${n}: чек спрошен без подписи`);
-      if (/80[1-4]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push(`${n}: tg_user_id в разметке`);
+      // адрес чека `blob:` несёт случайный UUID, и в нём «801» бывает само (Cafe13KPG#486): его вырезаем
+      // ДО поиска; настоящий id в разметке по-прежнему краснит — проверяется подлогом в самом случае
+      const html = await s.p.evaluate(() => document.getElementById('view').innerHTML);
+      const bare = h => h.replace(/blob:[^"'\s)]*/g, '');
+      if (/80[1-4]/.test(bare(html))) bad.push(`${n}: tg_user_id в разметке`);
+      if (!/80[1-4]/.test(bare(html + '<span data-x="801"></span>')) || /80[1-4]/.test(bare('<img src="blob:file:///aa801bb">')))
+        bad.push(`${n}: вырезка blob: слепа или шире своего предмета — признак id не различает`);
       const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
       if (/80[1-4]|Доступова/.test(stored)) bad.push(`${n}: просьбы легли в хранилище браузера`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
@@ -6723,7 +7132,8 @@ if (grantsSet.length !== 1) {
       await press(s, n, 'j-ok:21');
       if (posts(s, /\/decide$/).length) bad.push(`${n}: согласие ушло с первого нажатия — подтверждения нет (#413)`);
       if (!(await s.p.$('#view [data-action="j-yes:21"]'))) bad.push(`${n}: после «Согласиться» нет шага подтверждения`);
-      for (const w of ['Отменить в приложении будет нечем.', 'Не соглашаться', 'Точно согласиться'])
+      // фраза E45d с v74 — новая: кнопка «Исключить» на «Членах клуба» появилась (до v74 обещала бы несуществующее)
+      for (const w of ['Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба', 'Не соглашаться', 'Точно согласиться'])
         if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (кадр E45d)`);
       // подпись под списком при раскрытом вопросе остаётся (E45d)
       if (!(await s.view()).includes(JNOTE)) bad.push(`${n}: подпись о согласии исчезла при раскрытом вопросе (кадр E45d)`);
@@ -6820,6 +7230,62 @@ if (grantsSet.length !== 1) {
       if (!t2.includes('Просьбы не загрузились') || t2.includes('Ада Доступова')) bad.push(`${n}: битая строка не отвергла ответ целиком`);
       await s2.ctx.close();
     }
+    // Подпись вкладки не переносится в две строки на УЗКОМ окне, 360 px. Перенос на 390 px
+    // уже ловит `tabs-vse` (#410, прежде `tabs-vse-sem`) — мутация `white-space: nowrap` → `normal` краснит и его,
+    // поэтому 390 здесь не повторяется. Признак — высоты подписей (форма — designer-55,
+    // 28.10.2026): подпись выше самой низкой больше чем на 1 px — перенесена.
+    {
+      const n = 'tabs-perenos';
+      const lv = l => ({ level: l, starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-11-01T00:00:00+07:00', lifelong: false });
+      const who = roles => { const m = clone(OWNER); m.membership = lv('partner'); m.membership_active = true;
+        m.memberships = ['member', 'organizer', 'partner'].map(lv); m.roles = roles; return m; };
+      // семь: касса и бар без права главы; восемь: роли OWNER (глава и админ) — плюс «Управление»
+      for (const [k, roles, count] of [['семь', [{ role: 'staff', direction_id: null }, { role: 'bar', direction_id: 7 }], 7],
+                                       ['восемь', OWNER.roles, 8]]) {
+        for (const w of [360]) {
+          const s = await open(true, true, json(200, who(roles)));
+          await s.p.setViewportSize({ width: w, height: 844 }); await s.p.waitForTimeout(150);
+          const r = await s.p.evaluate(() => {
+            const sp = [...document.querySelectorAll('#tabs span')];
+            const h = sp.map(e => e.getBoundingClientRect().height);
+            return { n: sp.length, wrap: sp.filter(e => e.getBoundingClientRect().height > Math.min(...h) + 1).map(e => e.textContent) };
+          });
+          // различитель: вкладок столько, сколько задумано, — иначе спрашиваем не тот набор
+          if (r.n !== count) bad.push(`${n}: ${k}, ${w} px — вкладок ${r.n}, ждали ${count}; признак переноса спрашивает не тот набор`);
+          else if (r.wrap.length) bad.push(`${n}: ${k}, ${w} px — подпись в две строки: ${JSON.stringify(r.wrap)}`);
+          await s.ctx.close();
+        }
+      }
+    }
+    // вкладка «Управление» (E46): последней, только у главы; до ответа сервера — не ноль
+    {
+      const n = 'manage-tab';
+      let release;
+      const held = new Promise(r => { release = r; });
+      const s = await joinCase(OWNER, { list: held.then(() => json(200, JREQ)) });
+      const tabs = await s.p.evaluate(() => [...document.querySelectorAll('#tabs [data-go]')].map(b => b.getAttribute('data-go')));
+      if (tabs[tabs.length - 1] !== 'manage') bad.push(`${n}: «Управление» не последняя вкладка: ${JSON.stringify(tabs)} (кадр E46)`);
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click());
+      await s.p.waitForTimeout(250);
+      let t = await s.view();
+      // различитель: список ещё в пути — иначе случай не проверяет подпись «до счёта»
+      if (gets(s, /\/join\/requests$/).length !== 1) bad.push(`${n}: вкладка не спросила очередь — счёту неоткуда взяться`);
+      if (!t.includes('Кто просится в клуб')) bad.push(`${n}: пока счёт не пришёл, нет «Кто просится в клуб» (кадр E46)`);
+      if (/Ждут ответа: 0/.test(t)) bad.push(`${n}: до ответа сервера показан ноль — читается как «никто не просится»`);
+      for (const w of ['Кто в клубе', 'Заявки на доступ', 'Члены клуба', 'Кто в клубе и с какими уровнями'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}» (кадр E46)`);
+      release();
+      await s.p.waitForTimeout(400);
+      t = await s.view();
+      if (!t.includes('Ждут ответа: 2')) bad.push(`${n}: счёт ждущих с сервера не показан (ждали «Ждут ответа: 2»)`);
+      // на вкладке чеки не качаются: только счёт
+      if (gets(s, /\/receipt$/).length) bad.push(`${n}: вкладка скачала чеки`);
+      await s.ctx.close();
+      const MEM = clone(OWNER); MEM.roles = [];
+      const s2 = await joinCase(MEM);
+      if (await s2.p.$('#tabs [data-go="manage"]')) bad.push(`${n}: у члена клуба без роли есть вкладка «Управление»`);
+      await s2.ctx.close();
+    }
     // право: член без ролей — отказ без запроса; свидетели КАЖДОЙ половины права (#434)
     {
       const n = 'join-rights';
@@ -6850,7 +7316,10 @@ if (grantsSet.length !== 1) {
   {
     // [экран, параметр, признак экрана, признак отказа/пустоты]
     const WORK = [
-      ['people', null, 'Выдать ответственность', 'может глава клуба'],
+      // v78: «Выдать ответственность» стала чипом, и слово «ответственность» есть и в ОТКАЗЕ
+      // («Выдавать и снимать ответственность может глава клуба») — признак экрана берётся тот,
+      // которого в отказе нет: подпись поля поиска
+      ['people', null, 'Найти по имени', 'может глава клуба'],
       ['barCards', null, 'Ждут утверждения · 2', 'Карточки меню заводит'],
       ['barCard', '305', 'Заменить рецепт (RU)', 'Карточки меню заводит'],
       ['barRecipe', 'flat', 'Рецепта на английском нет — показан на русском', 'Рецепт — рабочая запись бара'],
