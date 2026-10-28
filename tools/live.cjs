@@ -5312,6 +5312,9 @@ if (grantsSet.length !== 1) {
       if (u.endsWith('/directions')) return r.dirs || json(200, DIRS);
       if (u.endsWith('/roles')) return r.grant || json(201, { id: 40, member_id: 702, role: 'x', direction_id: null, granted_at: '2026-10-21T10:00:00+00:00' });
       if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
+      // исключение (v74): ответ — как у сервера (join.py, revoke_access): строка допуска плюс число оборванных
+      if (/\/access\/\d+\/revoke$/.test(u)) return r.out || json(200, { tg_user_id: Number(u.match(/access\/(\d+)/)[1]),
+        revoked_at: '2026-10-28T13:00:00+00:00', memberships_ended: 1, note: '' });
       return undefined;
     });
     // вход — с вкладки «Управление» (кадр E46, Cafe13KPG#413), а не с главной: путь
@@ -5801,6 +5804,70 @@ if (grantsSet.length !== 1) {
       const s = await peopleCase(OWNER, { people: json(200, bad1) });
       await toPeople(s);
       if (!(await s.view()).includes('Ответ сервера не разобран.') || await s.p.$('[data-person]')) bad.push(`${n}: остаток не числом принят — ответ обязан отвергнуться целиком`);
+      await s.ctx.close();
+    }
+
+    // ── «Исключить» (кадры E47v, E47d, E47g, E47zh; v74) ──
+    const outs = s => s.calls.filter(c => c.method === 'POST' && /\/access\/\d+\/revoke$/.test(c.url)).map(c => c.url.match(/access\/(\d+)/)[1]);
+    // по ID ЧЕЛОВЕКА, а не по месту карточки: исключаем ВТОРОГО ПО ОТРИСОВКЕ (это третий в ответе, Глеб 703)
+    {
+      const n = 'out-by-id', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      const second = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')][1].getAttribute('data-person'));
+      if (second !== '2') bad.push(`${n}: второй по отрисовке ${second}, ждали 2 — порядок не тот, случай спрашивает не того человека`);
+      await act(s, 'p-out:2');
+      if (outs(s).length) bad.push(`${n}: исключение ушло с первого нажатия — вопроса нет (E47v)`);
+      const t = await s.view();
+      if (!t.includes('Глеб Главный потеряет вход в приложение и живое членство разом')) bad.push(`${n}: в вопросе нет имени человека (E47v)`);
+      await act(s, 'p-outkeep');
+      if (outs(s).length || (await s.view()).includes('потеряет вход')) bad.push(`${n}: «Не исключать» не закрыл вопрос или отправил`);
+      await act(s, 'p-out:2'); await act(s, 'p-outyes:2'); await s.p.waitForTimeout(300);
+      if (JSON.stringify(outs(s)) !== '["703"]') bad.push(`${n}: исключение ушло на ${JSON.stringify(outs(s))}, ждали ["703"] — исключили не того`);
+      const card = await s.p.$eval('[data-person="2"]', e => e.textContent).catch(() => '');
+      if (!/Глеб Главный/.test(card) || !/оборвано сегодняшним днём/.test(card)) bad.push(`${n}: итога с оборванным членством нет на месте карточки (E47g): «${card}»`);
+      if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push(`${n}: после исключения список не перечитан`);
+      if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push(`${n}: tg_user_id в разметке`);
+      await s.ctx.close();
+    }
+    // без членства: итог по memberships_ended = 0 (E47zh), а не по догадке
+    {
+      const n = 'out-nomember', s = await peopleCase(OWNER, { people: json(200, withBal),
+        out: json(200, { tg_user_id: 702, revoked_at: '2026-10-28T13:00:00+00:00', memberships_ended: 0, note: '' }) });
+      await toPeople(s);
+      await act(s, 'p-out:1');
+      // вопрос без членства — без «живое членство разом», и без рода (пола клиент не знает)
+      const q = await s.view();
+      if (!q.includes('Сомчай потеряет вход в приложение; живого членства нет — обрывать нечего.')) bad.push(`${n}: вопрос человеку без членства не тот`);
+      if (/членство разом/.test(q)) bad.push(`${n}: человеку без членства обещан обрыв членства`);
+      await act(s, 'p-outyes:1'); await s.p.waitForTimeout(300);
+      if (/исключена|исключён/.test(await s.view())) bad.push(`${n}: итог с родом — пола клиент не знает`);
+      if (JSON.stringify(outs(s)) !== '["702"]') bad.push(`${n}: исключение ушло на ${JSON.stringify(outs(s))}, ждали ["702"]`);
+      const card = await s.p.$eval('[data-person="1"]', e => e.textContent).catch(() => '');
+      if (!/обрывать было нечего/.test(card) || /оборвано сегодняшним/.test(card)) bad.push(`${n}: итог не по memberships_ended=0 (E47zh): «${card}»`);
+      await s.ctx.close();
+    }
+    // подтверждение без вопроса не проходит: «Точно исключить» по чужому номеру
+    {
+      const n = 'out-forged', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      await act(s, 'p-out:0');
+      await s.p.evaluate(() => { const b = document.querySelector('[data-action="p-outyes:0"]'); if (b) { b.setAttribute('data-action', 'p-outyes:2'); b.click(); } });
+      await s.p.waitForTimeout(300);
+      if (outs(s).length) bad.push(`${n}: исключение ушло по человеку, о котором не спрашивали: ${JSON.stringify(outs(s))}`);
+      await s.ctx.close();
+    }
+    // три отказа — словами сервера (E47d); на 409 список перечитывается
+    for (const [n, reply, want, reread] of [
+      ['out-403', json(403, { detail: 'исключать из клуба вправе глава клуба' }), 'Исключать из клуба вправе глава клуба.', false],
+      ['out-self', json(409, { detail: 'себя исключить нельзя' }), 'Себя исключить нельзя.', true],
+      ['out-gone', json(409, { detail: 'этого человека в клубе нет' }), 'Этого человека в клубе нет.', true]]) {
+      const s = await peopleCase(OWNER, { people: json(200, withBal), out: reply });
+      await toPeople(s);
+      await act(s, 'p-out:0'); await act(s, 'p-outyes:0'); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes(want)) bad.push(`${n}: отказ не словами сервера (ждали «${want}»)`);
+      const gets = s.calls.filter(c => c.url.endsWith('/people')).length;
+      if (reread && gets !== 2) bad.push(`${n}: после 409 список не перечитан (запросов /people ${gets})`);
+      if (await s.p.$('[data-person] [disabled]')) bad.push(`${n}: после отказа экран заперт`);
       await s.ctx.close();
     }
   }
@@ -6761,7 +6828,8 @@ if (grantsSet.length !== 1) {
       await press(s, n, 'j-ok:21');
       if (posts(s, /\/decide$/).length) bad.push(`${n}: согласие ушло с первого нажатия — подтверждения нет (#413)`);
       if (!(await s.p.$('#view [data-action="j-yes:21"]'))) bad.push(`${n}: после «Согласиться» нет шага подтверждения`);
-      for (const w of ['Отменить в приложении будет нечем.', 'Не соглашаться', 'Точно согласиться'])
+      // фраза E45d с v74 — новая: кнопка «Исключить» на «Членах клуба» появилась (до v74 обещала бы несуществующее)
+      for (const w of ['Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба', 'Не соглашаться', 'Точно согласиться'])
         if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (кадр E45d)`);
       // подпись под списком при раскрытом вопросе остаётся (E45d)
       if (!(await s.view()).includes(JNOTE)) bad.push(`${n}: подпись о согласии исчезла при раскрытом вопросе (кадр E45d)`);

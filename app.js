@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v73 · 28.10.2026';
+var VERSION = 'v74 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1879,7 +1879,8 @@ function testStrip() {
 var ROLE_PICK = ['head', 'ops_director', 'art_director', 'director', 'staff', 'curator', 'bar', 'admin'];
 var DIR_ROLES = ['curator', 'bar'];
 var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
-               open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '' };
+               open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '',
+               out: null, gone: null };
 
 function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
 /* Блокировка снимается вместе с состоянием экрана: вход на экран и смена роли
@@ -1888,6 +1889,7 @@ function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
 function peopleReset() {
   PEOPLE.busy = false;
   PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.dir = null; PEOPLE.ask = null; PEOPLE.deny = null; PEOPLE.done = null;
+  PEOPLE.out = null; PEOPLE.gone = null;
 }
 function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }
 
@@ -2007,6 +2009,34 @@ function revokeSend(rid) {
     loadRoster(); render();
   });
 }
+/* «Исключить» (кадры E47v, E47d, E47g, E47zh; Cafe13KPG#413, v74). Человек берётся по НОМЕРУ
+   СТРОКИ ОТВЕТА (k), а не по месту карточки на экране: порядок отрисовки свой (peopleOrder),
+   и «исключили не того» стоило бы человеку входа и членства. tg_user_id живёт только в адресе
+   запроса — в разметку не попадает. Итог выбирается по `memberships_ended` из ответа, не догадкой.
+   Слова без рода («больше не в клубе», «живого членства нет»): пола человека клиент не знает. */
+function outSend(k) {
+  var p = PEOPLE.list && PEOPLE.list[k];
+  if (!p || PEOPLE.busy) return;
+  var gen = PEOPLE.gen;
+  PEOPLE.busy = true; PEOPLE.deny = null; render();
+  api('POST', '/access/' + p.uid + '/revoke', { note: '' }).then(function (r) {
+    if (gen !== PEOPLE.gen) return;
+    PEOPLE.busy = false; PEOPLE.out = null;
+    var ok = r.status === 200 && r.data && typeof r.data.memberships_ended === 'number';
+    if (!ok) {
+      PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn');
+      // «этого человека в клубе нет» — список устарел: его исключил кто-то другой (E47d)
+      if (r.status === 409) loadRoster();
+      render(); return;
+    }
+    haptic('ok');
+    peopleReset();
+    PEOPLE.gone = { uid: p.uid, text: r.data.memberships_ended > 0
+      ? p.name + ' больше не в клубе. Вход закрыт, живое членство оборвано сегодняшним днём.'
+      : p.name + ' больше не в клубе. Вход закрыт; живых членств не было — обрывать было нечего.' };
+    loadRoster(); render();
+  });
+}
 /* Карточка знает номер строки списка (k), а не tg_user_id: id в разметке
    уехал бы в снимок экрана и дальше. */
 function personCard(p, k) {
@@ -2072,6 +2102,10 @@ function personCard(p, k) {
   var deny = mine(PEOPLE.deny) ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(PEOPLE.deny.text) + '</span></div>' : '';
   var done = mine(PEOPLE.done) ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(PEOPLE.done.text) + '</span></div>' : '';
   var q = PEOPLE.find.trim().toLowerCase();
+  // E47g/E47zh: исключённый — итогом на месте своей карточки
+  if (PEOPLE.gone && PEOPLE.gone.uid === p.uid)
+    return '<div class="card quiet" data-person="' + k + '" role="status"><span class="small">' + esc(PEOPLE.gone.text) + '</span></div>';
+  var outAsk = PEOPLE.out === k;
   return '<div class="card" data-person="' + k + '"' +
     (q && p.name.toLowerCase().indexOf(q) === -1 ? ' hidden' : '') + '>' +
     // Кадр E47: уровень — предмет строки, остаток справа. Стили встроены — долг Cafe13KPG#484
@@ -2081,7 +2115,15 @@ function personCard(p, k) {
       '</div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
       (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></div>' +
     (rows || '<span class="small">Ролей нет</span>') + done + deny + form +
-    (open ? '' : '<button type="button" class="btn ghost" data-action="p-open:' + k + '"' + lock + '>Выдать ответственность</button>') +
+    // E47v: вопрос во всю карточку, с ИМЕНЕМ; «себя нельзя» — отказом сервера, кнопку не прячем (E47)
+    (outAsk ? '<span class="small">' + esc(p.levels
+        ? p.name + ' потеряет вход в приложение и живое членство разом: оплаченное членство обрывается сегодняшним днём. Обратного действия у этой кнопки нет.'
+        : p.name + ' потеряет вход в приложение; живого членства нет — обрывать нечего. Обратного действия у этой кнопки нет.') + '</span>' +
+      '<div class="row" style="justify-content:flex-start;gap:8px"><button type="button" class="btn quiet" data-action="p-outkeep"' + lock + '>Не исключать</button>' +
+      '<button type="button" class="btn quiet" data-action="p-outyes:' + k + '"' + lock + '>Точно исключить</button></div>'
+    : open ? '' : '<div class="row" style="justify-content:flex-start;gap:8px">' +
+      '<button type="button" class="btn quiet" data-action="p-open:' + k + '"' + lock + '>Выдать ответственность</button>' +
+      '<button type="button" class="btn quiet" data-action="p-out:' + k + '"' + lock + '>Исключить</button></div>') +
   '</div>';
 }
 function peopleFilter() {
@@ -2214,7 +2256,7 @@ function joinCard(q) {
           '<button type="button" class="btn quiet" data-action="j-no:' + q.id + '"' + busy + '>Отказать и отправить</button></div>'
       : JOINQ.ok === q.id
       // E45d: имени в вопросе нет нарочно — оно строкой выше, в той же карточке
-      ? '<span class="small">Согласие впустит человека в приложение и создаст членство — одним действием. Отменить в приложении будет нечем.</span>' + row +
+      ? '<span class="small">Согласие впустит человека в приложение и создаст членство — одним действием. Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба — кнопкой на «Членах клуба», и тогда он теряет вход и живое членство разом.</span>' + row +
           '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>Не соглашаться</button>' +
           '<button type="button" class="btn quiet" data-action="j-yes:' + q.id + '"' + busy + '>Точно согласиться</button></div>'
       : row +
@@ -5928,7 +5970,7 @@ function demoWork(screen, p) {
 /* Отправки и перечитывания рабочих экранов. В демонстрации они не уходят:
    сервера нет, а «ничего не случилось» на нажатие — дефект, уже бывший у нас
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
-var DEMO_SENDS = ['p-grant', 'p-revoke', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
+var DEMO_SENDS = ['p-grant', 'p-revoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
                   'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
 
@@ -6193,6 +6235,9 @@ function doAction(a) {
       if (a === 'p-reload') { loadRoster(); render(); return; }
       if (a === 'p-grant') { grantSend(); return; }
       if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
+      if (a === 'p-outyes') { if (PEOPLE.out === Number(arg)) outSend(Number(arg)); return; }
+      if (a === 'p-out') { peopleReset(); PEOPLE.out = Number(arg); }
+      if (a === 'p-outkeep') PEOPLE.out = null;
       if (a === 'p-open') { peopleReset(); PEOPLE.open = Number(arg); }
       if (a === 'p-close') peopleReset();
       if (a === 'p-role' && ROLE_PICK.indexOf(arg) !== -1) {
