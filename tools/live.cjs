@@ -6810,9 +6810,9 @@ if (grantsSet.length !== 1) {
       if (!t2.includes('Просьбы не загрузились') || t2.includes('Ада Доступова')) bad.push(`${n}: битая строка не отвергла ответ целиком`);
       await s2.ctx.close();
     }
-    // Подпись вкладки не переносится в две строки — ни при семи вкладках, ни при восьми.
-    // `tabs-vse-sem` (#410) спрашивает ШИРИНУ и к переносу слеп: при переносе ширина в порядке,
-    // ломается высота. Признак — высоты подписей (форма и контроль — замер designer-55,
+    // Подпись вкладки не переносится в две строки на УЗКОМ окне, 360 px. Перенос на 390 px
+    // уже ловит `tabs-vse-sem` (#410) — мутация `white-space: nowrap` → `normal` краснит и его,
+    // поэтому 390 здесь не повторяется. Признак — высоты подписей (форма — designer-55,
     // 28.10.2026): подпись выше самой низкой больше чем на 1 px — перенесена.
     {
       const n = 'tabs-perenos';
@@ -6822,7 +6822,7 @@ if (grantsSet.length !== 1) {
       // семь: касса и бар без права главы; восемь: роли OWNER (глава и админ) — плюс «Управление»
       for (const [k, roles, count] of [['семь', [{ role: 'staff', direction_id: null }, { role: 'bar', direction_id: 7 }], 7],
                                        ['восемь', OWNER.roles, 8]]) {
-        for (const w of [390, 360]) {
+        for (const w of [360]) {
           const s = await open(true, true, json(200, who(roles)));
           await s.p.setViewportSize({ width: w, height: 844 }); await s.p.waitForTimeout(150);
           const r = await s.p.evaluate(() => {
