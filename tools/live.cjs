@@ -6810,6 +6810,33 @@ if (grantsSet.length !== 1) {
       if (!t2.includes('Просьбы не загрузились') || t2.includes('Ада Доступова')) bad.push(`${n}: битая строка не отвергла ответ целиком`);
       await s2.ctx.close();
     }
+    // Подпись вкладки не переносится в две строки — ни при семи вкладках, ни при восьми.
+    // `tabs-vse-sem` (#410) спрашивает ШИРИНУ и к переносу слеп: при переносе ширина в порядке,
+    // ломается высота. Признак — высоты подписей (форма и контроль — замер designer-55,
+    // 28.10.2026): подпись выше самой низкой больше чем на 1 px — перенесена.
+    {
+      const n = 'tabs-perenos';
+      const lv = l => ({ level: l, starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-11-01T00:00:00+07:00', lifelong: false });
+      const who = roles => { const m = clone(OWNER); m.membership = lv('partner'); m.membership_active = true;
+        m.memberships = ['member', 'organizer', 'partner'].map(lv); m.roles = roles; return m; };
+      // семь: касса и бар без права главы; восемь: роли OWNER (глава и админ) — плюс «Управление»
+      for (const [k, roles, count] of [['семь', [{ role: 'staff', direction_id: null }, { role: 'bar', direction_id: 7 }], 7],
+                                       ['восемь', OWNER.roles, 8]]) {
+        for (const w of [390, 360]) {
+          const s = await open(true, true, json(200, who(roles)));
+          await s.p.setViewportSize({ width: w, height: 844 }); await s.p.waitForTimeout(150);
+          const r = await s.p.evaluate(() => {
+            const sp = [...document.querySelectorAll('#tabs span')];
+            const h = sp.map(e => e.getBoundingClientRect().height);
+            return { n: sp.length, wrap: sp.filter(e => e.getBoundingClientRect().height > Math.min(...h) + 1).map(e => e.textContent) };
+          });
+          // различитель: вкладок столько, сколько задумано, — иначе спрашиваем не тот набор
+          if (r.n !== count) bad.push(`${n}: ${k}, ${w} px — вкладок ${r.n}, ждали ${count}; признак переноса спрашивает не тот набор`);
+          else if (r.wrap.length) bad.push(`${n}: ${k}, ${w} px — подпись в две строки: ${JSON.stringify(r.wrap)}`);
+          await s.ctx.close();
+        }
+      }
+    }
     // вкладка «Управление» (E46): последней, только у главы; до ответа сервера — не ноль
     {
       const n = 'manage-tab';
