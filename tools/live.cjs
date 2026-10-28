@@ -6687,7 +6687,7 @@ if (grantsSet.length !== 1) {
     {
       const n = 'people-grant-topups', s = await peopleCase(OWNER, { grant: json(201, { id: 42, member_id: 702, role: 'topups', direction_id: null, granted_at: '2026-10-29T10:00:00+00:00' }) });
       await toPeople(s);
-      await act(s, 'p-open:1');
+      await pokazhi(s, 1); await act(s, 'p-open:1');
       if (!(await s.view()).includes('Пополнение онлайн')) bad.push(`${n}: в выдаче нет строки «Пополнение онлайн»`);
       if ((await s.view()).includes('topups')) bad.push(`${n}: на экране имя роли «topups», а не подпись`);
       if (!(await act(s, 'p-give:topups'))) bad.push(`${n}: у строки «Пополнение онлайн» нет кружка выдачи`);
