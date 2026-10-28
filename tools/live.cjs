@@ -6048,6 +6048,45 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
+    // ── встать на карточку того, по кому нажали (Cafe13KPG#502 п.1, слово владельца 28.10.2026) ──
+    // После выдачи, снятия и исключения список перечитывается; на время загрузки страница короче
+    // экрана, прокрутка прижимается к нулю, и «вернуть где было» возвращало прижатое место. Ответ
+    // перечитанного списка нарочно ЗАДЕРЖАН: без задержки загрузка не успевает отрисоваться, и
+    // прежний код проходил бы зелёным. Цель стоит в середине длинного списка: у края страницы
+    // браузер не дал бы поставить карточку к верху и при правильном коде.
+    for (const [how, steps] of [
+      ['выдачи', ['p-open:K', 'p-role:ops_director', 'p-grant']],
+      ['снятия', ['short', 'p-ask:RID']],
+      ['исключения', ['p-out:K', 'p-outyes:K']]]) {
+      const n = 'people-land', long = clone(ROSTER), K = ROSTER.people.length + 10, RID = 70;
+      for (let i = 0; i < 20; i++) long.people.push({ tg_user_id: 720 + i, first_name: 'Запасной ' + (i + 1), last_name: null, lang: 'ru',
+        roles: [{ id: 60 + i, role: 'staff', direction_id: null, direction: null, granted_at: '2026-10-20T10:00:00+00:00' }], memberships: [] });
+      let reads = 0;
+      const s = await peopleCase(OWNER, {
+        get people() { reads++; return reads === 1 ? json(200, long) : new Promise(ok => setTimeout(() => ok(json(200, long)), 400)); },
+        grant: json(201, { id: 90, member_id: 730, role: 'ops_director', direction_id: null, granted_at: '2026-10-28T10:00:00+00:00' }),
+        revoke: json(200, { id: RID, member_id: 730, role: 'staff', revoked_at: '2026-10-28T10:00:00+00:00' }) });
+      await toPeople(s);
+      const room = await s.p.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+      if (room < 1000) bad.push(`${n} (${how}): прокручивать некуда (${room} px) — случай не проверяет место`);
+      // к человеку — так, как глава до него доходит: прокруткой; карточка не у верха
+      await s.p.evaluate(k => document.querySelector(`[data-person="${k}"]`).scrollIntoView({ block: 'center' }), K);
+      await s.p.waitForTimeout(100);
+      for (const st of steps) {
+        if (st === 'short') { await s.p.evaluate(() => { UNDO_MS = 50; }); continue; }
+        const a = st.replace('K', K).replace('RID', RID);
+        if (!(await act(s, a))) bad.push(`${n} (${how}): нет кнопки ${a}`);
+        await s.p.waitForTimeout(150);
+      }
+      await s.p.waitForTimeout(900);
+      if (reads < 2) bad.push(`${n} (${how}): список не перечитан (${reads}) — проверять нечего`);
+      const top = await s.p.evaluate(k => { const e = document.querySelector(`[data-person="${k}"]`); return e ? Math.round(e.getBoundingClientRect().top) : null; }, K);
+      const name = await s.p.evaluate(k => { const e = document.querySelector(`[data-person="${k}"]`); return e ? e.textContent : ''; }, K);
+      if (!name.includes('Запасной 11')) bad.push(`${n} (${how}): карточка ${K} не того человека: ${name.slice(0, 40)}`);
+      if (top === null || Math.abs(top) > 2) bad.push(`${n} (${how}): экран встал не на карточку человека — её верх в ${top} px от верха окна`);
+      await s.ctx.close();
+    }
+
     // ── частичная перерисовка (Cafe13KPG#490, v78): действие в карточке не трогает соседние ──
     // Различитель — метка, поставленная в СОСЕДНЮЮ карточку и в поле поиска: полная перерисовка её стирает.
     {

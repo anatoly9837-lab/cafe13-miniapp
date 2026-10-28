@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v81 · 28.10.2026';
+var VERSION = 'v82 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1953,7 +1953,7 @@ var HEAD_ROLES = ['head', 'god_mentor', 'admin'];
 var DIR_ROLES = ['curator', 'bar'];
 var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
                open: null, role: '', dir: null, ask: null, busy: false, deny: null, done: null, find: '',
-               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null };
+               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null, land: null };
 /* Окно отмены вместо второго подтверждения (слово владельца 28.10.2026: «убери двойное
    подтверждение… оставь кнопку отмены на несколько секунд»; 5 секунд — число координатора,
    кадр E47l). Цифра в полосе считается ОТСЮДА ЖЕ — разойтись с задержкой ей нечем. */
@@ -1994,6 +1994,22 @@ function peopleReset() {
   // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
   // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
   PEOPLE.sending = null;
+  PEOPLE.land = null;
+}
+/* Встать на карточку того, по кому нажали (слово владельца 28.10.2026, Cafe13KPG#502 п.1).
+   После выдачи, снятия и исключения список перечитывается, и на время загрузки страница
+   короче экрана: прокрутка прижимается к нулю, и возврат «где было» (render) возвращал уже
+   прижатое место. Поэтому место берётся не числом пикселей, а ЧЕЛОВЕКОМ — по tg_user_id в
+   памяти: строка его в новом списке может стоять иначе (живые членства наверх). */
+function peopleLand() {
+  var uid = PEOPLE.land, L = PEOPLE.list;
+  PEOPLE.land = null;
+  if (uid === null || !L) return;
+  for (var k = 0; k < L.length; k++) if (L[k].uid === uid) {
+    var el = document.querySelector('[data-person="' + k + '"]');
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+    return;
+  }
 }
 function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }
 
@@ -2057,7 +2073,7 @@ function loadRoster() {
     var list = r.status === 200 ? fromRoster(r.data) : null;
     if (list) PEOPLE.list = list;
     else PEOPLE.fail = r.status === 403 ? denyText(r) : failText(r);
-    if (current === 'people') render();
+    if (current === 'people') { render(); peopleLand(); }
   });
   if (PEOPLE.dirs) return;
   api('GET', '/directions').then(function (r) {
@@ -2093,6 +2109,7 @@ function grantSend() {
     if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
     haptic('ok');
     peopleReset();
+    PEOPLE.land = p.uid;
     PEOPLE.done = { uid: p.uid, text: 'Выдано: ' + roleWords(body.role, dir ? dir.title : '') + '. Кто выдал и когда — записано на сервере.' };
     loadRoster(); render();
   });
@@ -2112,6 +2129,7 @@ function revokeSend(rid) {
     if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
     haptic('ok');
     peopleReset();
+    PEOPLE.land = p.uid;
     PEOPLE.done = { uid: p.uid, text: 'Снято: ' + role.words + '. Снятая роль остаётся в истории на сервере.' };
     loadRoster(); render();
   });
@@ -2133,11 +2151,12 @@ function outSend(k) {
     if (!ok) {
       PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn');
       // «этого человека в клубе нет» — список устарел: его исключил кто-то другой (E47d)
-      if (r.status === 409) loadRoster();
+      if (r.status === 409) { PEOPLE.land = p.uid; loadRoster(); }
       render(); return;
     }
     haptic('ok');
     peopleReset();
+    PEOPLE.land = p.uid;
     PEOPLE.gone = { uid: p.uid, text: r.data.memberships_ended > 0
       ? p.name + ' больше не в клубе. Вход закрыт, живое членство оборвано сегодняшним днём.'
       : p.name + ' больше не в клубе. Вход закрыт; живых членств не было — обрывать было нечего.' };
