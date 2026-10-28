@@ -5796,12 +5796,12 @@ function queueCard(o) {
 /* ── навигация ───────────────────────────────────────── */
 
 var TABS = {
-  guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
-  member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Записи', ICON.cal]],
+  guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Ивенты', ICON.cal]],
+  member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Ивенты', ICON.cal]],
   organizer: [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
-              ['organizer', 'События', ICON.star], ['bookings', 'Записи', ICON.cal]],
+              ['organizer', 'События', ICON.star], ['bookings', 'Ивенты', ICON.cal]],
   partner:   [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
-              ['partner', 'Моё дело', ICON.case], ['bookings', 'Записи', ICON.cal]],
+              ['partner', 'Моё дело', ICON.case], ['bookings', 'Ивенты', ICON.cal]],
   staff:     [['staff', 'Касса', ICON.till], ['home', 'Клуб', ICON.home]],
   bar:       [['barQueue', 'Заказы', ICON.bell], ['barShot', 'Съёмка', ICON.cam],
               ['barDay', 'День', ICON.chart], ['barExpense', 'Затраты', ICON.coin]],
@@ -5812,7 +5812,7 @@ var TABS = {
 var TAB_ORDER = ['home', 'guest', 'organizer', 'partner', 'bookings'];
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
-  event: 'Мероприятие', bookings: 'Мои записи', staff: 'Касса', demo: 'Демо-режим',
+  event: 'Мероприятие', bookings: 'Мои ивенты', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно',
   bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
