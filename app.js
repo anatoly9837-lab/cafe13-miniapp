@@ -2089,7 +2089,7 @@ var JOIN_PILL = { pending: 'ЖДЁТ', approved: 'ВПУЩЕНА', rejected: 'О
 var JOINQ = { list: null, fail: '', gen: 0, busy: 0, err: '', ok: 0, no: 0, note: '', shot: {}, who: 0 };
 
 /* Одна битая просьба — отказ целиком: очередь с пропавшей строкой выглядит полной. */
-function fromJoin(d) {
+function fromJoinQueue(d) {
   if (!d || !Array.isArray(d.requests) || typeof d.pending !== 'number') return null;
   var out = [];
   for (var i = 0; i < d.requests.length; i++) {
@@ -2109,14 +2109,14 @@ function fromJoin(d) {
   }
   return out;
 }
-function loadJoin() {
+function loadJoinQueue() {
   var gen = ++JOINQ.gen, who = WHO;
   // чек неизменен, но смотрит его другой человек (тестовый режим «глазами») — кэш его не переживает
   if (JOINQ.who !== WHO) { joinDropShots(); JOINQ.who = WHO; }
   JOINQ.fail = '';
   api('GET', '/join/requests').then(function (r) {
     if (gen !== JOINQ.gen || who !== WHO) return;
-    var list = r.status === 200 ? fromJoin(r.data) : null;
+    var list = r.status === 200 ? fromJoinQueue(r.data) : null;
     if (list) JOINQ.list = list;
     else { JOINQ.list = null; JOINQ.fail = r.status === 403 ? denyText(r) : failText(r); }
     // чек нужен только тому, о ком ещё решают; PDF показать нечем — его байты не берутся вовсе
@@ -2154,7 +2154,7 @@ function decideJoin(id, decision) {
     if (r.status === 200 && r.data && r.data.status === decision) { JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; haptic('ok'); }
     else { JOINQ.err = denyText(r); haptic('warn'); }
     // и после отказа: 409 значит, что очередь устарела — решение уже кем-то принято
-    loadJoin();
+    loadJoinQueue();
     if (current === 'joinQueue') render();
   });
 }
@@ -5907,7 +5907,7 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
-  if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoin(); }
+  if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoinQueue(); }
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
   if (screen === 'home' && current !== 'home' && mayRequests() && WIRED.memberRequests) loadRequests();
@@ -6302,7 +6302,7 @@ function doAction(a) {
     if (a === 'j-ask' && mayPeople()) { JOINQ.no = Number(arg); JOINQ.ok = 0; JOINQ.note = ''; JOINQ.err = ''; render(); return; }
     if (a === 'j-keep') { JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; render(); return; }
     if (a === 'j-no' && mayPeople() && JOINQ.no === Number(arg)) { decideJoin(Number(arg), 'rejected'); return; }
-    if (a === 'j-retry' && mayPeople()) { loadJoin(); render(); return; }
+    if (a === 'j-retry' && mayPeople()) { loadJoinQueue(); render(); return; }
     if (a === 'j-shot' && mayPeople()) { delete JOINQ.shot[Number(arg)]; joinShot(Number(arg)); render(); return; }
 
     if (a === 'scan') { scanPass(); return; }
