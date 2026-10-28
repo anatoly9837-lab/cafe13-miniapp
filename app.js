@@ -267,6 +267,23 @@ var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клу�
                   // „Пополнение онлайн“». Имя роли в схеме остаётся `topups`; меняется только подпись
                   topups: 'Пополнение онлайн' };
 
+/* Дата конца членства в строке имени — ЧИСЛАМИ (кадр E47p: «· до 12.11.2026»), а не словами:
+   `ruDate` даёт «12 ноября 2026» и в строку рядом с именем не помещается.
+   ⚠ Порог «меньше двух недель» — слово владельца 28.10.2026 («Если до конца членства остается
+   менее 2х недель дата краснеет»). Считается он по ЧАСАМ КЛУБА (`TZ`), а не по поясу телефона:
+   у человека в другом поясе иначе краснело бы на сутки раньше или позже. Берём сутки клуба
+   у обеих дат (`en-CA` даёт YYYY-MM-DD) и вычитаем — так разница целая в днях и не зависит
+   от часа, в который открыли экран. */
+var TILL_SOON_DNEY = 14;
+function clubDay(d) { return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); }
+function tillWords(iso) {
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  var den = clubDay(d), seg = clubDay(new Date());
+  var ostalos = Math.round((Date.parse(den + 'T00:00:00Z') - Date.parse(seg + 'T00:00:00Z')) / 86400000);
+  var ch = den.split('-');
+  return { text: ch[2] + '.' + ch[1] + '.' + ch[0], soon: ostalos < TILL_SOON_DNEY };
+}
 function ruDate(iso) {
   var d = new Date(iso);
   if (isNaN(d.getTime())) return null;
@@ -2081,6 +2098,17 @@ function fromRoster(d) {
       // слова сервера по тем же местам, что `lv`: снятие уровня берёт уровень СЛОВОМ (v86)
       lvKeys: p.memberships.slice(),
       bal: bal,
+      // Конец живого членства (слово владельца 29.10.2026: «после имени сделай не большим
+      // шрифтом дату окончания членства», плюс «поставь мне значек бесконечности» 28.10).
+      // ⚠ Состояний ЧЕТЫРЕ, а не два, и признак — наличие КЛЮЧА, тот же класс, что у остатка:
+      //   поля нет вовсе      → `till === undefined`: старый сервер, рисовать нечего;
+      //   `lifelong: true`    → бессрочно, знак ∞ (сервер шлёт `ends_at: null` вместе с ним);
+      //   дата строкой        → срок;
+      //   `null` без lifelong → живого членства нет, и это НЕ то же, что «не спросили».
+      // Сервер (`roles.py` на боевом `e545973`): `NULLIF(max(ends_at),'infinity')` и
+      // `bool_or(ends_at='infinity')`, то есть поля ПЛОСКИЕ — один конец на человека.
+      till: 'ends_at' in p ? { iso: typeof p.ends_at === 'string' ? p.ends_at : null,
+                               inf: p.lifelong === true } : undefined,
       roles: roles
     });
   }
@@ -2246,6 +2274,17 @@ function outSend(k) {
 }
 /* Карточка знает номер строки списка (k), а не tg_user_id: id в разметке
    уехал бы в снимок экрана и дальше. */
+/* Хвост строки имени: дата конца живого членства или ∞ (кадр E47p). Четыре состояния поля
+   разобраны в `fromRoster`, здесь они только рисуются — и «поля нет» с «членства нет» дают
+   ПУСТО по разным причинам: у первого рисовать нечем, у второго нечего. */
+function tillTail(p) {
+  if (!p.till) return '';                                   // старый сервер: поля нет вовсе
+  if (p.till.inf) return '<span class="till"> · <span class="inf">∞</span></span>';
+  if (!p.till.iso) return '';                               // живого членства нет
+  var t = tillWords(p.till.iso);
+  if (!t) return '';                                        // дата не разобралась — молчим, а не врём
+  return '<span class="till' + (t.soon ? ' soon' : '') + '"> · до ' + esc(t.text) + '</span>';
+}
 function personCard(p, k) {
   var lock = PEOPLE.busy ? ' disabled' : '';
   var open = PEOPLE.open === k;
@@ -2383,7 +2422,7 @@ function personCard(p, k) {
   if (PEOPLE.card !== k)
     return '<div class="fold-wrap" data-person="' + k + '"' + hid + '>' +
       '<button type="button" class="card dense fold" data-action="p-card:' + k + '" aria-expanded="false"' + lock + '>' +
-        '<span class="row"><span class="col"><b>' + esc(p.name) + '</b>' +
+        '<span class="row"><span class="col"><b>' + esc(p.name) + tillTail(p) + '</b>' +
           '<span class="small">' + (p.lv.length ? esc(p.lv.join(' · ')) : 'без членства') + '</span>' +
         '</span><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
           (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></span>' +
@@ -2404,7 +2443,7 @@ function personCard(p, k) {
     // остаётся его же словом. Кружок — только вход, а не «нажал и исключил».
     '<div class="row"><div class="col"><div class="namerow">' +
       '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>' +
-      '<b>' + esc(p.name) + '</b></div></div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
+      '<b>' + esc(p.name) + tillTail(p) + '</b></div></div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
       (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></div>' +
     rows + done + deny + form +
     // E47v: вопрос во всю карточку, с ИМЕНЕМ; «себя нельзя» — отказом сервера, кнопку не прячем (E47)

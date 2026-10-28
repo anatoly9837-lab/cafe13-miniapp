@@ -5628,7 +5628,11 @@ if (grantsSet.length !== 1) {
                   { id: 9, title: 'Старое', is_active: false, is_open: false }];
     const HEAD_ONLY = clone(OWNER); HEAD_ONLY.roles = [{ role: 'head', direction_id: null }];
     const MASTER = clone(OWNER); MASTER.roles = [{ role: 'curator', direction_id: 7 }];
-    const peopleCase = (me, r) => open(true, true, json(200, me), null, null, null, q => {
+    /* ⚠ `now` — ПРИКОЛОТЫЕ часы, и они не удобство: порог «меньше двух недель» у даты конца
+       членства считается от «сейчас», а батарея, считающая время от настоящего момента, у нас
+       уже краснела сама по себе после 11:00 острова. Даты фикстуры и порог обязаны жить в
+       одной системе отсчёта, иначе случай зелен полдня и красен вторые полдня. */
+    const peopleCase = (me, r, now) => open(true, true, json(200, me), null, null, null, q => {
       const u = q.url();
       if (u.endsWith('/people')) return r.people || json(200, ROSTER);
       // r.dirs бывает ФАБРИКОЙ: задержка ответа начинается в момент запроса, а не при заведении случая
@@ -5645,7 +5649,7 @@ if (grantsSet.length !== 1) {
       if (/\/access\/\d+\/revoke$/.test(u)) return r.out || json(200, { tg_user_id: Number(u.match(/access\/(\d+)/)[1]),
         revoked_at: '2026-10-28T13:00:00+00:00', memberships_ended: 1, note: '' });
       return undefined;
-    });
+    }, null, now);
     // вход — с вкладки «Управление» (кадр E46, Cafe13KPG#413), а не с главной: путь
     // проходится так, как его проходит глава клуба, — вкладка, потом строка
     const toPeople = async s => {
@@ -6377,6 +6381,74 @@ if (grantsSet.length !== 1) {
         if (posle.scroll === doScroll && posle.top !== doTop) bad.push(`${n} (${how}): прокрутка та же, а карточка переехала — мерить нечем`);
       }
       await s.ctx.close();
+    }
+
+    /* ── ДАТА КОНЦА ЧЛЕНСТВА и ∞ (пункт 6 замечаний владельца: «Даты окончания членства не
+       вижу»; «поставь мне значек бесконечности» 28.10.2026) ──
+       Сервер отдаёт пару ПЛОСКИХ полей (`ends_at` + `lifelong`, бой `e545973`), и состояний
+       ЧЕТЫРЕ, а не два: дата / бессрочно / живого членства нет / поля НЕТ вовсе (старый
+       сервер). Последние два рисуют одно и то же — пусто, — но по РАЗНЫМ причинам, и
+       различать их обязан разбор, а не экран: тот же класс, что у остатка (`'balance' in p`).
+       ⚠ Часы ПРИКОЛОТЫ, даты фикстуры отсчитаны от них же. Порог проверяется с ОБЕИХ сторон
+       границы и НА границе: 14 дней — ещё не «меньше двух недель», 13 — уже. Без середины
+       диапазона проверка не отличала бы «посчитано верно» от «прибор промолчал». */
+    {
+      const n = 'people-till', NOW = '2026-11-01T09:00:00+07:00';
+      const lyudi = clone(ROSTER);
+      const dat = (dney) => { const d = new Date(Date.parse(NOW) + dney * 86400000); return d.toISOString(); };
+      lyudi.people[0].ends_at = dat(60);  lyudi.people[0].lifelong = false;   // срок далёкий
+      lyudi.people[1].ends_at = dat(13);  lyudi.people[1].lifelong = false;   // меньше двух недель
+      lyudi.people[2].ends_at = null;     lyudi.people[2].lifelong = true;    // бессрочное
+      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
+      await toPeople(s);
+      const hvosty = await s.p.$$eval('[data-person]', es => es.map(e => {
+        const t = e.querySelector('.till');
+        return { text: t ? t.textContent : null, soon: t ? t.classList.contains('soon') : null,
+                 inf: !!(t && t.querySelector('.inf')) }; }));
+      if (hvosty[0].text !== ' · до 31.12.2026') bad.push(`${n}: далёкий срок «${hvosty[0].text}», ждали « · до 31.12.2026»`);
+      if (hvosty[0].soon) bad.push(`${n}: далёкий срок покраснел`);
+      if (hvosty[1].text !== ' · до 14.11.2026') bad.push(`${n}: близкий срок «${hvosty[1].text}», ждали « · до 14.11.2026»`);
+      if (!hvosty[1].soon) bad.push(`${n}: срок меньше двух недель НЕ покраснел`);
+      if (!hvosty[2].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${hvosty[2].text}»`);
+      if (hvosty[2].soon) bad.push(`${n}: бессрочное покраснело`);
+      await s.ctx.close();
+    }
+    /* Граница порога — ОБЕ стороны и сама граница: «менее 2х недель» это строго меньше 14.
+       Подлоги по краям диапазона оставили бы середину непроверенной, поэтому здесь ровно
+       соседние дни, а не «ноль и много». */
+    {
+      const n = 'people-till-porog', NOW = '2026-11-01T09:00:00+07:00';
+      const lyudi = clone(ROSTER);
+      const dat = (dney) => new Date(Date.parse(NOW) + dney * 86400000).toISOString();
+      lyudi.people[0].ends_at = dat(14); lyudi.people[0].lifelong = false;
+      lyudi.people[1].ends_at = dat(13); lyudi.people[1].lifelong = false;
+      lyudi.people[2].ends_at = dat(0);  lyudi.people[2].lifelong = false;
+      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
+      await toPeople(s);
+      const soon = await s.p.$$eval('[data-person]', es => es.map(e => {
+        const t = e.querySelector('.till'); return t ? t.classList.contains('soon') : null; }));
+      if (soon[0] !== false) bad.push(`${n}: ровно 14 дней покраснели — «менее 2х недель» это строго меньше`);
+      if (soon[1] !== true) bad.push(`${n}: 13 дней не покраснели`);
+      if (soon[2] !== true) bad.push(`${n}: последний день не покраснел`);
+      await s.ctx.close();
+    }
+    /* ⚠ «Поля НЕТ» и «членства нет» рисуют одно и то же — пусто, — и различить их на экране
+       нечем по построению. Поэтому случай спрашивает РАЗБОР: у старого сервера `till` обязан
+       быть `undefined`, у человека без живого членства — объект с `iso: null`. Без этого
+       разница существует только в комментарии, то есть не существует. */
+    {
+      const n = 'people-till-net', NOW = '2026-11-01T09:00:00+07:00';
+      const stary = clone(ROSTER);                       // старый сервер: полей нет вовсе
+      const novy = clone(ROSTER);
+      novy.people.forEach(p => { p.ends_at = null; p.lifelong = false; });   // новый, членства нет
+      for (const [kak, body, zhdem] of [['старый сервер', stary, 'undefined'], ['нет живого членства', novy, 'object']]) {
+        const s = await peopleCase(OWNER, { people: json(200, body) }, NOW);
+        await toPeople(s);
+        const vid = await s.p.evaluate(() => typeof PEOPLE.list[0].till);
+        if (vid !== zhdem) bad.push(`${n} (${kak}): разбор дал till=${vid}, ждали ${zhdem}`);
+        if (await s.p.$('.till')) bad.push(`${n} (${kak}): на экране нарисована дата, которой нет`);
+        await s.ctx.close();
+      }
     }
 
     /* ── СВЁРТКА карточек (Cafe13KPG#493, слово владельца 28.10.2026) ──
