@@ -464,6 +464,108 @@
   ],
   "status": 200
  },
+ "join-decide-rejected": {
+  "request": "POST /join/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "id": null,
+   "status": null
+  },
+  "status": 200
+ },
+ "join-info-mine": {
+  "request": "GET /join",
+  "shape": {
+   "about_token": null,
+   "amount_thb": null,
+   "amount_usd": null,
+   "currency": null,
+   "period_months": null,
+   "request": {
+    "created_at": null,
+    "decided_at": null,
+    "decision_note": null,
+    "id": null,
+    "said": null,
+    "status": null,
+    "status_ru": null
+   },
+   "you": {
+    "first_name": null,
+    "last_name": null,
+    "username": null
+   }
+  },
+  "status": 200
+ },
+ "join-info-none": {
+  "request": "GET /join",
+  "shape": {
+   "about_token": null,
+   "amount_thb": null,
+   "amount_usd": null,
+   "currency": null,
+   "period_months": null,
+   "request": null,
+   "you": {
+    "first_name": null,
+    "last_name": null,
+    "username": null
+   }
+  },
+  "status": 200
+ },
+ "join-request-create": {
+  "request": "POST /join/request",
+  "shape": {
+   "created_at": null,
+   "id": null,
+   "status": null
+  },
+  "status": 201
+ },
+ "join-request-pending-409": {
+  "request": "POST /join/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "join-requests-denied": {
+  "request": "GET /join/requests",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "join-requests-head": {
+  "request": "GET /join/requests",
+  "shape": {
+   "pending": null,
+   "requests": [
+    {
+     "amount_thb": null,
+     "amount_usd": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "first_name": null,
+     "id": null,
+     "last_name": null,
+     "ledger_id": null,
+     "pay_method": null,
+     "receipt_bytes": null,
+     "receipt_mime": null,
+     "said": null,
+     "status": null,
+     "status_ru": null,
+     "tg_user_id": null,
+     "username": null
+    }
+   ]
+  },
+  "status": 200
+ },
  "me-curator": {
   "request": "GET /me",
   "shape": {
@@ -481,6 +583,7 @@
    },
    "membership": null,
    "membership_active": null,
+   "membership_request": null,
    "memberships": [],
    "roles": [
     {
@@ -513,6 +616,7 @@
     "starts_at": null
    },
    "membership_active": null,
+   "membership_request": null,
    "memberships": [
     {
      "ends_at": null,
@@ -792,6 +896,64 @@
   },
   "status": 422
  },
+ "product-state-denied-worker": {
+  "request": "POST /bar/products/N/state",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "product-state-draft-denied-worker": {
+  "request": "POST /bar/products/N/state",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "product-state-draft-from-active": {
+  "request": "POST /bar/products/N/state",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "product-state-draft-no-note": {
+  "request": "POST /bar/products/N/state",
+  "shape": {
+   "detail": null
+  },
+  "status": 422
+ },
+ "product-state-returned": {
+  "request": "POST /bar/products/N/state",
+  "shape": {
+   "decided_at": null,
+   "decision_note": null,
+   "id": null,
+   "state": null
+  },
+  "status": 200
+ },
+ "product-state-review": {
+  "request": "POST /bar/products/N/state",
+  "shape": {
+   "decided_at": null,
+   "decision_note": null,
+   "id": null,
+   "state": null
+  },
+  "status": 200
+ },
+ "product-state-review-2": {
+  "request": "POST /bar/products/N/state",
+  "shape": {
+   "decided_at": null,
+   "decision_note": null,
+   "id": null,
+   "state": null
+  },
+  "status": 200
+ },
  "products-list-bad-state": {
   "request": "GET /bar/products?direction_id=N&state=draft,nosuchstate",
   "shape": {
@@ -927,6 +1089,37 @@
   },
   "status": 200
  },
+ "till-by-member-denied-guest": {
+  "request": "GET /till/by-member/N",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "till-by-member-nopass": {
+  "request": "GET /till/by-member/N",
+  "shape": {
+   "balance": null,
+   "bookings": [
+    {
+     "amount_due": null,
+     "event_id": null,
+     "kind": null,
+     "paid": null,
+     "starts_at": null,
+     "title": null
+    }
+   ],
+   "first_name": null,
+   "last_name": null,
+   "member_id": null,
+   "membership": null,
+   "membership_active": null,
+   "memberships": [],
+   "pass_code": null
+  },
+  "status": 200
+ },
  "till-by-pass": {
   "request": "GET /till/by-pass/XIII-N",
   "shape": {
@@ -961,6 +1154,13 @@
    ]
   },
   "status": 200
+ },
+ "till-by-pass-denied-guest": {
+  "request": "GET /till/by-pass/XIII-N",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
  },
  "till-by-pass-no-bookings": {
   "request": "GET /till/by-pass/XIII-N",
