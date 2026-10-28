@@ -180,7 +180,13 @@ b.num, .big { white-space: nowrap; }
 .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
 .btn.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); min-height: 42px; font-size: 13px; width: auto; align-self: flex-start; padding: 0 14px; white-space: nowrap; }
 .btn.mini { min-height: 38px; width: auto; font-size: 13px; padding: 0 14px; white-space: nowrap; }
-.btn[disabled] { opacity: .55; cursor: default; }
+.btn[disabled] {
+  /* серое с рамкой = нельзя, на всех экранах одним обликом; прежние .55 по латуни
+     давали подписи контраст около 2.45 — нечитаемо (designer-55, к Cafe13KPG#459) */
+  background: var(--surface); color: var(--muted); border: 1px solid var(--line);
+  opacity: 1;          /* иначе прежняя прозрачность глушит и новые цвета */
+  cursor: default;
+}
 .btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 .seg { display: flex; gap: 8px; }
@@ -194,6 +200,18 @@ b.num, .big { white-space: nowrap; }
 .seg button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 .seg.wrap { flex-wrap: wrap; }
 .seg.wrap button { flex: 1 1 auto; padding: 0 12px; }
+/* Реквизиты на экране просьбы (кадр E44). В кадре место 78 px — число коробки
+   кадра, а не облика: здесь прокрутка есть, и картинку берут ширины, при
+   которой её наводят со второго телефона (designer-55, Cafe13KPG#464). */
+.qr { display: flex; gap: 10px; }
+.qr > div { flex: 1 1 0; display: flex; flex-direction: column; gap: 6px; }
+.qr .place { width: 100%; max-width: 240px; min-height: 120px; margin: 0 auto;
+             border: 1px dashed var(--line); border-radius: 10px;
+             background: var(--surface); display: flex; flex-direction: column; gap: 8px;
+             align-items: center; justify-content: center; text-align: center; padding: 10px; }
+.qr .place.img { border-style: solid; padding: 0; overflow: hidden; background: var(--card); }
+.qr .place img { display: block; width: 100%; height: auto; }
+.qr .place span { font-size: 11px; color: var(--muted); }
 
 .listitem {
   border: 1px solid var(--line); border-radius: 12px;
