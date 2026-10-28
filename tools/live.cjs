@@ -5708,10 +5708,17 @@ if (grantsSet.length !== 1) {
         // клуба» кадр не рисует (последнего главу снять не даст сервер — его отказ словами)
         if (!t.includes('Глава клуба')) bad.push('people-head: в раскрытой карточке нет бейджа «Глава клуба»');
         const chips = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]));
-        // ⚠ Прежняя редакция ждала уровень `span` БЕЗ крестика: ручки снятия уровня на бою не было,
-        // и кнопка обещала бы несделанное. С `d1fa661` ручка на бою (v86) — уровень стал кнопкой с
-        // крестиком; что крестик открывает окно, а не шлёт, держит `lv-revoke` и мутация mv1.
-        if (!chips.some(c => c[0] === 'BUTTON' && /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')) bad.push(`people-head: уровень не кнопкой «paid»: ${JSON.stringify(chips)}`);
+        /* ⚠ Ожидание у этой строки менялось ТРИЖДЫ, и каждая редакция была верна в своё время:
+           до `d1fa661` уровень был `span` без крестика (ручки на бою нет — кнопка обещала бы
+           несделанное); с v86 стал кнопкой с крестиком; 29.10.2026 крестик погашен словом
+           владельца, потому что ручка затирает срок (`Cafe13KPG#519`). Поэтому ожидание
+           привязано к тому же переключателю, что и снятые случаи: один случай остаётся
+           правдивым в обоих состояниях, и возврат крестика вернёт проверку САМ. */
+        const zhdemKnopku = process.env.LVON === '1';
+        const urov = chips.filter(c => /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')[0];
+        if (!urov) bad.push(`people-head: уровня «Бизнес-партнёр» нет вовсе: ${JSON.stringify(chips)}`);
+        else if (zhdemKnopku && urov[0] !== 'BUTTON') bad.push(`people-head: уровень не кнопкой «paid»: ${JSON.stringify(urov)}`);
+        else if (!zhdemKnopku && urov[0] !== 'SPAN') bad.push(`people-head: уровень нажимается, хотя крестик погашен до Cafe13KPG#519: ${JSON.stringify(urov)}`);
         // tg_user_id — ни текстом, ни в атрибутах разметки
         if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push('people-head: tg_user_id в разметке');
         // у админа «Снять» у админа есть
