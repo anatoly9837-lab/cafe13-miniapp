@@ -6374,7 +6374,19 @@ if (grantsSet.length !== 1) {
       // ⚠ цель раскрытия — НАСТОЯЩАЯ кнопка, а минус её сосед: вложенные кнопки невалидны,
       // а нажимаемых НЕ-кнопок в этом клиенте нет ни одной
       if (a.vlozhennyh) bad.push(`${n}: кнопка внутри кнопки (${a.vlozhennyh}) — разметка невалидна`);
-      if (!(await s.p.$('.fold-wrap > .round.out'))) bad.push(`${n}: в свёрнутой строке нет минуса`);
+      /* ⚠ Кнопка исключения — ТЕКСТОВАЯ «[ - ]» (слово владельца 29.10.2026), и у неё две
+         проверки, которых числа не дают. Первая: цель нажатия не ниже 24 px — ею человека
+         исключают из клуба. Вторая: подпись для голосового доступа; без `aria-label` кнопка
+         называется «минус в скобках». */
+      const outb = await s.p.$$eval('.fold-wrap > .outbtn', es => es.map(e => {
+        const r = e.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height), t: e.textContent, a: e.getAttribute('aria-label') }; }));
+      if (!outb.length) bad.push(`${n}: в свёрнутой строке нет кнопки исключения`);
+      else {
+        if (outb[0].t !== '[ - ]') bad.push(`${n}: на кнопке исключения «${outb[0].t}», а не «[ - ]»`);
+        if (outb[0].a !== 'Исключить из клуба') bad.push(`${n}: у кнопки исключения нет подписи для голосового доступа: ${JSON.stringify(outb[0].a)}`);
+        if (outb[0].h < 24 || outb[0].w < 24) bad.push(`${n}: цель нажатия у исключения ${outb[0].w}×${outb[0].h} — ниже порога 24`);
+      }
       // до нажатия в строке только узнавание: имя, уровень, остаток
       if (await s.p.$(`${card(s, 0)} .chip`)) bad.push(`${n}: чип виден в свёрнутой строке`);
       if (await s.p.$(`${card(s, 0)} [data-action^="p-give:"]`)) bad.push(`${n}: кружок выдачи виден до раскрытия`);
@@ -6391,6 +6403,27 @@ if (grantsSet.length !== 1) {
       await s.p.fill('#p-find', 'алев');
       const hid = await s.p.evaluate(() => [...document.querySelectorAll('[data-person]')].map(e => e.hidden));
       if (JSON.stringify(hid) !== '[false,true,true]') bad.push(`${n}: поиск по свёрнутому списку оставил ${JSON.stringify(hid)}`);
+      await s.ctx.close();
+    }
+
+    /* ⚠ Случай куплен СНИМКОМ, а не числом (designer-55, 29.10.2026): без `white-space:
+       nowrap` у длинного имени «[ -» и «]» разъезжаются по двум строкам, а высота плашки
+       при этом НЕ меняется — то есть прежние числовые проверки слепы к этому по построению.
+       Мерится форма самой кнопки: её высота у длинного имени обязана совпасть с высотой у
+       короткого, и обе — в одну строку. */
+    {
+      const n = 'people-fold-long', dlinnoe = clone(ROSTER);
+      dlinnoe.people[1].first_name = '[член клуба с очень длинным именем для проверки переноса]';
+      dlinnoe.people[1].last_name = null;
+      const s = await peopleCase(OWNER, { people: json(200, dlinnoe) });
+      await toPeople(s);
+      const hs = await s.p.$$eval('.fold-wrap > .outbtn', es => es.map(e => Math.round(e.getBoundingClientRect().height)));
+      if (hs.length < 2) bad.push(`${n}: кнопок исключения на экране ${hs.length} — сравнивать не с чем`);
+      else if (hs[1] !== hs[0]) bad.push(`${n}: у длинного имени кнопка в ${hs[1]} px против ${hs[0]} — «[ -» и «]» разъехались по строкам`);
+      const vidno = await s.p.evaluate(() => {
+        const e = document.querySelectorAll('.fold-wrap')[1].querySelector('b');
+        return e && e.getBoundingClientRect().width > 0; });
+      if (!vidno) bad.push(`${n}: длинное имя не поместилось в строку вовсе`);
       await s.ctx.close();
     }
 

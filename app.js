@@ -2331,8 +2331,7 @@ function personCard(p, k) {
         '</span><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
           (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></span>' +
       '</button>' +
-      '<button type="button" class="round out" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>' +
-        '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>' +
+      '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>' +
     '</div>';
   return '<div class="card dense open" data-person="' + k + '"' + hid + '>' +
     // Кадр E47: уровень — предмет строки, остаток справа. Стили встроены — долг Cafe13KPG#484
@@ -2347,8 +2346,7 @@ function personCard(p, k) {
     // ⚠ Действие НЕ меняется: вход в вопрос тот же `p-out:k`, и двойное подтверждение
     // остаётся его же словом. Кружок — только вход, а не «нажал и исключил».
     '<div class="row"><div class="col"><div class="namerow">' +
-      '<button type="button" class="round out" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>' +
-        '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>' +
+      '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>' +
       '<b>' + esc(p.name) + '</b></div></div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
       (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></div>' +
     rows + done + deny + form +
