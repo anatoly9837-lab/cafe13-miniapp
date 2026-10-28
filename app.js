@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v71 · 28.10.2026';
+var VERSION = 'v72 · 28.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -634,7 +634,7 @@ function sendJoin() {
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, bookings: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
-              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1, joinQueue: 1,
+              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1, joinQueue: 1, manage: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -2119,9 +2119,11 @@ function loadJoinQueue() {
     var list = r.status === 200 ? fromJoinQueue(r.data) : null;
     if (list) JOINQ.list = list;
     else { JOINQ.list = null; JOINQ.fail = r.status === 403 ? denyText(r) : failText(r); }
-    // чек нужен только тому, о ком ещё решают; PDF показать нечем — его байты не берутся вовсе
-    (JOINQ.list || []).forEach(function (q) { if (q.status === 'pending' && q.mime !== 'application/pdf') joinShot(q.id); });
-    if (current === 'joinQueue') render();
+    // чек нужен только тому, о ком ещё решают, и только на самой очереди (на «Управлении» —
+    // один счёт); PDF показать нечем — его байты не берутся вовсе
+    if (current === 'joinQueue')
+      (JOINQ.list || []).forEach(function (q) { if (q.status === 'pending' && q.mime !== 'application/pdf') joinShot(q.id); });
+    if (current === 'joinQueue' || current === 'manage') render();
   });
 }
 function joinDropShots() {
@@ -3750,7 +3752,9 @@ var ICON = {
   // Та же стрелка, что у кнопки «Назад» в шапке (`index.html`): у подписи
   // «Назад» стрелка вперёд читается как «дальше», и увидеть это можно только
   // ОТРИСОВАННЫМ — в исходнике `ICON.chev` ничем себя не выдаёт.
-  chevBack: '<path d="M15 6l-6 6 6 6"/>'
+  chevBack: '<path d="M15 6l-6 6 6 6"/>',
+  // вкладка «Управление» (кадр E46): две фигуры — не портфель «Моего дела», разделы разные
+  people: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0111 0"/><path d="M16 6.3a3 3 0 010 5.4M17.5 14.2A5.5 5.5 0 0120.5 19"/>'
 };
 function svg(paths, cls) { return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + paths + '</svg>'; }
 
@@ -3867,10 +3871,11 @@ var SCREENS = {
 
       (LIVE ? myRoles() +
         (canTopup() ? '<button type="button" class="btn ghost" data-go="topup">Внести себе на счёт</button>' : '') +
-        // Одна группа «Работа»: бар и управление клубом (кадр E42g, Cafe13KPG#428) —
-        // у «Заявок» и «Людей» одно право, и подпись у них одна; при барной роли
-        // строки главы клуба встают в ту же группу, а не во вторую «Работу».
-        (DATA.barSide || mayPeople() || mayRequests() && WIRED.memberRequests ? '<div class="group"><span class="label">Работа</span>' +
+        // Одна группа «Работа»: бар и «Заявки на членство» (кадр E42g, Cafe13KPG#428) —
+        // при барной роли строка главы клуба встаёт в ту же группу, а не во вторую «Работу».
+        // «Люди» отсюда уехали во вкладку «Управление» (E46, Cafe13KPG#413): рабочее
+        // не живёт внутри клиентского; в E42g они стояли здесь — кадр старше решения.
+        (DATA.barSide || mayRequests() && WIRED.memberRequests ? '<div class="group"><span class="label">Работа</span>' +
           (DATA.barSide ? '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' +
@@ -3885,9 +3890,6 @@ var SCREENS = {
           (mayRequests() && WIRED.memberRequests ? '<button type="button" class="listitem" data-go="memberRequests">' +
             '<span class="grow"><b>Заявки на членство</b><span class="small">' +
               (MREQS.pending !== null ? 'Ждут ответа: ' + MREQS.pending : 'Согласие или отказ, со словом заявителю') + '</span></span>' +
-            svg(ICON.chev, 'chev') + '</button>' : '') +
-          (mayPeople() ? '<button type="button" class="listitem" data-go="people">' +
-            '<span class="grow"><b>Люди и ответственность</b><span class="small">Кто за что отвечает: выдать и снять</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' : '') +
           '</div>' : '') +
         afishaHome() :
@@ -5281,6 +5283,22 @@ var SCREENS = {
       '<div class="group"><span class="label">Решение</span>' + deny + (acts || '<span class="small">Действий нет.</span>') + '</div>';
   },
 
+  // E46: ровно два входа — решение владельца 28.10.2026 (#413). «Заявки на членство» (E42)
+  // остаются на главной: это другая очередь, для уже допущенных.
+  manage: function () {
+    if (!mayPeople()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
+    // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46)
+    var wait = JOINQ.list ? JOINQ.list.filter(function (q) { return q.status === 'pending'; }).length : null;
+    return '<div class="group"><span class="label">Кто в клубе</span>' +
+      '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
+        '<span class="small">' + (wait !== null ? 'Ждут ответа: ' + wait : 'Кто просится в клуб') + '</span></span>' +
+        svg(ICON.chev, 'chev') + '</button>' +
+      '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
+        '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
+    '</div>';
+  },
+
   // E45 очередь, E45b пусто, E45g только решённые, E45v отказ со словом
   joinQueue: function () {
     // E45zh: слова — отказа сервера (_may_decide, 403) буквой; кнопок нет — идти отсюда некуда
@@ -5695,7 +5713,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Люди', joinQueue: 'Заявки на доступ', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы'
 };
@@ -5722,6 +5740,9 @@ function tabList() {
   // касса — от права, а не от уровня: кассир с членством — член клуба по уровню
   if (canTopup() && !t.some(function (x) { return x[0] === 'staff'; }))
     t.unshift(['staff', 'Касса', ICON.till]);
+  // «Управление» — от права главы клуба, а не от уровня; последней, как в кадре E46 (Cafe13KPG#413)
+  if (mayPeople() && !t.some(function (x) { return x[0] === 'manage'; }))
+    t.push(['manage', 'Управление', ICON.people]);
   return t;
 }
 
@@ -5741,7 +5762,7 @@ var BACK = {
   // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
-  people: 'home', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', memberRequests: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -5907,6 +5928,7 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
+  if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoinQueue(); }
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }

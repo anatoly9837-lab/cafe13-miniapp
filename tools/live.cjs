@@ -458,19 +458,26 @@ if (grantsSet.length !== 1) {
       m.memberships = levels.map(l => lv(l, END)); m.roles = roles || [];
       return m;
     };
-    const ALL = ['staff', 'barQueue', 'home', 'guest', 'organizer', 'partner', 'bookings'];
+    // ⚠ ЧУЖОЙ случай (frontend-11, Cafe13KPG#410), ожидание правит frontend-upravlenie по решению
+    // координатора 28.10.2026. Прежняя редакция — семь вкладок, без 'manage': до v72 вкладки
+    // «Управление» не было. С v72 глава клуба (роли OWNER) получает восьмую, последней
+    // (Cafe13KPG#413, кадр E46). Что она появляется только у главы и только последней, держат
+    // `manage-tab` и мутация «вкладка без права», а не это ожидание.
+    const ALL = ['staff', 'barQueue', 'home', 'guest', 'organizer', 'partner', 'bookings', 'manage'];
     for (const [name, me, want] of [
       ['tabs-dva-member-vyigral', who('member', ['member', 'partner']), ['home', 'guest', 'partner', 'bookings']],
       ['tabs-dva-partner-vyigral', who('partner', ['member', 'partner']), ['home', 'guest', 'partner', 'bookings']],
       ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'bookings']],
       ['tabs-tolko-member', who('member', ['member']), ['home', 'guest', 'bookings']],
       ['tabs-gost', who(null, []), ['guest', 'bookings']],
-      ['tabs-vse-sem', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
+      // было `tabs-vse-sem` («все семь»): до v72 вкладок было семь. Имя без числа нарочно —
+      // число в имени проверки стареет на следующей вкладке (решение координатора 28.10.2026)
+      ['tabs-vse', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
       const s = await open(true, true, json(200, me));
       const got = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
       if (JSON.stringify(got) !== JSON.stringify(want))
         bad.push(`${name}: вкладки ${JSON.stringify(got)}, ждали ${JSON.stringify(want)}`);
-      // семь вкладок в 390 px: ни одна не вылезла за край и не съела соседнюю
+      // все вкладки в 390 px (до v72 — семь, с v72 у главы клуба восемь): ни одна не вылезла за край и не съела соседнюю
       const over = await s.p.evaluate(() => {
         const t = document.getElementById('tabs'), w = document.documentElement.clientWidth;
         return [...t.querySelectorAll('button')].filter(b => {
@@ -496,7 +503,7 @@ if (grantsSet.length !== 1) {
         }).map(b => b.textContent));
       if (wrapped.length) bad.push(`${name}: подпись вкладки переносится на вторую строку: ${JSON.stringify(wrapped)}`);
       if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
-      if (name === 'tabs-vse-sem') await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
+      if (name === 'tabs-vse') await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
       // что партнёр увидит за вкладкой: partner вне WIRED, сервера за ним нет (Cafe13KPG#99) —
       // снимок для решения владельца, а не проверка
       // без вкладки снимать нечего: строка о составе уже стоит выше, а клик в пустоту оборвал бы батарею
@@ -5307,10 +5314,14 @@ if (grantsSet.length !== 1) {
       if (/\/roles\/\d+\/revoke$/.test(u)) return r.revoke || json(200, { id: 31, member_id: 701, role: 'curator', revoked_at: '2026-10-21T10:00:00+00:00' });
       return undefined;
     });
+    // вход — с вкладки «Управление» (кадр E46, Cafe13KPG#413), а не с главной: путь
+    // проходится так, как его проходит глава клуба, — вкладка, потом строка
     const toPeople = async s => {
-      const entry = await s.p.$('[data-go="people"]');
-      if (!entry) return false;
-      await s.p.evaluate(() => document.querySelector('[data-go="people"]').click());
+      if (!(await s.p.$('#tabs [data-go="manage"]'))) return false;
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click());
+      await s.p.waitForTimeout(250);
+      if (!(await s.p.$('#view [data-go="people"]'))) return false;
+      await s.p.evaluate(() => document.querySelector('#view [data-go="people"]').click());
       await s.p.waitForTimeout(250);
       return true;
     };
@@ -5404,6 +5415,7 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(MASTER, {});
       if (await s.p.$('[data-go="people"]')) bad.push('people-master: у куратора направления есть вход «Люди»');
+      if (await s.p.$('#tabs [data-go="manage"]')) bad.push('people-master: у куратора направления есть вкладка «Управление»');
       await s.p.evaluate(() => go('people'));
       await s.p.waitForTimeout(200);
       if (!(await s.view()).includes('может глава клуба')) bad.push('people-master: экран «Люди» не отказал куратору');
@@ -6536,18 +6548,19 @@ if (grantsSet.length !== 1) {
       await s.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s.p.waitForTimeout(300);
       if (!(await s.p.$('#view [data-go="memberRequests"]'))) bad.push(`${n}: у главы клуба нет строки «Заявки на членство»`);
       else if (!(await s.view()).includes('Ждут ответа: 1')) bad.push(`${n}: в строке входа нет счёта ждущих с сервера (кадр E42g)`);
-      // кадр E42g: одна группа «Работа», «Заявки» перед «Людьми»; второй группы «Клуб» нет
+      // кадр E42g: одна группа «Работа»; второй группы «Клуб» нет. «Люди» в E42g стояли в той же
+      // группе — с решения владельца 28.10.2026 они во вкладке «Управление» (E46, Cafe13KPG#413),
+      // и на главной их быть не должно: рабочее не живёт внутри клиентского.
       const g = await s.p.evaluate(() => {
         const labels = [...document.querySelectorAll('#view .group > .label')].map(l => l.textContent);
-        const r = document.querySelector('#view [data-go="memberRequests"]'), p = document.querySelector('#view [data-go="people"]');
+        const r = document.querySelector('#view [data-go="memberRequests"]');
         return { work: labels.filter(l => l === 'Работа').length, club: labels.filter(l => l === 'Клуб').length,
-                 same: !!r && !!p && r.closest('.group') === p.closest('.group'),
-                 order: !!r && !!p && !!(r.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING),
+                 people: !!document.querySelector('#view [data-go="people"]'),
                  label: r && r.closest('.group') ? r.closest('.group').querySelector(':scope > .label').textContent : null };
       });
       if (g.work !== 1 || g.club !== 0) bad.push(`${n}: групп «Работа» ${g.work}, «Клуб» ${g.club} — ждали одну «Работа» (кадр E42g)`);
-      if (!g.same || g.label !== 'Работа') bad.push(`${n}: «Заявки» и «Люди» не в одной группе «Работа»: ${JSON.stringify(g)} (кадр E42g)`);
-      else if (!g.order) bad.push(`${n}: «Люди» стоят выше «Заявок» (кадр E42g)`);
+      if (g.label !== 'Работа') bad.push(`${n}: «Заявки на членство» не в группе «Работа»: ${JSON.stringify(g)} (кадр E42g)`);
+      if (g.people) bad.push(`${n}: на главной остался вход «Люди» — он во вкладке «Управление» (E46)`);
       await s.ctx.close();
       const MEM = clone(OWNER); MEM.roles = [];
       const s2 = await memCase(MEM);
@@ -6802,6 +6815,62 @@ if (grantsSet.length !== 1) {
       await toJoin(s2);
       const t2 = await s2.view();
       if (!t2.includes('Просьбы не загрузились') || t2.includes('Ада Доступова')) bad.push(`${n}: битая строка не отвергла ответ целиком`);
+      await s2.ctx.close();
+    }
+    // Подпись вкладки не переносится в две строки на УЗКОМ окне, 360 px. Перенос на 390 px
+    // уже ловит `tabs-vse` (#410, прежде `tabs-vse-sem`) — мутация `white-space: nowrap` → `normal` краснит и его,
+    // поэтому 390 здесь не повторяется. Признак — высоты подписей (форма — designer-55,
+    // 28.10.2026): подпись выше самой низкой больше чем на 1 px — перенесена.
+    {
+      const n = 'tabs-perenos';
+      const lv = l => ({ level: l, starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-11-01T00:00:00+07:00', lifelong: false });
+      const who = roles => { const m = clone(OWNER); m.membership = lv('partner'); m.membership_active = true;
+        m.memberships = ['member', 'organizer', 'partner'].map(lv); m.roles = roles; return m; };
+      // семь: касса и бар без права главы; восемь: роли OWNER (глава и админ) — плюс «Управление»
+      for (const [k, roles, count] of [['семь', [{ role: 'staff', direction_id: null }, { role: 'bar', direction_id: 7 }], 7],
+                                       ['восемь', OWNER.roles, 8]]) {
+        for (const w of [360]) {
+          const s = await open(true, true, json(200, who(roles)));
+          await s.p.setViewportSize({ width: w, height: 844 }); await s.p.waitForTimeout(150);
+          const r = await s.p.evaluate(() => {
+            const sp = [...document.querySelectorAll('#tabs span')];
+            const h = sp.map(e => e.getBoundingClientRect().height);
+            return { n: sp.length, wrap: sp.filter(e => e.getBoundingClientRect().height > Math.min(...h) + 1).map(e => e.textContent) };
+          });
+          // различитель: вкладок столько, сколько задумано, — иначе спрашиваем не тот набор
+          if (r.n !== count) bad.push(`${n}: ${k}, ${w} px — вкладок ${r.n}, ждали ${count}; признак переноса спрашивает не тот набор`);
+          else if (r.wrap.length) bad.push(`${n}: ${k}, ${w} px — подпись в две строки: ${JSON.stringify(r.wrap)}`);
+          await s.ctx.close();
+        }
+      }
+    }
+    // вкладка «Управление» (E46): последней, только у главы; до ответа сервера — не ноль
+    {
+      const n = 'manage-tab';
+      let release;
+      const held = new Promise(r => { release = r; });
+      const s = await joinCase(OWNER, { list: held.then(() => json(200, JREQ)) });
+      const tabs = await s.p.evaluate(() => [...document.querySelectorAll('#tabs [data-go]')].map(b => b.getAttribute('data-go')));
+      if (tabs[tabs.length - 1] !== 'manage') bad.push(`${n}: «Управление» не последняя вкладка: ${JSON.stringify(tabs)} (кадр E46)`);
+      await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click());
+      await s.p.waitForTimeout(250);
+      let t = await s.view();
+      // различитель: список ещё в пути — иначе случай не проверяет подпись «до счёта»
+      if (gets(s, /\/join\/requests$/).length !== 1) bad.push(`${n}: вкладка не спросила очередь — счёту неоткуда взяться`);
+      if (!t.includes('Кто просится в клуб')) bad.push(`${n}: пока счёт не пришёл, нет «Кто просится в клуб» (кадр E46)`);
+      if (/Ждут ответа: 0/.test(t)) bad.push(`${n}: до ответа сервера показан ноль — читается как «никто не просится»`);
+      for (const w of ['Кто в клубе', 'Заявки на доступ', 'Члены клуба', 'Кто в клубе и с какими уровнями'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}» (кадр E46)`);
+      release();
+      await s.p.waitForTimeout(400);
+      t = await s.view();
+      if (!t.includes('Ждут ответа: 2')) bad.push(`${n}: счёт ждущих с сервера не показан (ждали «Ждут ответа: 2»)`);
+      // на вкладке чеки не качаются: только счёт
+      if (gets(s, /\/receipt$/).length) bad.push(`${n}: вкладка скачала чеки`);
+      await s.ctx.close();
+      const MEM = clone(OWNER); MEM.roles = [];
+      const s2 = await joinCase(MEM);
+      if (await s2.p.$('#tabs [data-go="manage"]')) bad.push(`${n}: у члена клуба без роли есть вкладка «Управление»`);
       await s2.ctx.close();
     }
     // право: член без ролей — отказ без запроса; свидетели КАЖДОЙ половины права (#434)
