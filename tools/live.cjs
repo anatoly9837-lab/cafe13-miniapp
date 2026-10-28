@@ -661,7 +661,7 @@ if (grantsSet.length !== 1) {
     entries.filter(e => e[1]).forEach(([g]) => { if (['pass', 'topup', 'manage', 'people', 'joinQueue', 'home'].includes(g)) bad.push(`${n}: погашен живой вход «${g}»`); });
     // подпись у баланса называла кассу, а касса заморожена (Cafe13KPG#513): путь не называется
     const home = await s.view();
-    if (!home.includes('Пополнение временно недоступно') || home.includes('Пополняется в кассе'))
+    if (!home.includes('Через кассу — позже') || home.includes('Пополняется в кассе'))
       bad.push(`${n}: подпись у баланса обещает кассу, а «На счёт» в кассе заморожен`);
     await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(200);
     let t = await s.view();

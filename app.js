@@ -4091,9 +4091,10 @@ var SCREENS = {
       '<div class="card quiet"><div class="row">' +
         '<div class="col"><span class="label">Баланс</span><span class="big num">' + money(m.balance) + ' ฿</span></div>' +
         // подпись называет ПУТЬ, а заморозка путь снимает (Cafe13KPG#510, #513): пока «На счёт» в кассе
-        // закрыт, путь не называется вовсе — слова designer-55. Текст не снят: при разморозке вернётся сам
+        // закрыт, путь не обещается, но и не снят: «Через кассу — позже» — слова designer-55, измерены в слоте
+        // (одна строка, 124 px из 130); прежнее «Пополнение временно недоступно» шло в две и стирало кассу
         '<span class="small" style="text-align:right;max-width:130px">' +
-          (closed('tillTopup') ? 'Пополнение временно недоступно' : 'Пополняется в кассе') + '</span>' +
+          (closed('tillTopup') ? 'Через кассу — позже' : 'Пополняется в кассе') + '</span>' +
       '</div></div>' +
 
       (next ? '<div class="group"><span class="label">Вы записаны</span>' +
