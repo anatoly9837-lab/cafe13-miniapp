@@ -5963,8 +5963,9 @@ if (grantsSet.length !== 1) {
       if (room < 400) bad.push(`${n}: прокручивать некуда (${room} px) — случай не проверяет место`);
       await s.p.evaluate(() => window.scrollTo(0, 600)); await s.p.waitForTimeout(100);
       const before = await s.p.evaluate(() => window.scrollY);
-      // действие на том же экране, которое перерисовывает его целиком: вопрос перед снятием роли
-      await act(s, 'p-ask:70'); await s.p.waitForTimeout(150);
+      // перерисовка экрана ЦЕЛИКОМ на том же экране. С v78 действия внутри карточки render() не зовут
+      // (частичная перерисовка), поэтому render() зовётся прямо — иначе случай проверял бы не его
+      await s.p.evaluate(() => render()); await s.p.waitForTimeout(150);
       const after = await s.p.evaluate(() => window.scrollY);
       if (before < 500) bad.push(`${n}: прокрутка не встала (${before}) — сравнивать нечего`);
       else if (Math.abs(after - before) > 2) bad.push(`${n}: после действия на том же экране место уехало: было ${before}, стало ${after}`);
@@ -5979,6 +5980,24 @@ if (grantsSet.length !== 1) {
       else if (other !== 0) bad.push(`${n}: другой экран открылся не сверху (${other})`);
       await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click()); await s.p.waitForTimeout(200);
       if (await s.p.evaluate(() => window.scrollY) !== 0) bad.push(`${n}: вкладка открылась не сверху`);
+      await s.ctx.close();
+    }
+
+    // ── частичная перерисовка (Cafe13KPG#490, v78): действие в карточке не трогает соседние ──
+    // Различитель — метка, поставленная в СОСЕДНЮЮ карточку и в поле поиска: полная перерисовка её стирает.
+    {
+      const n = 'people-partial', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      await s.p.evaluate(() => { document.querySelector('[data-person="1"]').setAttribute('data-mark', 'x');
+                                 document.getElementById('p-find').setAttribute('data-mark', 'x'); });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('Снять «Куратор направления · Бар» у Алевтина Тестова?')) bad.push(`${n}: вопрос в своей карточке не появился`);
+      const marks = await s.p.evaluate(() => [!!document.querySelector('[data-person="1"][data-mark]'), !!document.querySelector('#p-find[data-mark]')]);
+      if (!marks[0] || !marks[1]) bad.push(`${n}: действие в одной карточке перерисовало экран целиком (соседняя ${marks[0]}, поиск ${marks[1]})`);
+      // и обратный ход: открыли форму у другой — у первой вопрос закрылся (перерисованы ОБЕ)
+      await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
+      if ((await s.view()).includes('Снять «Куратор направления')) bad.push(`${n}: прежняя карточка осталась с вопросом — перерисована только новая`);
+      if (!(await s.p.$('[data-person="2"] [data-action="p-close"]'))) bad.push(`${n}: форма во второй карточке не открылась`);
       await s.ctx.close();
     }
 

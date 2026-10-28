@@ -2168,6 +2168,31 @@ function personCard(p, k) {
       '<button type="button" class="btn quiet" data-action="p-out:' + k + '"' + lock + '>Исключить</button></div>') +
   '</div>';
 }
+/* Частичная перерисовка (слово владельца 28.10.2026: «перерисовывай только элемент»,
+   Cafe13KPG#490). Действия ВНУТРИ карточки — открыть форму, выбрать роль и направление,
+   вопрос «Снять» и «Исключить» — меняют только те карточки, у которых было или стало своё
+   состояние; их и перерисовываем, а экран целиком — нет: соседняя карточка, поле поиска и
+   место прокрутки остаются как были. */
+function peopleTouched() {
+  var ks = [], L = PEOPLE.list || [];
+  var at = function (uid) { for (var i = 0; i < L.length; i++) if (L[i].uid === uid) return i; return null; };
+  [PEOPLE.open, PEOPLE.out,
+   PEOPLE.ask !== null ? (function () { for (var i = 0; i < L.length; i++) if (L[i].roles.some(function (r) { return r.id === PEOPLE.ask; })) return i; return null; })() : null,
+   PEOPLE.deny && at(PEOPLE.deny.uid), PEOPLE.done && at(PEOPLE.done.uid), PEOPLE.gone && at(PEOPLE.gone.uid)]
+    .forEach(function (k) { if (typeof k === 'number' && ks.indexOf(k) === -1) ks.push(k); });
+  return ks;
+}
+function peopleRedraw(before) {
+  var ks = before.slice();
+  peopleTouched().forEach(function (k) { if (ks.indexOf(k) === -1) ks.push(k); });
+  for (var i = 0; i < ks.length; i++) {
+    var el = document.querySelector('[data-person="' + ks[i] + '"]');
+    // карточки нет на экране (список перечитан, экран другой) — честная полная перерисовка
+    if (!el || !PEOPLE.list || !PEOPLE.list[ks[i]] || current !== 'people') { render(); return; }
+    el.outerHTML = personCard(PEOPLE.list[ks[i]], ks[i]);
+  }
+  tgChrome();   // главная кнопка Telegram («Выдать») зависит от открытой формы
+}
 function peopleFilter() {
   var q = PEOPLE.find.trim().toLowerCase();
   [].forEach.call(document.querySelectorAll('[data-person]'), function (el) {
@@ -6282,6 +6307,7 @@ function doAction(a) {
       // Cafe13KPG#214, 22.10.2026). Снимать можно одну, не обе. Эта ещё и
       // держит p-open/p-close: peopleReset снимает блокировку.
       if (PEOPLE.busy) return;
+      var before = peopleTouched();
       if (a === 'p-reload') { loadRoster(); render(); return; }
       if (a === 'p-grant') { grantSend(); return; }
       if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
@@ -6299,7 +6325,7 @@ function doAction(a) {
       if (a === 'p-dir') PEOPLE.dir = Number(arg);
       if (a === 'p-ask') { PEOPLE.ask = Number(arg); PEOPLE.deny = null; }
       if (a === 'p-keep') PEOPLE.ask = null;
-      haptic(); render();
+      haptic(); peopleRedraw(before);
       // раскрытая форма — в вид: иначе она открылась бы за нижним краем
       var f = a === 'p-open' && document.querySelector('[data-person="' + PEOPLE.open + '"]');
       if (f && f.scrollIntoView) f.scrollIntoView({ block: 'start' });
