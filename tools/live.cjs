@@ -24,7 +24,9 @@ function tgStub(inside) {
     isVersionAtLeast: function () { return true; },
     ready: function () {}, expand: function () {}, onEvent: function () {},
     HapticFeedback: { notificationOccurred: function () {}, selectionChanged: function () {} },
-    BackButton: { onClick: function () {}, offClick: function () {}, show: function () {}, hide: function () {} },
+    // системная «назад» запоминает обработчик и видимость — чтобы её можно было «нажать» (Cafe13KPG#458)
+    BackButton: { onClick: function (f) { window.__back = f; }, offClick: function () { window.__back = null; },
+                  show: function () { window.__backShown = true; }, hide: function () { window.__backShown = false; } },
     MainButton: { setText: function () {}, show: function () {}, hide: function () {},
                   onClick: function (f) { window.__main = f; }, offClick: function () { window.__main = null; } }
   } };`;
@@ -182,6 +184,69 @@ if (grantsSet.length !== 1) {
     if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
     await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
     await s.ctx.close();
+  }
+
+  // ── отказ входа: выхода нет ни одним путём (Cafe13KPG#458) ──
+  // Отказ не поднимает LIVE, и приложение оставалось демонстрацией с ролью
+  // 'member': «назад» вело в демонстрационный кабинет клуба. Три пути выхода —
+  // системная «назад», нарисованная (Telegram старше 6.1) и переход по data-go —
+  // проверяются каждый. Пара — тот же путь при 200 и вне Telegram (витрина).
+  {
+    const tryAll = async (s, n, stay) => {
+      const shown = await s.p.evaluate(() => window.__backShown === true);
+      if (shown) bad.push(`${n}: на экране отказа показана системная «назад»`);
+      await s.p.evaluate(() => window.__back && window.__back());
+      await s.p.waitForTimeout(100);
+      if (!(await s.view()).includes(stay)) bad.push(`${n}: системная «назад» увела с экрана отказа`);
+      // Telegram старше 6.1: системной нет, рисуется своя
+      await s.p.evaluate(() => { Telegram.WebApp.isVersionAtLeast = () => false; render(); });
+      if (await s.p.isVisible('#back')) bad.push(`${n}: нарисованная «назад» видна на экране отказа`);
+      // подсунутый переход изнутри страницы — обработчик, а не попадание мышью
+      await s.p.evaluate(() => {
+        const x = document.createElement('button'); x.setAttribute('data-go', 'home');
+        document.getElementById('view').appendChild(x); x.click();
+      });
+      await s.p.waitForTimeout(100);
+      if (!(await s.view()).includes(stay)) bad.push(`${n}: переход data-go увёл с экрана отказа`);
+    };
+    for (const [n, me, stay] of [
+      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Вас нет в списке'],
+      ['vyhod-401', json(401, { detail: 'подпись не принята' }), 'Подпись не принята'],
+      ['vyhod-500', json(500, { detail: 'x' }), 'Сервер клуба недоступен']]) {
+      const s = await open(true, true, me);
+      if (!(await s.view()).includes(stay)) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — нет экрана отказа «${stay}»`);
+      else await tryAll(s, n, stay);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // пара: вошёл — «назад» с неглавного экрана жива и ведёт домой
+    {
+      const n = 'vyhod-200';
+      const s = await open(true, true, json(200, OWNER));
+      await s.p.evaluate(() => go('pass'));
+      await s.p.waitForTimeout(150);
+      if (!(await s.p.evaluate(() => window.__backShown === true && typeof window.__back === 'function')))
+        bad.push(`${n}: после входа на «Пропуске» нет системной «назад»`);
+      await s.p.evaluate(() => window.__back && window.__back());
+      await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «назад» после входа не вернула в кабинет`);
+      await s.ctx.close();
+    }
+    // витрина вне Telegram: демонстрация работает как прежде, нарисованная «назад» жива
+    {
+      const n = 'vyhod-vitrina';
+      const s = await open(false, true, json(200, OWNER));
+      await s.p.evaluate(() => go('pass'));
+      await s.p.waitForTimeout(150);
+      if (!(await s.p.isVisible('#back'))) bad.push(`${n}: на витрине у «Пропуска» нет «назад»`);
+      else {
+        await s.p.click('#back');
+        await s.p.waitForTimeout(150);
+        if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: «назад» на витрине не вернула на главную`);
+      }
+      if (s.calls.length) bad.push(`${n}: витрина спросила сервер (${s.calls.length})`);
+      await s.ctx.close();
+    }
   }
 
   // ── вкладки — по ВСЕМ живым членствам (Cafe13KPG#410, шаг 1a) ──
