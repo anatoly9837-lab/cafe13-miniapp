@@ -26,7 +26,7 @@
 """
 import hashlib, io, json, os, re, sys
 
-VERSION = 'v77 · 28.10.2026'
+VERSION = 'v78 · 28.10.2026'
 LIVE = 'https://anatoly9837-lab.github.io/cafe13-miniapp/'
 
 GROUPS = {
@@ -769,7 +769,7 @@ TITLES = {
     'consent': 'Согласие на данные', 'consentFull': 'Согласие · полный текст',
     'soon': 'Раздел ещё не подключён',
     'guest': 'Услуги и бар', 'home': 'Клуб', 'pass': 'Пропуск', 'membership': 'Членство', 'memberRequests': 'Заявки на членство',
-    'events': 'Афиша', 'event': 'Мероприятие', 'bookings': 'Мои записи',
+    'events': 'Афиша', 'event': 'Мероприятие', 'bookings': 'Мои ивенты',
     'bar': 'Меню бара', 'drink': 'Напиток', 'barCart': 'Заказ', 'barOrder': 'Состояние заказа',
     'barQueue': 'Заказы на баре', 'barShot': 'Съёмка напитков', 'barDay': 'Отчёт за день',
     'barExpense': 'Затраты направления', 'curator': 'Кабинет куратора',

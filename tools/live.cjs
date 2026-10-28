@@ -5487,12 +5487,13 @@ if (grantsSet.length !== 1) {
       if (!(await toPeople(s))) bad.push('people-head: у главы клуба нет входа «Люди»');
       else {
         const t = await s.view();
-        ['Алевтина Тестова', 'Куратор направления', 'Сомчай', 'Ролей нет', 'без членства', 'Член клуба · Бизнес-партнёр', 'Глава клуба',
-         'единственный глава клуба']
+        // v78 (E47z): уровни и роли — надписи-кнопки; «Ролей нет», «без членства» и «единственный глава
+        // клуба» кадр не рисует (последнего главу снять не даст сервер — его отказ словами)
+        ['Алевтина Тестова', 'Куратор направления · Бар', 'Сомчай', 'Член клуба', 'Бизнес-партнёр', 'Глава клуба']
           .forEach(x => { if (!t.includes(x)) bad.push(`people-head: нет «${x}»`); });
-        // роль и направление — разные строки: длинное направление не рвёт имя роли
-        const under = await s.p.$eval(`${card(s, 0)} .role-row .small`, e => e.textContent).catch(() => null);
-        if (under !== 'Бар') bad.push(`people-head: направление под ролью «${under}», ждали «Бар»`);
+        const chips = await s.p.$$eval(`${card(s, 2)} .chip`, e => e.map(x => [x.tagName, x.className, x.textContent]));
+        if (!chips.some(c => c[0] === 'SPAN' && /paid/.test(c[1]) && c[2] === 'Бизнес-партнёр')) bad.push(`people-head: уровень не чипом «paid» без крестика: ${JSON.stringify(chips)}`);
+        if (chips.some(c => c[0] === 'BUTTON' && /paid/.test(c[1]))) bad.push('people-head: уровень нажимается, а ручки снятия уровня на бою нет');
         // tg_user_id — ни текстом, ни в атрибутах разметки
         if (/70[123]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push('people-head: tg_user_id в разметке');
         // у админа «Снять» у админа есть
@@ -5578,7 +5579,8 @@ if (grantsSet.length !== 1) {
       // админа снимает только админ: у главы на строке администратора кнопки нет, есть подпись
       const ask = !!(await s.p.$('[data-action="p-ask:6"]'));
       if (ask !== want) bad.push(`${name}: «Снять» у администратора ${ask ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
-      if (!want && !(await s.view()).includes('снимает только администратор')) bad.push(`${name}: нет подписи «снимает только администратор»`);
+      // без права на админа его надпись — чип без крестика, не кнопка
+      if (!want && !(await s.p.$$eval('[data-person="2"] span.chip', e => e.map(x => x.textContent))).includes('Администратор')) bad.push(`${name}: надписи «Администратор» без крестика нет`);
       await act(s, 'p-open:1');
       const has = !!(await s.p.$(`${card(s, 1)} [data-action="p-role:admin"]`));
       if (has !== want) bad.push(`${name}: выбор «Администратор» ${has ? 'есть' : 'нет'}, ждали ${want ? 'есть' : 'нет'}`);
@@ -5637,10 +5639,11 @@ if (grantsSet.length !== 1) {
         await act(s, 'p-open:1'); await act(s, 'p-role:director');
         await s.p.evaluate(() => window.__main && window.__main());
       } else {
+        // окно отмены вместо вопроса (E47l): сначала полоса и ни одного запроса, потом — ровно один
+        await s.p.evaluate(() => { UNDO_MS = 150; });
         await act(s, 'p-ask:5');
-        if (posts(s, /revoke/).length) bad.push(`${name}: снятие ушло без подтверждения`);
-        if (!(await s.view()).includes('Снять «Глава клуба» у Глеб Главный?')) bad.push(`${name}: нет вопроса перед снятием`);
-        await act(s, 'p-revoke:5');
+        if (posts(s, /revoke/).length) bad.push(`${name}: снятие ушло сразу, окна отмены нет`);
+        if (!(await s.view()).includes('Снимаем: Глава клуба')) bad.push(`${name}: нет полосы «Снимаем: Глава клуба»`);
       }
       await s.p.waitForTimeout(300);
       if (step === 'revoke' && (posts(s, /\/roles\/5\/revoke$/).length !== 1)) bad.push(`${name}: снятие не ушло ровно один раз`);
@@ -5760,7 +5763,7 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       const k = step === 'grant' ? 1 : 0;
       if (step === 'grant') { await act(s, 'p-open:1'); await act(s, 'p-role:ops_director'); await s.p.evaluate(() => window.__main && window.__main()); }
-      else { await act(s, 'p-ask:31'); await act(s, 'p-revoke:31'); }
+      else { await s.p.evaluate(() => { UNDO_MS = 50; }); await act(s, 'p-ask:31'); }
       await s.p.waitForTimeout(300);
       const deny = await s.p.$eval(`${card(s, k)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== 'Ответ сервера не разобран.') bad.push(`${name}: плашка «${deny}», ждали «Ответ сервера не разобран.»`);
@@ -5788,7 +5791,7 @@ if (grantsSet.length !== 1) {
     // медленный, второй быстрый; тело медленного — нечитаемый маркер.
     for (const [name, step, start, again, re] of [
       ['people-late-grant', 'grant', ['p-open:1', 'p-role:ops_director', 'main'], ['p-open:1', 'p-role:ops_director', 'main'], /\/roles$/],
-      ['people-late-revoke', 'revoke', ['p-ask:31', 'p-revoke:31'], ['p-ask:31', 'p-revoke:31'], /\/roles\/31\/revoke$/],
+      ['people-late-revoke', 'revoke', ['short', 'p-ask:31'], ['short', 'p-ask:31'], /\/roles\/31\/revoke$/],
     ]) {
       // задержка считается от самого запроса: таймер, заведённый при создании
       // случая, истекал ещё до ухода с экрана, и мутация на гард оставалась зелёной
@@ -5797,7 +5800,9 @@ if (grantsSet.length !== 1) {
       const r = { get [step]() { n++; return n === 1 ? slow() : undefined; } };
       const s = await peopleCase(OWNER, r);
       await toPeople(s);
-      const run = async steps => { for (const a of steps) { if (a === 'main') await s.p.evaluate(() => window.__main && window.__main()); else await act(s, a); } };
+      // 'short' — окно отмены в 50 мс: снятие уходит по таймеру окна, а не вторым нажатием (v78)
+      const run = async steps => { for (const a of steps) { if (a === 'main') await s.p.evaluate(() => window.__main && window.__main());
+        else if (a === 'short') await s.p.evaluate(() => { UNDO_MS = 50; }); else await act(s, a); } };
       await run(start);
       await s.p.waitForTimeout(100);
       await s.p.evaluate(() => { go('home'); go('people'); });
@@ -5879,6 +5884,9 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(300);
       const pp = posts(s, /\/roles\/31\/revoke$/).length;
       if (pp !== 1) bad.push(`people-double-revoke: двойное «Точно снять» отправило ${pp} запросов, а не один`);
+      // E47k: пока сервер отвечает, надпись на месте, но погашена и не нажимается
+      const busy = await s.p.$eval('[data-person="0"] .chip.busy', e => [e.tagName, e.textContent]).catch(() => null);
+      if (!busy || busy[0] !== 'SPAN' || !/Куратор направления/.test(busy[1])) bad.push(`people-chip-busy: снимаемая надпись не погашена на время ответа (E47k): ${JSON.stringify(busy)}`);
       await s.ctx.close();
     }
 
@@ -5886,12 +5894,14 @@ if (grantsSet.length !== 1) {
     {
       const s = await peopleCase(OWNER, {});
       await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 150; });
       await act(s, 'p-ask:31');
       await act(s, 'p-keep');
-      if (posts(s, /revoke/).length) bad.push('people-revoke: «Не снимать» отправило снятие');
+      await s.p.waitForTimeout(300);              // окно истекло бы — но «Отменить» его снял
+      if (posts(s, /revoke/).length) bad.push('people-revoke: «Отменить» не снял окно — снятие ушло');
       await act(s, 'p-ask:31');
-      await act(s, 'p-revoke:31');
-      await s.p.waitForTimeout(300);
+      if (posts(s, /revoke/).length) bad.push('people-revoke: снятие ушло сразу, без окна отмены');
+      await s.p.waitForTimeout(400);
       if (posts(s, /\/roles\/31\/revoke$/).length !== 1) bad.push('people-revoke: снятие не ушло ровно один раз');
       if (!(await note(s, 0)).includes('Снято: Куратор направления · Бар.')) bad.push('people-revoke: в карточке нет итога «Снято»');
       if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-revoke: список не перечитан');
@@ -5963,8 +5973,9 @@ if (grantsSet.length !== 1) {
       if (room < 400) bad.push(`${n}: прокручивать некуда (${room} px) — случай не проверяет место`);
       await s.p.evaluate(() => window.scrollTo(0, 600)); await s.p.waitForTimeout(100);
       const before = await s.p.evaluate(() => window.scrollY);
-      // действие на том же экране, которое перерисовывает его целиком: вопрос перед снятием роли
-      await act(s, 'p-ask:70'); await s.p.waitForTimeout(150);
+      // перерисовка экрана ЦЕЛИКОМ на том же экране. С v78 действия внутри карточки render() не зовут
+      // (частичная перерисовка), поэтому render() зовётся прямо — иначе случай проверял бы не его
+      await s.p.evaluate(() => render()); await s.p.waitForTimeout(150);
       const after = await s.p.evaluate(() => window.scrollY);
       if (before < 500) bad.push(`${n}: прокрутка не встала (${before}) — сравнивать нечего`);
       else if (Math.abs(after - before) > 2) bad.push(`${n}: после действия на том же экране место уехало: было ${before}, стало ${after}`);
@@ -5979,6 +5990,45 @@ if (grantsSet.length !== 1) {
       else if (other !== 0) bad.push(`${n}: другой экран открылся не сверху (${other})`);
       await s.p.evaluate(() => document.querySelector('#tabs [data-go="manage"]').click()); await s.p.waitForTimeout(200);
       if (await s.p.evaluate(() => window.scrollY) !== 0) bad.push(`${n}: вкладка открылась не сверху`);
+      await s.ctx.close();
+    }
+
+    // ── частичная перерисовка (Cafe13KPG#490, v78): действие в карточке не трогает соседние ──
+    // Различитель — метка, поставленная в СОСЕДНЮЮ карточку и в поле поиска: полная перерисовка её стирает.
+    {
+      const n = 'people-partial', s = await peopleCase(OWNER, { people: json(200, withBal) });
+      await toPeople(s);
+      await s.p.evaluate(() => { document.querySelector('[data-person="1"]').setAttribute('data-mark', 'x');
+                                 document.getElementById('p-find').setAttribute('data-mark', 'x'); });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('Снимаем: Куратор направления · Бар')) bad.push(`${n}: полоса отмены у своей карточки не появилась`);
+      const marks = await s.p.evaluate(() => [!!document.querySelector('[data-person="1"][data-mark]'), !!document.querySelector('#p-find[data-mark]')]);
+      if (!marks[0] || !marks[1]) bad.push(`${n}: действие в одной карточке перерисовало экран целиком (соседняя ${marks[0]}, поиск ${marks[1]})`);
+      // и обратный ход: открыли форму у другой — у первой вопрос закрылся (перерисованы ОБЕ)
+      await act(s, 'p-open:2'); await s.p.waitForTimeout(150);
+      if ((await s.view()).includes('Снимаем: Куратор')) bad.push(`${n}: полоса отмены прежней карточки осталась — перерисована только новая`);
+      if (!(await s.p.$('[data-person="2"] [data-action="p-close"]'))) bad.push(`${n}: форма во второй карточке не открылась`);
+      await s.ctx.close();
+    }
+
+    // ── окно отмены (E47l, v78): цифра в полосе = задержка в коде; «Отменить» — запроса нет; вышло — ровно один ──
+    // Задержка в случае НЕ равна 5 нарочно: при цифре, вписанной в разметку руками, «5 == 5» прошло бы по построению.
+    {
+      const n = 'people-undo', s = await peopleCase(OWNER, {});
+      await toPeople(s);
+      await s.p.evaluate(() => { UNDO_MS = 3000; });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(60);
+      const sec = await s.p.$eval('.undo .sec', e => e.textContent).catch(() => null);
+      if (sec !== '3') bad.push(`${n}: в полосе «${sec}», а задержка 3 с — цифра и задержка разошлись`);
+      if (posts(s, /revoke/).length) bad.push(`${n}: снятие ушло сразу, окна нет`);
+      if (await s.p.$('[data-person="0"] [data-action="p-ask:31"]')) bad.push(`${n}: в окне отмены надпись роли осталась нажимаемой (E47l)`);
+      await act(s, 'p-keep');
+      if (await s.p.$('.undo')) bad.push(`${n}: «Отменить» не убрал полосу`);
+      if (!(await s.p.$('[data-person="0"] [data-action="p-ask:31"]'))) bad.push(`${n}: после «Отменить» надпись роли не вернулась`);
+      await s.p.evaluate(() => { UNDO_MS = 200; });
+      await act(s, 'p-ask:31'); await s.p.waitForTimeout(600);
+      const pp = posts(s, /\/roles\/31\/revoke$/).length;
+      if (pp !== 1) bad.push(`${n}: окно вышло — запросов ${pp}, ждали ровно 1`);
       await s.ctx.close();
     }
 
@@ -7195,7 +7245,10 @@ if (grantsSet.length !== 1) {
   {
     // [экран, параметр, признак экрана, признак отказа/пустоты]
     const WORK = [
-      ['people', null, 'Выдать ответственность', 'может глава клуба'],
+      // v78: «Выдать ответственность» стала чипом, и слово «ответственность» есть и в ОТКАЗЕ
+      // («Выдавать и снимать ответственность может глава клуба») — признак экрана берётся тот,
+      // которого в отказе нет: подпись поля поиска
+      ['people', null, 'Найти по имени', 'может глава клуба'],
       ['barCards', null, 'Ждут утверждения · 2', 'Карточки меню заводит'],
       ['barCard', '305', 'Заменить рецепт (RU)', 'Карточки меню заводит'],
       ['barRecipe', 'flat', 'Рецепта на английском нет — показан на русском', 'Рецепт — рабочая запись бара'],
