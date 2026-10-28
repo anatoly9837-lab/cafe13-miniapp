@@ -6707,6 +6707,11 @@ if (grantsSet.length !== 1) {
       await press(s, n, 'j-ok:21');
       if (posts(s, /\/decide$/).length) bad.push(`${n}: согласие ушло с первого нажатия — подтверждения нет (#413)`);
       if (!(await s.p.$('#view [data-action="j-yes:21"]'))) bad.push(`${n}: после «Согласиться» нет шага подтверждения`);
+      for (const w of ['Отменить в приложении будет нечем.', 'Не соглашаться', 'Точно согласиться'])
+        if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (кадр E45d)`);
+      // подпись под списком при раскрытом вопросе остаётся (E45d)
+      if (!(await s.view()).includes(JNOTE)) bad.push(`${n}: подпись о согласии исчезла при раскрытом вопросе (кадр E45d)`);
+      if ((await s.p.$('#view textarea'))) bad.push(`${n}: у согласия поле слова, а в E45d его нет`);
       await press(s, n, 'j-keep');
       if (await s.p.$('#view [data-action="j-yes:21"]')) bad.push(`${n}: «назад» не закрыл подтверждение`);
       if (posts(s, /\/decide$/).length) bad.push(`${n}: «назад» отправил решение`);

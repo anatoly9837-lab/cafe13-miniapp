@@ -2188,9 +2188,10 @@ function joinCard(q) {
           '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>Не отказывать</button>' +
           '<button type="button" class="btn quiet" data-action="j-no:' + q.id + '"' + busy + '>Отказать и отправить</button></div>'
       : JOINQ.ok === q.id
-      ? '<span class="small">ЖДЁТ КАДРА: подтверждение согласия</span>' + row +
-          '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>ЖДЁТ КАДРА: назад</button>' +
-          '<button type="button" class="btn quiet" data-action="j-yes:' + q.id + '"' + busy + '>ЖДЁТ КАДРА: согласиться</button></div>'
+      // E45d: имени в вопросе нет нарочно — оно строкой выше, в той же карточке
+      ? '<span class="small">Согласие впустит человека в приложение и создаст членство — одним действием. Отменить в приложении будет нечем.</span>' + row +
+          '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>Не соглашаться</button>' +
+          '<button type="button" class="btn quiet" data-action="j-yes:' + q.id + '"' + busy + '>Точно согласиться</button></div>'
       : row +
           '<button type="button" class="btn quiet" data-action="j-ok:' + q.id + '"' + busy + '>Согласиться</button>' +
           '<button type="button" class="btn quiet" data-action="j-ask:' + q.id + '"' + busy + '>Отказать</button></div>') +
