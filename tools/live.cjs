@@ -5684,10 +5684,10 @@ if (grantsSet.length !== 1) {
            остаток. Поэтому проверка разбита надвое: что видно СВЁРНУТЫМ — спрашивается
            сразу, а роли и чипы — после раскрытия. Если спрашивать всё сразу, отсутствие
            будет означать свёртку, а не потерю, и случай станет вечно зелёным. */
-        const svёрnuto = await s.view();
+        const folded = await s.view();
         ['Алевтина Тестова', 'Сомчай', 'Член клуба', 'Бизнес-партнёр']
-          .forEach(x => { if (!svёрnuto.includes(x)) bad.push(`people-head: в свёрнутом списке нет «${x}»`); });
-        if (svёрnuto.includes('Куратор направления · Бар')) bad.push('people-head: роль видна в СВЁРНУТОЙ строке — свёртка не свернула настройки');
+          .forEach(x => { if (!folded.includes(x)) bad.push(`people-head: в свёрнутом списке нет «${x}»`); });
+        if (folded.includes('Куратор направления · Бар')) bad.push('people-head: роль видна в СВЁРНУТОЙ строке — свёртка не свернула настройки');
         if (await s.p.$(`${card(s, 0)} .chip`)) bad.push('people-head: чип в свёрнутой карточке');
         await act(s, 'p-card:2');
         const t = await s.view();
