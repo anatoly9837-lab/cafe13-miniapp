@@ -6387,6 +6387,23 @@ if (grantsSet.length !== 1) {
         if (outb[0].a !== 'Исключить из клуба') bad.push(`${n}: у кнопки исключения нет подписи для голосового доступа: ${JSON.stringify(outb[0].a)}`);
         if (outb[0].h < 24 || outb[0].w < 24) bad.push(`${n}: цель нажатия у исключения ${outb[0].w}×${outb[0].h} — ниже порога 24`);
       }
+      /* ⚠ Кнопка стоит в строке ИМЕНИ (слово владельца), а не по середине плашки, и держится
+         это числом смещения (4 px), выведенным из отступа карточки и высоты строки имени.
+         Случай сторожит связку: поменяется отступ плашки или кегль имени — смещение уедет
+         молча, потому что на глаз 3–4 px не видно, а на снимке описи — тем более. */
+      const vyr = await s.p.evaluate(() => {
+        const w = document.querySelector('.fold-wrap');
+        const c = w.querySelector('.card.dense.fold').getBoundingClientRect();
+        const b = w.querySelector('.outbtn').getBoundingClientRect();
+        const nm = w.querySelector('b').getBoundingClientRect();
+        return { центрКнопки: b.top - c.top + b.height / 2,
+                 центрИмени: nm.top - c.top + Math.min(nm.height, 18) / 2,
+                 правыйКрайКнопки: b.right, левыйКрайИмени: nm.left };
+      });
+      if (Math.abs(vyr.центрКнопки - vyr.центрИмени) > 1.5)
+        bad.push(`${n}: кнопка не в строке имени — её центр ${Math.round(vyr.центрКнопки)} против ${Math.round(vyr.центрИмени)} у имени`);
+      if (vyr.правыйКрайКнопки > vyr.левыйКрайИмени)
+        bad.push(`${n}: кнопка заходит на колонку имени (${Math.round(vyr.правыйКрайКнопки)} > ${Math.round(vyr.левыйКрайИмени)})`);
       // до нажатия в строке только узнавание: имя, уровень, остаток
       if (await s.p.$(`${card(s, 0)} .chip`)) bad.push(`${n}: чип виден в свёрнутой строке`);
       if (await s.p.$(`${card(s, 0)} [data-action^="p-give:"]`)) bad.push(`${n}: кружок выдачи виден до раскрытия`);
