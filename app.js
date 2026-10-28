@@ -634,7 +634,7 @@ function sendJoin() {
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, organizer: 1,
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, topup: 1, barQueue: 1, barMoney: 1, barDay: 1,
               events: 1, event: 1, eventNew: 1, bookings: 1, barRecipe: 1, people: 1, barCards: 1, barCard: 1,
-              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1,
+              staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1, joinQueue: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
@@ -2072,6 +2072,139 @@ function peopleFilter() {
     el.hidden = !!q && !!p && p.name.toLowerCase().indexOf(q) === -1;
   });
 }
+
+/* ── заявки на доступ ──────────────────────────────────  Cafe13KPG#413
+   Кадры E45*: очередь просьб от людей, которых в приложении ещё нет.
+   Право — то же, что у «Людей» (сервер: _may_decide — head или is_admin).
+   ⚠ Согласие одной транзакцией даёт допуск И членство, отмены нет: второе
+   решение сервер отвергает 409 («просьба уже согласована»). Поэтому у
+   «Согласиться» есть шаг подтверждения, хотя E45 его не рисует, —
+   решение координатора в #413.
+   ⚠ В ответе /join/requests есть tg_user_id просителя — разбор его НЕ берёт
+   вовсе: решение идёт по номеру просьбы, а репозиторий публичный.
+   Чек отдаётся файлом и только с подписью в заголовке, поэтому <img src>
+   на ручку не годится: байты берутся fetch'ем и показываются objectURL. */
+var JOIN_MIME = { 'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/webp': 'WEBP', 'application/pdf': 'PDF' };
+var JOIN_PILL = { pending: 'ЖДЁТ', approved: 'ВПУЩЕНА', rejected: 'ОТКАЗАНО' };
+var JOINQ = { list: null, fail: '', gen: 0, busy: 0, err: '', ok: 0, no: 0, note: '', shot: {}, who: 0 };
+
+/* Одна битая просьба — отказ целиком: очередь с пропавшей строкой выглядит полной. */
+function fromJoin(d) {
+  if (!d || !Array.isArray(d.requests) || typeof d.pending !== 'number') return null;
+  var out = [];
+  for (var i = 0; i < d.requests.length; i++) {
+    var q = d.requests[i];
+    if (!q || typeof q.id !== 'number' || !JOIN_PILL[q.status] || !JOIN_MIME[q.receipt_mime] ||
+        typeof q.receipt_bytes !== 'number' || !isFinite(num(q.amount_thb))) return null;
+    var usd = q.amount_usd === null || q.amount_usd === undefined ? null : num(q.amount_usd);
+    if (usd !== null && !isFinite(usd)) return null;
+    out.push({ id: q.id, status: q.status,
+               name: [q.first_name, q.last_name].filter(Boolean).join(' ') || (q.username ? '@' + q.username : 'Без имени'),
+               said: typeof q.said === 'string' ? q.said.trim() : '',
+               answer: typeof q.decision_note === 'string' ? q.decision_note.trim() : '',
+               mime: q.receipt_mime, kb: Math.max(1, Math.round(q.receipt_bytes / 1024)),
+               thb: num(q.amount_thb), usd: usd,
+               iso: typeof q.created_at === 'string' ? q.created_at : '',
+               done: typeof q.decided_at === 'string' ? q.decided_at : '' });
+  }
+  return out;
+}
+function loadJoin() {
+  var gen = ++JOINQ.gen, who = WHO;
+  // чек неизменен, но смотрит его другой человек (тестовый режим «глазами») — кэш его не переживает
+  if (JOINQ.who !== WHO) { joinDropShots(); JOINQ.who = WHO; }
+  JOINQ.fail = '';
+  api('GET', '/join/requests').then(function (r) {
+    if (gen !== JOINQ.gen || who !== WHO) return;
+    var list = r.status === 200 ? fromJoin(r.data) : null;
+    if (list) JOINQ.list = list;
+    else { JOINQ.list = null; JOINQ.fail = r.status === 403 ? denyText(r) : failText(r); }
+    // чек нужен только тому, о ком ещё решают; PDF показать нечем — его байты не берутся вовсе
+    (JOINQ.list || []).forEach(function (q) { if (q.status === 'pending' && q.mime !== 'application/pdf') joinShot(q.id); });
+    if (current === 'joinQueue') render();
+  });
+}
+function joinDropShots() {
+  Object.keys(JOINQ.shot).forEach(function (k) { if (JOINQ.shot[k].url) URL.revokeObjectURL(JOINQ.shot[k].url); });
+  JOINQ.shot = {};
+}
+/* Заголовки — те же, что у api(): без тестового режима чек пришёл бы из боевой базы. */
+function joinShot(id) {
+  if (JOINQ.shot[id]) return;
+  var s = JOINQ.shot[id] = { url: '', fail: false }, who = WHO;
+  var h = { 'X-Telegram-Init-Data': tg.initData };
+  if (TEST.on) h['X-Test-Mode'] = '1';
+  if (TEST.on && TEST.as) h['X-Act-As'] = String(TEST.as.id);
+  fetch(API + '/join/requests/' + id + '/receipt', { headers: h })
+    .then(function (r) { return r.ok ? r.blob() : null; }, function () { return null; })
+    .then(function (b) {
+      if (who !== WHO || JOINQ.shot[id] !== s) return;
+      if (b && b.size) s.url = URL.createObjectURL(b); else s.fail = true;
+      if (current === 'joinQueue') render();
+    }, function () { s.fail = true; if (current === 'joinQueue') render(); });
+}
+function decideJoin(id, decision) {
+  if (JOINQ.busy) return;
+  JOINQ.busy = id; JOINQ.err = ''; render();
+  var who = WHO;
+  api('POST', '/join/requests/' + id + '/decide', { decision: decision, note: decision === 'rejected' ? JOINQ.note.trim() : '' }).then(function (r) {
+    // занятость гасится ДО гарда: иначе ответ, пришедший после смены человека, запер бы экран (#213)
+    JOINQ.busy = 0;
+    if (who !== WHO) return;
+    if (r.status === 200 && r.data && r.data.status === decision) { JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; haptic('ok'); }
+    else { JOINQ.err = denyText(r); haptic('warn'); }
+    // и после отказа: 409 значит, что очередь устарела — решение уже кем-то принято
+    loadJoin();
+    if (current === 'joinQueue') render();
+  });
+}
+function joinTile(q) {
+  var s = JOINQ.shot[q.id] || {}, pdf = q.mime === 'application/pdf';
+  var box = 'flex:0 0 auto;width:72px;aspect-ratio:3/4;border-radius:9px;border:1px dashed var(--line);' +
+            'background:var(--surface);display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;overflow:hidden';
+  var inner = !pdf && s.url
+    ? '<img src="' + s.url + '" alt="Чек" style="width:72px;height:96px;object-fit:cover;margin:-6px">'
+    : '<span style="font-size:10px;color:var(--muted)">' + (pdf ? 'PDF<br>показать<br>нечем' : 'чек<br>с сервера') + '</span>';
+  // «открыть» у PDF, как в E45, нет нарочно: открывается ли objectURL в Telegram-вебвью,
+  // не проверено, а обещание, которого может не быть, хуже отсутствующей кнопки (#413)
+  var kind = JOIN_MIME[q.mime] + ' · ' + q.kb + ' КБ';
+  return '<div style="display:flex;gap:10px;align-items:flex-start"><div style="' + box + '">' + inner + '</div>' +
+    '<div class="col" style="flex:1 1 auto"><span class="small">' + kind + '</span>' +
+      (s.fail ? '<span class="small">ЖДЁТ КАДРА: чек не загрузился</span>' : '') +
+      '<span class="small">Просили по заявке: <b class="num">' + money(q.thb) + ' ฿</b>' +
+        (q.usd !== null ? ' или <b class="num">' + money(q.usd) + ' USDT</b>' : '') + '</span></div></div>';
+}
+function joinCard(q) {
+  var busy = JOINQ.busy ? ' disabled' : '';
+  var row = '<div class="row" style="justify-content:flex-start;gap:8px">';
+  return '<div class="card"><div class="row top"><div class="col"><b>' + esc(q.name) + '</b>' +
+      '<span class="small">' + esc(['просит доступ', askedWhen(q.iso, true)].filter(Boolean).join(' · ')) + '</span></div>' +
+      '<span class="pill">' + JOIN_PILL.pending + '</span></div>' +
+    (q.said ? '<span class="small">«' + esc(q.said) + '»</span>' : '') +
+    joinTile(q) +
+    (JOINQ.no === q.id
+      ? '<div class="field"><label for="j-note">Слово заявителю</label>' +
+          '<textarea id="j-note" rows="3" maxlength="500">' + esc(JOINQ.note) + '</textarea></div>' + row +
+          '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>Не отказывать</button>' +
+          '<button type="button" class="btn quiet" data-action="j-no:' + q.id + '"' + busy + '>Отказать и отправить</button></div>'
+      : JOINQ.ok === q.id
+      ? '<span class="small">ЖДЁТ КАДРА: подтверждение согласия</span>' + row +
+          '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>ЖДЁТ КАДРА: назад</button>' +
+          '<button type="button" class="btn quiet" data-action="j-yes:' + q.id + '"' + busy + '>ЖДЁТ КАДРА: согласиться</button></div>'
+      : row +
+          '<button type="button" class="btn quiet" data-action="j-ok:' + q.id + '"' + busy + '>Согласиться</button>' +
+          '<button type="button" class="btn quiet" data-action="j-ask:' + q.id + '"' + busy + '>Отказать</button></div>') +
+  '</div>';
+}
+function joinRow(q) {
+  return '<div class="card quiet"><div class="row top"><div class="col"><b>' + esc(q.name) + '</b>' +
+      '<span class="small">' + esc(askedWhen(q.done || q.iso, false)) + '</span></div>' +
+      '<span class="pill' + (q.status === 'rejected' ? ' warm' : '') + '">' + JOIN_PILL[q.status] + '</span></div>' +
+    (q.answer ? '<span class="small">«' + esc(q.answer) + '»</span>' : '') + '</div>';
+}
+document.addEventListener('input', function (ev) {
+  if (ev.target && ev.target.id === 'j-note') JOINQ.note = ev.target.value;
+});
 
 /* ── карточки меню: конструктор и утверждение ──────────  #175
    Бар заводит карточку черновиком, пишет рецепт и отправляет на утверждение;
@@ -5143,6 +5276,23 @@ var SCREENS = {
       '<div class="group"><span class="label">Решение</span>' + deny + (acts || '<span class="small">Действий нет.</span>') + '</div>';
   },
 
+  // E45 очередь, E45b пусто, E45g только решённые, E45v отказ со словом
+  joinQueue: function () {
+    if (!mayPeople()) return '<div class="card quiet"><span class="small">Просьбы о доступе смотрит и решает глава клуба.</span></div>';
+    if (!JOINQ.list) return JOINQ.fail
+      ? '<div class="card strong"><h2>Просьбы не загрузились</h2><p>' + esc(JOINQ.fail) + '</p>' +
+        '<button type="button" class="btn" data-action="j-retry">Попробовать снова</button></div>'
+      : '<div class="card quiet"><span class="small">Загружаем просьбы…</span></div>';
+    var wait = JOINQ.list.filter(function (q) { return q.status === 'pending'; });
+    var past = JOINQ.list.filter(function (q) { return q.status !== 'pending'; });
+    var note = noteBox('Согласие одним действием впускает в приложение И создаёт членство. Отказ не отменяется: второго решения сервер не примет.');
+    if (!wait.length && !past.length) return '<div class="card quiet"><div class="col"><b>Просьб нет</b>' +
+      '<span class="small">Здесь появятся просьбы о доступе — от людей, которых в приложении ещё нет. Они приходят с экрана оплаты, вместе с чеком.</span></div></div>' + note;
+    return (JOINQ.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(JOINQ.err) + '</span></div>' : '') +
+      (wait.length ? '<div class="group"><span class="label">Ждут ответа · ' + wait.length + '</span>' + wait.map(joinCard).join('') + '</div>' + note : '') +
+      (past.length ? '<div class="group"><span class="label">Решённые</span>' + past.map(joinRow).join('') + '</div>' : '');
+  },
+
   people: function () {
     if (LIVE && !mayPeople()) return '<div class="card quiet"><span class="small">Выдавать и снимать ответственность может глава клуба.</span></div>';
     if (!PEOPLE.list) return PEOPLE.fail
@@ -5538,7 +5688,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Люди', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Люди', joinQueue: 'Заявки на доступ', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы'
 };
@@ -5750,6 +5900,7 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   if (screen === 'people' && current !== 'people') { peopleReset(); if (mayPeople()) loadRoster(); }
+  if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoin(); }
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
   if (screen === 'home' && current !== 'home' && mayRequests() && WIRED.memberRequests) loadRequests();
@@ -6138,6 +6289,13 @@ function doAction(a) {
     if (a === 'mq-keep') { MREQS.ask = 0; MREQS.note = ''; render(); return; }
     if (a === 'mq-no' && mayRequests()) { decideRequest(Number(arg), 'rejected'); return; }
     if (a === 'mq-retry' && mayRequests()) { loadRequests(); render(); return; }
+    // заявки на доступ: согласие — только вторым нажатием (j-ok спрашивает, j-yes решает)
+    if (a === 'j-ok' && mayPeople()) { JOINQ.ok = Number(arg); JOINQ.no = 0; JOINQ.err = ''; render(); return; }
+    if (a === 'j-yes' && mayPeople() && JOINQ.ok === Number(arg)) { decideJoin(Number(arg), 'approved'); return; }
+    if (a === 'j-ask' && mayPeople()) { JOINQ.no = Number(arg); JOINQ.ok = 0; JOINQ.note = ''; JOINQ.err = ''; render(); return; }
+    if (a === 'j-keep') { JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; render(); return; }
+    if (a === 'j-no' && mayPeople() && JOINQ.no === Number(arg)) { decideJoin(Number(arg), 'rejected'); return; }
+    if (a === 'j-retry' && mayPeople()) { loadJoin(); render(); return; }
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'book' && LIVE) { bookEvent(arg); return; }
