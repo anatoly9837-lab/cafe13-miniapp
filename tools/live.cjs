@@ -5660,7 +5660,20 @@ if (grantsSet.length !== 1) {
     const posts = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
     // нет кнопки — false, а не исключение: иначе отсутствие кнопки краснело бы
     // падением прогона, а не своим текстом
-    const act = (s, a) => s.p.evaluate(a => { const x = document.querySelector(`[data-action="${a}"]`); if (x) x.click(); return !!x; }, a);
+    /* ⚠ Помощник КРАСНЕЕТ, когда кнопки нет. Прежде он возвращал «нашлась ли», и этого не
+       проверял ни один из 46 вызовов: нажатие в пустоту было молчаливым пустым ходом, а
+       случай, у которого следом стоит утверждение в ОТРИЦАТЕЛЬНОЙ форме («ноль запросов»,
+       «плашки нет»), оставался зелёным и доказывал ничего. Свёртка карточек (#493) эту дыру
+       и открывает: половины кнопок на экране до нажатия больше нет.
+       Возврат сохранён: случаи, которым ОТСУТСТВИЕ кнопки и есть предмет, зовут `act` в
+       условии и красноту гасят сами — для них рядом стоит `miss`. */
+    const act = async (s, a, допустимо) => {
+      const nashlas = await s.p.evaluate(a => { const x = document.querySelector(`[data-action="${a}"]`); if (x) x.click(); return !!x; }, a);
+      if (!nashlas && !допустимо) bad.push(`нажатие в пустоту: кнопки [data-action="${a}"] на экране нет`);
+      return nashlas;
+    };
+    // «кнопки быть НЕ должно» — тот же помощник, но отсутствие законно и краснотой не считается
+    const miss = (s, a) => act(s, a, true);
 
     // глава видит вход и список; данные — с сервера, ни одного id на экране
     {
@@ -5892,7 +5905,7 @@ if (grantsSet.length !== 1) {
       const role = (await await s.p.$$eval(`${card(s, 0)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
       if (!role || !/\boff\b/.test(role[0]) || !role[1].includes('уже есть') || role[2])
         bad.push('people-one-dir-held: «Куратор направления» не погашен, хотя единственное направление занято: ' + JSON.stringify(role));
-      if (await act(s, 'p-role:curator')) bad.push('people-one-dir-held: у погашенной роли остался указатель');
+      if (await miss(s, 'p-role:curator')) bad.push('people-one-dir-held: у погашенной роли остался указатель');
       await s.p.waitForTimeout(100);
       if (await s.p.$(`${card(s, 0)} [data-action^="p-give:curator"]`)) bad.push('people-one-dir-held: занятая пара всё-таки предложена кружком');
       if (posts(s, /\/roles$/).length) bad.push('people-one-dir-held: ушёл дубль роли');
@@ -5921,7 +5934,7 @@ if (grantsSet.length !== 1) {
       const role = (await await s.p.$$eval(`${card(s, 0)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
       if (!role || !/\boff\b/.test(role[0]) || !role[1].includes('уже есть') || role[2])
         bad.push('people-two-dirs-held: «Куратор направления» не погашен, хотя заняты оба направления: ' + JSON.stringify(role));
-      if (await act(s, 'p-role:curator')) bad.push('people-two-dirs-held: у погашенной роли остался указатель');
+      if (await miss(s, 'p-role:curator')) bad.push('people-two-dirs-held: у погашенной роли остался указатель');
       await s.ctx.close();
     }
 
@@ -5965,7 +5978,7 @@ if (grantsSet.length !== 1) {
       const role = (await await s.p.$$eval(`${card(s, 1)} .grant`, es => es.map(e => [e.className, e.textContent, !!e.querySelector('button')]))).filter(x => x[1].indexOf('Куратор направления') === 0)[0];
       if (!role || !/\boff\b/.test(role[0]) || !role[1].includes('направлений нет') || role[2])
         bad.push(`${name}: «Куратор направления» не погашен словами: ` + JSON.stringify(role));
-      if (await act(s, 'p-role:curator')) bad.push(`${name}: у роли с пустым перечнем остался указатель`);
+      if (await miss(s, 'p-role:curator')) bad.push(`${name}: у роли с пустым перечнем остался указатель`);
       if ((await s.view()).includes('Выберите направление.')) bad.push(`${name}: подсказка просит выбрать из пустого перечня`);
       // общая роль при этом выдаётся как обычно
       if (!(await s.p.$(`${card(s, 1)} [data-action="p-give:director"]`))) bad.push(`${name}: погашена и общая роль`);
