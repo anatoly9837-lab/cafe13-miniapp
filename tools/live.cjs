@@ -728,6 +728,144 @@ if (grantsSet.length !== 1) {
     await s.p.click('[data-go="home"]'); await s.p.click('[data-go="pass"]'); await s.p.waitForTimeout(100);
     if (s.calls.filter(c => c.url.endsWith('/pass')).length !== 1) bad.push('pass: повторный запрос при втором заходе');
     if (s.errs.length) bad.push('pass: ошибки страницы ' + s.errs.join('; '));
+    // Фикстура несёт `photo_url: null` — значит здесь кружок обязан быть буквой.
+    // Без этой строки «фото никогда не рисуется» было бы зелено и тогда, когда
+    // клиент рисует его всегда.
+    if (await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
+      bad.push('pass: фото при пустом photo_url');
+    await s.ctx.close();
+  }
+
+  /* ── аватарка Telegram на пропуске (кадры E50, E50b) ──
+     Решение владельца 28.10.2026 («по аватарке делаем»), три условия: фото
+     только при сети, адрес НЕ кладётся в память телефона, без сети — буква.
+     Второе условие проверяется не видом кружка, а СОСТАВОМ записи в
+     `cafe13.pass`: экран с правильным кружком и экран, заодно сохранивший
+     адрес, выглядят одинаково. Адрес в фикстуре — нули, как номера в базе
+     кадров: ничьё фото, и живого адреса в публичный репозиторий не уезжает. */
+  const PHOTO = 'https://t.me/i/userpic/320/obrazec.jpg';
+  {
+    const s = await open(true, true, json(200, OWNER), null,
+                         json(200, Object.assign({}, PASS, { photo_url: PHOTO })));
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    /* Что мерим: признак `photo` на кружке, адрес в своём свойстве, и —
+       главное — что ПРАВИЛО КАДРА действительно применилось: фон у
+       псевдоэлемента `::after`, а не у самого кружка (фоном кружка буква
+       проступила бы на лице; это первая редакция кадра, отвергнутая
+       отрисовкой). Картинку в docker не загрузить — сети нет, Telegram CDN
+       не ответит, — поэтому мерится РАЗМЕТКА и ПРАВИЛО, а не пиксели лица. */
+    const face = await s.p.evaluate(() => {
+      const el = document.querySelector('.pass .avatar');
+      if (!el) return null;
+      const c = getComputedStyle(el), a = getComputedStyle(el, '::after');
+      const r = el.getBoundingClientRect();
+      return { tag: el.tagName, cls: el.className, letter: el.textContent,
+               prop: el.style.getPropertyValue('--photo'),
+               after: a.backgroundImage, afterSize: a.backgroundSize,
+               own: c.backgroundImage, pos: c.position, style: c.borderTopStyle,
+               radius: c.borderRadius, w: Math.round(r.width), h: Math.round(r.height),
+               imgs: document.querySelectorAll('.pass img').length };
+    });
+    if (!face) bad.push('pass-photo: кружка нет вовсе');
+    else {
+      if (!/(^| )photo( |$)/.test(face.cls)) bad.push('pass-photo: кружок без признака фото: ' + face.cls);
+      if (face.prop.indexOf(PHOTO) === -1) bad.push('pass-photo: адрес не в свойстве кружка: ' + face.prop);
+      if (face.after.indexOf(PHOTO) === -1) bad.push('pass-photo: правило кадра не применилось, фона у ::after нет: ' + face.after);
+      if (face.afterSize !== 'cover') bad.push('pass-photo: фото не обрезается, а тянется: ' + face.afterSize);
+      if (face.own !== 'none') bad.push('pass-photo: фон у САМОГО кружка — буква проступит на лице: ' + face.own);
+      if (face.letter !== 'Т') bad.push('pass-photo: буквы под фото нет, терять её незачем: ' + face.letter);
+      if (face.pos !== 'relative') bad.push('pass-photo: кружок не держит псевдоэлемент: ' + face.pos);
+      if (face.style !== 'solid') bad.push('pass-photo: обводка фото пунктиром (заполнитель): ' + face.style);
+      if (!/50%/.test(face.radius)) bad.push('pass-photo: кружок не круглый: ' + face.radius);
+      if (face.w !== 54 || face.h !== 54) bad.push(`pass-photo: коробка ${face.w}x${face.h}, в кадре 54x54`);
+      if (face.imgs) bad.push('pass-photo: фото вставлено тегом — при неудаче в кружке значок битого изображения');
+    }
+    const kept = await s.p.evaluate(() => localStorage.getItem('cafe13.pass'));
+    if (!kept) bad.push('pass-photo: пропуск не сохранён — условие проверять не на чем');
+    else {
+      if (kept.indexOf('obrazec') !== -1 || /photo/i.test(kept))
+        bad.push('pass-photo: адрес фото уехал в память телефона: ' + kept);
+      if (JSON.parse(kept).code !== 'XIII-0042') bad.push('pass-photo: сохранён не тот код: ' + kept);
+    }
+    if (!(await s.view()).includes('XIII · 0042')) bad.push('pass-photo: код не показан рядом с фото');
+    await s.p.screenshot({ path: `${OUT}/live-pass-photo.png` });
+    if (s.errs.length) bad.push('pass-photo: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+  // Негодный адрес — буква, а не `src`, которому клиент поверил. `http://`
+  // здесь главный: картинка по нему пошла бы открытой сетью с устройства.
+  /* ⚠ Три последних — про набор знаков, и ВЫЛАЗКА из них одна: `закрыть url`.
+     Замер мой, отрисовкой: двойная кавычка выходит из `url("…")` и чужое
+     правило применяется (вычисленный цвет `rgb(255,0,0)`), а апостроф и
+     пробел — нет (`url("x.jpg';…")` и `%20`). Стоят они здесь потому, что
+     запрет в клиенте шире измеренного нарочно, и случай сторожит ЗАПРЕТ, а
+     не мою догадку об опасности каждого знака.
+     ⚠ И адрес-образец БЕЗ длинного ряда цифр: первая редакция несла на
+     месте номера десять нулей (сам ряд здесь не привожу — страж читает и
+     эту строку), и страж номеров людей (`tools/ids-clean.cjs`)
+     покраснел — верно покраснел. Он ищет СВОЙСТВО, «7 и больше цифр в одной
+     лексеме», а нули от настоящего Telegram-номера по этому свойству не
+     отличаются. Лечение — снять свойство, а не внести исключение в
+     разрешающий список: у адреса-образца форма свободна (его никто не
+     загружает), а каждое исключение в списке — дыра на будущее. */
+  for (const [name, photo] of [['http', 'http://t.me/i/userpic/320/obrazec.jpg'],
+                               ['пусто', ''], ['число', 7], ['null', null],
+                               ['нет поля', undefined],
+                               ['закрыть url', 'https://t.me/0.jpg");color:red;x:url("y'],
+                               ['кавычка', "https://t.me/0'.jpg"],
+                               ['пробел', 'https://t.me/0 .jpg']]) {
+    const d = Object.assign({}, PASS);
+    if (photo === undefined) delete d.photo_url; else d.photo_url = photo;
+    const s = await open(true, true, json(200, OWNER), null, json(200, d));
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    const кружок = await s.p.evaluate(() => {
+      const el = document.querySelector('.pass .avatar');
+      if (!el) return null;
+      return { cls: el.className, letter: el.textContent, html: el.outerHTML,
+               after: getComputedStyle(el, '::after').backgroundImage };
+    });
+    if (!кружок) bad.push(`pass-photo-bad(${name}): кружка нет вовсе`);
+    else {
+      if (/(^| )photo( |$)/.test(кружок.cls)) bad.push(`pass-photo-bad(${name}): клиент поверил адресу: ` + кружок.html);
+      if (кружок.after !== 'none') bad.push(`pass-photo-bad(${name}): фон у ::after есть: ` + кружок.after);
+      if (кружок.letter !== 'Т') bad.push(`pass-photo-bad(${name}): в кружке не буква имени: ` + кружок.letter);
+      if (/color *: *red/.test(кружок.html)) bad.push(`pass-photo-bad(${name}): чужое правило попало в разметку: ` + кружок.html);
+    }
+    if (!(await s.view()).includes('XIII · 0042')) bad.push(`pass-photo-bad(${name}): код не показан`);
+    await s.ctx.close();
+  }
+  /* ⚠ ПРЕДЕЛ запрета «адрес не кладётся в память» — и случай, который его
+     называет. Запрет закрывает ХРАНИЛИЩЕ, а внутри ОДНОГО запуска адрес в
+     памяти приложения есть, и если карточку рисовать из него, а не из довода,
+     то экран сбоя покажет фото там, где сети уже нет. Путь: вход удался, фото
+     приехало, сервер умер, человек выходит из просмотра — `switchTo` уводит на
+     экран сбоя с сохранённым пропуском. Без этого случая довод у `passCard`
+     неотличим от чтения переменной изнутри. */
+  {
+    let мёртв = false;
+    const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      if (q.url().endsWith('/pass')) return json(200, Object.assign({}, PASS, { photo_url: PHOTO }));
+      if (q.url().endsWith('/events')) return json(200, []);
+      // Остальное отдаётся как в обычном случае: `undefined` — это «решай сам».
+      // Умирает только `/me`, потому что на нём и стоит путь к экрану сбоя.
+      if (q.url().endsWith('/me')) return мёртв ? 'abort' : json(200, OWNER);
+      return undefined;
+    });
+    await s.p.click('[data-go="pass"]');
+    await s.p.waitForTimeout(200);
+    if (!(await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length)))
+      bad.push('pass-photo-offline: фото не приехало — предел проверять не на чем');
+    мёртв = true;
+    await s.p.evaluate(() => switchTo(false, null));
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    if (!t.includes('Сервер клуба недоступен')) bad.push('pass-photo-offline: не экран сбоя: ' + t.slice(0, 80));
+    if (!t.includes('Пропуск, сохранённый на телефоне')) bad.push('pass-photo-offline: сохранённый пропуск не показан');
+    if (await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
+      bad.push('pass-photo-offline: фото на экране сбоя — без сети оно не загрузится, а кружок обещает человека');
+    await s.p.screenshot({ path: `${OUT}/live-pass-photo-offline.png`, fullPage: true });
     await s.ctx.close();
   }
   const SAVED = { code: 'XIII-0042', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 };
@@ -1473,6 +1611,9 @@ if (grantsSet.length !== 1) {
     const has = t.includes('Пропуск, сохранённый на телефоне');
     if (has !== show) bad.push(`${name}: сохранённый пропуск ${has ? 'показан' : 'не показан'}`);
     if (show && !t.includes('XIII · 0042')) bad.push(`${name}: показан не тот код`);
+    // В запасе адреса фото нет и не бывает — значит кружок здесь всегда буква.
+    if (show && await s.p.evaluate(() => document.querySelectorAll('.pass .avatar.photo').length))
+      bad.push(`${name}: в сохранённом пропуске фото`);
     if (!t.includes('Сервер клуба недоступен')) bad.push(`${name}: нет экрана сбоя`);
     if (name === 'offline-pass') await s.p.screenshot({ path: `${OUT}/live-offline-pass.png`, fullPage: true });
     await s.ctx.close();
