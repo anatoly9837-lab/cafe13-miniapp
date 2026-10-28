@@ -5681,7 +5681,8 @@ var SCREENS = {
   frozen: function () {
     return '<div class="card quiet"><div class="col">' +
       '<b style="font-size:13px">' + esc(TITLES[current] || 'Этот раздел') + ' — временно недоступно</b>' +
-      '<span class="small">Клуб пока не пользуется этим разделом. Данные на сервере на месте — раздел вернётся, когда к нему дойдём.</span>' +
+      // текст designer-55: «данные на месте» — первое, о чём думает человек, увидевший пустоту на месте своей работы
+      '<span class="small">Раздел выключен в приложении, данные на сервере на месте. Вернётся, когда дойдут руки.</span>' +
     '</div></div>';
   },
 
@@ -6088,7 +6089,12 @@ function render() {
   // вход на замороженный экран гаснет ПО СВОЙСТВУ, а не перечнем кнопок: любой [data-go] туда
   // (Cafe13KPG#510); облик — общий .btn[disabled]
   if (LIVE) [].forEach.call(view.querySelectorAll('[data-go]'), function (b) {
-    if (closed(b.getAttribute('data-go'))) { b.disabled = true; b.setAttribute('aria-disabled', 'true'); }
+    if (!closed(b.getAttribute('data-go'))) return;
+    b.disabled = true; b.setAttribute('aria-disabled', 'true');
+    // причина — к подстрочнику строки через «·», а не второй строкой: иначе список вырастет на треть
+    // (designer-55); серое без причины читается как поломка
+    var sub = b.classList.contains('listitem') && b.querySelector('.grow .small');
+    if (sub) sub.textContent += ' · временно недоступно';
   });
 
   var root = tabList().some(function (t) { return t[0] === current; });

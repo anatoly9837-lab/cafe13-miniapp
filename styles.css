@@ -247,9 +247,10 @@ iframe.about { flex: 1 1 auto; display: block; width: 100%; border: 0; }
 .chev { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: var(--muted); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 /* Погашенный вход (заморозка, Cafe13KPG#510): тот же облик «серое = нельзя», что у .btn[disabled] —
    фон поверхности, приглушённый текст, ни латунной полосы, ни стрелки «туда». Без правила погашенная
-   строка выглядела живой (замер снимком 29.10.2026). Временное — до правила designer-55. */
+   строка выглядела живой (замер снимком 29.10.2026). Правило designer-55: --muted на --surface — 5.5;
+   стрелка снята целиком (display), иначе под пальцем остаётся пустое место шириной со стрелку. */
 .listitem[disabled] { background: var(--surface); color: var(--muted); box-shadow: none; cursor: default; }
-.listitem[disabled] .chev { visibility: hidden; }
+.listitem[disabled] .chev { display: none; }
 
 .rows { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; gap: 1px; }
 .rows > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 15px; background: var(--paper); }
@@ -363,9 +364,10 @@ input[type="search"]::-webkit-search-cancel-button {
   color: var(--muted); font-family: 'Golos Text', sans-serif; font-size: 11px; font-weight: 500;
 }
 .tabs button[aria-current="page"] { color: var(--ink); font-weight: 700; }
-/* замороженная вкладка: невыбранные и так --muted, без своей приметы серая не отличалась от обычной
-   (Cafe13KPG#510). Прозрачность — нарочно: вкладка недоступна, читать её не нужно. Временное — до designer-55. */
-.tabs button[disabled] { opacity: .38; cursor: default; }
+/* замороженная вкладка (Cafe13KPG#510): невыбранные и так --muted, и без своей приметы серая не отличалась
+   от обычной. Правило designer-55: «нельзя» несёт ЗАЧЁРКИВАНИЕ, а не бледность — цвет остаётся измеренным
+   (5.75); прозрачность .38 давала 1.74, ниже порога, и серое читалось бы как поломка. Значок не гасить. */
+.tabs button[disabled] { color: var(--muted); cursor: default; text-decoration: line-through; }
 .tabs svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Когда снизу стоит главная кнопка Telegram, своя — лишняя */

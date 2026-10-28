@@ -637,19 +637,24 @@ if (grantsSet.length !== 1) {
     const look = await s.p.evaluate(() => {
       const op = q => { const e = document.querySelector(q); return e ? Number(getComputedStyle(e).opacity) : null; };
       const li = document.querySelector('#view .listitem[disabled]');
-      return { off: op('#tabs button[disabled]'), on: op('#tabs [data-go="home"]'),
-               chev: li && li.querySelector('.chev') ? getComputedStyle(li.querySelector('.chev')).visibility : null };
+      const deco = q => { const e = document.querySelector(q); return e ? getComputedStyle(e).textDecorationLine : null; };
+      return { off: deco('#tabs button[disabled]'), on: deco('#tabs [data-go="home"]'), op: op('#tabs button[disabled]'),
+               chev: li && li.querySelector('.chev') ? getComputedStyle(li.querySelector('.chev')).display : null,
+               why: li ? (li.querySelector('.grow .small') || {}).textContent || '' : null };
     });
-    if (look.off === null || look.on === null || !(look.off < look.on)) bad.push(`${n}: серая вкладка на вид не отличается от живой (прозрачность ${look.off} против ${look.on})`);
+    // «нельзя» у вкладки — зачёркивание, а не бледность (designer-55: прозрачность .38 давала контраст 1.74)
+    if (!/line-through/.test(look.off || '') || /line-through/.test(look.on || '')) bad.push(`${n}: серая вкладка не зачёркнута или зачёркнута живая (${look.off} против ${look.on})`);
+    if (look.op !== null && look.op < 1) bad.push(`${n}: серая вкладка погашена прозрачностью (${look.op}) — контраст ниже порога`);
     if (look.chev === null) bad.push(`${n}: на главной нет погашенной строки списка со стрелкой — облик строки не проверен`);
-    else if (look.chev !== 'hidden') bad.push(`${n}: у погашенной строки осталась стрелка «туда»`);
+    else if (look.chev !== 'none') bad.push(`${n}: у погашенной строки осталась стрелка «туда»`);
+    if (look.why !== null && !/ · временно недоступно$/.test(look.why)) bad.push(`${n}: у погашенной строки нет причины в подстрочнике: «${look.why}»`);
     const entries = await s.p.$$eval('#view [data-go]', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
     if (!entries.some(e => e[1])) bad.push(`${n}: на главной владельца нет ни одного погашенного входа — проверять нечего (${JSON.stringify(entries)})`);
     entries.forEach(([g, d]) => { if (g === 'pass' && d) bad.push(`${n}: вход «Пропуск» погашен`); });
     entries.filter(e => e[1]).forEach(([g]) => { if (['pass', 'topup', 'manage', 'people', 'joinQueue', 'home'].includes(g)) bad.push(`${n}: погашен живой вход «${g}»`); });
     await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(200);
     let t = await s.view();
-    if (!t.includes('Бар — временно недоступно')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
+    if (!t.includes('Бар — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
     if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
     await s.p.evaluate(() => go('partner')); await s.p.waitForTimeout(200);
     t = await s.view();
