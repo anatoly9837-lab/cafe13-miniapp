@@ -633,6 +633,18 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(150);
       if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: серая вкладка «${off[0]}» открылась`);
     }
+    // облик: без своего правила погашенное выглядело живым (снимок 29.10.2026) — серость спрашивается у отрисовки
+    const look = await s.p.evaluate(() => {
+      const op = q => { const e = document.querySelector(q); return e ? Number(getComputedStyle(e).opacity) : null; };
+      const li = document.querySelector('#view .listitem[disabled]');
+      return { off: op('#tabs button[disabled]'), on: op('#tabs [data-go="home"]'),
+               chev: li && li.querySelector('.chev') ? getComputedStyle(li.querySelector('.chev')).visibility : null,
+               liBg: li ? getComputedStyle(li).backgroundColor : null,
+               paper: getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() };
+    });
+    if (look.off === null || look.on === null || !(look.off < look.on)) bad.push(`${n}: серая вкладка на вид не отличается от живой (прозрачность ${look.off} против ${look.on})`);
+    if (look.chev === null) bad.push(`${n}: на главной нет погашенной строки списка со стрелкой — облик строки не проверен`);
+    else if (look.chev !== 'hidden') bad.push(`${n}: у погашенной строки осталась стрелка «туда»`);
     const entries = await s.p.$$eval('#view [data-go]', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
     if (!entries.some(e => e[1])) bad.push(`${n}: на главной владельца нет ни одного погашенного входа — проверять нечего (${JSON.stringify(entries)})`);
     entries.forEach(([g, d]) => { if (g === 'pass' && d) bad.push(`${n}: вход «Пропуск» погашен`); });
