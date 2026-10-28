@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v93 · 29.10.2026';
+var VERSION = 'v94 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -6397,6 +6397,9 @@ function barRight() {
     '<button type="button" class="icon-btn" id="wallet" data-go="topup" aria-label="Пополнить счёт">' + svg(ICON.wallet) + '</button>';
 }
 
+// где знака быть не должно: машиночитаемый код на экране (довод — доверие у двери, designer-55)
+var MARK_OFF = '.code-box, .qr';
+
 /* Экраны без вкладок: уйти с них можно решением, а не переключением. */
 var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 function bare() { return !!BARE[current]; }
@@ -6441,6 +6444,12 @@ function render() {
   }
   var right = document.getElementById('bar-right');
   if (right) right.innerHTML = barRight();
+  /* Водяной знак (кадр E53, Cafe13KPG#509) гаснет ЭКРАНОМ ЦЕЛИКОМ там, где на нём
+     машиночитаемый код: QR пропуска (.code-box) и QR реквизитов (.qr). Признак —
+     СВОЙСТВО отрисованного экрана, а не перечень имён: пропуск рисуется и на
+     apiDown (запас с телефона), и новый экран с кодом погасит знак сам. Гасится
+     атрибутом оболочки, а не удалением узла — иначе на возврате знак мигнёт. */
+  document.body.setAttribute('data-mark', view.querySelector(MARK_OFF) ? 'off' : 'on');
 
   var tabs = document.getElementById('tabs');
   var list = bare() ? [] : tabList();

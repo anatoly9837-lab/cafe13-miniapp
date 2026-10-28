@@ -104,6 +104,15 @@ img { max-width: 100%; }
   letter-spacing: 0;
 }
 
+/* Водяной знак (кадр E53): по центру окна, вне потока — прокрутка его не двигает;
+   92vw — долей окна, не числом (380 px на окне 360 обрезает кольцо); 0.06 — замер
+   контраста designer-55. Под содержимым: main поднят над ним. */
+.mark { position: fixed; inset: 0; z-index: 0; display: flex; align-items: center; justify-content: center;
+        pointer-events: none; }
+.mark img { width: 92vw; max-width: 390px; height: auto; opacity: .06; }
+body[data-mark="off"] .mark { visibility: hidden; }
+main { position: relative; z-index: 1; }
+
 .bar-right { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; }
 .bar-right:empty { display: none; }
 .bal { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink);

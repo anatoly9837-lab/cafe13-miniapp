@@ -6,7 +6,7 @@
 <title>Café XIII — клуб</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css?v=93">
+<link rel="stylesheet" href="styles.css?v=94">
 </head>
 <body>
 
@@ -18,11 +18,14 @@
   <span class="bar-right" id="bar-right"></span>
 </header>
 
+<!-- водяной знак оболочки (кадр E53): не едет при прокрутке, под всем, что рисует экран -->
+<div class="mark" id="mark" aria-hidden="true"><img src="img/watermark.png" alt=""></div>
+
 <main id="view"></main>
 
 <nav class="tabs" id="tabs"></nav>
 
 <script src="vendor/qrcode-1.4.4.js"></script>
-<script src="app.js?v=93"></script>
+<script src="app.js?v=94"></script>
 </body>
 </html>
