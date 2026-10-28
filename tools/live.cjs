@@ -6629,6 +6629,204 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
   }
+  // ── заявки на доступ: очередь главы клуба (кадры E45*, Cafe13KPG#413) ──
+  // Люди ВЫДУМАНЫ, имена кадра сюда не переносятся (репозиторий публичный).
+  // Суммы выдуманы тоже: число, вшитое в клиент, на них краснеет.
+  // tg_user_id — 801…803: в разметку и хранилище он попадать не должен.
+  {
+    // 1×1 PNG — настоящий файл: objectURL от пустого тела экран честно не покажет
+    const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const JREQ = { pending: 2, requests: [
+      { id: 21, tg_user_id: 801, first_name: 'Ада', last_name: 'Доступова', username: null, said: 'была на трёх вечерах',
+        receipt_mime: 'image/png', receipt_bytes: 3072, amount_thb: '1111.00', amount_usd: '22.00',
+        status: 'pending', status_ru: 'ждёт ответа', created_at: '2026-10-27T10:00:00+00:00', decided_at: null, decision_note: '' },
+      { id: 22, tg_user_id: 802, first_name: 'Борис', last_name: null, username: 'kvitancin', said: '',
+        receipt_mime: 'application/pdf', receipt_bytes: 204800, amount_thb: '1111.00', amount_usd: null,
+        status: 'pending', status_ru: 'ждёт ответа', created_at: '2026-10-27T09:00:00+00:00', decided_at: null, decision_note: '' },
+      { id: 19, tg_user_id: 803, first_name: 'Вадим', last_name: 'Решённый', username: null, said: '',
+        receipt_mime: 'image/jpeg', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00',
+        status: 'rejected', status_ru: 'отклонена', created_at: '2026-10-25T09:00:00+00:00', decided_at: '2026-10-25T12:00:00+00:00',
+        decision_note: 'познакомимся лично' },
+      { id: 18, tg_user_id: 804, first_name: 'Галина', last_name: 'Впущенная', username: null, said: '',
+        receipt_mime: 'image/webp', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00',
+        status: 'approved', status_ru: 'согласована', created_at: '2026-10-24T09:00:00+00:00', decided_at: '2026-10-24T12:00:00+00:00',
+        decision_note: '' }] };
+    const JNOTE = 'Согласие одним действием впускает в приложение И создаёт членство.';
+    const joinCase = (me, r = {}) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url();
+      if (/\/join\/requests\/\d+\/receipt$/.test(u)) return r.shot || { status: 200, contentType: 'image/png', body: PNG1 };
+      if (/\/join\/requests\/\d+\/decide$/.test(u)) return r.decide || json(200, { id: 21, status: JSON.parse(q.postData()).decision, decided_at: '2026-10-27T13:00:00+00:00' });
+      if (/\/join\/requests$/.test(u)) return r.list || json(200, JREQ);
+      return undefined;
+    });
+    const toJoin = s => s.p.evaluate(() => go('joinQueue')).then(() => s.p.waitForTimeout(400));
+    const press = async (s, n, a) => {
+      const ok = await s.p.evaluate(a => { const x = document.querySelector(`#view [data-action="${a}"]`); if (x) x.click(); return !!x; }, a);
+      if (!ok) bad.push(`${n}: нет кнопки ${a}`);
+      await s.p.waitForTimeout(/^j-(yes|no):/.test(a) ? 400 : 150);
+      return ok;
+    };
+    const posts = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
+    const gets = (s, re) => s.calls.filter(c => c.method === 'GET' && re.test(c.url));
+
+    // очередь: ждущие с чеком и суммами заявки, решённые без кнопок (E45, E45g)
+    {
+      const n = 'join-queue', s = await joinCase(OWNER);
+      await toJoin(s);
+      const t = await s.view();
+      for (const w of ['Ждут ответа · 2', 'Ада Доступова', 'просит доступ', '«была на трёх вечерах»', 'PNG · 3 КБ', 'PDF · 200 КБ',
+                       '1 111 ฿', '22 USDT', 'Борис', 'Решённые', 'Вадим Решённый', 'ОТКАЗАНО', '«познакомимся лично»',
+                       'Галина Впущенная', 'ВПУЩЕНА', JNOTE])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      if (/открыть/.test(t)) bad.push(`${n}: у PDF стоит «открыть», а в Telegram это не проверено (#413)`);
+      // у Бориса суммы в долларах нет — и строка не обещает её
+      const boris = await s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes('Борис'))[0] || '');
+      if (/USDT/.test(boris)) bad.push(`${n}: у просьбы без amount_usd показана сумма в USDT`);
+      // решённым нечем решать: 2 карточки × 2 кнопки
+      const btn = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="j-"]')].map(b => b.getAttribute('data-action')));
+      if (JSON.stringify(btn.sort()) !== JSON.stringify(['j-ask:21', 'j-ask:22', 'j-ok:21', 'j-ok:22']))
+        bad.push(`${n}: кнопки решения ${JSON.stringify(btn)}, ждали только у ждущих 21 и 22`);
+      // чек картинкой — по байтам с сервера; PDF и решённые не спрашиваются
+      const shots = gets(s, /\/receipt$/).map(c => c.url.replace(/.*requests\//, ''));
+      if (JSON.stringify(shots) !== JSON.stringify(['21/receipt'])) bad.push(`${n}: чеки спрошены так: ${JSON.stringify(shots)}, ждали только 21`);
+      const img = await s.p.evaluate(() => { const i = document.querySelector('#view img[alt="Чек"]'); return i ? i.getAttribute('src') : null; });
+      if (!img || !img.startsWith('blob:')) bad.push(`${n}: чек не показан картинкой из ответа сервера (${img})`);
+      // подпись — та же, что у остальных ручек: без неё сервер чек не отдаст
+      if (gets(s, /\/receipt$/).some(c => c.init !== INIT)) bad.push(`${n}: чек спрошен без подписи`);
+      if (/80[1-4]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push(`${n}: tg_user_id в разметке`);
+      const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
+      if (/80[1-4]|Доступова/.test(stored)) bad.push(`${n}: просьбы легли в хранилище браузера`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.p.screenshot({ path: `${OUT}/live-join-queue.png` });
+      await s.ctx.close();
+    }
+    // согласие необратимо: первое нажатие только спрашивает, «назад» не шлёт ничего
+    {
+      const n = 'join-approve', s = await joinCase(OWNER);
+      await toJoin(s);
+      await press(s, n, 'j-ok:21');
+      if (posts(s, /\/decide$/).length) bad.push(`${n}: согласие ушло с первого нажатия — подтверждения нет (#413)`);
+      if (!(await s.p.$('#view [data-action="j-yes:21"]'))) bad.push(`${n}: после «Согласиться» нет шага подтверждения`);
+      for (const w of ['Отменить в приложении будет нечем.', 'Не соглашаться', 'Точно согласиться'])
+        if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (кадр E45d)`);
+      // подпись под списком при раскрытом вопросе остаётся (E45d)
+      if (!(await s.view()).includes(JNOTE)) bad.push(`${n}: подпись о согласии исчезла при раскрытом вопросе (кадр E45d)`);
+      if ((await s.p.$('#view textarea'))) bad.push(`${n}: у согласия поле слова, а в E45d его нет`);
+      await press(s, n, 'j-keep');
+      if (await s.p.$('#view [data-action="j-yes:21"]')) bad.push(`${n}: «назад» не закрыл подтверждение`);
+      if (posts(s, /\/decide$/).length) bad.push(`${n}: «назад» отправил решение`);
+      // подтверждение чужой карточки чужим номером не проходит
+      await s.p.evaluate(() => { JOINQ.ok = 22; render(); });
+      await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="j-yes:22"]'); b.setAttribute('data-action', 'j-yes:21'); b.click(); });
+      await s.p.waitForTimeout(300);
+      if (posts(s, /\/decide$/).length) bad.push(`${n}: подтверждение ушло по просьбе, о которой не спрашивали`);
+      await press(s, n, 'j-keep');
+      await press(s, n, 'j-ok:21');
+      await press(s, n, 'j-yes:21');
+      const pp = posts(s, /\/join\/requests\/21\/decide$/);
+      const body = pp.length === 1 ? JSON.parse(pp[0].body) : null;
+      if (!body || body.decision !== 'approved' || body.note !== '') bad.push(`${n}: согласие ушло так: ${JSON.stringify(pp.map(c => c.body))}`);
+      if (gets(s, /\/join\/requests$/).length !== 2) bad.push(`${n}: после решения список не перечитан`);
+      await s.ctx.close();
+    }
+    // отказ — со словом заявителю (E45v)
+    {
+      const n = 'join-reject', s = await joinCase(OWNER);
+      await toJoin(s);
+      await press(s, n, 'j-ask:21');
+      if (!(await s.view()).includes('Слово заявителю')) bad.push(`${n}: «Отказать» не открыло поле слова (кадр E45v)`);
+      for (const w of ['Не отказывать', 'Отказать и отправить']) if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (кадр E45v)`);
+      await s.p.fill('#j-note', 'приходите в четверг');
+      await press(s, n, 'j-no:21');
+      const pp = posts(s, /\/join\/requests\/21\/decide$/);
+      const body = pp.length === 1 ? JSON.parse(pp[0].body) : null;
+      if (!body || body.decision !== 'rejected' || body.note !== 'приходите в четверг') bad.push(`${n}: отказ ушёл так: ${JSON.stringify(pp.map(c => c.body))}`);
+      await s.ctx.close();
+    }
+    // второе решение: 409 словами сервера, и очередь перечитана
+    {
+      const n = 'join-409', s = await joinCase(OWNER, { decide: json(409, { detail: 'просьба уже согласована' }) });
+      await toJoin(s);
+      await press(s, n, 'j-ok:21');
+      await press(s, n, 'j-yes:21');
+      if (!(await s.view()).includes('Просьба уже согласована.')) bad.push(`${n}: повторное решение не сказано словами сервера`);
+      if (gets(s, /\/join\/requests$/).length !== 2) bad.push(`${n}: после 409 очередь не перечитана`);
+      // занятость снята: кнопки снова нажимаются. Ищутся ВСЕ кнопки решения, а не j-ok:21 —
+      // после 409 карточка остаётся в вопросе (j-keep / j-yes), и j-ok:21 на экране нет вовсе
+      const btns = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="j-"]')].map(b => b.disabled));
+      if (!btns.length) bad.push(`${n}: после 409 на экране нет кнопок решения — проверять занятость не на чем`);
+      else if (btns.some(Boolean)) bad.push(`${n}: после отказа сервера экран заперт`);
+      await s.ctx.close();
+    }
+    // пусто (E45b) и только решённые (E45g): подпись о согласии — только там, где решают или ждут
+    {
+      const n = 'join-empty', s = await joinCase(OWNER, { list: json(200, { requests: [], pending: 0 }) });
+      await toJoin(s);
+      const t = await s.view();
+      if (!t.includes('Просьб нет') || !t.includes(JNOTE)) bad.push(`${n}: пустая очередь не по кадру E45b: ${t.slice(0, 120)}`);
+      await s.ctx.close();
+      const n2 = 'join-decided', s2 = await joinCase(OWNER, { list: json(200, { requests: JREQ.requests.slice(2), pending: 0 }) });
+      await toJoin(s2);
+      const t2 = await s2.view();
+      if (!t2.includes('Решённые') || t2.includes('Ждут ответа')) bad.push(`${n2}: решённые не по кадру E45g`);
+      if (t2.includes(JNOTE)) bad.push(`${n2}: подпись о согласии под одними решёнными (в E45g её нет)`);
+      if (gets(s2, /\/receipt$/).length) bad.push(`${n2}: чек спрошен у решённой просьбы`);
+      await s2.ctx.close();
+    }
+    // чек не пришёл (E45e): строка с «Повторить» вместо плитки, суммы на месте, решения живы
+    {
+      const n = 'join-shot-fail';
+      let shotN = 0;
+      const s = await joinCase(OWNER, { shot: () => (shotN += 1) === 1 ? json(500, { detail: 'x' }) : { status: 200, contentType: 'image/png', body: PNG1 } });
+      await toJoin(s);
+      const card21 = () => s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes('Ада'))[0] || '');
+      let c = await card21();
+      for (const w of ['Чек не загрузился', 'Повторить', '1 111 ฿']) if (!c.includes(w)) bad.push(`${n}: нет «${w}» (кадр E45e)`);
+      if (await s.p.$('#view img[alt="Чек"]')) bad.push(`${n}: на отказе чека показана картинка`);
+      if (!(await s.p.$('#view [data-action="j-ok:21"]:not([disabled])'))) bad.push(`${n}: без чека решение заперто, а сервер его не запрещает (кадр E45e)`);
+      await press(s, n, 'j-shot:21');
+      await s.p.waitForTimeout(300);
+      if (gets(s, /\/21\/receipt$/).length !== 2) bad.push(`${n}: «Повторить» не спросил чек снова (${gets(s, /\/21\/receipt$/).length})`);
+      c = await card21();
+      if (c.includes('Чек не загрузился') || !(await s.p.$('#view img[alt="Чек"]'))) bad.push(`${n}: после «Повторить» чек не показан`);
+      await s.ctx.close();
+    }
+    // список не загрузился — форма близнеца E42; одна битая строка — отказ целиком
+    {
+      const n = 'join-fail', s = await joinCase(OWNER, { list: json(500, { detail: 'x' }) });
+      await toJoin(s);
+      if (!(await s.view()).includes('Просьбы не загрузились')) bad.push(`${n}: отказ списка не сказан`);
+      await s.ctx.close();
+      const broken = clone(JREQ); broken.requests[1].receipt_bytes = null;
+      const s2 = await joinCase(OWNER, { list: json(200, broken) });
+      await toJoin(s2);
+      const t2 = await s2.view();
+      if (!t2.includes('Просьбы не загрузились') || t2.includes('Ада Доступова')) bad.push(`${n}: битая строка не отвергла ответ целиком`);
+      await s2.ctx.close();
+    }
+    // право: член без ролей — отказ без запроса; свидетели КАЖДОЙ половины права (#434)
+    {
+      const n = 'join-rights';
+      const MEM = clone(OWNER); MEM.roles = [];
+      const s = await joinCase(MEM);
+      await toJoin(s);
+      // E45zh: слова отказа сервера буквой, кнопок нет
+      for (const w of ['Сюда нельзя', 'Просьбы о вступлении смотрит и решает глава клуба.'])
+        if (!(await s.view()).includes(w)) bad.push(`${n}: без права нет «${w}» (кадр E45zh)`);
+      if (await s.p.$('#view button')) bad.push(`${n}: на экране без права есть кнопка, а идти некуда (кадр E45zh)`);
+      if (gets(s, /\/join\//).length) bad.push(`${n}: очередь спрошена без права`);
+      await s.ctx.close();
+      for (const [who, roles] of [['глава клуба без админа', [{ role: 'head', direction_id: null }]],
+                                  ['админ без главы клуба', [{ role: 'admin', direction_id: null }]]]) {
+        const X = clone(OWNER); X.roles = roles;
+        const sx = await joinCase(X);
+        await toJoin(sx);
+        if ((await sx.view()).includes('смотрит и решает глава клуба')) bad.push(`${n}: «${who}» получил отказ — сервер его пускает`);
+        else if (gets(sx, /\/join\/requests$/).length !== 1) bad.push(`${n}: у «${who}» очередь не спрошена`);
+        await sx.ctx.close();
+      }
+    }
+  }
   // Рабочие экраны в демонстрации (Cafe13KPG#409, вариант A). Три свойства, каждое своим случаем:
   // вне Telegram экран рисует СЕБЯ на демо-данных, а не отказ по праву (снимок отказа похож на
   // экран — отсюда и карточка); в живом режиме без прав — по-прежнему отказ, и демо-данные туда
