@@ -282,7 +282,8 @@ if (grantsSet.length !== 1) {
     const withReq = (status, note) => Object.assign(clone(JOIN0), { request: {
       id: 7, status, said: '', created_at: '2026-10-28T08:00:00+00:00', decided_at: null,
       decision_note: note || '', status_ru: '' } });
-    const JPOST = { id: 7, status: 'pending' };
+    // created_at — дословно из снимка join-request-create (cafe13-miniapp#106)
+    const JPOST = { id: 7, status: 'pending', created_at: '2026-10-28T10:05:43.558711Z' };
     Object.assign(LATE_STUBS, { 'join-info-none': JOIN0, 'join-info-mine': withReq('pending'),
                                 'join-request-create': JPOST });
     // ответы /join*: join — функция или ответ; post — ответ на POST /join/request
@@ -6647,19 +6648,21 @@ if (grantsSet.length !== 1) {
   {
     // 1×1 PNG — настоящий файл: objectURL от пустого тела экран честно не покажет
     const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    // pay_method и ledger_id — из снимка join-requests-head (cafe13-miniapp#106): у ждущей и у
+    // согласованной без способа оплаты оба null; клиент очереди их не читает.
     const JREQ = { pending: 2, requests: [
       { id: 21, tg_user_id: 801, first_name: 'Ада', last_name: 'Доступова', username: null, said: 'была на трёх вечерах',
-        receipt_mime: 'image/png', receipt_bytes: 3072, amount_thb: '1111.00', amount_usd: '22.00',
+        receipt_mime: 'image/png', receipt_bytes: 3072, amount_thb: '1111.00', amount_usd: '22.00', pay_method: null, ledger_id: null,
         status: 'pending', status_ru: 'ждёт ответа', created_at: '2026-10-27T10:00:00+00:00', decided_at: null, decision_note: '' },
       { id: 22, tg_user_id: 802, first_name: 'Борис', last_name: null, username: 'kvitancin', said: '',
-        receipt_mime: 'application/pdf', receipt_bytes: 204800, amount_thb: '1111.00', amount_usd: null,
+        receipt_mime: 'application/pdf', receipt_bytes: 204800, amount_thb: '1111.00', amount_usd: null, pay_method: null, ledger_id: null,
         status: 'pending', status_ru: 'ждёт ответа', created_at: '2026-10-27T09:00:00+00:00', decided_at: null, decision_note: '' },
       { id: 19, tg_user_id: 803, first_name: 'Вадим', last_name: 'Решённый', username: null, said: '',
-        receipt_mime: 'image/jpeg', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00',
+        receipt_mime: 'image/jpeg', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00', pay_method: null, ledger_id: null,
         status: 'rejected', status_ru: 'отклонена', created_at: '2026-10-25T09:00:00+00:00', decided_at: '2026-10-25T12:00:00+00:00',
         decision_note: 'познакомимся лично' },
       { id: 18, tg_user_id: 804, first_name: 'Галина', last_name: 'Впущенная', username: null, said: '',
-        receipt_mime: 'image/webp', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00',
+        receipt_mime: 'image/webp', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00', pay_method: null, ledger_id: null,
         status: 'approved', status_ru: 'согласована', created_at: '2026-10-24T09:00:00+00:00', decided_at: '2026-10-24T12:00:00+00:00',
         decision_note: '' }] };
     const JNOTE = 'Согласие одним действием впускает в приложение И создаёт членство.';
