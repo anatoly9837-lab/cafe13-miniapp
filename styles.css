@@ -219,6 +219,20 @@ b.num, .big { white-space: nowrap; }
 .qr .place.img { border-style: solid; padding: 0; overflow: hidden; background: var(--card); }
 .qr .place img { display: block; width: 100%; height: auto; }
 .qr .place span { font-size: 11px; color: var(--muted); }
+/* Пополнение (кадры E52*): строки путей, ящик чека, статус заявки словом. */
+.way { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px;
+       border-radius: 12px; background: var(--card); border: 1px solid var(--line); width: 100%;
+       text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.way.off { background: var(--surface); border-color: transparent; color: var(--muted); cursor: default; }
+.way .col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.way .chev { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: var(--muted); stroke-width: 2; }
+.box.dashed { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 12px;
+              border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); cursor: pointer; }
+.box.dashed svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.st { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.st.wait { color: var(--muted); }
+.st.ok { color: var(--sage); }
+.st.no { color: var(--clay-ink); }
 /* Тетрадь клуба внутри приложения (v74, кадры E49*): белый лист во всю высоту
    main — без вкладок это окно минус шапка (58 + отступ сверху), поля main
    (16 + 20) и нижний отступ; ничего над листом и под ним (designer-55). */
