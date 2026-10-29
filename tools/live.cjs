@@ -668,6 +668,33 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // подача, на которую сервер ответил НЕразобранно: деньги могли уйти, человек остаётся на форме — своя заявка
+    // перечитывается всё равно. На пути успеха это дублирует сброс при входе на «Клуб» (go('home')), поэтому
+    // проверяется ЗДЕСЬ, где go('home') нет (подлог «снято перечитывание» на успехе был зелёным)
+    {
+      const n = 'offer-send-lost';
+      const o = { mine: () => [], posted: [] };
+      const api = masterApi(o);
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/master/request' && q.method() === 'POST') { o.posted.push(1); return json(502, '<html>bad gateway</html>'); }
+        return api(q);
+      });
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(300);
+        await tapIf(s, n, '[data-action="msf-place:1"]', 'место «Зал»');
+        if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
+        const before = s.calls.length;
+        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+        await s.p.waitForTimeout(400);
+        const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+        if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
+        else if (!after.some(u => u === 'GET /master/requests/mine')) bad.push(`${n}: после неразобранного ответа своя заявка не перечитана — деньги могли уйти: ${JSON.stringify(after)}`);
+        if (await s.p.evaluate(() => current) !== 'masterApply') bad.push(`${n}: после неразобранного ответа форма закрылась`);
+      }
+      await s.ctx.close();
+    }
     // своя заявка арт-директора — по номеру из ЕГО /master/requests/mine: без «Согласовать»/«Отказать»
     {
       const n = 'offer-own-ad';
