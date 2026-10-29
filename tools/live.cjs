@@ -712,6 +712,124 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // занятость слота (v112, `GET /master/slot-busy`): fits false — «Отправить» погашен и причина названа ДО
+    // нажатия; fits true — жив, заявка уходит. Запрос — с выбранными часами: «+» спрашивает сервер заново.
+    // ⚠ Второй линии нет НАРОЧНО: sendMaster пересечения не проверяет, последняя защита — 409 сервера (код v112).
+    for (const fits of [false, true]) {
+      const n = fits ? 'slot-fits-free' : 'slot-fits-clash';
+      const asked = [];
+      const o = { mine: () => [], posted: [] };
+      const api = masterApi(o);
+      const busyRow = { title: 'Чужой вечер', starts_at: '2026-12-03T18:00:00+07:00', ends_at: '2026-12-03T20:00:00+07:00' };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (!u.startsWith('/master/slot-busy')) return api(q);
+        asked.push(u);
+        return json(200, { month: '2026-12', fits, dates: [
+          { date: '2026-12-03', busy: [busyRow], conflict: fits ? null : { title: 'Чужой вечер', starts_label: '03.12 18:00', ends_label: '20:00' } },
+          { date: '2026-12-10', busy: [], conflict: null }] });
+      });
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(400);
+        if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
+        const f = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]');
+          return { off: b ? b.disabled : null, text: document.getElementById('view').textContent }; });
+        if (!asked.some(u => /place_id=1&weekday=4&start_local=18%3A00&hours=2$/.test(u))) bad.push(`${n}: занятость не спрошена под выбранные день и время: ${JSON.stringify(asked)}`);
+        if (!fits) {
+          if (f.off !== true) bad.push(`${n}: при fits false «Отправить заявку» нажимается (${JSON.stringify(f.off)}) — человек узнает о пересечении отказом`);
+          if (!f.text.includes('Выбранное время пересекается с занятым — выберите другое')) bad.push(`${n}: при fits false причина погашенной кнопки не названа`);
+          if (!f.text.includes('пересекается: 18:00–20:00 «Чужой вечер»')) bad.push(`${n}: дата с пересечением не названа (ждали «пересекается: 18:00–20:00 «Чужой вечер»»)`);
+          if (o.posted.length) bad.push(`${n}: заявка ушла при пересечении`);
+        } else {
+          if (f.off !== false) bad.push(`${n}: при fits true «Отправить заявку» погашен (${JSON.stringify(f.off)})`);
+          if (f.text.includes('пересекается с занятым')) bad.push(`${n}: при fits true сказано «пересекается с занятым»`);
+          if (!f.text.includes('Выбранное время свободно на всех 2 датах месяца')) bad.push(`${n}: при fits true не сказано, что время свободно`);
+          // «+» — новый запрос занятости уже под 3 часа
+          await tapIf(s, n, '[data-action="msf-plus"]', '«+» часа');
+          await s.p.waitForTimeout(400);
+          if (!asked.some(u => /hours=3$/.test(u))) bad.push(`${n}: после «+» занятость не спрошена под 3 часа: ${JSON.stringify(asked)}`);
+          if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера');   // перерисовка «+» могла снять набранное
+          await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+          await s.p.waitForTimeout(300);
+          if (o.posted.length !== 1) bad.push(`${n}: при fits true POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
+  // ── остаток перечитывается по возврату в приложение (v110, Cafe13KPG#638) ──
+  // Замеры frontend-upravlenie-ec. /me — управляемая заглушка: остаток меняется по ходу, ответ задерживается или
+  // ломается. Возврат — событие focus окна (visibilitychange и activated Telegram — то же onReturn).
+  {
+    const meOf = bal => { const p = clone(OWNER); p.roles = []; p.balance = bal; return p; };
+    const balCase = async (start) => {
+      const st = { bal: start, mode: 'ok', slow: 0 };
+      const s = await open(true, true, json(200, meOf(start)), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u !== '/me') return undefined;
+        if (st.mode === 'fail') return json(502, '<html>bad gateway</html>');
+        const body = json(200, meOf(st.bal));
+        if (st.slow) { const ms = st.slow; st.slow = 0; return new Promise(r => setTimeout(() => r(body), ms)); }
+        return body;
+      });
+      await s.p.waitForTimeout(300);
+      return Object.assign(s, { st });
+    };
+    const meCalls = s => s.calls.filter(c => /\/me$/.test(c.url)).length;
+    const shown = s => s.p.evaluate(() => DATA.member && DATA.member.balance);
+    const headSays = async s => {
+      await s.p.evaluate(() => { const b = document.getElementById('bal'); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); });
+      await s.p.waitForTimeout(80);
+      return s.p.evaluate(() => (document.getElementById('bar-right') || {}).textContent || '');
+    };
+    const back = s => s.p.evaluate(() => window.dispatchEvent(new Event('focus')));
+    // (5) на старте /me ровно один — перечитывание при входе на «Клуб» не задваивает загрузку
+    // (1) сервер поменял остаток, человек вернулся — шапка говорит новое
+    {
+      const n = 'bal-return';
+      const s = await balCase(1000);
+      if (meCalls(s) !== 1) bad.push(`${n}: на старте /me ушёл ${meCalls(s)} раз, ждали 1`);
+      s.st.bal = 5000;
+      await back(s); await s.p.waitForTimeout(300);
+      if (await shown(s) !== 5000) bad.push(`${n}: после возврата остаток ${await shown(s)}, на сервере 5 000 — не перечитан`);
+      if (!(await headSays(s)).includes('5 000')) bad.push(`${n}: шапка после возврата не показывает 5 000 ฿`);
+      await s.ctx.close();
+    }
+    // (2) два признака возврата разом — ОДИН /me
+    {
+      const n = 'bal-return-pair';
+      const s = await balCase(1000);
+      const before = meCalls(s);
+      await s.p.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
+      await s.p.waitForTimeout(300);
+      if (meCalls(s) - before !== 1) bad.push(`${n}: на парный возврат /me ушёл ${meCalls(s) - before} раз, ждали 1`);
+      await s.ctx.close();
+    }
+    // (3) сервер не ответил на возврате — остаток прежний, а не пустой и не ноль
+    {
+      const n = 'bal-return-502';
+      const s = await balCase(1000);
+      s.st.mode = 'fail';
+      await back(s); await s.p.waitForTimeout(300);
+      if (await shown(s) !== 1000) bad.push(`${n}: после неответа остаток ${JSON.stringify(await shown(s))}, был 1 000 — известное затёрто`);
+      if (!(await headSays(s)).includes('1 000')) bad.push(`${n}: шапка после неответа не показывает прежние 1 000 ฿`);
+      await s.ctx.close();
+    }
+    // (4) медленный СТАРЫЙ ответ после свежего не перетирает: возврат спросил медленно (2 000), вход на
+    // пополнение спросил быстро (5 000) — итог 5 000
+    {
+      const n = 'bal-return-late';
+      const s = await balCase(1000);
+      s.st.bal = 2000; s.st.slow = 1200;
+      await back(s); await s.p.waitForTimeout(100);
+      s.st.bal = 5000;
+      await s.p.evaluate(() => go('topup')); await s.p.waitForTimeout(1600);
+      if (await shown(s) !== 5000) bad.push(`${n}: поздний старый ответ перетёр свежий — остаток ${await shown(s)}, ждали 5 000`);
+      await s.ctx.close();
+    }
   }
 
   // ── водяной знак (кадр E53, Cafe13KPG#509): виден, неподвижен, долей окна; гаснет ПО СВОЙСТВУ ──
@@ -3732,6 +3850,34 @@ if (grantsSet.length !== 1) {
     for (let i = 0; i < hs.length; i++) { const x = hs[i] ? hs[i](q) : undefined; if (x !== undefined) return x; }
     return undefined;
   };
+  // «мест без ограничения» (v111, Cafe13KPG#639): сервер шлёт `seats_left: null`. Разбор, отвергший null,
+  // кладёт всю афишу («не открылась»), а запись без признака unl закрыта: `null > 0` ложно. Условие
+  // arhitector-47 к мерджу api#101 — его мутация разбора была зелёной (в фикстурах null не было)
+  {
+    // «Ивенты» и «Мероприятие» в живом заморожены (#510) — афиша живёт на «Клубе»; поэтому смотрим её там,
+    // а запись — самим `canBookEvent` (экран мероприятия, где кнопка, в живом закрыт заморозкой)
+    const n = 'seats-null';
+    const UNL = EV({ id: 9, title: 'Без предела', kind: 'free', price: '0.00', seats: 0, taken: 3, seats_left: null,
+                     starts_at: atBkk(0, 19) });
+    // граница: у мероприятия С числом мест «без ограничения» не печатается — иначе подпись могла бы стоять всегда
+    const LIM = EV({ id: 10, title: 'С пределом', kind: 'free', price: '0.00', seats: 12, taken: 7, seats_left: 5,
+                     starts_at: atBkk(0, 20) });
+    // часы фиксированы (NOWFIX, среда 08:00), оба мероприятия — в тот же день: без этого «сейчас + N часов»
+    // переваливает за полночь и в ночь на понедельник уезжает в следующую неделю
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, [UNL, LIM])), null, NOWFIX);
+    await s.p.waitForTimeout(400);
+    const t = await s.view();
+    if (t.includes('Афиша не открылась')) bad.push(`${n}: «Афиша не открылась» на ответе с seats_left: null — разбор отверг null`);
+    else if (!t.includes('Без предела')) bad.push(`${n}: на «Клубе» нет мероприятия с seats_left: null`);
+    else if (!t.includes('мест без ограничения')) bad.push(`${n}: на «Клубе» не сказано «мест без ограничения»`);
+    const lim = await s.p.evaluate(() => { const b = document.querySelector('#view [data-event="10"]'); return b ? b.textContent : null; });
+    if (lim === null) bad.push(`${n}: на «Клубе» нет мероприятия с числом мест`);
+    else if (lim.includes('без ограничения') || !lim.includes('осталось 5')) bad.push(`${n}: у мероприятия с 5 местами не «осталось 5»: ${lim}`);
+    const can = await s.p.evaluate(() => { const e = eventById('9'); return e ? canBookEvent(e) : null; });
+    if (can !== true) bad.push(`${n}: запись на мероприятие без ограничения мест закрыта (canBookEvent → ${JSON.stringify(can)})`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
   /* Места — форма и ЗНАЧЕНИЯ из снимка `places.json` (прогон координатора
      24.10.2026 на стволе api `6332425`, метка sha рядом с каталогом): четыре
      строки, вместимость есть только у зала, у двора и сада `null` — «числа не
