@@ -465,6 +465,20 @@ if (grantsSet.length !== 1) {
       judge(n, st);
       if (st.op !== '0.06') bad.push(`${n}: прозрачность знака ${st.op}, ждали 0.06`);
       if (st.pos !== 'fixed') bad.push(`${n}: знак не прибит к окну (position ${st.pos}) — поедет при прокрутке`);
+      // знак ПОД содержимым: в точке, где заведомо лежит карточка, сверху обязана быть она, а не знак.
+      // elementFromPoint пропускает pointer-events:none — без временного «auto» знак поверх дал бы тот же
+      // ответ, что и под (замер на макете, долг по v94, Cafe13KPG#509); стиль возвращается сразу
+      const top = await s.p.evaluate(() => {
+        const c = document.querySelector('#view .card'), m = document.getElementById('mark');
+        if (!c || !m) return null;
+        const r = c.getBoundingClientRect();
+        m.style.pointerEvents = 'auto';
+        const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        m.style.pointerEvents = '';
+        return e ? (e.closest('#mark') ? 'mark' : 'content') : 'nothing';
+      });
+      if (top === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — на главной нет карточки, порядок слоёв не спрошен`);
+      else if (top !== 'content') bad.push(`${n}: над карточкой лежит ${top === 'mark' ? 'водяной знак' : 'ничего'} — знак обязан быть ПОД содержимым`);
       // долей окна, а не числом: 92% и на окне 390, и на окне 360 (прибитое число обрезало бы кольцо на узком окне)
       if (Math.abs(st.w - 390 * 0.92) > 1) bad.push(`${n}: ширина знака на окне 390 — ${st.w}, ждали 92% окна`);
       await s.p.setViewportSize({ width: 360, height: 780 });
