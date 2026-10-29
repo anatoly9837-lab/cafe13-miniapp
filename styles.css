@@ -242,6 +242,7 @@ b.num, .big { white-space: nowrap; }
 .st.wait { color: var(--muted); }
 .st.ok { color: var(--sage); }
 .st.no { color: var(--clay-ink); }
+.st.off { color: var(--muted); }
 /* Тетрадь клуба внутри приложения (v74, кадры E49*): белый лист во всю высоту
    main — без вкладок это окно минус шапка (58 + отступ сверху), поля main
    (16 + 20) и нижний отступ; ничего над листом и под ним (designer-55). */

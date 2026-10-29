@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v101 · 29.10.2026';
+var VERSION = 'v103 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1074,8 +1074,9 @@ var TOPUP = { amount: '', method: 'cash', ask: false, busy: false, err: '', from
    E52v/E52g (история), E52d (чужими глазами); Cafe13KPG#509, голова 73e7457.
    Состояние экрана одно из трёх: пути → форма или история. Слова — с кадров;
    статус и причина отказа — слова сервера (status_ru, decision_note), как пришли. */
-// «отменено» (касса сняла зачисление) — денег на счёте нет, как у отказа; цвета в кадре нет — черновик
-var TUP_ST = { pending: 'wait', approved: 'ok', rejected: 'no', cancelled: 'no' };
+// «отменено» — тихий цвет, НЕ цвет отказа: у отказа денег не было вовсе, у отмены они пришли и ушли; судьбу
+// денег говорит подстрочник (кадр E52v, designer-55, Cafe13KPG#591)
+var TUP_ST = { pending: 'wait', approved: 'ok', rejected: 'no', cancelled: 'off' };
 function topupMember() {
   // чужими глазами деньги не вносятся: сервер откажет 403 (_not_acting), экран говорит это сразу (E52d)
   if (TEST.on && TEST.as) return '<div class="card quiet"><span class="small">Чужими глазами пополнение недоступно: деньги вносит только сам человек.</span></div>';
@@ -1117,7 +1118,8 @@ function topupMember() {
        : mine.map(function (q) {
            return '<div class="card quiet hist"><div class="row"><div class="col"><b>' + money(q.amount) + ' ฿</b>' +
                '<span class="small">' + esc([q.when, q.from].filter(Boolean).join(' · ')) + '</span></div><span class="st ' + TUP_ST[q.status] + '">' + esc(q.word) + '</span></div>' +
-             (q.status === 'rejected' && q.note ? '<span class="small">' + esc(q.note) + '</span>' : '') + '</div>';
+             (q.status === 'rejected' && q.note ? '<span class="small">' + esc(q.note) + '</span>'
+               : q.status === 'cancelled' ? '<span class="small">Зачисление отменено, деньги списаны обратно</span>' : '') + '</div>';
          }).join(''));
   }
   var way = function (name, sub, on) {
