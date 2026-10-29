@@ -5854,7 +5854,11 @@ if (grantsSet.length !== 1) {
                   { id: 9, title: 'Старое', is_active: false, is_open: false }];
     const HEAD_ONLY = clone(OWNER); HEAD_ONLY.roles = [{ role: 'head', direction_id: null }];
     const MASTER = clone(OWNER); MASTER.roles = [{ role: 'curator', direction_id: 7 }];
-    const peopleCase = (me, r) => open(true, true, json(200, me), null, null, null, q => {
+    /* ⚠ `now` — ПРИКОЛОТЫЕ часы, и они не удобство: порог «меньше двух недель» у даты конца
+       членства считается от «сейчас», а батарея, считающая время от настоящего момента, у нас
+       уже краснела сама по себе после 11:00 острова. Даты фикстуры и порог обязаны жить в
+       одной системе отсчёта, иначе случай зелен полдня и красен вторые полдня. */
+    const peopleCase = (me, r, now) => open(true, true, json(200, me), null, null, null, q => {
       const u = q.url();
       if (u.endsWith('/people')) return r.people || json(200, ROSTER);
       // r.dirs бывает ФАБРИКОЙ: задержка ответа начинается в момент запроса, а не при заведении случая
@@ -5871,7 +5875,7 @@ if (grantsSet.length !== 1) {
       if (/\/access\/\d+\/revoke$/.test(u)) return r.out || json(200, { tg_user_id: Number(u.match(/access\/(\d+)/)[1]),
         revoked_at: '2026-10-28T13:00:00+00:00', memberships_ended: 1, note: '' });
       return undefined;
-    });
+    }, null, now);
     // вход — с вкладки «Управление» (кадр E46, Cafe13KPG#413), а не с главной: путь
     // проходится так, как его проходит глава клуба, — вкладка, потом строка
     const toPeople = async s => {
@@ -6608,6 +6612,84 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
+    /* ── ДАТА КОНЦА ЧЛЕНСТВА и ∞ (пункт 6 замечаний владельца: «Даты окончания членства не
+       вижу»; «поставь мне значек бесконечности» 28.10.2026) ──
+       Сервер отдаёт пару ПЛОСКИХ полей (`ends_at` + `lifelong`, бой `e545973`), и состояний
+       ЧЕТЫРЕ, а не два: дата / бессрочно / живого членства нет / поля НЕТ вовсе (старый
+       сервер). Последние два рисуют одно и то же — пусто, — но по РАЗНЫМ причинам, и
+       различать их обязан разбор, а не экран: тот же класс, что у остатка (`'balance' in p`).
+       ⚠ Часы ПРИКОЛОТЫ, даты фикстуры отсчитаны от них же. Порог проверяется с ОБЕИХ сторон
+       границы и НА границе: 14 дней — ещё не «меньше двух недель», 13 — уже. Без середины
+       диапазона проверка не отличала бы «посчитано верно» от «прибор промолчал». */
+    {
+      const n = 'people-till', NOW = '2026-11-01T09:00:00+07:00';
+      const lyudi = clone(ROSTER);
+      const dat = (dney) => { const d = new Date(Date.parse(NOW) + dney * 86400000); return d.toISOString(); };
+      lyudi.people[0].ends_at = dat(60);  lyudi.people[0].lifelong = false;   // срок далёкий
+      lyudi.people[1].ends_at = dat(13);  lyudi.people[1].lifelong = false;   // меньше двух недель
+      lyudi.people[2].ends_at = null;     lyudi.people[2].lifelong = true;    // бессрочное
+      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
+      await toPeople(s);
+      /* ⚠ Ключ — АТРИБУТ `data-person` (номер строки ОТВЕТА), а не положение в DOM:
+         `peopleOrder` ставит живые членства наверх, и порядок отрисовки ответу не равен.
+         Первая редакция случая читала по положению и дала перепутанные строки — поймал
+         прогон, а не чтение. */
+      const hvosty = await s.p.$$eval('[data-person]', es => {
+        const o = {};
+        es.forEach(e => { const t = e.querySelector('.till');
+          o[e.getAttribute('data-person')] = { text: t ? t.textContent : null,
+            soon: t ? t.classList.contains('soon') : null, inf: !!(t && t.querySelector('.inf')) }; });
+        return o; });
+      if (hvosty[0].text !== ' · до 31.12.2026') bad.push(`${n}: далёкий срок «${hvosty[0].text}», ждали « · до 31.12.2026»`);
+      if (hvosty[0].soon) bad.push(`${n}: далёкий срок покраснел`);
+      if (hvosty[1].text !== ' · до 14.11.2026') bad.push(`${n}: близкий срок «${hvosty[1].text}», ждали « · до 14.11.2026»`);
+      if (!hvosty[1].soon) bad.push(`${n}: срок меньше двух недель НЕ покраснел`);
+      if (!hvosty[2].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${hvosty[2].text}»`);
+      if (hvosty[2].soon) bad.push(`${n}: бессрочное покраснело`);
+      await s.ctx.close();
+    }
+    /* Граница порога — ОБЕ стороны и сама граница: «менее 2х недель» это строго меньше 14.
+       Подлоги по краям диапазона оставили бы середину непроверенной, поэтому здесь ровно
+       соседние дни, а не «ноль и много». */
+    {
+      const n = 'people-till-porog', NOW = '2026-11-01T09:00:00+07:00';
+      const lyudi = clone(ROSTER);
+      const dat = (dney) => new Date(Date.parse(NOW) + dney * 86400000).toISOString();
+      lyudi.people[0].ends_at = dat(14); lyudi.people[0].lifelong = false;
+      lyudi.people[1].ends_at = dat(13); lyudi.people[1].lifelong = false;
+      lyudi.people[2].ends_at = dat(0);  lyudi.people[2].lifelong = false;
+      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
+      await toPeople(s);
+      // тот же ключ по атрибуту: порядок отрисовки не равен порядку ответа
+      const soon = await s.p.$$eval('[data-person]', es => {
+        const o = {};
+        es.forEach(e => { const t = e.querySelector('.till');
+          o[e.getAttribute('data-person')] = t ? t.classList.contains('soon') : null; });
+        return o; });
+      if (soon[0] !== false) bad.push(`${n}: ровно 14 дней покраснели — «менее 2х недель» это строго меньше`);
+      if (soon[1] !== true) bad.push(`${n}: 13 дней не покраснели`);
+      if (soon[2] !== true) bad.push(`${n}: последний день не покраснел`);
+      await s.ctx.close();
+    }
+    /* ⚠ «Поля НЕТ» и «членства нет» рисуют одно и то же — пусто, — и различить их на экране
+       нечем по построению. Поэтому случай спрашивает РАЗБОР: у старого сервера `till` обязан
+       быть `undefined`, у человека без живого членства — объект с `iso: null`. Без этого
+       разница существует только в комментарии, то есть не существует. */
+    {
+      const n = 'people-till-net', NOW = '2026-11-01T09:00:00+07:00';
+      const stary = clone(ROSTER);                       // старый сервер: полей нет вовсе
+      const novy = clone(ROSTER);
+      novy.people.forEach(p => { p.ends_at = null; p.lifelong = false; });   // новый, членства нет
+      for (const [kak, body, zhdem] of [['старый сервер', stary, 'undefined'], ['нет живого членства', novy, 'object']]) {
+        const s = await peopleCase(OWNER, { people: json(200, body) }, NOW);
+        await toPeople(s);
+        const vid = await s.p.evaluate(() => typeof PEOPLE.list[0].till);
+        if (vid !== zhdem) bad.push(`${n} (${kak}): разбор дал till=${vid}, ждали ${zhdem}`);
+        if (await s.p.$('.till')) bad.push(`${n} (${kak}): на экране нарисована дата, которой нет`);
+        await s.ctx.close();
+      }
+    }
+
     /* ── СВЁРТКА карточек (Cafe13KPG#493, слово владельца 28.10.2026) ──
        «Самое идеальное когда они свернуты и по клику разворачиваются с настройками… фокус
        только на настройки одного человека». Мерится ПОВЕДЕНИЕМ, а не разметкой: сколько
@@ -6644,19 +6726,28 @@ if (grantsSet.length !== 1) {
          это числом смещения (4 px), выведенным из отступа карточки и высоты строки имени.
          Случай сторожит связку: поменяется отступ плашки или кегль имени — смещение уедет
          молча, потому что на глаз 3–4 px не видно, а на снимке описи — тем более. */
+      /* ⚠ Отсутствие свёрнутой строки — СВОЙ отказ, а не исключение. Прежняя редакция брала
+         `.fold-wrap` и сразу спрашивала его потомков: при мутации «свёртка снята» элемента
+         нет, `null.querySelector` роняло БАТАРЕЮ, и красное всех случаев НИЖЕ не печаталось
+         вовсе — обрыв прятал накопленное. Нашёл `frontend-upravlenie` пакетом долга; тот же
+         класс я чинил часом раньше в чужом случае и оставил у себя. */
       const vyr = await s.p.evaluate(() => {
         const w = document.querySelector('.fold-wrap');
-        const c = w.querySelector('.card.dense.fold').getBoundingClientRect();
-        const b = w.querySelector('.outbtn').getBoundingClientRect();
-        const nm = w.querySelector('b').getBoundingClientRect();
+        if (!w) return null;
+        const card_ = w.querySelector('.card.dense.fold'), btn = w.querySelector('.outbtn'), nm = w.querySelector('b');
+        if (!card_ || !btn || !nm) return null;
+        const c = card_.getBoundingClientRect(), b = btn.getBoundingClientRect(), r = nm.getBoundingClientRect();
         return { центрКнопки: b.top - c.top + b.height / 2,
-                 центрИмени: nm.top - c.top + Math.min(nm.height, 18) / 2,
-                 правыйКрайКнопки: b.right, левыйКрайИмени: nm.left };
+                 центрИмени: r.top - c.top + Math.min(r.height, 18) / 2,
+                 правыйКрайКнопки: b.right, левыйКрайИмени: r.left };
       });
-      if (Math.abs(vyr.центрКнопки - vyr.центрИмени) > 1.5)
-        bad.push(`${n}: кнопка не в строке имени — её центр ${Math.round(vyr.центрКнопки)} против ${Math.round(vyr.центрИмени)} у имени`);
-      if (vyr.правыйКрайКнопки > vyr.левыйКрайИмени)
-        bad.push(`${n}: кнопка заходит на колонку имени (${Math.round(vyr.правыйКрайКнопки)} > ${Math.round(vyr.левыйКрайИмени)})`);
+      if (!vyr) bad.push(`${n}: свёрнутой строки нет — выравнивание кнопки проверять не на чем`);
+      else {
+        if (Math.abs(vyr.центрКнопки - vyr.центрИмени) > 1.5)
+          bad.push(`${n}: кнопка не в строке имени — её центр ${Math.round(vyr.центрКнопки)} против ${Math.round(vyr.центрИмени)} у имени`);
+        if (vyr.правыйКрайКнопки > vyr.левыйКрайИмени)
+          bad.push(`${n}: кнопка заходит на колонку имени (${Math.round(vyr.правыйКрайКнопки)} > ${Math.round(vyr.левыйКрайИмени)})`);
+      }
       // до нажатия в строке только узнавание: имя, уровень, остаток
       if (await s.p.$(`${card(s, 0)} .chip`)) bad.push(`${n}: чип виден в свёрнутой строке`);
       if (await s.p.$(`${card(s, 0)} [data-action^="p-give:"]`)) bad.push(`${n}: кружок выдачи виден до раскрытия`);
@@ -6730,9 +6821,12 @@ if (grantsSet.length !== 1) {
       if (hs.length < 2) bad.push(`${n}: кнопок исключения на экране ${hs.length} — сравнивать не с чем`);
       else if (hs[1] !== hs[0]) bad.push(`${n}: у длинного имени кнопка в ${hs[1]} px против ${hs[0]} — «[ -» и «]» разъехались по строкам`);
       const vidno = await s.p.evaluate(() => {
-        const e = document.querySelectorAll('.fold-wrap')[1].querySelector('b');
-        return e && e.getBoundingClientRect().width > 0; });
-      if (!vidno) bad.push(`${n}: длинное имя не поместилось в строку вовсе`);
+        const w = document.querySelectorAll('.fold-wrap')[1];      // второй человек — с длинным именем
+        if (!w) return null;                                        // строк меньше двух: мерить нечем
+        const e = w.querySelector('b');
+        return !!(e && e.getBoundingClientRect().width > 0); });
+      if (vidno === null) bad.push(`${n}: свёрнутых строк меньше двух — длинное имя проверять не на чем`);
+      else if (!vidno) bad.push(`${n}: длинное имя не поместилось в строку вовсе`);
       await s.ctx.close();
     }
 
