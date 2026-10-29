@@ -577,6 +577,76 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── «Я мастер» на «Клубе» (v108, прототип, кадры E54*): порог 2 600 ฿, «+» часа по остатку, своя заявка ──
+  // Замеры frontend-upravlenie-ec (браузером), подлог arhitector-47 на v108 («+» без сверки суммы) был зелёным.
+  {
+    const mem = (bal, roles) => { const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null })); p.balance = bal; return p; };
+    const offer = s => s.p.evaluate(() => {
+      const b = [...document.querySelectorAll('#view [data-action="ms-apply"]')].filter(x => x.textContent === 'Я мастер')[0];
+      return { has: !!b, off: b ? b.disabled : null, text: document.getElementById('view').textContent };
+    });
+    // меньше 2 600 — «Я мастер» погашен, и недостача названа ДО нажатия
+    {
+      const n = 'offer-short';
+      const s = await open(true, true, json(200, mem(2000, [])));
+      await s.p.waitForTimeout(250);
+      const o = await offer(s);
+      if (!o.has) bad.push(`${n}: на «Клубе» нет «Я мастер» у члена клуба`);
+      else {
+        if (o.off !== true) bad.push(`${n}: при остатке 2 000 «Я мастер» нажимается — статус стоит 2 600`);
+        if (!o.text.includes('Не хватает 600 ฿')) bad.push(`${n}: недостача не названа до нажатия`);
+        if (!o.text.includes('Прототип')) bad.push(`${n}: у блока нет плашки «Прототип»`);
+      }
+      await s.ctx.close();
+    }
+    // ровно 2 600 — «Я мастер» жив, а «+» часа погашен (следующий час — 3 900); и вторая линия: обработчик
+    // сам сверяет сумму с остатком — кнопке возвращается доступность, нажатие часа не прибавляет
+    {
+      const n = 'offer-exact';
+      const s = await open(true, true, json(200, mem(2600, [])));
+      await s.p.waitForTimeout(250);
+      const o = await offer(s);
+      if (!o.has || o.off !== false) bad.push(`${n}: при ровно 2 600 «Я мастер» недоступен (${JSON.stringify(o.off)})`);
+      else {
+        await s.p.click('#view [data-action="ms-apply"]'); await s.p.waitForTimeout(150);
+        if (await s.p.evaluate(() => current) !== 'masterApply') bad.push(`${n}: «Я мастер» не открыл заявку`);
+        else {
+          const plusOff = await s.p.evaluate(() => { const b = document.querySelector('[data-action="msf-plus"]'); return b ? b.disabled : null; });
+          if (plusOff !== true) bad.push(`${n}: при ровно 2 600 «+» часа доступен — следующий час 3 900`);
+          await s.p.evaluate(() => { const b = document.querySelector('[data-action="msf-plus"]'); if (b) { b.disabled = false; b.click(); } });
+          await s.p.waitForTimeout(120);
+          if (await s.p.evaluate(() => MSF.extra) !== 0) bad.push(`${n}: обработчик «+» прибавил час сверх остатка — сверки суммы нет`);
+        }
+      }
+      await s.ctx.close();
+    }
+    // отправка заявки — ни одного запроса к api, заявка ждёт решения на «Клубе»
+    // и своя заявка у арт-директора — без «Согласовать» и «Отказать»: сервер ответит 409
+    for (const [n, roles] of [['offer-send', []], ['offer-own-ad', ['art_director']]]) {
+      const s = await open(true, true, json(200, mem(5000, roles)));
+      await s.p.waitForTimeout(250);
+      const before = s.calls.length;
+      await s.p.click('#view [data-action="ms-apply"]'); await s.p.waitForTimeout(150);
+      await s.p.fill('#msf-title', 'Проба мастера');
+      await s.p.click('[data-action="ms-send"]'); await s.p.waitForTimeout(200);
+      const sent = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+      if (sent.length) bad.push(`${n}: прототип отправки спросил сервер: ${JSON.stringify(sent)}`);
+      if (!(await s.view()).includes('ждёт решения')) bad.push(`${n}: после отправки на «Клубе» нет «ждёт решения»`);
+      if (n === 'offer-own-ad') {
+        const id = await s.p.evaluate(() => (MSM[msWho()] || {}).id);
+        if (id === undefined) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — своей заявки в памяти нет`);
+        else {
+          await s.p.evaluate(x => go('masterReq', x), id); await s.p.waitForTimeout(150);
+          const t = await s.view();
+          if (await s.p.$('[data-action^="ms-yes"], [data-action^="ms-no"]')) bad.push(`${n}: у своей заявки есть «Согласовать»/«Отказать» — сервер ответит 409`);
+          if (!t.includes('Свою заявку решает другой арт-директор')) bad.push(`${n}: не сказано, кто решает свою заявку`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
   // ── водяной знак (кадр E53, Cafe13KPG#509): виден, неподвижен, долей окна; гаснет ПО СВОЙСТВУ ──
   {
     // свойство одно на все экраны: есть машиночитаемый код (.code-box — QR пропуска, .qr — реквизиты) ⇔ знака не видно
