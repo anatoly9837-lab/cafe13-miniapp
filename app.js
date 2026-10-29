@@ -2992,7 +2992,7 @@ function msIsMaster() {
 function masterOffer() {
   if (!LIVE || DATA.role === 'guest') return '';
   if (MR.mineState === '') loadMineMaster();
-  loadPrice(2);
+  loadPrice(2); loadPrice(3);
   if (MR.mineState === 'loading' && !MR.mine) return '';
   if (MR.mineState !== 'ok' && !MR.mine) return '<div class="card quiet"><div class="row"><span class="small">Заявки в мастера не загрузились: ' +
       esc(MR.mineState) + '</span><button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>';
@@ -3014,7 +3014,11 @@ function masterOffer() {
       '<span class="small">Свой слот в расписании клуба и свой ивент в афише.</span></div>' +
       '<span class="small">' + (typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
         : short ? 'Не хватает ' + money(p - bal) + ' ฿: нужно ' + money(p) + ' ฿, на счёте ' + money(bal) + ' ฿'
-        : money(p) + ' ฿ один раз · ивент на 2 часа каждую неделю, пока есть членство') + '</span>' +
+        /* ВРЕМЕННАЯ строка из фактов владельца 29.10.2026 (через координатора), слова ждут кадра дизайнера:
+           2 600 ฿ — за календарный МЕСЯЦ («Не правильно - на месяц»), продление оплатой без новой заявки,
+           неоплаченный слот отдаётся. «Один раз» и «пока есть членство» — сняты: первое ложно, второе — не период */
+        : money(p) + ' ฿ в месяц · ивент на 2 часа каждую неделю' + (typeof MR.price[3] === 'number' ? ', ещё час — ' + money(MR.price[3] - p) + ' ฿' : '')) + '</span>' +
+      (typeof p === 'number' && !short ? '<span class="small">Месяц календарный. Продлевается оплатой, без новой заявки; неоплаченный слот отдаётся.</span>' : '') +
       '<button type="button" class="btn" data-action="ms-apply"' + (typeof p !== 'number' || short ? ' disabled' : '') + '>Я мастер</button></div>' +
     (short ? '<div class="note">' + svg(ICON.info) + '<span>Пополнить счёт можно на вкладке «Клуб» — кошельком в шапке.</span></div>' : '');
 }
