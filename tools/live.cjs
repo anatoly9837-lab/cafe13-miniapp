@@ -6500,19 +6500,28 @@ if (grantsSet.length !== 1) {
          это числом смещения (4 px), выведенным из отступа карточки и высоты строки имени.
          Случай сторожит связку: поменяется отступ плашки или кегль имени — смещение уедет
          молча, потому что на глаз 3–4 px не видно, а на снимке описи — тем более. */
+      /* ⚠ Отсутствие свёрнутой строки — СВОЙ отказ, а не исключение. Прежняя редакция брала
+         `.fold-wrap` и сразу спрашивала его потомков: при мутации «свёртка снята» элемента
+         нет, `null.querySelector` роняло БАТАРЕЮ, и красное всех случаев НИЖЕ не печаталось
+         вовсе — обрыв прятал накопленное. Нашёл `frontend-upravlenie` пакетом долга; тот же
+         класс я чинил часом раньше в чужом случае и оставил у себя. */
       const vyr = await s.p.evaluate(() => {
         const w = document.querySelector('.fold-wrap');
-        const c = w.querySelector('.card.dense.fold').getBoundingClientRect();
-        const b = w.querySelector('.outbtn').getBoundingClientRect();
-        const nm = w.querySelector('b').getBoundingClientRect();
+        if (!w) return null;
+        const card_ = w.querySelector('.card.dense.fold'), btn = w.querySelector('.outbtn'), nm = w.querySelector('b');
+        if (!card_ || !btn || !nm) return null;
+        const c = card_.getBoundingClientRect(), b = btn.getBoundingClientRect(), r = nm.getBoundingClientRect();
         return { центрКнопки: b.top - c.top + b.height / 2,
-                 центрИмени: nm.top - c.top + Math.min(nm.height, 18) / 2,
-                 правыйКрайКнопки: b.right, левыйКрайИмени: nm.left };
+                 центрИмени: r.top - c.top + Math.min(r.height, 18) / 2,
+                 правыйКрайКнопки: b.right, левыйКрайИмени: r.left };
       });
-      if (Math.abs(vyr.центрКнопки - vyr.центрИмени) > 1.5)
-        bad.push(`${n}: кнопка не в строке имени — её центр ${Math.round(vyr.центрКнопки)} против ${Math.round(vyr.центрИмени)} у имени`);
-      if (vyr.правыйКрайКнопки > vyr.левыйКрайИмени)
-        bad.push(`${n}: кнопка заходит на колонку имени (${Math.round(vyr.правыйКрайКнопки)} > ${Math.round(vyr.левыйКрайИмени)})`);
+      if (!vyr) bad.push(`${n}: свёрнутой строки нет — выравнивание кнопки проверять не на чем`);
+      else {
+        if (Math.abs(vyr.центрКнопки - vyr.центрИмени) > 1.5)
+          bad.push(`${n}: кнопка не в строке имени — её центр ${Math.round(vyr.центрКнопки)} против ${Math.round(vyr.центрИмени)} у имени`);
+        if (vyr.правыйКрайКнопки > vyr.левыйКрайИмени)
+          bad.push(`${n}: кнопка заходит на колонку имени (${Math.round(vyr.правыйКрайКнопки)} > ${Math.round(vyr.левыйКрайИмени)})`);
+      }
       // до нажатия в строке только узнавание: имя, уровень, остаток
       if (await s.p.$(`${card(s, 0)} .chip`)) bad.push(`${n}: чип виден в свёрнутой строке`);
       if (await s.p.$(`${card(s, 0)} [data-action^="p-give:"]`)) bad.push(`${n}: кружок выдачи виден до раскрытия`);
@@ -6586,9 +6595,12 @@ if (grantsSet.length !== 1) {
       if (hs.length < 2) bad.push(`${n}: кнопок исключения на экране ${hs.length} — сравнивать не с чем`);
       else if (hs[1] !== hs[0]) bad.push(`${n}: у длинного имени кнопка в ${hs[1]} px против ${hs[0]} — «[ -» и «]» разъехались по строкам`);
       const vidno = await s.p.evaluate(() => {
-        const e = document.querySelectorAll('.fold-wrap')[1].querySelector('b');
-        return e && e.getBoundingClientRect().width > 0; });
-      if (!vidno) bad.push(`${n}: длинное имя не поместилось в строку вовсе`);
+        const w = document.querySelectorAll('.fold-wrap')[1];      // второй человек — с длинным именем
+        if (!w) return null;                                        // строк меньше двух: мерить нечем
+        const e = w.querySelector('b');
+        return !!(e && e.getBoundingClientRect().width > 0); });
+      if (vidno === null) bad.push(`${n}: свёрнутых строк меньше двух — длинное имя проверять не на чем`);
+      else if (!vidno) bad.push(`${n}: длинное имя не поместилось в строку вовсе`);
       await s.ctx.close();
     }
 
