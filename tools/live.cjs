@@ -8305,6 +8305,33 @@ if (grantsSet.length !== 1) {
         bad.push(`${n}: отказ ушёл так: ${JSON.stringify(pp.map(c => c.body))}`);
       await s.ctx.close();
     }
+    // Долг v104 (мутации arhitector-47 на ревью #136 — обе были зелёными):
+    // (1) причина, набранная для отказа и брошенная «Назад», НЕ уходит с зачислением — `decision_note`
+    //     одобренной заявки остался бы в ней и на экране решённой;
+    // (2) 200 со статусом, не равным запрошенному решению, — «не разобран», а не «Зачислено».
+    {
+      const n = 'tq-approve-no-note', s = await tqCase(OWNER);
+      await toReq(s, 31);
+      await tqAct(s, 'tq-ask:31'); await s.p.waitForTimeout(150);
+      if (!(await s.p.$('#tq-note'))) bad.push(`${n}: нет поля причины — набрать нечего`);
+      else await s.p.fill('#tq-note', 'на чеке другая сумма');
+      await tqAct(s, 'tq-keep'); await s.p.waitForTimeout(150);
+      await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
+      const pp = tqPosts(s);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ decision: 'approved', note: '' }))
+        bad.push(`${n}: брошенная причина отказа ушла с зачислением: ${JSON.stringify(pp.map(c => c.body))}`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'tq-approve-alien', s = await tqCase(OWNER, { decide: json(200, TDEC('rejected')) });
+      await toReq(s, 31);
+      await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
+      const t = await s.view();
+      if (t.includes('Зачислено')) bad.push(`${n}: ответ 200 со статусом «rejected» на зачисление показан успехом`);
+      const deny = await s.p.$eval('#view .deny', e => e.textContent).catch(() => '');
+      if (!deny.includes('Ответ сервера не разобран')) bad.push(`${n}: нет «Ответ сервера не разобран»: «${deny}»`);
+      await s.ctx.close();
+    }
     // своя заявка (E56e): видна, кнопок НЕТ вовсе; подложенное решение не уходит
     {
       const n = 'tq-own', s = await tqCase(OWNER);
