@@ -3730,6 +3730,25 @@ if (grantsSet.length !== 1) {
     for (let i = 0; i < hs.length; i++) { const x = hs[i] ? hs[i](q) : undefined; if (x !== undefined) return x; }
     return undefined;
   };
+  // «мест без ограничения» (v111, Cafe13KPG#639): сервер шлёт `seats_left: null`. Разбор, отвергший null,
+  // кладёт всю афишу («не открылась»), а запись без признака unl закрыта: `null > 0` ложно. Условие
+  // arhitector-47 к мерджу api#101 — его мутация разбора была зелёной (в фикстурах null не было)
+  {
+    const n = 'seats-null';
+    const UNL = EV({ id: 9, title: 'Без предела', kind: 'free', price: '0.00', seats: 0, taken: 3, seats_left: null });
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, [UNL])));
+    await s.p.waitForTimeout(300);
+    await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(250);
+    const t = await s.view();
+    if (!t.includes('Без предела')) bad.push(`${n}: афиша с seats_left: null не открылась — мероприятия нет: ${t.slice(0, 80)}`);
+    else if (!t.includes('мест без ограничения')) bad.push(`${n}: в афише не сказано «мест без ограничения»`);
+    await s.p.evaluate(() => go('event', '9')); await s.p.waitForTimeout(250);
+    const t2 = await s.view();
+    if (!(await s.p.$('#view [data-action^="book"]'))) bad.push(`${n}: на мероприятии без ограничения мест записи нет — закрыта`);
+    if (!t2.includes('без ограничения')) bad.push(`${n}: на мероприятии не сказано «без ограничения»`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
   /* Места — форма и ЗНАЧЕНИЯ из снимка `places.json` (прогон координатора
      24.10.2026 на стволе api `6332425`, метка sha рядом с каталогом): четыре
      строки, вместимость есть только у зала, у двора и сада `null` — «числа не
