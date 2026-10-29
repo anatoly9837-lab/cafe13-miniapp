@@ -71,9 +71,10 @@ const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
     // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
     ['Пожизненно', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
-    // 4 = /me, /events и с v109 два запроса блока «Я мастер» на «Клубе»: /master/requests/mine, /master/price?hours=2
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 4],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 4],
+    // 5 = /me, /events и три запроса блока «Я мастер» на «Клубе»: /master/requests/mine, /master/price?hours=2 и
+    // hours=3 (цена часа сверх — в подписи «ещё час — N ฿», с сервера, а не константой)
+    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 5],
+  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 5],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Показать пропуск', 'нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -655,13 +656,14 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(300);
       if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
         await s.p.waitForTimeout(300);
-        await tapIf(s, n, '[data-action="msf-place:1"]', 'место «Зал»');
+        // место ФИКСИРОВАНО «Зал» (слово владельца) — чипа нет, номер места берётся из /places по имени
         if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
         await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
         await s.p.waitForTimeout(300);
         const b = o.posted[0] || {};
         if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
-        else if (b.title !== 'Проба мастера' || b.seats !== 8 || b.place_id !== 1 || b.hours !== 2 || b.weekday !== 4 || b.start_local !== '18:00')
+        // мест по умолчанию 0 = «без ограничения» (слово владельца)
+        else if (b.title !== 'Проба мастера' || b.seats !== 0 || b.place_id !== 1 || b.hours !== 2 || b.weekday !== 4 || b.start_local !== '18:00')
           bad.push(`${n}: тело заявки не то: ${JSON.stringify(b)}`);
         if (!(await s.view()).includes('ждёт решения')) bad.push(`${n}: после подачи на «Клубе» нет «ждёт решения» — своя заявка не перечитана`);
       }
@@ -683,7 +685,7 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(300);
       if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
         await s.p.waitForTimeout(300);
-        await tapIf(s, n, '[data-action="msf-place:1"]', 'место «Зал»');
+        // место ФИКСИРОВАНО «Зал» (слово владельца) — чипа нет, номер места берётся из /places по имени
         if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
         const before = s.calls.length;
         await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
@@ -1392,8 +1394,8 @@ if (grantsSet.length !== 1) {
     await s.p.click('[data-action="retry"]');
     await s.p.waitForTimeout(150);
     if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
-    // с v109 + два запроса блока «Я мастер» на «Клубе» (/master/requests/mine, /master/price?hours=2)
-    if (s.calls.length !== 5) bad.push(`retry: запросов ${s.calls.length}, ждали 5 (/me, /me, /events, /master/requests/mine, /master/price)`);
+    // + три запроса блока «Я мастер» на «Клубе» (/master/requests/mine, /master/price?hours=2 и hours=3)
+    if (s.calls.length !== 6) bad.push(`retry: запросов ${s.calls.length}, ждали 6 (/me, /me, /events, /master/requests/mine, /master/price ×2)`);
     await s.ctx.close();
   }
 

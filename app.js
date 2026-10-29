@@ -3069,7 +3069,9 @@ function masterOffer() {
   if (MR.mineState !== 'ok' && !MR.mine) return '<div class="card quiet"><div class="row"><span class="small">Заявки в мастера не загрузились: ' +
       esc(MR.mineState) + '</span><button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>';
   if (msIsMaster()) return '<div class="card"><div class="col"><b>Вы мастер</b>' +
-      '<span class="small">Мастерство покупают один раз. Своё время и ивент — в «Ивентах».</span></div></div>';
+      // «покупают один раз» снято — ложь при оплате по месяцам (слово владельца «Не правильно - на месяц»); слова ждут кадра
+      '<span class="small">Своё время и ивент — в «Ивентах». Слот — ' + (typeof MR.price[2] === 'number' ? money(MR.price[2]) + ' ฿' : 'оплата') +
+        ' в календарный месяц: продлевается оплатой, неоплаченный отдаётся.</span></div></div>';
   var last = MR.mine[0];
   if (last && last.status === 'pending') return '<div class="card quiet"><div class="row"><div class="col"><b>Заявка в мастера</b>' +
       '<span class="small">' + esc(topupDay(last.iso, true)) + '</span></div><span class="st wait">' + esc(last.word) + '</span></div>' +
@@ -6548,7 +6550,7 @@ var SCREENS = {
     if (!LIVE || DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Мастером становится член клуба.</span></div></div>';
     if (msIsMaster()) return '<div class="card"><div class="col"><b>Вы мастер</b>' +
-      '<span class="small">Мастерство покупают один раз.</span></div></div>';
+      '<span class="small">Новая заявка не нужна: слот продлевается оплатой.</span></div></div>';
     var last = MR.mine && MR.mine[0];
     if (last && last.status === 'pending') return '<div class="card quiet"><div class="col"><b>Заявка уже ждёт решения</b>' +
       '<span class="small">Вторую не подать, пока арт-директор не ответил на первую.</span></div></div>';
