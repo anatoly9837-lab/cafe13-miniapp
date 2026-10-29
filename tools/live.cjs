@@ -712,6 +712,78 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── остаток перечитывается по возврату в приложение (v110, Cafe13KPG#638) ──
+  // Замеры frontend-upravlenie-ec. /me — управляемая заглушка: остаток меняется по ходу, ответ задерживается или
+  // ломается. Возврат — событие focus окна (visibilitychange и activated Telegram — то же onReturn).
+  {
+    const meOf = bal => { const p = clone(OWNER); p.roles = []; p.balance = bal; return p; };
+    const balCase = async (start) => {
+      const st = { bal: start, mode: 'ok', slow: 0 };
+      const s = await open(true, true, json(200, meOf(start)), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u !== '/me') return undefined;
+        if (st.mode === 'fail') return json(502, '<html>bad gateway</html>');
+        const body = json(200, meOf(st.bal));
+        if (st.slow) { const ms = st.slow; st.slow = 0; return new Promise(r => setTimeout(() => r(body), ms)); }
+        return body;
+      });
+      await s.p.waitForTimeout(300);
+      return Object.assign(s, { st });
+    };
+    const meCalls = s => s.calls.filter(c => /\/me$/.test(c.url)).length;
+    const shown = s => s.p.evaluate(() => DATA.member && DATA.member.balance);
+    const headSays = async s => {
+      await s.p.evaluate(() => { const b = document.getElementById('bal'); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); });
+      await s.p.waitForTimeout(80);
+      return s.p.evaluate(() => (document.getElementById('bar-right') || {}).textContent || '');
+    };
+    const back = s => s.p.evaluate(() => window.dispatchEvent(new Event('focus')));
+    // (5) на старте /me ровно один — перечитывание при входе на «Клуб» не задваивает загрузку
+    // (1) сервер поменял остаток, человек вернулся — шапка говорит новое
+    {
+      const n = 'bal-return';
+      const s = await balCase(1000);
+      if (meCalls(s) !== 1) bad.push(`${n}: на старте /me ушёл ${meCalls(s)} раз, ждали 1`);
+      s.st.bal = 5000;
+      await back(s); await s.p.waitForTimeout(300);
+      if (await shown(s) !== 5000) bad.push(`${n}: после возврата остаток ${await shown(s)}, на сервере 5 000 — не перечитан`);
+      if (!(await headSays(s)).includes('5 000')) bad.push(`${n}: шапка после возврата не показывает 5 000 ฿`);
+      await s.ctx.close();
+    }
+    // (2) два признака возврата разом — ОДИН /me
+    {
+      const n = 'bal-return-pair';
+      const s = await balCase(1000);
+      const before = meCalls(s);
+      await s.p.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
+      await s.p.waitForTimeout(300);
+      if (meCalls(s) - before !== 1) bad.push(`${n}: на парный возврат /me ушёл ${meCalls(s) - before} раз, ждали 1`);
+      await s.ctx.close();
+    }
+    // (3) сервер не ответил на возврате — остаток прежний, а не пустой и не ноль
+    {
+      const n = 'bal-return-502';
+      const s = await balCase(1000);
+      s.st.mode = 'fail';
+      await back(s); await s.p.waitForTimeout(300);
+      if (await shown(s) !== 1000) bad.push(`${n}: после неответа остаток ${JSON.stringify(await shown(s))}, был 1 000 — известное затёрто`);
+      if (!(await headSays(s)).includes('1 000')) bad.push(`${n}: шапка после неответа не показывает прежние 1 000 ฿`);
+      await s.ctx.close();
+    }
+    // (4) медленный СТАРЫЙ ответ после свежего не перетирает: возврат спросил медленно (2 000), вход на
+    // пополнение спросил быстро (5 000) — итог 5 000
+    {
+      const n = 'bal-return-late';
+      const s = await balCase(1000);
+      s.st.bal = 2000; s.st.slow = 1200;
+      await back(s); await s.p.waitForTimeout(100);
+      s.st.bal = 5000;
+      await s.p.evaluate(() => go('topup')); await s.p.waitForTimeout(1600);
+      if (await shown(s) !== 5000) bad.push(`${n}: поздний старый ответ перетёр свежий — остаток ${await shown(s)}, ждали 5 000`);
+      await s.ctx.close();
+    }
+  }
+
   // ── водяной знак (кадр E53, Cafe13KPG#509): виден, неподвижен, долей окна; гаснет ПО СВОЙСТВУ ──
   {
     // свойство одно на все экраны: есть машиночитаемый код (.code-box — QR пропуска, .qr — реквизиты) ⇔ знака не видно
