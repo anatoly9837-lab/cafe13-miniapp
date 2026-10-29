@@ -510,8 +510,22 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(200);
       // экраны — из PROTO самой страницы, а не списком здесь: v107 добавил masterEvent, и список из пяти
       // его не знал. Меньше пяти — признак сломан (PROTO не прочитан), а не «прототипов стало меньше»
-      const MS5 = await s.p.evaluate(() => Object.keys(PROTO));
-      if (MS5.length < 5) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — прототипов в PROTO ${MS5.length}, ждали не меньше 5`);
+      // привратник у прототипов НЕ один: экраны арт-директора стережёт mayMasters, «Я мастер» (masterApply,
+      // v108) — членство. Делим по СВОЙСТВУ тела экрана; прототип без известного привратника — «не выполнено»,
+      // а не молча вне проверки (иначе следующий экран со своим привратником дал бы ложное красное или ничего)
+      const split = await s.p.evaluate(() => {
+        const by = { masters: [], member: [], unknown: [] };
+        Object.keys(PROTO).forEach(k => {
+          const src = String(SCREENS[k]);
+          if (/mayMasters\(\)/.test(src)) by.masters.push(k);
+          else if (/DATA\.role === 'guest'/.test(src)) by.member.push(k);
+          else by.unknown.push(k);
+        });
+        return by;
+      });
+      const MS5 = split.masters;
+      if (MS5.length < 5) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — прототипов арт-директора ${MS5.length}, ждали не меньше 5`);
+      if (split.unknown.length) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — прототип без известного привратника: ${split.unknown.join(', ')}`);
       const before = s.calls.length;
       for (const sc of MS5) {
         await s.p.evaluate(x => go(x), sc);
@@ -522,6 +536,34 @@ if (grantsSet.length !== 1) {
         if (may && deny) bad.push(`${n}: «${sc}» — «Сюда нельзя» тому, кто решает заявки мастеров`);
         if (may && !banner) bad.push(`${n}: «${sc}» без плашки «Прототип» — данные примерные, а сказано не было`);
         if (!may && !deny) bad.push(`${n}: «${sc}» открыт главе без art_director и admin — сервер ему отвечает 403`);
+      }
+      const sent = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+      if (sent.length) bad.push(`${n}: прототипы спросили сервер: ${JSON.stringify(sent)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // прототипы, которые стережёт ЧЛЕНСТВО («Я мастер», masterApply): гостю — «Сюда нельзя», члену клуба без
+    // ролей — экран с плашкой «Прототип»; ноль запросов к api
+    const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = []; guest.roles = [];
+    const plain = clone(OWNER); plain.roles = [];
+    for (const [n, who_, may] of [['proto-member-guest', guest, false], ['proto-member-plain', plain, true]]) {
+      const s = await open(true, true, json(200, who_));
+      await s.p.waitForTimeout(200);
+      const list = await s.p.evaluate(() => Object.keys(PROTO).filter(k => /DATA\.role === 'guest'/.test(String(SCREENS[k]))));
+      if (!list.length) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — прототипов под членством нет`);
+      const before = s.calls.length;
+      for (const sc of list) {
+        await s.p.evaluate(x => go(x), sc);
+        await s.p.waitForTimeout(120);
+        const cur = await s.p.evaluate(() => current), t = await s.view();
+        if (!may) {
+          // гостя может не пустить и сам go() — экран ему так и так не показан; красное — только экран с формой
+          if (cur === sc && !t.includes('Сюда нельзя')) bad.push(`${n}: «${sc}» открыт гостю — мастером становится член клуба`);
+          continue;
+        }
+        if (cur !== sc) { bad.push(`${n}: go('${sc}') не открыл экран члену клуба (стоит «${cur}»)`); continue; }
+        if (t.includes('Сюда нельзя')) bad.push(`${n}: «${sc}» — «Сюда нельзя» члену клуба`);
+        if (!t.includes('Прототип')) bad.push(`${n}: «${sc}» без плашки «Прототип»`);
       }
       const sent = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
       if (sent.length) bad.push(`${n}: прототипы спросили сервер: ${JSON.stringify(sent)}`);
