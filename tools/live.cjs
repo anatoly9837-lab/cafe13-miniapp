@@ -440,8 +440,10 @@ if (grantsSet.length !== 1) {
     {
       const n = 'tu-istochnik';
       const s = await tuCase(json(200, hist([
+        // слово сервера НАРОЧНО не «естественное» для till («касса клуба», а не «касса»): клиент, подставивший своё
+        // слово по `source`, совпал бы с сервером на «касса» и прошёл бы зелёным (мутация arhitector-47 на v101)
         { ledger_id: 31, request_id: null, amount: '1800.00', method: 'cash', at: '2026-10-28T12:00:00+07:00', source: 'till',
-          source_ru: 'касса', decision_note: null, status: 'cancelled', status_ru: 'отменено' },
+          source_ru: 'касса клуба', decision_note: null, status: 'cancelled', status_ru: 'отменено' },
         { ledger_id: 30, request_id: null, amount: '2400.00', method: 'transfer', at: '2026-10-27T12:00:00+07:00', source: 'join',
           source_ru: 'вступление в клуб', decision_note: null, status: 'approved', status_ru: 'зачислено' }])));
       await tap(s, '[data-action="tu-hist"]');
@@ -450,9 +452,18 @@ if (grantsSet.length !== 1) {
       else {
         if (!rows[1].includes('вступление в клуб') || !rows[1].includes('2 400')) bad.push(`${n}: нет строки взноса за вступление: ${rows[1]}`);
         if (!rows[0].includes('касса') || !rows[0].includes('отменено')) bad.push(`${n}: отменённая строка кассы не названа: ${rows[0]}`);
+        // источник — РОВНО слово сервера, а не своё по `source`: подстрочник оканчивается на « · касса клуба»
+        const sub = await s.p.$$eval('#view .hist .col .small', e => e.map(x => x.textContent));
+        if (!/ · касса клуба$/.test(sub[0] || '')) bad.push(`${n}: источник не словом сервера: ${JSON.stringify(sub[0])}`);
+        // судьбу денег у отмены говорит подстрочник, а не цвет (кадр E52v, #591)
+        if (!rows[0].includes('Зачисление отменено, деньги списаны обратно')) bad.push(`${n}: у отменённой не сказано, что деньги списаны обратно`);
       }
       const cls = await s.p.$$eval('#view .hist .st', e => e.map(x => x.className));
-      if (JSON.stringify(cls) !== '["st no","st ok"]') bad.push(`${n}: статус несёт не тот цвет: ${JSON.stringify(cls)}`);
+      // «отменено» — тихий цвет, не цвет отказа: деньги пришли и ушли, а не «отказали» (#591)
+      if (JSON.stringify(cls) !== '["st off","st ok"]') bad.push(`${n}: статус несёт не тот цвет: ${JSON.stringify(cls)}`);
+      const offc = await s.p.evaluate(() => { const e = document.querySelector('#view .hist .st.off'), w = document.querySelector('#view .hist .st.ok');
+        return e && w ? [getComputedStyle(e).color, getComputedStyle(w).color, getComputedStyle(document.body).color] : null; });
+      if (!offc || offc[0] === offc[1] || offc[0] === offc[2]) bad.push(`${n}: «отменено» не тихим цветом: ${JSON.stringify(offc)}`);
       await s.ctx.close();
     }
     // прежняя форма (только `requests`) — клиент её больше не читает: «не разобран», а не пустая история
