@@ -1,6 +1,6 @@
 {
- "снято": "2026-10-29T04:03:27.037Z",
- "клиент_sha256": "38eff3e4aa4e3571cf3ecbfbacc5f0b4e59ce9bef26f6e3a509caa999155cb0d",
+ "снято": "2026-10-29T04:36:29.218Z",
+ "клиент_sha256": "0abd6e56e38ec7406623be98f667853ea8ddcb08a2259587fee42b629ec20416",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
@@ -34,7 +34,8 @@
       "mayCards": true,
       "mayBook": true,
       "mayPeople": true,
-      "canTopup": true
+      "canTopup": true,
+      "mayTopups": true
      },
      "barSide": true,
      "достижимо": {
@@ -46,14 +47,17 @@
       ],
       "people": [
        "manage"
+      ],
+      "topupQueue": [
+       "manage"
       ]
      },
      "при_данных": {},
      "сбои": {},
      "афиша_закрыта": true,
      "обзор": {
-      "всего_в_документе": 8,
-      "в_обзоре": 2
+      "всего_в_документе": 9,
+      "в_обзоре": 3
      }
     }
    ]
@@ -83,7 +87,8 @@
       "mayCards": false,
       "mayBook": false,
       "mayPeople": false,
-      "canTopup": true
+      "canTopup": true,
+      "mayTopups": false
      },
      "barSide": false,
      "достижимо": {},
@@ -126,7 +131,8 @@
       "mayCards": true,
       "mayBook": true,
       "mayPeople": false,
-      "canTopup": false
+      "canTopup": false,
+      "mayTopups": false
      },
      "barSide": true,
      "достижимо": {
@@ -165,7 +171,8 @@
       "mayCards": true,
       "mayBook": true,
       "mayPeople": false,
-      "canTopup": false
+      "canTopup": false,
+      "mayTopups": false
      },
      "barSide": true,
      "достижимо": {
@@ -212,7 +219,8 @@
       "mayCards": true,
       "mayBook": false,
       "mayPeople": false,
-      "canTopup": false
+      "canTopup": false,
+      "mayTopups": false
      },
      "barSide": true,
      "достижимо": {},
@@ -247,7 +255,8 @@
       "mayCards": false,
       "mayBook": false,
       "mayPeople": false,
-      "canTopup": false
+      "canTopup": false,
+      "mayTopups": false
      },
      "barSide": false,
      "достижимо": {},

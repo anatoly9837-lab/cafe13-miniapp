@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v103 · 29.10.2026';
+var VERSION = 'v104 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -683,6 +683,7 @@ function sendJoin() {
 // без действия и путь через кассу, который новичку сегодня не пройти
 // (Cafe13KPG#301). Вернётся кадром E38 после слова владельца.
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, people: 1, joinQueue: 1, manage: 1,
+              topupQueue: 1, topupReq: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
@@ -2828,6 +2829,115 @@ function joinRow(q) {
 }
 document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'j-note') JOINQ.note = ev.target.value;
+});
+
+/* ── заявки на пополнение: очередь держателя «Пополнения онлайн» ──  Cafe13KPG#583, кадры E56*
+   Нашёл владелец 29.10.2026: «у меня в управлении не вижу вкладки запросы на пополнение» — ручки
+   сервера были (`app/routers/topup.py`), клиента не было вовсе. Право — ответственность `topups`
+   или администратор (`_may_decide`).
+   ⚠ В ответе очереди есть `member_id` (это tg_user_id) и `username` — в разметку не идут: свою
+   заявку узнаём сравнением с tgUid() В ПАМЯТИ, решение — по номеру заявки.
+   ⚠ Свою заявку сервер решить не даёт (409 «свою заявку решает другой ответственный»), поэтому
+   у своей строки кнопок НЕТ вовсе, а не погашены (кадр E56e): у владельца роль одна, и своя
+   заявка появится у него в первом же тесте.
+   ⚠ «Зачислить» необратимо — строка в книгу; отсюда шаг подтверждения (E56g).
+   ⚠ Пустая причина отказа — не пустота: сервер ставит «Мы не получили деньги». Подсказка под
+   полем говорит это вслух (E56d), иначе «необязательно» читалось бы как «причины не будет». */
+var TOPQ = { list: null, pending: null, fail: '', gen: 0, busy: false, err: '', step: '', note: '', shot: {}, who: 0, done: '' };
+var TOPQ_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
+var TOPQ_WAY = { transfer: 'Перевод' };         // единственный способ: CHECK в миграции 019
+function mayTopups() { return LIVE && (grant('topups') || grant('admin')); }
+/* Одна битая заявка — отказ целиком: очередь с пропавшей строкой выглядит полной. */
+function fromTopupQueue(d) {
+  if (!d || !Array.isArray(d.requests) || typeof d.pending !== 'number') return null;
+  var me = tgUid(), out = [];
+  for (var i = 0; i < d.requests.length; i++) {
+    var q = d.requests[i];
+    if (!q || typeof q.id !== 'number' || !TOPQ_ST[q.status] || typeof q.status_ru !== 'string' ||
+        !JOIN_MIME[q.receipt_mime] || typeof q.receipt_bytes !== 'number' || !isFinite(num(q.amount)) ||
+        typeof q.member_id !== 'number') return null;
+    out.push({ id: q.id, status: q.status, word: q.status_ru, mine: me !== null && q.member_id === me,
+               name: [q.first_name, q.last_name].filter(Boolean).join(' ') || 'Без имени',
+               way: TOPQ_WAY[q.pay_method] || String(q.pay_method || ''), sum: num(q.amount),
+               mime: q.receipt_mime, bytes: q.receipt_bytes,
+               iso: typeof q.created_at === 'string' ? q.created_at : '',
+               done: typeof q.decided_at === 'string' ? q.decided_at : '',
+               answer: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' });
+  }
+  return { list: out, pending: d.pending };
+}
+function loadTopupQueue() {
+  var gen = ++TOPQ.gen, who = WHO;
+  if (TOPQ.who !== WHO) { topupDropShots(); TOPQ.who = WHO; }
+  TOPQ.fail = '';
+  api('GET', '/topup/requests').then(function (r) {
+    if (gen !== TOPQ.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromTopupQueue(r.data) : null;
+    if (got) { TOPQ.list = got.list; TOPQ.pending = got.pending; }
+    else { TOPQ.list = null; TOPQ.pending = null; TOPQ.fail = r.status === 403 ? denyText(r) : failText(r); }
+    if (current === 'topupReq') topupShotFor(param);
+    if (current === 'topupQueue' || current === 'topupReq' || current === 'manage') render();
+  });
+}
+function topupDropShots() {
+  Object.keys(TOPQ.shot).forEach(function (k) { if (TOPQ.shot[k].url) URL.revokeObjectURL(TOPQ.shot[k].url); });
+  TOPQ.shot = {};
+}
+// чек — только у ждущей заявки и только снимком: PDF в <img> не показать, его байты не берутся
+function topupShotFor(id) {
+  var q = (TOPQ.list || []).filter(function (x) { return x.id === Number(id); })[0];
+  if (q && q.status === 'pending' && q.mime !== 'application/pdf') topupShot(q.id);
+}
+/* Заголовки — те же, что у api(): без тестового режима чек пришёл бы из боевой базы. */
+function topupShot(id) {
+  if (TOPQ.shot[id]) return;
+  var s = TOPQ.shot[id] = { url: '', fail: false }, who = WHO;
+  var h = { 'X-Telegram-Init-Data': tg.initData };
+  if (TEST.on) h['X-Test-Mode'] = '1';
+  if (TEST.on && TEST.as) h['X-Act-As'] = String(TEST.as.id);
+  fetch(API + '/topup/requests/' + id + '/receipt', { headers: h })
+    .then(function (r) { return r.ok ? r.blob() : null; }, function () { return null; })
+    .then(function (b) {
+      if (who !== WHO || TOPQ.shot[id] !== s) return;
+      if (b && b.size) s.url = URL.createObjectURL(b); else s.fail = true;
+      if (current === 'topupReq') render();
+    }, function () { s.fail = true; if (current === 'topupReq') render(); });
+}
+function decideTopup(id, decision) {
+  var q = (TOPQ.list || []).filter(function (x) { return x.id === id; })[0];
+  if (TOPQ.busy || !q || q.mine || q.status !== 'pending') return;
+  TOPQ.busy = true; TOPQ.err = ''; render();
+  var who = WHO;
+  api('POST', '/topup/requests/' + id + '/decide',
+      { decision: decision, note: decision === 'rejected' ? TOPQ.note.trim() : '' }).then(function (r) {
+    // занятость гасится ДО гарда: иначе ответ, пришедший после смены человека, запер бы экран (#213)
+    TOPQ.busy = false;
+    if (who !== WHO) return;
+    if (r.status === 200 && r.data && r.data.status === decision) {
+      haptic('ok');
+      TOPQ.step = ''; TOPQ.note = '';
+      TOPQ.done = decision === 'approved'
+        ? 'Зачислено ' + money(q.sum) + ' ฿ — деньги на счёте человека.'
+        : 'Отказано. Причину человек увидит в своей истории.';
+      loadTopupQueue();
+      go('topupQueue');
+      return;
+    }
+    TOPQ.err = denyText(r); haptic('warn');
+    // 409 — очередь устарела (решил другой) или заявка своя: перечитать
+    loadTopupQueue();
+    if (current === 'topupReq') render();
+  });
+}
+function topupDay(iso, withTime) {
+  var d = new Date(iso); if (!iso || isNaN(d.getTime())) return '';
+  var p = bkk(d), x = p.ymd.split('-');
+  return x[2] + '.' + x[1] + '.' + x[0] + (withTime ? ', ' + p.hm : '');
+}
+// вид и размер чека — как у очереди доступа («PNG · 3 КБ»): один предмет — один вид (designer-55, E56b/E56v)
+function topupSize(q) { return JOIN_MIME[q.mime] + ' · ' + Math.max(1, Math.round(q.bytes / 1024)) + ' КБ'; }
+document.addEventListener('input', function (ev) {
+  if (ev.target && ev.target.id === 'tq-note') TOPQ.note = ev.target.value;
 });
 
 /* ── карточки меню: конструктор и утверждение ──────────  #175
@@ -5908,17 +6018,101 @@ var SCREENS = {
   // E46: ровно два входа — решение владельца 28.10.2026 (#413). «Заявки на членство» (E42)
   // остаются на главной: это другая очередь, для уже допущенных.
   manage: function () {
-    if (!mayPeople()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    // v100: две группы, каждая по своему праву — «Кто в клубе» у главы, «Деньги» у ответственного
+    // за пополнения (кадр E46, Cafe13KPG#586). Ни одного права — прежний отказ.
+    if (!mayPeople() && !mayTopups()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
-    // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46)
+    // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
+    // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
     var wait = JOINQ.list ? JOINQ.list.filter(function (q) { return q.status === 'pending'; }).length : null;
+    var money_ = mayTopups() ? '<div class="group"><span class="label">Деньги</span>' +
+      '<button type="button" class="listitem" data-go="topupQueue"><span class="grow"><b>Заявки на пополнение</b>' +
+        '<span class="small">' + (TOPQ.pending !== null ? 'Ждут решения: ' + TOPQ.pending : 'Кто просит пополнить счёт') + '</span></span>' +
+        svg(ICON.chev, 'chev') + '</button></div>' : '';
+    if (!mayPeople()) return money_;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
         '<span class="small">' + (wait !== null ? 'Ждут ответа: ' + wait : 'Кто просится в клуб') + '</span></span>' +
         svg(ICON.chev, 'chev') + '</button>' +
       '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
         '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
-    '</div>';
+    '</div>' + money_;
+  },
+
+  // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g — подтверждение; E56d — причина; E56e — своя
+  topupQueue: function () {
+    // слова отказа — сервера (`_may_decide`, 403) буквой
+    if (!mayTopups()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Заявки на пополнение решает ответственный за пополнения.</span></div></div>';
+    if (!TOPQ.list) return TOPQ.fail
+      ? '<div class="card strong"><h2>Заявки не загрузились</h2><p>' + esc(TOPQ.fail) + '</p>' +
+        '<button type="button" class="btn" data-action="tq-retry">Попробовать снова</button></div>'
+      : '<div class="card quiet"><span class="small">Загружаем заявки…</span></div>';
+    var wait = TOPQ.list.filter(function (q) { return q.status === 'pending'; });
+    var past = TOPQ.list.filter(function (q) { return q.status !== 'pending'; });
+    var done = TOPQ.done ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(TOPQ.done) + '</span></div>' : '';
+    if (!wait.length && !past.length) return done + '<div class="card quiet"><div class="col"><b>Заявок нет</b>' +
+      '<span class="small">Здесь появятся заявки на пополнение — члены клуба присылают их с чеком перевода.</span></div></div>';
+    var who = function (q) { return q.mine ? 'вы' : q.name; };
+    return done +
+      (wait.length ? '<div class="group"><span class="label">Ждут решения</span>' + wait.map(function (q) {
+        // ждущая строка ВЕДЁТ на заявку — решение живёт там (E56b); форма входа — `listitem`
+        return '<button type="button" class="listitem" data-action="tq-open:' + q.id + '"><span class="grow">' +
+            '<b class="num">' + money(q.sum) + ' ฿</b><span class="small">' + esc(who(q) + ' · ' + askedWhen(q.iso, true)) + '</span></span>' +
+            '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span>' + svg(ICON.chev, 'chev') + '</button>';
+      }).join('') + '</div>' : '') +
+      (past.length ? '<div class="group"><span class="label">Решённые</span>' + past.map(function (q) {
+        return '<div class="card quiet"><div class="row"><div class="col"><b class="num">' + money(q.sum) + ' ฿</b>' +
+            '<span class="small">' + esc(who(q) + ' · ' + topupDay(q.done || q.iso, false)) + '</span></div>' +
+            '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div>' +
+          (q.status === 'rejected' && q.answer ? '<span class="small">' + esc(q.answer) + '</span>' : '') + '</div>';
+      }).join('') + '</div>' : '');
+  },
+
+  topupReq: function (id) {
+    if (!mayTopups()) return SCREENS.topupQueue();
+    var q = (TOPQ.list || []).filter(function (x) { return x.id === Number(id); })[0];
+    if (!q) return TOPQ.list ? '<div class="card quiet"><div class="col"><b>Такой заявки нет</b>' +
+        '<span class="small">Её уже нет в очереди — вернитесь к заявкам.</span></div></div>' : SCREENS.topupQueue();
+    var busy = TOPQ.busy ? ' disabled' : '';
+    var rows = '<div class="rows">' +
+      '<div><span class="small">Сумма</span><b class="num">' + money(q.sum) + ' ฿</b></div>' +
+      '<div><span class="small">Способ</span><b>' + esc(q.way) + '</b></div>' +
+      '<div><span class="small">Просит</span><b>' + esc(q.mine ? 'вы' : q.name) + '</b></div>' +
+      '<div><span class="small">Когда</span><b>' + esc(topupDay(q.iso, true)) + '</b></div></div>';
+    var err = TOPQ.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TOPQ.err) + '</span></div>' : '';
+    if (q.status !== 'pending') return rows + err + '<div class="card quiet"><div class="row"><span class="small">Решено ' +
+        esc(topupDay(q.done, true)) + '</span><span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div>' +
+        (q.answer ? '<span class="small">' + esc(q.answer) + '</span>' : '') + '</div>';
+    // E56g: подтверждение — без чека, как в кадре
+    if (TOPQ.step === 'ok' && !q.mine) return rows + err +
+      '<div class="card"><div class="col"><b>Зачислить ' + money(q.sum) + ' ฿?</b>' +
+        '<span class="small">Деньги появятся на счёте сразу, и запись останется в книге клуба. Отменить зачисление нельзя.</span></div>' +
+        '<button type="button" class="btn" data-action="tq-yes:' + q.id + '"' + busy + '>' + (TOPQ.busy ? 'Зачисляем…' : 'Да, зачислить') + '</button>' +
+        '<button type="button" class="btn quiet" data-action="tq-keep"' + busy + '>Назад</button></div>';
+    // E56d. ⚠ Кнопка в кадре — «Отказать и вернуть деньги»; сервер при отказе денег не двигает
+    // (`decide_request`: только статус и причина) — обещание возврата не ставлю (вопрос designer-55)
+    if (TOPQ.step === 'no' && !q.mine) return rows + err +
+      '<div class="field"><label for="tq-note">Причина отказа</label>' +
+        '<textarea id="tq-note" rows="3" maxlength="500">' + esc(TOPQ.note) + '</textarea>' +
+        '<span class="small">Человек увидит её в своей истории. Оставите пустым — он увидит «Мы не получили деньги».</span></div>' +
+      '<button type="button" class="btn" data-action="tq-no:' + q.id + '"' + busy + '>' + (TOPQ.busy ? 'Отправляем…' : 'Отказать') + '</button>' +
+      '<button type="button" class="btn quiet" data-action="tq-keep"' + busy + '>Назад</button>';
+    var sh = TOPQ.shot[q.id] || {}, pdf = q.mime === 'application/pdf';
+    var box = 'height:120px;display:flex;align-items:center;justify-content:center;color:var(--muted);overflow:hidden';
+    // PDF в <img> не показать; «открыть» не ставлю: откроет ли вебвью Telegram objectURL PDF, не мерено
+    // (#413). Слова — как у очереди доступа (кадр E56v приведён к ним designer-55)
+    var inner = pdf ? '<div class="box" style="' + box + ';text-align:center">PDF<br>показать нечем</div>'
+      : sh.url ? '<div class="box" style="' + box + ';padding:0"><img src="' + sh.url + '" alt="Чек" style="width:100%;height:100%;object-fit:contain"></div>'
+      : sh.fail ? '<div class="row"><span class="small">Чек не загрузился</span><button type="button" class="btn quiet" data-action="tq-shot:' + q.id + '">Повторить</button></div>'
+      : '<div class="box" style="' + box + '">загружаем чек…</div>';
+    var check = '<div class="field"><label>Чек</label>' + inner +
+      '<span class="small">' + esc(topupSize(q) + ' · прислан ' + topupDay(q.iso, true)) + '</span></div>';
+    // E56e: своя заявка — кнопок НЕТ вовсе, а не погашены
+    if (q.mine) return rows + check + '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой ответственный за пополнения.</span></div>';
+    return rows + check + err +
+      '<button type="button" class="btn" data-action="tq-ok:' + q.id + '"' + busy + '>Зачислить</button>' +
+      '<button type="button" class="btn quiet" data-action="tq-ask:' + q.id + '"' + busy + '>Отказать</button>';
   },
 
   // E45 очередь, E45b пусто, E45g только решённые, E45v отказ со словом
@@ -6362,7 +6556,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы'
 };
@@ -6390,7 +6584,8 @@ function tabList() {
   if (canTopup() && !t.some(function (x) { return x[0] === 'staff'; }))
     t.unshift(['staff', 'Касса', ICON.till]);
   // «Управление» — от права главы клуба, а не от уровня; последней, как в кадре E46 (Cafe13KPG#413)
-  if (mayPeople() && !t.some(function (x) { return x[0] === 'manage'; }))
+  // v100: и у ответственного за пополнения без главенства — иначе очередь пополнений ему недостижима
+  if ((mayPeople() || mayTopups()) && !t.some(function (x) { return x[0] === 'manage'; }))
     t.push(['manage', 'Управление', ICON.people]);
   return t;
 }
@@ -6411,7 +6606,7 @@ var BACK = {
   // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
-  people: 'manage', joinQueue: 'manage', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -6641,6 +6836,11 @@ function go(screen, p) {
   if (current === 'people' && screen !== 'people' && PEOPLE.lvAsk !== null) lvSend(PEOPLE.lvAsk);
   if (screen === 'people' && current !== 'people') { PEOPLE.back = null; peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
+  if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
+  if (screen === 'topupQueue' && current !== 'topupQueue') { TOPQ.err = ''; TOPQ.step = ''; TOPQ.note = ''; if (mayTopups()) loadTopupQueue(); }
+  // заявку открывают и не с очереди (назад из другого экрана, тест) — без списка она не нарисуется
+  if (screen === 'topupReq') { TOPQ.err = ''; TOPQ.step = ''; TOPQ.note = ''; TOPQ.done = '';
+    if (!TOPQ.list && mayTopups()) loadTopupQueue(); else topupShotFor(p); }
   if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoinQueue(); }
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
@@ -7094,6 +7294,14 @@ function doAction(a) {
     if (a === 'j-keep') { JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; render(); return; }
     if (a === 'j-no' && mayPeople() && JOINQ.no === Number(arg)) { decideJoin(Number(arg), 'rejected'); return; }
     if (a === 'j-retry' && mayPeople()) { loadJoinQueue(); render(); return; }
+    if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
+    if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
+    if (a === 'tq-shot' && mayTopups()) { delete TOPQ.shot[Number(arg)]; topupShot(Number(arg)); render(); return; }
+    if (a === 'tq-ok' && mayTopups() && !TOPQ.busy) { TOPQ.step = 'ok'; TOPQ.err = ''; render(); return; }
+    if (a === 'tq-ask' && mayTopups() && !TOPQ.busy) { TOPQ.step = 'no'; TOPQ.err = ''; render(); return; }
+    if (a === 'tq-keep' && !TOPQ.busy) { TOPQ.step = ''; TOPQ.err = ''; render(); return; }
+    if (a === 'tq-yes' && mayTopups()) { if (TOPQ.step === 'ok') decideTopup(Number(arg), 'approved'); return; }
+    if (a === 'tq-no' && mayTopups()) { if (TOPQ.step === 'no') decideTopup(Number(arg), 'rejected'); return; }
     if (a === 'j-shot' && mayPeople()) { delete JOINQ.shot[Number(arg)]; joinShot(Number(arg)); render(); return; }
 
     if (a === 'scan') { scanPass(); return; }
