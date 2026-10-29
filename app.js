@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v110 · 29.10.2026';
+var VERSION = 'v111 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3686,7 +3686,10 @@ function fromEvents(d) {
     var e = d[i];
     if (!e || typeof e.id !== 'number' || typeof e.title !== 'string' || !e.title) return null;
     if (!KIND[e.kind] || typeof e.duration_min !== 'number' || !(e.duration_min > 0)) return null;
-    if (typeof e.seats !== 'number' || typeof e.seats_left !== 'number' || typeof e.taken !== 'number') return null;
+    /* `seats_left: null` — «мест без ограничения» (слово владельца 29.10.2026: «0 мест = не ограничено»,
+       Cafe13KPG#639). Порядок здесь ОБРАТНЫЙ обычному: сервер меняет форму поля, которое клиент уже читает, —
+       поэтому клиент первым, и при старом сервере null просто не приходит. Записалось тогда — `taken` сервера */
+    if (typeof e.seats !== 'number' || !(e.seats_left === null || typeof e.seats_left === 'number') || typeof e.taken !== 'number') return null;
     if (typeof e.organizer_id !== 'number') return null;
     // Место: отсутствие приходит null'ом в ОБОИХ полях. Пустая строка в
     // имени — не место, а след поломки, поэтому имя требуется непустым.
@@ -3714,7 +3717,7 @@ function fromEvents(d) {
       done: now.getTime() >= ends,
       master: [e.organizer_first_name, e.organizer_last_name].filter(Boolean).join(' ') || 'Без имени',
       by: e.organizer_id,       // Telegram id ведущего: по нему и только по нему «своё»
-      seats: e.seats_left, of: e.seats,
+      seats: e.seats_left, of: e.seats, unl: e.seats_left === null, taken: e.taken,
       kind: e.kind, price: price,
       about: typeof e.about === 'string' ? e.about : '',
       filmed: !!e.filmed,
@@ -3800,7 +3803,11 @@ var BOOK_ASK = false;      // у отмены спрашивают: место �
 
 function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 
-function canBookEvent(e) { return !!e && !e.booked && !e.done && e.seats > 0 && !BOOK_BUSY; }
+function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY; }
+// сколько записалось: без ограничения — `taken` сервера (из «мест» не вычесть), иначе — мест минус осталось
+function takenOf(e) { return e.unl ? e.taken : e.of - e.seats; }
+// ВРЕМЕННЫЕ слова «без ограничения» — до кадра дизайнера (Cafe13KPG#639)
+var NO_LIMIT = 'без ограничения';
 
 function bookEvent(id) {
   var e = eventById(id);
@@ -4046,8 +4053,8 @@ function signedBlock(e) {
   SIGNED.rows.forEach(function (p) { (p.live ? live : off).push(p); });
   // Число в афише и число в списке считает сервер в двух местах. Разойдутся —
   // сказать прямо: ведущий и гость иначе будут спорить о числе, а не о записи.
-  var spor = SIGNED.taken !== (e.of - e.seats)
-    ? '<div class="card quiet"><span class="small">Афиша говорит «' + (e.of - e.seats) +
+  var spor = SIGNED.taken !== takenOf(e)
+    ? '<div class="card quiet"><span class="small">Афиша говорит «' + takenOf(e) +
       '», список — «' + SIGNED.taken + '». Откройте экран заново: одно из чисел устарело.</span></div>'
     : '';
   if (!live.length && !off.length)
@@ -4080,7 +4087,7 @@ function manageBlock(e) {
     '</div></div>' : '';
   var head = '<div class="group"><span class="label">Управление</span>' +
     '<div class="rows"><div><span class="small">Записалось</span>' +
-      '<b class="num">' + (e.of - e.seats) + ' из ' + e.of + '</b></div></div>' +
+      '<b class="num">' + takenOf(e) + (e.unl ? ' · мест ' + NO_LIMIT : ' из ' + e.of) + '</b></div></div>' +
     signedBlock(e) + err;
   if (EV_BUSY) return head + '<div class="card quiet"><span class="small">Отправляем…</span></div></div>';
   // Один предикат на оба пути: рисование и отправку. Пока их было два,
@@ -4522,7 +4529,7 @@ function eventLive(e) {
       // его когда-нибудь укажут: ручки правки события на сервере нет.
       (e.place ? '<div><span class="small">Где</span><b>' + esc(e.place) + '</b></div>' : '') +
       '<div><span class="small">Мест осталось</span><b class="num">' +
-        (e.seats === 0 ? 'мест нет' : e.seats + ' из ' + e.of) + '</b></div>' +
+        (e.unl ? NO_LIMIT : e.seats === 0 ? 'мест нет' : e.seats + ' из ' + e.of) + '</b></div>' +
       '<div><span class="small">Участие</span><b class="num">' + KIND[e.kind].label(e) + '</b></div>' +
     '</div>' +
     (e.about ? '<p style="font-size:14px">' + esc(e.about) + '</p>' : '') +
@@ -4839,19 +4846,21 @@ function organizerLive() {
   var list = eventList();
   if (!list) return eventsWait();
   var mine = list.filter(isMyEvent);
-  var signed = 0, seats = 0, dueIfPaid = 0;
+  // наполненность — только по ивентам С ограничением: у безлимитного доли от мест нет
+  var signed = 0, seats = 0, signedLim = 0, dueIfPaid = 0, unl = false;
   mine.forEach(function (e) {
-    var t = e.of - e.seats;
-    signed += t; seats += e.of;
+    var t = takenOf(e);
+    signed += t;
+    if (e.unl) unl = true; else { seats += e.of; signedLim += t; }
     if (e.kind === 'paid') dueIfPaid += t * e.price;
   });
   return (FLASH ? flash() : '') +
     '<div class="group"><span class="label">Ваши мероприятия впереди</span>' +
       '<div class="rows">' +
         '<div><span class="small">Событий</span><b class="num">' + mine.length + '</b></div>' +
-        '<div><span class="small">Записалось</span><b class="num">' + signed + ' из ' + seats + '</b></div>' +
+        '<div><span class="small">Записалось</span><b class="num">' + signed + (unl ? '' : ' из ' + seats) + '</b></div>' +
         '<div><span class="small">Наполненность</span><b class="num">' +
-          (seats ? Math.round(signed / seats * 100) : 0) + ' %</b></div>' +
+          (seats ? Math.round(signedLim / seats * 100) + ' %' : unl ? '—' : '0 %') + '</b></div>' +
         '<div><span class="small">Если все заплатят</span><b class="num">' + money(dueIfPaid) + ' ฿</b></div>' +
       '</div>' +
     '</div>' +
@@ -4860,7 +4869,7 @@ function organizerLive() {
         return '<button type="button" class="listitem" data-event="' + esc(e.id) + '">' +
           '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.day.split(',')[0]) + '</span></span>' +
           '<span class="grow"><b>' + esc(e.title) + '</b>' +
-          '<span class="small">записалось ' + (e.of - e.seats) + ' из ' + e.of +
+          '<span class="small">записалось ' + takenOf(e) + (e.unl ? ' · мест ' + NO_LIMIT : ' из ' + e.of) +
             // Слово берётся из афиши (`eventRow`), а не сочиняется второй
             // раз: кончившееся попадает сюда в зазор между ответом сервера
             // и взглядом человека, и без пометки строка неотличима от
@@ -5131,7 +5140,7 @@ var SCREENS = {
       '<span class="small">' + esc(e.day) + ' · ' + esc(e.time) + '–' + esc(e.until) + '</span></div>' +
       '<div class="rows">' +
         '<div><span class="small">Ведёт</span><b>' + esc(e.master) + '</b></div>' +
-        '<div><span class="small">Мест осталось</span><b class="num">' + e.seats + ' из ' + e.of + '</b></div>' +
+        '<div><span class="small">Мест осталось</span><b class="num">' + (e.unl ? NO_LIMIT : e.seats + ' из ' + e.of) + '</b></div>' +
         '<div><span class="small">Участие</span><b class="num">' + k.label(e) + '</b></div>' +
       '</div>' +
       '<p style="font-size:14px">' + esc(e.about) + '</p>' +
@@ -6928,7 +6937,7 @@ function eventRow(e, o) {
       ? 'ведёт ' + esc(e.master)
       : 'ведёт ' + esc(e.master) + ' · ' + (e.done ? 'завершилось'
         : e.booked ? 'вы записаны'
-        : e.seats === 0 ? 'мест нет' : e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats)) + '</span></span>' +
+        : e.unl ? 'мест ' + NO_LIMIT : e.seats === 0 ? 'мест нет' : e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats)) + '</span></span>' +
     '<span class="pill ' + k.pill + '">' + k.label(e) + '</span>' +
   '</button>';
 }
