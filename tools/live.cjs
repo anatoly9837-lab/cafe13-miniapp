@@ -3739,12 +3739,18 @@ if (grantsSet.length !== 1) {
     const n = 'seats-null';
     const UNL = EV({ id: 9, title: 'Без предела', kind: 'free', price: '0.00', seats: 0, taken: 3, seats_left: null,
                      starts_at: new Date(Date.now() + 3 * 3600e3).toISOString() });
-    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, [UNL])));
+    // граница: у мероприятия С числом мест «без ограничения» не печатается — иначе подпись могла бы стоять всегда
+    const LIM = EV({ id: 10, title: 'С пределом', kind: 'free', price: '0.00', seats: 12, taken: 7, seats_left: 5,
+                     starts_at: new Date(Date.now() + 4 * 3600e3).toISOString() });
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, [UNL, LIM])));
     await s.p.waitForTimeout(400);
     const t = await s.view();
     if (t.includes('Афиша не открылась')) bad.push(`${n}: «Афиша не открылась» на ответе с seats_left: null — разбор отверг null`);
     else if (!t.includes('Без предела')) bad.push(`${n}: на «Клубе» нет мероприятия с seats_left: null`);
     else if (!t.includes('мест без ограничения')) bad.push(`${n}: на «Клубе» не сказано «мест без ограничения»`);
+    const lim = await s.p.evaluate(() => { const b = document.querySelector('#view [data-event="10"]'); return b ? b.textContent : null; });
+    if (lim === null) bad.push(`${n}: на «Клубе» нет мероприятия с числом мест`);
+    else if (lim.includes('без ограничения') || !lim.includes('осталось 5')) bad.push(`${n}: у мероприятия с 5 местами не «осталось 5»: ${lim}`);
     const can = await s.p.evaluate(() => { const e = eventById('9'); return e ? canBookEvent(e) : null; });
     if (can !== true) bad.push(`${n}: запись на мероприятие без ограничения мест закрыта (canBookEvent → ${JSON.stringify(can)})`);
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
