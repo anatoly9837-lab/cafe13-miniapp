@@ -3738,11 +3738,13 @@ if (grantsSet.length !== 1) {
     // а запись — самим `canBookEvent` (экран мероприятия, где кнопка, в живом закрыт заморозкой)
     const n = 'seats-null';
     const UNL = EV({ id: 9, title: 'Без предела', kind: 'free', price: '0.00', seats: 0, taken: 3, seats_left: null,
-                     starts_at: new Date(Date.now() + 3 * 3600e3).toISOString() });
+                     starts_at: atBkk(0, 19) });
     // граница: у мероприятия С числом мест «без ограничения» не печатается — иначе подпись могла бы стоять всегда
     const LIM = EV({ id: 10, title: 'С пределом', kind: 'free', price: '0.00', seats: 12, taken: 7, seats_left: 5,
-                     starts_at: new Date(Date.now() + 4 * 3600e3).toISOString() });
-    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, [UNL, LIM])));
+                     starts_at: atBkk(0, 20) });
+    // часы фиксированы (NOWFIX, среда 08:00), оба мероприятия — в тот же день: без этого «сейчас + N часов»
+    // переваливает за полночь и в ночь на понедельник уезжает в следующую неделю
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, [UNL, LIM])), null, NOWFIX);
     await s.p.waitForTimeout(400);
     const t = await s.view();
     if (t.includes('Афиша не открылась')) bad.push(`${n}: «Афиша не открылась» на ответе с seats_left: null — разбор отверг null`);
