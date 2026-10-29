@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v97 · 29.10.2026';
+var VERSION = 'v99 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1084,7 +1084,10 @@ function topupMember() {
   if (TUP.online) {
     var amt = tupAmount(TUP.amount), f = TUP.file, img = JOIN.img.promptpay;
     return '<div class="field"><label for="tu-amount">Сколько пополнить, ฿</label>' +
-        '<input id="tu-amount" type="text" inputmode="decimal" value="' + esc(TUP.amount) + '"' + (TUP.busy ? ' disabled' : '') + '></div>' +
+        '<input id="tu-amount" type="text" inputmode="decimal" value="' + esc(TUP.amount) + '"' + (TUP.busy ? ' disabled' : '') + '>' +
+        // порог держит СЕРВЕР (MIN_AMOUNT, отказ «пополнение от 500 ฿»); клиент только говорит его заранее,
+        // своего запрета не ставит — слово владельца «порог на сервере», слова кадра E52b (Cafe13KPG#574, #579)
+        '<span class="small">от 500 ฿</span></div>' +
       // реквизиты — картинка сервера по подписи (кадр места не рисует: «не знает чужих счетов»)
       '<div class="card quiet"><span class="label">Куда перевести</span>' +
         (img === 'fail' ? '<div class="row"><span class="small">Реквизиты не загрузились</span>' +
@@ -1095,7 +1098,9 @@ function topupMember() {
         '<label class="box dashed" for="tu-file">' + svg(f ? ICON.check : ICON.cam) + '<span>' +
           (f ? 'Чек приложен · заменить' : 'Приложить чек') + '</span>' +
           '<input id="tu-file" type="file" accept="' + RECEIPT_TYPES.join(',') + '" hidden></label>' +
-        (f ? '<span class="small">' + (f.pdf ? 'PDF' : 'Фото') + ' · ' + money(Math.max(1, Math.round(f.size / 1024))) + ' КБ</span>' : '') + '</div>' +
+        // до чека — предел СЛОВАМИ кадра E52b (#579): иначе о нём узнают отказом 413 после выбора файла
+        '<span class="small">' + (f ? (f.pdf ? 'PDF' : 'Фото') + ' · ' + money(Math.max(1, Math.round(f.size / 1024))) + ' КБ'
+          : 'снимок или PDF, до 2 МиБ') + '</span></div>' +
       (TUP.fileErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TUP.fileErr) + '</span></div>' : '') +
       (TUP.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TUP.err) + '</span></div>' : '') +
       '<button type="button" class="btn" id="tu-send" data-action="tu-send"' + (amt === null || !f || TUP.busy || img === 'fail' ? ' disabled' : '') + '>' +
