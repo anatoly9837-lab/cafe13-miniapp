@@ -474,6 +474,17 @@ body.has-main .dup-main { display: none; }
 .n-wait { color: var(--sage); font-weight: 700; }
 /* ⚠ во входе `.listitem .grow b` ставит 600 и перебивал — «жирным» владельца там было полужирным (замер отрисовкой) */
 .listitem .grow .n-wait { font-weight: 700; }
+/* Шаг 3, форма «Я мастер» (кадры E54b/E54i): чипы-кнопки, выбранный, занятый зачёркнут, счётчик часов.
+   Под `.mf`, чтобы не задеть чипы «Людей»: там `.chip.busy` значит «ждём ответа», а не «занято» */
+.mf { display: flex; flex-direction: column; gap: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mf button.chip { font-size: 13px; padding: 8px 11px; cursor: pointer; color: var(--ink); }
+.mf .chip.on { border-color: var(--accent); background: var(--surface); font-weight: 600; }
+.mf .chip.busy { color: var(--muted); text-decoration: line-through; cursor: default; }
+.counter { display: flex; align-items: center; gap: 14px; }
+.counter .num { min-width: 86px; text-align: center; }
+.counter .round { border: 1px solid var(--line); width: 34px; height: 34px; font-size: 17px; color: var(--ink); }
+.counter .round[disabled] { color: var(--muted); opacity: .45; cursor: default; }
 .tap { background: none; border: 0; padding: 0; margin: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; flex: 1 1 auto; }
 
 /* ── покупка в баре: отказ над кнопкой, итог, номер заказа (макеты E23б, E24) ── */
