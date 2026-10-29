@@ -8274,7 +8274,10 @@ if (grantsSet.length !== 1) {
       if (tqGets(s, /\/receipt$/).some(c => c.init !== INIT)) bad.push(`${n}: чек спрошен без подписи`);
       await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(150);
       if (tqPosts(s).length) bad.push(`${n}: зачисление ушло с первого нажатия — подтверждения нет (E56g)`);
-      for (const w of ['Зачислить 1 000 ฿?', 'Отменить зачисление нельзя.', 'Да, зачислить']) if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (E56g)`);
+      for (const w of ['Зачислить 1 000 ฿?', 'Отсюда отменить нельзя.', 'Да, зачислить']) if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (E56g)`);
+      // прежняя фраза («Отменить зачисление нельзя») стала бы ложью после разморозки кассы — её нет вовсе,
+      // и рядом с новой тоже: «добавлена» не отличается от «заменила» без этого счёта (Cafe13KPG#602 п.2)
+      if ((await s.view()).includes('Отменить зачисление нельзя')) bad.push(`${n}: в подтверждении осталась прежняя фраза «Отменить зачисление нельзя»`);
       await tqAct(s, 'tq-keep'); await s.p.waitForTimeout(150);
       if (tqPosts(s).length || await s.p.$('#view [data-action="tq-yes:31"]')) bad.push(`${n}: «Назад» отправил или не закрыл подтверждение`);
       await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
