@@ -712,6 +712,52 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // занятость слота (v112, `GET /master/slot-busy`): fits false — «Отправить» погашен и причина названа ДО
+    // нажатия; fits true — жив, заявка уходит. Запрос — с выбранными часами: «+» спрашивает сервер заново.
+    // ⚠ Второй линии нет НАРОЧНО: sendMaster пересечения не проверяет, последняя защита — 409 сервера (код v112).
+    for (const fits of [false, true]) {
+      const n = fits ? 'slot-fits-free' : 'slot-fits-clash';
+      const asked = [];
+      const o = { mine: () => [], posted: [] };
+      const api = masterApi(o);
+      const busyRow = { title: 'Чужой вечер', starts_at: '2026-12-03T18:00:00+07:00', ends_at: '2026-12-03T20:00:00+07:00' };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (!u.startsWith('/master/slot-busy')) return api(q);
+        asked.push(u);
+        return json(200, { month: '2026-12', fits, dates: [
+          { date: '2026-12-03', busy: [busyRow], conflict: fits ? null : { title: 'Чужой вечер', starts_label: '03.12 18:00', ends_label: '20:00' } },
+          { date: '2026-12-10', busy: [], conflict: null }] });
+      });
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(400);
+        if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
+        const f = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]');
+          return { off: b ? b.disabled : null, text: document.getElementById('view').textContent }; });
+        if (!asked.some(u => /place_id=1&weekday=4&start_local=18%3A00&hours=2$/.test(u))) bad.push(`${n}: занятость не спрошена под выбранные день и время: ${JSON.stringify(asked)}`);
+        if (!fits) {
+          if (f.off !== true) bad.push(`${n}: при fits false «Отправить заявку» нажимается (${JSON.stringify(f.off)}) — человек узнает о пересечении отказом`);
+          if (!f.text.includes('Выбранное время пересекается с занятым — выберите другое')) bad.push(`${n}: при fits false причина погашенной кнопки не названа`);
+          if (!f.text.includes('пересекается: 18:00–20:00 «Чужой вечер»')) bad.push(`${n}: дата с пересечением не названа (ждали «пересекается: 18:00–20:00 «Чужой вечер»»)`);
+          if (o.posted.length) bad.push(`${n}: заявка ушла при пересечении`);
+        } else {
+          if (f.off !== false) bad.push(`${n}: при fits true «Отправить заявку» погашен (${JSON.stringify(f.off)})`);
+          if (f.text.includes('пересекается с занятым')) bad.push(`${n}: при fits true сказано «пересекается с занятым»`);
+          if (!f.text.includes('Выбранное время свободно на всех 2 датах месяца')) bad.push(`${n}: при fits true не сказано, что время свободно`);
+          // «+» — новый запрос занятости уже под 3 часа
+          await tapIf(s, n, '[data-action="msf-plus"]', '«+» часа');
+          await s.p.waitForTimeout(400);
+          if (!asked.some(u => /hours=3$/.test(u))) bad.push(`${n}: после «+» занятость не спрошена под 3 часа: ${JSON.stringify(asked)}`);
+          if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера');   // перерисовка «+» могла снять набранное
+          await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+          await s.p.waitForTimeout(300);
+          if (o.posted.length !== 1) bad.push(`${n}: при fits true POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
 
   // ── остаток перечитывается по возврату в приложение (v110, Cafe13KPG#638) ──
