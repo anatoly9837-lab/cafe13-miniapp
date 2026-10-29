@@ -30,8 +30,10 @@ const ME = {
    ней. Надписи уже караулят `live.cjs` и `shots.cjs`. Здесь: вход в пропуск (`data-go="pass"`) на
    экране, не ноль входов на нём и вкладка главного (`data-go="home"`) в панели.
    ⚠ Предел, названный вслух: пустую или ложную НАДПИСЬ дым не видит — он отвечает «загрузилось ли»,
-   а не «верны ли слова». Дефект на этом пределе построить можно (стёртая подпись кнопки), и ловит его
-   не дым, а батарея (`live.cjs` ждёт слова экрана) — поэтому это граница, а не долг. */
+   а не «верны ли слова». Дефект на этом пределе построить можно (стёртая подпись кнопки), и до глаз
+   владельца он ДОЙДЁТ: батарея (`live.cjs`, ждёт слова экрана) гоняется ПОЗАДИ показа. Закрыт предел
+   не прибором, а решением владельца о стадии пред-МВП («если тесты будут идти после того как я посмотрю
+   глазами, то ок», Cafe13KPG#605); условие его смерти — день запуска в бой. */
 const ANCHOR = '[data-go="pass"]';
 
 function notDone(text) { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + text + ' — это НЕ «зелёное»'); process.exit(2); }
@@ -53,7 +55,9 @@ function red(lines) { console.log('КРАСНОЕ:\n' + lines.join('\n')); proce
     await ctx.addInitScript(() => { try { localStorage.setItem('cafe13.consent', '0.1'); } catch (e) {} });
     const p = await ctx.newPage();
     const errs = [];
-    p.on('pageerror', e => errs.push(e.message));
+    // ошибка страницы обрывает ожидание СРАЗУ: сломанный клиент — красное за секунды, а не по тайм-ауту
+    let failNow; const failed = new Promise(res => { failNow = res; });
+    p.on('pageerror', e => { errs.push(e.message); failNow(false); });
     await p.route('https://telegram.org/**', r => r.fulfill({ contentType: 'text/javascript', body: `
       window.Telegram = { WebApp: { platform: 'ios', initData: ${JSON.stringify(INIT)}, initDataUnsafe: { user: { id: 1 } },
         colorScheme: 'light', version: '7.0', isVersionAtLeast: function () { return true; },
@@ -69,7 +73,9 @@ function red(lines) { console.log('КРАСНОЕ:\n' + lines.join('\n')); proce
     });
     await p.goto('file://' + ROOT + '/index.html', { waitUntil: 'load' });
     // главный экран ждём ПО ПРИЗНАКУ, а не паузой: зелёное приходит, как только он нарисован
-    const seen = await p.waitForFunction(a => !!document.querySelector('#view ' + a), ANCHOR, { timeout: 8000 }).then(() => true, () => false);
+    // тайм-аут 8 с ведёт в 1 («не нарисован»), а не в 2: «не выполнено» — только не поднятый браузер и нет файлов
+    const seen = await Promise.race([failed,
+      p.waitForFunction(a => !!document.querySelector('#view ' + a), ANCHOR, { timeout: 8000 }).then(() => true, () => false)]);
     const view = await p.evaluate(() => { const v = document.getElementById('view'); return v ? v.innerHTML.trim() : null; });
     const doors = await p.evaluate(() => document.querySelectorAll('#view [data-go]').length);
     const tabs = await p.evaluate(() => [...document.querySelectorAll('#tabs [data-go]')].map(x => x.getAttribute('data-go')));
