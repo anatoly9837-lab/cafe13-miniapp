@@ -428,6 +428,81 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── водяной знак (кадр E53, Cafe13KPG#509): виден, неподвижен, долей окна; гаснет ПО СВОЙСТВУ ──
+  {
+    // свойство одно на все экраны: есть машиночитаемый код (.code-box — QR пропуска, .qr — реквизиты) ⇔ знака не видно
+    const markState = s => s.p.evaluate(() => {
+      const m = document.querySelector('#mark img');
+      const code = !!document.querySelector('#view .code-box, #view .qr');
+      const shown = !!m && getComputedStyle(document.getElementById('mark')).visibility !== 'hidden' && m.getBoundingClientRect().width > 0;
+      return { code, shown, w: m ? m.getBoundingClientRect().width : 0, op: m ? getComputedStyle(m).opacity : '',
+               pos: getComputedStyle(document.getElementById('mark')).position, screen: current };
+    });
+    const judge = (n, st) => {
+      if (st.code && st.shown) bad.push(`${n}: на экране «${st.screen}» есть машиночитаемый код, а водяной знак виден`);
+      if (!st.code && !st.shown) bad.push(`${n}: на экране «${st.screen}» кода нет, а водяного знака не видно`);
+    };
+    const MPASS = { pass_code: 'XIII-0042', first_name: 'Тест', last_name: '', photo_url: null, level: 'member', valid_until: null, lifelong: true };
+    {
+      const n = 'znak-glavnaya';
+      const s = await open(true, true, json(200, OWNER), null, json(200, MPASS));
+      let st = await markState(s);
+      judge(n, st);
+      if (st.op !== '0.06') bad.push(`${n}: прозрачность знака ${st.op}, ждали 0.06`);
+      if (st.pos !== 'fixed') bad.push(`${n}: знак не прибит к окну (position ${st.pos}) — поедет при прокрутке`);
+      // долей окна, а не числом: 92% и на окне 390, и на окне 360 (прибитое число обрезало бы кольцо на узком окне)
+      if (Math.abs(st.w - 390 * 0.92) > 1) bad.push(`${n}: ширина знака на окне 390 — ${st.w}, ждали 92% окна`);
+      await s.p.setViewportSize({ width: 360, height: 780 });
+      await s.p.waitForTimeout(100);
+      st = await markState(s);
+      if (Math.abs(st.w - 360 * 0.92) > 1) bad.push(`${n}: ширина знака на окне 360 — ${st.w}, ждали 92% окна (размер прибит числом?)`);
+      // пропуск: QR — знака нет; назад на главную — знак снова есть (гасится свойством, узел жив)
+      await s.p.evaluate(() => go('pass'));
+      await s.p.waitForTimeout(250);
+      st = await markState(s);
+      if (!st.code) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — на пропуске не нарисован QR`);
+      judge(n, st);
+      // тот же УЗЕЛ, а не такой же: метка на элементе переживает возврат, только если его не пересоздали
+      // (элемент из evaluate приходит пустым объектом — сравнить его снаружи нечем)
+      await s.p.evaluate(() => { const m = document.querySelector('#mark img'); if (m) m.dataset.seen = '1'; });
+      await s.p.evaluate(() => go('home'));
+      await s.p.waitForTimeout(150);
+      judge(n, await markState(s));
+      if (!(await s.p.evaluate(() => { const m = document.querySelector('#mark img'); return !!m && m.dataset.seen === '1'; })))
+        bad.push(`${n}: узел знака пересоздан — на возврате он грузится заново и мигает`);
+      await s.ctx.close();
+    }
+    // экран сбоя без сети с пропуском с телефона — тот же QR (passCard зовут два места); перечень экранов его пропустил бы
+    {
+      const n = 'znak-apidown';
+      const s = await open(true, true, 'abort', null, null,
+        { code: 'XIII-0042', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 });
+      await s.p.waitForTimeout(200);
+      const st = await markState(s);
+      if (st.screen !== 'apiDown' || !st.code) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — нет экрана сбоя с пропуском (${st.screen}, код ${st.code})`);
+      judge(n, st);
+      await s.ctx.close();
+    }
+    // реквизиты PromptPay на экране просьбы — тоже код: знака нет
+    {
+      const n = 'znak-rekvizity';
+      const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+      const J = { amount_thb: '3600.00', amount_usd: '130.00', period_months: 1, currency: 'THB', request: null,
+                  about_token: 'tok', you: { first_name: '[просящий]', last_name: '', username: 'ab' } };
+      const s = await open(true, true, json(403, { detail: 'доступа нет' }), null, null, null, q => {
+        const u = q.url();
+        if (/\/join\/requisites\//.test(u)) return { status: 200, contentType: 'image/png', body: PNG1 };
+        if (u.endsWith('/join')) return json(200, J);
+        return undefined;
+      });
+      await s.p.waitForTimeout(250);
+      const st = await markState(s);
+      if (!st.code) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — реквизиты не нарисованы`);
+      judge(n, st);
+      await s.ctx.close();
+    }
+  }
+
   // ── Telegram есть, подписи нет — витрина, а не вход (условие arhitector-47 на v69) ──
   // tryLive() требует подпись; без неё boot() обязан уйти в демонстрацию, не спросив сервер.
   {
