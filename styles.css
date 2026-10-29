@@ -481,6 +481,9 @@ body.has-main .dup-main { display: none; }
 .mf button.chip { font-size: 13px; padding: 8px 11px; cursor: pointer; color: var(--ink); }
 .mf .chip.on { border-color: var(--accent); background: var(--surface); font-weight: 600; }
 .mf .chip.busy { color: var(--muted); text-decoration: line-through; cursor: default; }
+/* «Начало» — выбор из 48 значений с шагом 30 минут (слово владельца): облик поля ввода, ширина по значению */
+.mf select { min-height: 46px; width: 120px; border: 1px solid var(--line); border-radius: 9px; padding: 0 12px;
+             background: var(--paper); color: var(--ink); font-family: 'Golos Text', sans-serif; font-size: 15px; }
 .counter { display: flex; align-items: center; gap: 14px; }
 .counter .num { min-width: 86px; text-align: center; }
 .counter .round { border: 1px solid var(--line); width: 34px; height: 34px; font-size: 17px; color: var(--ink); }

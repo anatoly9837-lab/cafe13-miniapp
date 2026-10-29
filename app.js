@@ -2884,11 +2884,15 @@ function msSpan(day, start, hours) {
    заявку… За каждый дополнительный час… 1300»; «Про деньги - они списываются в момент заявки. Если не
    достаточно - заявку подать нельзя»; «арт директор не может начать / он может только согласовать». */
 var MS_DAY = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];   // weekday сервера: 1 — понедельник (ISO)
-/* Время — из списка, занятость проверяет СЕРВЕР при подаче (решение координатора 29.10.2026, вариант «б»):
-   ручки «свободное время» для ЕЖЕНЕДЕЛЬНОГО слота у сервера нет, занятость есть только по дате. ДОЛГ: когда
-   такая ручка появится, форма вернётся к показу занятого (кадр E54b). Отказ сервера печатается буквой:
-   «неделя N слота пересекается: место «…» занято «…», DD.MM HH:MI–HH:MI». */
-var MS_TIMES = ['10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
+/* Старт — ЛЮБОЙ с шагом 30 минут, продолжительность — отдельным полем (слово владельца 29.10.2026: «время
+   должгно быть произвольное с интервалом в 30 минут. Нужен старт мероприятия и продолжительность, по умолчанию
+   продолжительность 2 часа, + для добавки еще одного за 1300 бат»). Отказ сервера при пересечении остаётся
+   ПОСЛЕДНЕЙ защитой и печатается буквой: между показом занятости и отправкой время мог занять другой. */
+var MS_TIMES = [];
+for (var msi = 0; msi < 48; msi++) MS_TIMES.push((msi < 20 ? '0' : '') + Math.floor(msi / 2) + ':' + (msi % 2 ? '30' : '00'));
+// место ФИКСИРОВАНО — «Зал» (слово владельца через координатора, 29.10.2026); его номер — из `GET /places` по имени
+var MS_PLACE = 'Зал';
+function msPlace() { return EV_PLACES ? EV_PLACES.filter(function (x) { return x.name === MS_PLACE; })[0] || null : null; }
 // потолки — сервера (`NewMasterRequest`, master.py:75; снимок master-request-201-max: hours 12, about 2000)
 var MS_MAX_H = 12, MS_ABOUT = 2000, MS_SEATS = 500;
 function msName(p) {
@@ -2939,7 +2943,8 @@ function fromSlots(d) {
 var MR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail: '', qGen: 0,
            slots: null, without: null, sFail: '', sGen: 0, price: {}, priceAsk: {},
            busy: false, err: '', qErr: '', sErr: '' };
-var MSF = { day: 4, time: '18:00', extra: 0, place: null, seats: '8', title: '', about: '', err: '' };
+// мест по умолчанию 0 = «не ограничено» (слово владельца); ⚠ схема сервера ноль пока не принимает (seats ≥ 1)
+var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
 function loadMineMaster() {
   var gen = ++MR.mineGen; MR.mineState = 'loading';
   api('GET', '/master/requests/mine').then(function (r) {
@@ -3018,19 +3023,19 @@ function sendMaster() {
   var seats = Number(MSF.seats), h = 2 + MSF.extra, p = MR.price[h];
   // пределы — сервера (NewMasterRequest): название 1–200, мест 1–500, аннотация до 2000
   MSF.err = !MSF.title ? 'Без названия ивент в афишу не ставится.'
-    : !(seats >= 1 && seats <= MS_SEATS && Math.floor(seats) === seats) ? 'Число мест — целое, от 1 до ' + MS_SEATS + '.'
-    : !MSF.place ? 'Выберите место.' : typeof p !== 'number' ? 'Цена ещё не пришла от сервера.'
+    : !(seats >= 0 && seats <= MS_SEATS && Math.floor(seats) === seats) ? 'Число мест — целое, от 0 до ' + MS_SEATS + '; 0 — без ограничения.'
+    : !msPlace() ? 'Места «' + MS_PLACE + '» нет среди открытых мест клуба.' : typeof p !== 'number' ? 'Цена ещё не пришла от сервера.'
     : p > msBalance() ? 'Не хватает денег на счёте.' : '';
   if (MSF.err) { render(); return; }
   MR.busy = true; render();
-  api('POST', '/master/request', { title: MSF.title, about: MSF.about, seats: seats, place_id: MSF.place,
+  api('POST', '/master/request', { title: MSF.title, about: MSF.about, seats: seats, place_id: msPlace().id,
     weekday: MSF.day, start_local: MSF.time, hours: h }).then(function (r) {
     MR.busy = false;
     var got = r.status === 201 ? fromMasterReq(r.data, false) : null;
     // деньги могли уйти и при неразобранном ответе — свою заявку и остаток перечитываем ВСЕГДА
     loadMineMaster(); refreshMe();
     if (got) {
-      MSF = { day: 4, time: '18:00', extra: 0, place: null, seats: '8', title: '', about: '', err: '' };
+      MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
       FLASH = { text: 'Заявка отправлена', note: 'Списано ' + money(got.amount) + ' ฿. Решение примет арт-директор; если он откажет, деньги вернутся на счёт.' };
       go('home'); return;
     }
@@ -6478,25 +6483,27 @@ var SCREENS = {
         return '<button type="button" class="chip' + (x[0] === on ? ' on' : '') + '" data-action="' + act + ':' + x[0] + '" aria-pressed="' + (x[0] === on) + '">' + esc(x[1]) + '</button>';
       }).join('') + '</div>';
     };
-    var places = EV_PLACES ? chips('msf-place', EV_PLACES.map(function (x) { return [x.id, x.name]; }), MSF.place)
-      : EV_PLACES_STATE === 'loading' || !EV_PLACES_STATE ? '<span class="small">Загружаем места…</span>'
+    var place = EV_PLACES ? (msPlace() ? '<b>' + esc(MS_PLACE) + '</b>' : '<span class="small">Места «' + esc(MS_PLACE) + '» нет среди открытых мест клуба</span>')
+      : EV_PLACES_STATE === 'loading' || !EV_PLACES_STATE ? '<span class="small">Загружаем место…</span>'
       : '<div class="row"><span class="small">' + esc(EV_PLACES_STATE) + '</span><button type="button" class="btn quiet" data-action="ms-retry-places">Повторить</button></div>';
     var why = MR.busy ? '' : typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
-      : p > bal ? 'Не хватает ' + money(p - bal) + ' ฿ на счёте.' : !MSF.place ? 'Выберите место.' : '';
+      : p > bal ? 'Не хватает ' + money(p - bal) + ' ฿ на счёте.' : EV_PLACES && !msPlace() ? 'Места «' + MS_PLACE + '» нет.' : !EV_PLACES ? 'Загружаем место…' : '';
     return (FLASH ? flash() : '') + '<div class="mf">' +
       '<div class="field"><label>День недели</label>' + chips('msf-day', MS_DAY.map(function (d, i) { return [i + 1, d]; }), MSF.day) + '</div>' +
-      '<div class="field"><label>Время</label>' + chips('msf-time', MS_TIMES.map(function (t) { return [t, t]; }), MSF.time) +
-        '<span class="small">Занято ли это время, сервер проверит при отправке — до списания</span></div>' +
-      '<div class="field"><label>Часы сверх двух</label><div class="counter">' +
+      '<div class="field"><label for="msf-time">Начало</label><select id="msf-time">' + MS_TIMES.map(function (t) {
+          return '<option value="' + t + '"' + (t === MSF.time ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label>Продолжительность</label><div class="counter">' +
         '<button type="button" class="round" data-action="msf-minus"' + (MSF.extra ? '' : ' disabled') + ' aria-label="Меньше">−</button>' +
-        '<b class="num">' + (MSF.extra ? '+' + MSF.extra + ' ' + msHours(MSF.extra) : 'нет') + '</b>' +
+        '<b class="num">' + h + ' ' + msHours(h) + '</b>' +
         '<button type="button" class="round" data-action="msf-plus"' + (more ? '' : ' disabled') + ' aria-label="Больше">+</button></div>' +
         // «+» гаснет там, где следующий час не покрыт остатком или упёрся в потолок сервера, и причина — рядом
         '<span class="small">' + (top ? 'Больше ' + MS_MAX_H + ' часов в слоте сервер не примет'
-          : more ? 'Два часа уже входят' : typeof pNext === 'number' ? 'Ещё час — ' + money(pNext) + ' ฿, на счёте ' + money(bal) + ' ฿' : 'Узнаём цену…') + '</span></div>' +
-      '<div class="field"><label>Место и мест</label>' + places +
-        '<div class="row" style="justify-content:flex-start;gap:10px"><label for="msf-seats" class="small">Мест</label>' +
-          '<input id="msf-seats" inputmode="numeric" style="width:92px" value="' + esc(MSF.seats) + '"></div></div>' +
+          : more ? msSpan(MS_DAY[MSF.day - 1], MSF.time, h) + (typeof pNext === 'number' && typeof p === 'number' ? ' · ещё час — ' + money(pNext - p) + ' ฿' : '')
+          : typeof pNext === 'number' ? 'Ещё час — ' + money(pNext) + ' ฿, на счёте ' + money(bal) + ' ฿' : 'Узнаём цену…') + '</span></div>' +
+      '<div class="field"><label>Место</label>' + place + '</div>' +
+      '<div class="field"><label for="msf-seats">Мест</label>' +
+        '<input id="msf-seats" inputmode="numeric" style="width:92px" value="' + esc(MSF.seats) + '">' +
+        '<span class="small">0 — без ограничения</span></div>' +
       '<div class="field"><label for="msf-title">Название ивента</label><input id="msf-title" maxlength="200" value="' + esc(MSF.title) + '"></div>' +
       '<div class="field"><label for="msf-about">Коротко для афиши</label><textarea id="msf-about" rows="3" maxlength="' + MS_ABOUT + '">' + esc(MSF.about) + '</textarea></div>' +
       '<div class="rows">' +
@@ -7738,12 +7745,11 @@ function doAction(a) {
       // набранное не теряется при перерисовке нажатием чипа
       if (document.getElementById('msf-title')) { MSF.title = val('msf-title'); MSF.about = val('msf-about'); }
       if (document.getElementById('msf-seats')) MSF.seats = val('msf-seats');
+      if (document.getElementById('msf-time')) MSF.time = document.getElementById('msf-time').value;
       MSF.err = '';
     }
     if (a === 'ms-apply') { MSF.err = ''; go('masterApply'); return; }
     if (a === 'msf-day') { MSF.day = Number(arg); render(); return; }
-    if (a === 'msf-time') { MSF.time = arg; render(); return; }
-    if (a === 'msf-place') { MSF.place = Number(arg); render(); return; }
     if (a === 'msf-plus' && 2 + MSF.extra < MS_MAX_H && MR.price[3 + MSF.extra] <= msBalance()) {
       MSF.extra += 1; loadPrice(3 + MSF.extra); render(); return;
     }
