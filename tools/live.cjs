@@ -8256,7 +8256,7 @@ if (grantsSet.length !== 1) {
       const n = 'tq-approve', s = await tqCase(OWNER);
       await toTq(s); await tqAct(s, 'tq-open:31'); await s.p.waitForTimeout(400);
       const t = await s.view();
-      for (const w of ['Сумма', '1 000 ฿', 'Способ', 'Перевод', 'Просит', '[член клуба]', 'Когда', '29.10.2026, 19:40', 'Чек', '1,2 МБ · прислан 29.10.2026, 19:40'])
+      for (const w of ['Сумма', '1 000 ฿', 'Способ', 'Перевод', 'Просит', '[член клуба]', 'Когда', '29.10.2026, 19:40', 'Чек', 'PNG · 1229 КБ · прислан 29.10.2026, 19:40'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}» (E56b)`);
       const img = await s.p.evaluate(() => { const i = document.querySelector('#view img[alt="Чек"]'); return i ? i.getAttribute('src') : null; });
       if (!img || !img.startsWith('blob:')) bad.push(`${n}: чек не показан картинкой из ответа сервера (${img})`);
@@ -8310,7 +8310,7 @@ if (grantsSet.length !== 1) {
       const n = 'tq-pdf', s = await tqCase(OWNER);
       await toReq(s, 32);
       const t = await s.view();
-      if (!t.includes('PDF')) bad.push(`${n}: не сказано, что чек — PDF`);
+      if (!t.includes('показать нечем') || !t.includes('PDF · 200 КБ')) bad.push(`${n}: нет слов E56v «PDF показать нечем» / «PDF · 200 КБ»`);
       if (/открыть/i.test(t)) bad.push(`${n}: у PDF «открыть», а в Telegram это не проверено (#413)`);
       if (await s.p.$('#view img[alt="Чек"]')) bad.push(`${n}: PDF показан через <img>`);
       if (tqGets(s, /\/32\/receipt$/).length) bad.push(`${n}: байты PDF спрошены — показать их нечем`);

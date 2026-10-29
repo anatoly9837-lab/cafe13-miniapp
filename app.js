@@ -2934,10 +2934,8 @@ function topupDay(iso, withTime) {
   var p = bkk(d), x = p.ymd.split('-');
   return x[2] + '.' + x[1] + '.' + x[0] + (withTime ? ', ' + p.hm : '');
 }
-function topupSize(b) {
-  var mib = 1024 * 1024;               // МиБ — как считает сервер свой потолок чека (MAX_RECEIPT)
-  return b >= mib ? String(Math.round(b * 10 / mib) / 10).replace('.', ',') + ' МБ' : Math.max(1, Math.round(b / 1024)) + ' КБ';
-}
+// вид и размер чека — как у очереди доступа («PNG · 3 КБ»): один предмет — один вид (designer-55, E56b/E56v)
+function topupSize(q) { return JOIN_MIME[q.mime] + ' · ' + Math.max(1, Math.round(q.bytes / 1024)) + ' КБ'; }
 document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'tq-note') TOPQ.note = ev.target.value;
 });
@@ -6102,13 +6100,14 @@ var SCREENS = {
       '<button type="button" class="btn quiet" data-action="tq-keep"' + busy + '>Назад</button>';
     var sh = TOPQ.shot[q.id] || {}, pdf = q.mime === 'application/pdf';
     var box = 'height:120px;display:flex;align-items:center;justify-content:center;color:var(--muted);overflow:hidden';
-    // PDF в <img> не показать; «открыть» не ставлю: откроет ли вебвью Telegram objectURL PDF, не мерено (#413)
-    var inner = pdf ? '<div class="box" style="' + box + '">PDF · показать нечем — сверьте сумму с банком</div>'
+    // PDF в <img> не показать; «открыть» не ставлю: откроет ли вебвью Telegram objectURL PDF, не мерено
+    // (#413). Слова — как у очереди доступа (кадр E56v приведён к ним designer-55)
+    var inner = pdf ? '<div class="box" style="' + box + ';text-align:center">PDF<br>показать нечем</div>'
       : sh.url ? '<div class="box" style="' + box + ';padding:0"><img src="' + sh.url + '" alt="Чек" style="width:100%;height:100%;object-fit:contain"></div>'
       : sh.fail ? '<div class="row"><span class="small">Чек не загрузился</span><button type="button" class="btn quiet" data-action="tq-shot:' + q.id + '">Повторить</button></div>'
       : '<div class="box" style="' + box + '">загружаем чек…</div>';
     var check = '<div class="field"><label>Чек</label>' + inner +
-      '<span class="small">' + esc(topupSize(q.bytes) + ' · прислан ' + topupDay(q.iso, true)) + '</span></div>';
+      '<span class="small">' + esc(topupSize(q) + ' · прислан ' + topupDay(q.iso, true)) + '</span></div>';
     // E56e: своя заявка — кнопок НЕТ вовсе, а не погашены
     if (q.mine) return rows + check + '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой ответственный за пополнения.</span></div>';
     return rows + check + err +
