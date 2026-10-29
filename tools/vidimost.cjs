@@ -62,7 +62,7 @@ const ЛЮДИ = [
   { имя: 'гость без ролей', роли: [], членство: null }
 ];
 
-const ПРАВА = ['mayCards', 'mayBook', 'mayPeople', 'canTopup'];
+const ПРАВА = ['mayCards', 'mayBook', 'mayPeople', 'canTopup', 'mayTopups'];
 
 function не_выполнено(текст) {
   console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + текст);
@@ -92,7 +92,7 @@ function не_выполнено(текст) {
     window.fetch = function () { return new Promise(function () {}); };
 
     const права = {};
-    ['mayCards', 'mayBook', 'mayPeople', 'canTopup'].forEach((и) => { права[и] = !!window[и](); });
+    ['mayCards', 'mayBook', 'mayPeople', 'canTopup', 'mayTopups'].forEach((и) => { права[и] = !!window[и](); });
 
     /* ── ОБХОД ДВЕРЕЙ. Видимость — не право, а путь: право без входа никуда
        не ведёт. Вход берётся с ОТРИСОВАННОГО экрана (`data-go` внутри

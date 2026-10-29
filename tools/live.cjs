@@ -8168,6 +8168,167 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
   }
+  // ── заявки на пополнение: очередь ответственного «Пополнение онлайн» (v100, Cafe13KPG#583, кадры E56*) ──
+  // Люди — роль-словом в скобках (#495). member_id 901…904 в разметку и хранилище попадать не должен;
+  // 1 — это сам смотрящий (initDataUnsafe.user.id в open()), его заявка «своя» и кнопок не имеет (E56e).
+  {
+    const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const TROW = (o) => Object.assign({ last_name: null, username: null, currency: 'THB', pay_method: 'transfer',
+      receipt_mime: 'image/png', receipt_bytes: Math.round(1.2 * 1024 * 1024), status: 'pending', status_ru: 'ждёт проверки',
+      created_at: '2026-10-29T12:40:00+00:00', decided_at: null, decision_note: null, ledger_id: null }, o);
+    const TREQ = { pending: 3, requests: [
+      TROW({ id: 31, member_id: 901, first_name: '[член клуба]', amount: '1000.00' }),
+      TROW({ id: 32, member_id: 902, first_name: '[мастер]', amount: '2500.00', receipt_mime: 'application/pdf', receipt_bytes: 204800 }),
+      TROW({ id: 33, member_id: 1, first_name: '[глава клуба]', amount: '300.00' }),
+      TROW({ id: 29, member_id: 903, first_name: '[гость]', amount: '700.00', status: 'rejected', status_ru: 'отклонено',
+             decided_at: '2026-10-25T09:00:00+00:00', decision_note: 'Мы не получили деньги' }),
+      TROW({ id: 28, member_id: 904, first_name: '[кассир]', amount: '500.00', status: 'rejected', status_ru: 'отклонено',
+             decided_at: '2026-10-24T09:00:00+00:00', decision_note: 'на чеке другая сумма' }),
+      TROW({ id: 27, member_id: 902, first_name: '[мастер]', amount: '2000.00', status: 'approved', status_ru: 'зачислено',
+             decided_at: '2026-10-26T09:00:00+00:00', decision_note: '', ledger_id: 77 })] };
+    const TDEC = st => ({ id: 31, status: st, decided_at: '2026-10-29T13:00:00+00:00', ledger_id: st === 'approved' ? 78 : null });
+    const tqCase = (me, r = {}) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url();
+      if (/\/topup\/requests\/\d+\/receipt$/.test(u)) return r.shot || { status: 200, contentType: 'image/png', body: PNG1 };
+      if (/\/topup\/requests\/\d+\/decide$/.test(u)) return r.decide || json(200, TDEC(JSON.parse(q.postData()).decision));
+      if (/\/topup\/requests$/.test(u)) return r.list || json(200, TREQ);
+      return undefined;
+    });
+    const tqPosts = s => s.calls.filter(c => c.method === 'POST' && /\/topup\/requests\/\d+\/decide$/.test(c.url));
+    const tqGets = (s, re) => s.calls.filter(c => c.method === 'GET' && re.test(c.url));
+    const tqAct = (s, a) => s.p.evaluate(a => { const x = document.querySelector(`#view [data-action="${a}"]`); if (x) x.click(); return !!x; }, a);
+    const toTq = s => s.p.evaluate(() => go('topupQueue')).then(() => s.p.waitForTimeout(400));
+    const toReq = (s, id) => s.p.evaluate(id => go('topupReq', id), id).then(() => s.p.waitForTimeout(400));
+    const noIds = async (s, n) => {
+      const html = (await s.p.evaluate(() => document.getElementById('view').innerHTML)).replace(/blob:[^"'\s)]*/g, '');
+      if (/90[1-4]/.test(html)) bad.push(`${n}: member_id (tg_user_id) в разметке`);
+      const stored = await s.p.evaluate(() => JSON.stringify(Object.assign({}, localStorage, sessionStorage)));
+      if (/90[1-4]|\[член клуба\]/.test(stored)) bad.push(`${n}: заявки легли в хранилище браузера`);
+    };
+    // «Управление»: группа «Деньги» с числом ждущих ОТ СЕРВЕРА (pending), у главы — рядом с «Кто в клубе» (E46)
+    {
+      const n = 'tq-manage', s = await tqCase(OWNER);
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(400);
+      const t = await s.view();
+      for (const w of ['Кто в клубе', 'Деньги', 'Заявки на пополнение', 'Ждут решения: 3']) if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      await s.ctx.close();
+    }
+    // у ответственного за пополнения БЕЗ главенства вкладка есть, а в ней — только «Деньги»
+    {
+      const n = 'tq-manage-topups-only', who = clone(OWNER); who.roles = [{ role: 'topups', direction_id: null }];
+      const s = await tqCase(who);
+      if (!(await s.p.$('#tabs [data-go="manage"]'))) bad.push(`${n}: у держателя «Пополнения онлайн» нет вкладки «Управление» — очередь недостижима`);
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(400);
+      const t = await s.view();
+      if (!t.includes('Заявки на пополнение')) bad.push(`${n}: нет входа «Заявки на пополнение»`);
+      if (t.includes('Заявки на доступ') || t.includes('Кто в клубе')) bad.push(`${n}: без главенства видна группа главы клуба`);
+      await s.ctx.close();
+    }
+    // без права — ни вкладки, ни очереди, ни запроса к ней
+    {
+      const n = 'tq-norights', who = clone(OWNER); who.roles = [];
+      const s = await tqCase(who);
+      if (await s.p.$('#tabs [data-go="manage"]')) bad.push(`${n}: вкладка «Управление» у человека без прав`);
+      await toTq(s);
+      if (!(await s.view()).includes('Заявки на пополнение решает ответственный за пополнения')) bad.push(`${n}: нет отказа словами сервера`);
+      if (tqGets(s, /\/topup\/requests$/).length) bad.push(`${n}: очередь спрошена без права`);
+      await s.ctx.close();
+    }
+    // очередь (E56): ждущие ведут на заявку, решённые — нет; оба вида отказа словами; своя — «вы»
+    {
+      const n = 'tq-queue', s = await tqCase(OWNER);
+      await toTq(s);
+      const t = await s.view();
+      for (const w of ['Ждут решения', '1 000 ฿', '[член клуба]', 'ждёт проверки', 'Решённые', 'зачислено', 'отклонено',
+                       'Мы не получили деньги', 'на чеке другая сумма', '[кассир] · 24.10.2026', 'вы ·'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      const opens = await s.p.$$eval('#view [data-action^="tq-open:"]', b => b.map(x => x.getAttribute('data-action')).sort());
+      if (JSON.stringify(opens) !== JSON.stringify(['tq-open:31', 'tq-open:32', 'tq-open:33'])) bad.push(`${n}: в заявку ведут ${JSON.stringify(opens)}, ждали только ждущие 31–33`);
+      if (await s.p.$('#view [data-action^="tq-ok"], #view [data-action^="tq-ask"]')) bad.push(`${n}: кнопки решения прямо в очереди — решение живёт в заявке (E56b)`);
+      if (tqGets(s, /\/receipt$/).length) bad.push(`${n}: чеки спрошены на очереди — нужны только в заявке`);
+      await noIds(s, n);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.p.screenshot({ path: `${OUT}/live-topup-queue.png` });
+      await s.ctx.close();
+    }
+    // заявка (E56b) → «Зачислить» спрашивает (E56g) → «Назад» не шлёт → «Да, зачислить» шлёт один раз
+    {
+      const n = 'tq-approve', s = await tqCase(OWNER);
+      await toTq(s); await tqAct(s, 'tq-open:31'); await s.p.waitForTimeout(400);
+      const t = await s.view();
+      for (const w of ['Сумма', '1 000 ฿', 'Способ', 'Перевод', 'Просит', '[член клуба]', 'Когда', '29.10.2026, 19:40', 'Чек', '1,2 МБ · прислан 29.10.2026, 19:40'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}» (E56b)`);
+      const img = await s.p.evaluate(() => { const i = document.querySelector('#view img[alt="Чек"]'); return i ? i.getAttribute('src') : null; });
+      if (!img || !img.startsWith('blob:')) bad.push(`${n}: чек не показан картинкой из ответа сервера (${img})`);
+      if (tqGets(s, /\/receipt$/).some(c => c.init !== INIT)) bad.push(`${n}: чек спрошен без подписи`);
+      await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(150);
+      if (tqPosts(s).length) bad.push(`${n}: зачисление ушло с первого нажатия — подтверждения нет (E56g)`);
+      for (const w of ['Зачислить 1 000 ฿?', 'Отменить зачисление нельзя.', 'Да, зачислить']) if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (E56g)`);
+      await tqAct(s, 'tq-keep'); await s.p.waitForTimeout(150);
+      if (tqPosts(s).length || await s.p.$('#view [data-action="tq-yes:31"]')) bad.push(`${n}: «Назад» отправил или не закрыл подтверждение`);
+      await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
+      const pp = tqPosts(s);
+      if (pp.length !== 1 || !pp[0].url.endsWith('/topup/requests/31/decide') || pp[0].body !== JSON.stringify({ decision: 'approved', note: '' }))
+        bad.push(`${n}: зачисление ушло так: ${JSON.stringify(pp.map(c => [c.url.replace(/^.*requests/, ''), c.body]))}`);
+      if (await s.p.evaluate(() => current) !== 'topupQueue') bad.push(`${n}: после зачисления экран не вернулся к очереди`);
+      if (!(await s.view()).includes('Зачислено 1 000 ฿')) bad.push(`${n}: нет итога «Зачислено»`);
+      if (tqGets(s, /\/topup\/requests$/).length < 2) bad.push(`${n}: после решения очередь не перечитана`);
+      await noIds(s, n);
+      await s.ctx.close();
+    }
+    // отказ (E56d): поле причины с подсказкой «что будет при пустом»; причина уходит словами; обещания возврата нет
+    {
+      const n = 'tq-reject', s = await tqCase(OWNER);
+      await toReq(s, 31);
+      await tqAct(s, 'tq-ask:31'); await s.p.waitForTimeout(150);
+      const t = await s.view();
+      if (!t.includes('Оставите пустым — он увидит «Мы не получили деньги».')) bad.push(`${n}: нет подсказки о причине по умолчанию (E56d)`);
+      if (/вернуть деньги|вернём|возврат/i.test(t)) bad.push(`${n}: отказ обещает возврат денег, а сервер при отказе денег не двигает`);
+      if (tqPosts(s).length) bad.push(`${n}: отказ ушёл без причины и без нажатия`);
+      await s.p.fill('#tq-note', 'на чеке другая сумма');
+      await tqAct(s, 'tq-no:31'); await s.p.waitForTimeout(500);
+      const pp = tqPosts(s);
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ decision: 'rejected', note: 'на чеке другая сумма' }))
+        bad.push(`${n}: отказ ушёл так: ${JSON.stringify(pp.map(c => c.body))}`);
+      await s.ctx.close();
+    }
+    // своя заявка (E56e): видна, кнопок НЕТ вовсе; подложенное решение не уходит
+    {
+      const n = 'tq-own', s = await tqCase(OWNER);
+      await toReq(s, 33);
+      const t = await s.view();
+      if (!t.includes('Свою заявку решает другой ответственный за пополнения.')) bad.push(`${n}: нет слов E56e`);
+      if (!t.includes('вы')) bad.push(`${n}: «Просит» не «вы»`);
+      if (await s.p.$('#view [data-action^="tq-ok"], #view [data-action^="tq-ask"]')) bad.push(`${n}: у своей заявки кнопки решения — сервер ответит 409`);
+      await s.p.evaluate(() => { doAction('tq-ok:33'); doAction('tq-yes:33'); doAction('tq-ask:33'); doAction('tq-no:33'); });
+      await s.p.waitForTimeout(400);
+      if (tqPosts(s).length) bad.push(`${n}: решение своей заявки ушло подложенным действием`);
+      await s.ctx.close();
+    }
+    // чек PDF (E56v): в <img> не показать, байты не берутся, «открыть» не обещано (#413)
+    {
+      const n = 'tq-pdf', s = await tqCase(OWNER);
+      await toReq(s, 32);
+      const t = await s.view();
+      if (!t.includes('PDF')) bad.push(`${n}: не сказано, что чек — PDF`);
+      if (/открыть/i.test(t)) bad.push(`${n}: у PDF «открыть», а в Telegram это не проверено (#413)`);
+      if (await s.p.$('#view img[alt="Чек"]')) bad.push(`${n}: PDF показан через <img>`);
+      if (tqGets(s, /\/32\/receipt$/).length) bad.push(`${n}: байты PDF спрошены — показать их нечем`);
+      await s.ctx.close();
+    }
+    // решил другой (409): отказ словами сервера, очередь перечитана, итога «Зачислено» нет
+    {
+      const n = 'tq-409', s = await tqCase(OWNER, { decide: json(409, { detail: 'заявка уже зачислено' }) });
+      await toReq(s, 31);
+      await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
+      const deny = await s.p.$eval('#view .deny', e => e.textContent).catch(() => '');
+      if (!deny.includes('Заявка уже зачислено')) bad.push(`${n}: нет отказа словами сервера: «${deny}»`);
+      if ((await s.view()).includes('Зачислено 1 000')) bad.push(`${n}: отказ показан успехом`);
+      if (tqGets(s, /\/topup\/requests$/).length < 2) bad.push(`${n}: после отказа очередь не перечитана`);
+      await s.ctx.close();
+    }
+  }
+
   // ── заявки на доступ: очередь главы клуба (кадры E45*, Cafe13KPG#413) ──
   // Люди ВЫДУМАНЫ, имена кадра сюда не переносятся (репозиторий публичный).
   // Суммы выдуманы тоже: число, вшитое в клиент, на них краснеет.
