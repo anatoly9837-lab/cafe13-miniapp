@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v99 · 29.10.2026';
+var VERSION = 'v101 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1074,7 +1074,8 @@ var TOPUP = { amount: '', method: 'cash', ask: false, busy: false, err: '', from
    E52v/E52g (история), E52d (чужими глазами); Cafe13KPG#509, голова 73e7457.
    Состояние экрана одно из трёх: пути → форма или история. Слова — с кадров;
    статус и причина отказа — слова сервера (status_ru, decision_note), как пришли. */
-var TUP_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
+// «отменено» (касса сняла зачисление) — денег на счёте нет, как у отказа; цвета в кадре нет — черновик
+var TUP_ST = { pending: 'wait', approved: 'ok', rejected: 'no', cancelled: 'no' };
 function topupMember() {
   // чужими глазами деньги не вносятся: сервер откажет 403 (_not_acting), экран говорит это сразу (E52d)
   if (TEST.on && TEST.as) return '<div class="card quiet"><span class="small">Чужими глазами пополнение недоступно: деньги вносит только сам человек.</span></div>';
@@ -1115,7 +1116,7 @@ function topupMember() {
        : !mine.length ? '<div class="card quiet"><span class="small">Пополнений ещё не было.</span></div>'
        : mine.map(function (q) {
            return '<div class="card quiet hist"><div class="row"><div class="col"><b>' + money(q.amount) + ' ฿</b>' +
-               '<span class="small">' + esc(q.when) + '</span></div><span class="st ' + TUP_ST[q.status] + '">' + esc(q.word) + '</span></div>' +
+               '<span class="small">' + esc([q.when, q.from].filter(Boolean).join(' · ')) + '</span></div><span class="st ' + TUP_ST[q.status] + '">' + esc(q.word) + '</span></div>' +
              (q.status === 'rejected' && q.note ? '<span class="small">' + esc(q.note) + '</span>' : '') + '</div>';
          }).join(''));
   }
@@ -1135,21 +1136,28 @@ function topupMember() {
    просьбы о вступлении: реквизиты PromptPay → человек переводит сам → чек →
    заявка; решает держатель ответственности «пополнения», согласие кладёт
    РОВНО сумму заявки на счёт. Только баты (слово владельца). Своя история —
-   GET /topup/requests/mine; причина отказа — слово сервера (по умолчанию
-   владельца: «Мы не получили деньги»). TUP.online — форма, hist — история
-   (оба выключены — пути); mine — история (null — не загружена). */
-var TUP_STATES = { pending: 1, approved: 1, rejected: 1 };
+   GET /topup/requests/mine, ключ `history` (Cafe13KPG#582, бой api 6b797fc):
+   КНИГА плюс заявки без строки книги — взнос за вступление и касса заявок не
+   имеют, и по одним заявкам (`requests`, прежний ключ) история у только что
+   вступившего пуста. Источник — подпись сервера `source_ru`; на `source` не
+   ветвимся (предел сервера: чужой путь способом кассы подписан «касса»).
+   Причина отказа — слово сервера (по умолчанию владельца: «Мы не получили
+   деньги»). TUP.online — форма, hist — история (оба выключены — пути);
+   mine — история (null — не загружена). */
+var TUP_STATES = { pending: 1, approved: 1, rejected: 1, cancelled: 1 };
 var TUP = { online: false, amount: '', file: null, fileErr: '', busy: false, err: '',
             mine: null, fail: '', gen: 0, hist: false };
 function fromTopups(d) {
-  if (!d || typeof d !== 'object' || !Array.isArray(d.requests)) return null;
+  if (!d || typeof d !== 'object' || !Array.isArray(d.history)) return null;
   var out = [];
-  for (var i = 0; i < d.requests.length; i++) {
-    var q = d.requests[i], amt = q && num(q.amount);
-    if (!q || typeof q.id !== 'number' || !TUP_STATES[q.status] || !(amt > 0) || typeof q.status_ru !== 'string') return null;
-    // hint сервер больше не отдаёт (api#87, слово владельца) — не читаем
-    out.push({ id: q.id, status: q.status, word: q.status_ru, amount: amt,
-               when: askedWhen(q.created_at, true),
+  for (var i = 0; i < d.history.length; i++) {
+    var q = d.history[i], amt = q && num(q.amount);
+    // строка — либо книги (ledger_id), либо заявки без книги (request_id): хоть один номер обязан быть
+    if (!q || (typeof q.ledger_id !== 'number' && typeof q.request_id !== 'number') || !TUP_STATES[q.status] ||
+        !(amt > 0) || typeof q.status_ru !== 'string' || typeof q.source_ru !== 'string') return null;
+    // hint сервер больше не отдаёт (api#87, слово владельца) — не читаем; note книги члену не отдаётся вовсе
+    out.push({ status: q.status, word: q.status_ru, amount: amt, from: q.source_ru,
+               when: askedWhen(q.at, true),
                note: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' });
   }
   return out;

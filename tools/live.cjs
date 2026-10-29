@@ -271,7 +271,7 @@ if (grantsSet.length !== 1) {
     const n = 'balans-shapka';
     const who = clone(OWNER); who.roles = [];        // член клуба без прав кассы: вид «у всех остальных»
     const s = await open(true, true, json(200, who), null, null, null,
-      q => q.url().endsWith('/topup/requests/mine') ? json(200, { requests: [] }) : undefined);
+      q => q.url().endsWith('/topup/requests/mine') ? json(200, { requests: [], history: [] }) : undefined);
     const head = () => s.p.evaluate(() => document.getElementById('bar-right').textContent);
     const pressed = () => s.p.evaluate(() => { const b = document.getElementById('bal'); return b ? b.getAttribute('aria-pressed') : null; });
     if (await pressed() === null) bad.push(`${n}: в шапке нет баланса`);
@@ -308,8 +308,11 @@ if (grantsSet.length !== 1) {
   {
     const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
     const member = clone(OWNER); member.roles = [];
-    const row = (id, status, word, extra) => Object.assign({ id, amount: '1500.00', currency: 'THB', pay_method: null, status,
-      status_ru: word, created_at: '2026-10-29T01:00:00+07:00', decided_at: null, decision_note: '' }, extra || {});
+    // строка истории в форме `history` (бой api 6b797fc, Cafe13KPG#582): заявка онлайн; у зачисленной есть и строка книги
+    const row = (id, status, word, extra) => Object.assign({ ledger_id: status === 'approved' ? 100 + id : null, request_id: id,
+      amount: '1500.00', method: 'transfer', at: '2026-10-29T01:00:00+07:00', source: 'request', source_ru: 'пополнение онлайн',
+      decision_note: '', status, status_ru: word }, extra || {});
+    const hist = rows => ({ requests: [], history: rows });
     const tuCase = async (mine, post) => {
       const posted = [];
       const s = await open(true, true, json(200, member), null, null, null, q => {
@@ -328,7 +331,7 @@ if (grantsSet.length !== 1) {
     // форма: сумма, реквизиты PromptPay по подписи, чек, отправка → «ждёт проверки» из перечитанной истории
     {
       const n = 'tu-forma';
-      let mine = { requests: [] };
+      let mine = hist([]);
       const s = await tuCase(() => json(200, mine));
       if (!(await s.p.$('[data-action="tu-hist"]'))) bad.push(`${n}: в меню пополнения нет кнопки «История пополнений»`);
       if ((await s.view()).includes('Пополнений ещё не было.')) bad.push(`${n}: история открыта без нажатия`);
@@ -366,7 +369,7 @@ if (grantsSet.length !== 1) {
         if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: клиент сам запрещает сумму ниже порога — порог держит сервер`);
         await s.p.fill('#tu-amount', '1500');
         await s.p.waitForTimeout(100);
-        mine = { requests: [row(9, 'pending', 'ждёт проверки')] };
+        mine = hist([row(9, 'pending', 'ждёт проверки')]);
         await tap(s, '#tu-send');
         const b = s.posted[0];
         if (!b || b.amount !== '1500.00' || b.receipt_mime !== 'application/pdf' || b.receipt_base64 !== pdf(900).buffer.toString('base64'))
@@ -382,7 +385,7 @@ if (grantsSet.length !== 1) {
     {
       const n = 'tu-istoriya';
       // hint сервер больше не отдаёт (api#87): причина — только decision_note, по умолчанию слово владельца
-      const s = await tuCase(json(200, { requests: [row(8, 'rejected', 'отклонено', { decision_note: 'Мы не получили деньги' }), row(7, 'approved', 'зачислено', { decision_note: 'заметка к зачислению' })] }));
+      const s = await tuCase(json(200, hist([row(8, 'rejected', 'отклонено', { decision_note: 'Мы не получили деньги' }), row(7, 'approved', 'зачислено', { decision_note: 'заметка к зачислению' })])));
       await tap(s, '[data-action="tu-hist"]');
       const t = await s.view();
       for (const w of ['отклонено', 'зачислено', 'Мы не получили деньги']) if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
@@ -396,7 +399,7 @@ if (grantsSet.length !== 1) {
     // отказ сервера — его словами
     {
       const n = 'tu-409';
-      const s = await tuCase(json(200, { requests: [] }), json(409, { detail: 'ваша заявка на пополнение уже ждёт проверки' }));
+      const s = await tuCase(json(200, hist([])), json(409, { detail: 'ваша заявка на пополнение уже ждёт проверки' }));
       await tap(s, '[data-action="tu-online"]');
       // нет формы — «не выполнено», а не обрыв по таймауту, прячущий остальное (класс #480)
       if (!(await s.p.$('#tu-amount'))) { bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — форма не открылась`); await s.ctx.close(); }
@@ -412,7 +415,7 @@ if (grantsSet.length !== 1) {
     // чужими глазами (тестовый режим «Смотреть как»): деньги не вносятся — сказано сразу (E52d), сервер не спрошен
     {
       const n = 'tu-chuzhie';
-      const s = await tuCase(json(200, { requests: [] }));
+      const s = await tuCase(json(200, hist([])));
       const before = s.calls.length;
       await s.p.evaluate(() => { TEST.on = true; TEST.as = { id: 2, name: '[член клуба]', what: 'член клуба' }; go('home'); go('topup'); });
       await s.p.waitForTimeout(200);
@@ -432,10 +435,39 @@ if (grantsSet.length !== 1) {
       if (s.calls.length) bad.push(`${n}: демонстрация спросила сервер: ${JSON.stringify(s.calls.map(c => c.url.replace(/^https:\/\/[^/]+/, '')))}`);
       await s.ctx.close();
     }
+    // источник денег (Cafe13KPG#582): взнос за вступление и касса заявок не имеют — по одним заявкам их не было бы
+    // вовсе; подпись источника — слово сервера (`source_ru`), отменённая кассой строка — «отменено», а не «зачислено»
+    {
+      const n = 'tu-istochnik';
+      const s = await tuCase(json(200, hist([
+        { ledger_id: 31, request_id: null, amount: '1800.00', method: 'cash', at: '2026-10-28T12:00:00+07:00', source: 'till',
+          source_ru: 'касса', decision_note: null, status: 'cancelled', status_ru: 'отменено' },
+        { ledger_id: 30, request_id: null, amount: '2400.00', method: 'transfer', at: '2026-10-27T12:00:00+07:00', source: 'join',
+          source_ru: 'вступление в клуб', decision_note: null, status: 'approved', status_ru: 'зачислено' }])));
+      await tap(s, '[data-action="tu-hist"]');
+      const rows = await s.p.$$eval('#view .hist', e => e.map(x => x.textContent));
+      if (rows.length !== 2) bad.push(`${n}: строк истории ${rows.length}, ждали 2 (взнос и касса без заявок)`);
+      else {
+        if (!rows[1].includes('вступление в клуб') || !rows[1].includes('2 400')) bad.push(`${n}: нет строки взноса за вступление: ${rows[1]}`);
+        if (!rows[0].includes('касса') || !rows[0].includes('отменено')) bad.push(`${n}: отменённая строка кассы не названа: ${rows[0]}`);
+      }
+      const cls = await s.p.$$eval('#view .hist .st', e => e.map(x => x.className));
+      if (JSON.stringify(cls) !== '["st no","st ok"]') bad.push(`${n}: статус несёт не тот цвет: ${JSON.stringify(cls)}`);
+      await s.ctx.close();
+    }
+    // прежняя форма (только `requests`) — клиент её больше не читает: «не разобран», а не пустая история
+    {
+      const n = 'tu-staraya-forma';
+      const s = await tuCase(json(200, { requests: [row(5, 'approved', 'зачислено')] }));
+      await tap(s, '[data-action="tu-hist"]');
+      const t = await s.view();
+      if (!t.includes('Ответ сервера не разобран.') || t.includes('Пополнений ещё не было.')) bad.push(`${n}: ответ без history прочитан как история`);
+      await s.ctx.close();
+    }
     // неразобранная история — так и сказано, и есть повтор
     {
       const n = 'tu-ne-razobran';
-      const s = await tuCase(json(200, { requests: [{ id: 'x' }] }));
+      const s = await tuCase(json(200, hist([{ id: 'x' }])));
       await tap(s, '[data-action="tu-hist"]');
       if (!(await s.view()).includes('Ответ сервера не разобран.')) bad.push(`${n}: неразобранная история не названа`);
       if (!(await s.p.$('[data-action="tu-retry"]'))) bad.push(`${n}: нет «Повторить» у истории`);
