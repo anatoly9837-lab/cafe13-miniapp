@@ -577,71 +577,109 @@ if (grantsSet.length !== 1) {
     }
   }
 
-  // ── «Я мастер» на «Клубе» (v108, прототип, кадры E54*): порог 2 600 ฿, «+» часа по остатку, своя заявка ──
-  // Замеры frontend-upravlenie-ec (браузером), подлог arhitector-47 на v108 («+» без сверки суммы) был зелёным.
+  // ── «Я мастер» на «Клубе» (v109 на ручках, кадры E54*): цена сервера, «+» по остатку, подача, своя заявка ──
+  // Замеры frontend-upravlenie-ec; подлог arhitector-47 на v108 («+» без сверки) держит вторая линия ниже.
+  // ⚠ Цена в заглушке НАРОЧНО не 2 600: клиент, подставивший свою константу, совпал бы с «естественной» ценой
+  // и прошёл бы зелёным. Каждое нажатие — через tapIf: нет элемента — красная строка, а не обрыв батареи.
   {
+    const PRICE = h => 2700 + 1300 * (h - 2);
     const mem = (bal, roles) => { const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null })); p.balance = bal; return p; };
+    const mreq = (id, status, extra) => Object.assign({ id, title: 'Проба мастера', about: '', seats: 8, place_id: 1, place_name: 'Зал',
+      weekday: 4, weekday_ru: 'четверг', start_local: '18:00', hours: 2, hours_extra: 0, amount: String(PRICE(2)), status,
+      status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
+      created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '' }, extra || {});
+    // заглушки ручек мастера; mine — функцией, чтобы после подачи перечитанный список был уже с заявкой
+    const masterApi = o => q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
+      if (u.startsWith('/master/price')) { const h = Number((u.match(/hours=(\d+)/) || [])[1]); return json(200, { hours: h, hours_included: 2, amount: String(PRICE(h)) }); }
+      if (u === '/master/requests/mine') return json(200, { requests: o.mine() });
+      if (u === '/master/requests') return json(200, { requests: o.queue || [], pending: (o.queue || []).length });
+      if (u === '/master/slots') return json(200, { slots: [], masters_without_slot: [] });
+      if (u === '/places') return json(200, [{ id: 1, name: 'Зал', capacity: 20, state: 'active' }]);
+      if (u === '/master/request' && m === 'POST') { o.posted.push(JSON.parse(q.postData() || '{}')); o.after && o.after(); return json(201, mreq(901, 'pending')); }
+      return undefined;
+    };
+    const tapIf = async (s, n, sel, what) => {
+      const ok = await s.p.evaluate(x => { const b = document.querySelector(x); if (!b || b.disabled) return false; b.click(); return true; }, sel);
+      if (!ok) bad.push(`${n}: нечего нажать — ${what} (${sel})`);
+      await s.p.waitForTimeout(200);
+      return ok;
+    };
     const offer = s => s.p.evaluate(() => {
       const b = [...document.querySelectorAll('#view [data-action="ms-apply"]')].filter(x => x.textContent === 'Я мастер')[0];
       return { has: !!b, off: b ? b.disabled : null, text: document.getElementById('view').textContent };
     });
-    // меньше 2 600 — «Я мастер» погашен, и недостача названа ДО нажатия
+    // меньше цены сервера — «Я мастер» погашен, и недостача названа ДО нажатия словами СЕРВЕРНОЙ цены
     {
       const n = 'offer-short';
-      const s = await open(true, true, json(200, mem(2000, [])));
-      await s.p.waitForTimeout(250);
-      const o = await offer(s);
-      if (!o.has) bad.push(`${n}: на «Клубе» нет «Я мастер» у члена клуба`);
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(2000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      const f = await offer(s);
+      if (!f.has) bad.push(`${n}: на «Клубе» нет «Я мастер» у члена клуба`);
       else {
-        if (o.off !== true) bad.push(`${n}: при остатке 2 000 «Я мастер» нажимается — статус стоит 2 600`);
-        if (!o.text.includes('Не хватает 600 ฿')) bad.push(`${n}: недостача не названа до нажатия`);
-        if (!o.text.includes('Прототип')) bad.push(`${n}: у блока нет плашки «Прототип»`);
+        if (f.off !== true) bad.push(`${n}: при остатке 2 000 «Я мастер» нажимается — цена 2 700`);
+        if (!f.text.includes('Не хватает 700 ฿')) bad.push(`${n}: недостача не названа ценой сервера (ждали «Не хватает 700 ฿»)`);
+        if (f.text.includes('Прототип')) bad.push(`${n}: у блока плашка «Прототип» — с v109 он на ручках`);
       }
       await s.ctx.close();
     }
-    // ровно 2 600 — «Я мастер» жив, а «+» часа погашен (следующий час — 3 900); и вторая линия: обработчик
-    // сам сверяет сумму с остатком — кнопке возвращается доступность, нажатие часа не прибавляет
+    // ровно цена — «Я мастер» жив, «+» часа погашен (следующий час дороже остатка); вторая линия — обработчик
     {
       const n = 'offer-exact';
-      const s = await open(true, true, json(200, mem(2600, [])));
-      await s.p.waitForTimeout(250);
-      const o = await offer(s);
-      if (!o.has || o.off !== false) bad.push(`${n}: при ровно 2 600 «Я мастер» недоступен (${JSON.stringify(o.off)})`);
-      else {
-        await s.p.click('#view [data-action="ms-apply"]'); await s.p.waitForTimeout(150);
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(PRICE(2), [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      const f = await offer(s);
+      if (!f.has || f.off !== false) bad.push(`${n}: при остатке ровно в цену «Я мастер» недоступен (${JSON.stringify(f.off)})`);
+      else if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(200);
         if (await s.p.evaluate(() => current) !== 'masterApply') bad.push(`${n}: «Я мастер» не открыл заявку`);
         else {
           const plusOff = await s.p.evaluate(() => { const b = document.querySelector('[data-action="msf-plus"]'); return b ? b.disabled : null; });
-          if (plusOff !== true) bad.push(`${n}: при ровно 2 600 «+» часа доступен — следующий час 3 900`);
+          if (plusOff !== true) bad.push(`${n}: при остатке ровно в цену «+» часа доступен — следующий час дороже (${JSON.stringify(plusOff)})`);
           await s.p.evaluate(() => { const b = document.querySelector('[data-action="msf-plus"]'); if (b) { b.disabled = false; b.click(); } });
-          await s.p.waitForTimeout(120);
+          await s.p.waitForTimeout(150);
           if (await s.p.evaluate(() => MSF.extra) !== 0) bad.push(`${n}: обработчик «+» прибавил час сверх остатка — сверки суммы нет`);
         }
       }
+      if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия «Отправить»`);
       await s.ctx.close();
     }
-    // отправка заявки — ни одного запроса к api, заявка ждёт решения на «Клубе»
-    // и своя заявка у арт-директора — без «Согласовать» и «Отказать»: сервер ответит 409
-    for (const [n, roles] of [['offer-send', []], ['offer-own-ad', ['art_director']]]) {
-      const s = await open(true, true, json(200, mem(5000, roles)));
-      await s.p.waitForTimeout(250);
-      const before = s.calls.length;
-      await s.p.click('#view [data-action="ms-apply"]'); await s.p.waitForTimeout(150);
-      await s.p.fill('#msf-title', 'Проба мастера');
-      await s.p.click('[data-action="ms-send"]'); await s.p.waitForTimeout(200);
-      const sent = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
-      if (sent.length) bad.push(`${n}: прототип отправки спросил сервер: ${JSON.stringify(sent)}`);
-      if (!(await s.view()).includes('ждёт решения')) bad.push(`${n}: после отправки на «Клубе» нет «ждёт решения»`);
-      if (n === 'offer-own-ad') {
-        const id = await s.p.evaluate(() => (MSM[msWho()] || {}).id);
-        if (id === undefined) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — своей заявки в памяти нет`);
-        else {
-          await s.p.evaluate(x => go('masterReq', x), id); await s.p.waitForTimeout(150);
-          const t = await s.view();
-          if (await s.p.$('[data-action^="ms-yes"], [data-action^="ms-no"]')) bad.push(`${n}: у своей заявки есть «Согласовать»/«Отказать» — сервер ответит 409`);
-          if (!t.includes('Свою заявку решает другой арт-директор')) bad.push(`${n}: не сказано, кто решает свою заявку`);
-        }
+    // подача: ровно один POST /master/request с телом формы, после — своя заявка перечитана, на «Клубе» «ждёт решения»
+    {
+      const n = 'offer-send';
+      let sent = false;
+      const o = { mine: () => (sent ? [mreq(901, 'pending')] : []), posted: [], after: () => { sent = true; } };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(300);
+        await tapIf(s, n, '[data-action="msf-place:1"]', 'место «Зал»');
+        if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
+        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+        await s.p.waitForTimeout(300);
+        const b = o.posted[0] || {};
+        if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
+        else if (b.title !== 'Проба мастера' || b.seats !== 8 || b.place_id !== 1 || b.hours !== 2 || b.weekday !== 4 || b.start_local !== '18:00')
+          bad.push(`${n}: тело заявки не то: ${JSON.stringify(b)}`);
+        if (!(await s.view()).includes('ждёт решения')) bad.push(`${n}: после подачи на «Клубе» нет «ждёт решения» — своя заявка не перечитана`);
       }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // своя заявка арт-директора — по номеру из ЕГО /master/requests/mine: без «Согласовать»/«Отказать»
+    {
+      const n = 'offer-own-ad';
+      const own = mreq(501, 'pending');
+      const o = { mine: () => [own], queue: [Object.assign({ first_name: '[арт-директор]', last_name: '', username: 'ab' }, own)], posted: [] };
+      const s = await open(true, true, json(200, mem(9000, ['art_director'])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('masterReqs')); await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('masterReq', 501)); await s.p.waitForTimeout(300);
+      const t = await s.view();
+      if (await s.p.$('[data-action^="ms-yes"], [data-action^="ms-no"]')) bad.push(`${n}: у своей заявки есть «Согласовать»/«Отказать» — сервер ответит 409`);
+      if (!t.includes('Свою заявку решает другой арт-директор')) bad.push(`${n}: не сказано, кто решает свою заявку`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
