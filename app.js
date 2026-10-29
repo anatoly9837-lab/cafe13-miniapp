@@ -2858,8 +2858,9 @@ var TOPQ_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
 var TOPQ_WAY = { transfer: 'Перевод' };         // единственный способ: CHECK в миграции 019
 function mayTopups() { return LIVE && (grant('topups') || grant('admin')); }
 
-/* шаг 3 — право арт-директора; глава и админ — чтобы владелец видел прототип у себя.
-   Кто решает на сервере, не известно: ручек ещё нет (вопрос backend-uvedomleniya-32, 29.10.2026). */
+/* шаг 3 — право арт-директора. На сервере решают `art_director` и админ (`_may_decide`, cafe13-api#91
+   `b3de2dd`, app/routers/master.py:55, не смержен); главе сервер ответит 403. Глава здесь — только чтобы
+   владелец видел ПРОТОТИП у себя; при подключении к ручкам снять (решение координатора). */
 function mayMasters() { return LIVE && (grant('art_director') || grant('head') || grant('admin')); }
 function protoStrip() {
   return '<div class="proto-strip" role="note"><b>Прототип</b><span class="small">Данные примерные, нажатия ничего не отправляют.</span></div>';
@@ -6219,7 +6220,8 @@ var SCREENS = {
       '<div class="field"><label for="ms-about">Коротко для афиши</label><textarea id="ms-about" rows="3">' + esc(q.about) + '</textarea></div>' +
       '<button type="button" class="btn" data-action="proto">Согласовать</button>' +
       '<span class="small">Мероприятие сразу встанет в афишу. Выключить его можно в «Мероприятиях».</span>' +
-      // «вернуть деньги» — слова кадра; вернёт ли их сервер, не мерено: ручки нет (Cafe13KPG#328 — тот же класс)
+      // «вернуть деньги» — правда по договору cafe13-api#91: отказ пишет встречную строку книги на ту же сумму
+      // (`refund_ledger_id` в ответе; со слов сервера, дым: 3540.50 → 940.50 → 3540.50 — лично не мерено)
       '<button type="button" class="btn quiet" data-action="proto">Отказать и вернуть деньги</button>';
   },
 
