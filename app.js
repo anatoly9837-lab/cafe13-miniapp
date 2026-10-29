@@ -2858,10 +2858,10 @@ var TOPQ_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
 var TOPQ_WAY = { transfer: 'Перевод' };         // единственный способ: CHECK в миграции 019
 function mayTopups() { return LIVE && (grant('topups') || grant('admin')); }
 
-/* шаг 3 — право арт-директора. На сервере решают `art_director` и админ (`_may_decide`, cafe13-api#91
-   `b3de2dd`, app/routers/master.py:55, не смержен); главе сервер ответит 403. Глава здесь — только чтобы
-   владелец видел ПРОТОТИП у себя; при подключении к ручкам снять (решение координатора). */
-function mayMasters() { return LIVE && (grant('art_director') || grant('head') || grant('admin')); }
+/* шаг 3 — право ровно как у сервера: решают `art_director` и админ (`_may_decide`, cafe13-api#91,
+   app/routers/master.py:55, не смержен). Главы здесь нет: сервер ответил бы ему 403, а владелец проходит
+   как `admin` (решение координатора 29.10.2026, по засеву api — боевую базу никто не мерил). */
+function mayMasters() { return LIVE && (grant('art_director') || grant('admin')); }
 function protoStrip() {
   return '<div class="proto-strip" role="note"><b>Прототип</b><span class="small">Данные примерные, нажатия ничего не отправляют.</span></div>';
 }
