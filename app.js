@@ -570,7 +570,8 @@ function loadRequisites(name) {
   }, function () {
     JOIN.img[name] = 'fail';
   }).then(function () {
-    if (current === 'noAccess') render();
+    // те же реквизиты показывает и пополнение (Cafe13KPG#500: «как оплата членства»)
+    if (current === 'noAccess' || current === 'topup') render();
   });
 }
 
@@ -609,22 +610,23 @@ function shrink(file) {
     img.src = url;
   });
 }
-function attachReceipt(file) {
-  JOIN.fileErr = ''; JOIN.err = '';
+// чек в форму: box — состояние формы (JOIN — просьба о вступлении, TUP — пополнение), screen — её экран
+function attachReceipt(file, box, screen) {
+  box.fileErr = ''; box.err = '';
   if (RECEIPT_TYPES.indexOf(file.type) === -1) {
-    JOIN.file = null; JOIN.fileErr = 'Чек — фото или PDF. Выберите другой файл.'; render(); return;
+    box.file = null; box.fileErr = 'Чек — фото или PDF. Выберите другой файл.'; render(); return;
   }
   var pdf = file.type === 'application/pdf';
   (pdf ? Promise.resolve(file) : shrink(file)).then(function (b) {
     if (b.size > RECEIPT_MAX) throw new Error('big');
     return readAsB64(b).then(function (s) {
-      JOIN.file = { mime: pdf ? 'application/pdf' : 'image/jpeg', b64: s, size: b.size, pdf: pdf };
+      box.file = { mime: pdf ? 'application/pdf' : 'image/jpeg', b64: s, size: b.size, pdf: pdf };
     });
   }).catch(function (e) {
-    JOIN.file = null;
-    JOIN.fileErr = e && e.message === 'big' ? 'Чек больше 2 МБ — приложите файл поменьше.' : 'Чек не прочитался — приложите его снова.';
+    box.file = null;
+    box.fileErr = e && e.message === 'big' ? 'Чек больше 2 МБ — приложите файл поменьше.' : 'Чек не прочитался — приложите его снова.';
   }).then(function () {
-    if (current === 'noAccess') render();
+    if (current === screen) render();
   });
 }
 
@@ -1067,6 +1069,119 @@ function shiftAct(open) {
    отвечает 201 и на строку, которая в баланс не попала (способ оплаты,
    который баланс не считает), и такой 201 — правдоподобный успех. */
 var TOPUP = { amount: '', method: 'cash', ask: false, busy: false, err: '', from: 'bar' };
+
+/* Ветка члена клуба на экране пополнения — кадры E52 (пути), E52b (форма «Онлайн»),
+   E52v/E52g (история), E52d (чужими глазами); Cafe13KPG#509, голова 73e7457.
+   Состояние экрана одно из трёх: пути → форма или история. Слова — с кадров;
+   статус и причина отказа — слова сервера (status_ru, decision_note), как пришли. */
+var TUP_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
+function topupMember() {
+  // чужими глазами деньги не вносятся: сервер откажет 403 (_not_acting), экран говорит это сразу (E52d)
+  if (TEST.on && TEST.as) return '<div class="card quiet"><span class="small">Чужими глазами пополнение недоступно: деньги вносит только сам человек.</span></div>';
+  if (!LIVE && TUP.mine === null) TUP.mine = [];      // демонстрация к серверу не ходит: истории нет
+  var bal = '<div class="card strong"><span class="label">На счёте</span>' +
+    '<span class="big num">' + money(DATA.member.balance) + ' ฿</span></div>';
+  if (TUP.online) {
+    var amt = tupAmount(TUP.amount), f = TUP.file, img = JOIN.img.promptpay;
+    return '<div class="field"><label for="tu-amount">Сколько пополнить, ฿</label>' +
+        '<input id="tu-amount" type="text" inputmode="decimal" value="' + esc(TUP.amount) + '"' + (TUP.busy ? ' disabled' : '') + '></div>' +
+      // реквизиты — картинка сервера по подписи (кадр места не рисует: «не знает чужих счетов»)
+      '<div class="card quiet"><span class="label">Куда перевести</span>' +
+        (img === 'fail' ? '<div class="row"><span class="small">Реквизиты не загрузились</span>' +
+            '<button type="button" class="btn quiet mini" data-action="join-req-retry">Повторить</button></div>'
+         : img && img !== 'loading' ? '<div class="qr"><div><div class="place img"><img src="' + esc(img) + '" alt="Реквизиты PromptPay"></div></div></div>'
+         : '<span class="small">Загружаем реквизиты…</span>') + '</div>' +
+      '<div class="field"><label for="tu-file">Чек</label>' +
+        '<label class="box dashed" for="tu-file">' + svg(f ? ICON.check : ICON.cam) + '<span>' +
+          (f ? 'Чек приложен · заменить' : 'Приложить чек') + '</span>' +
+          '<input id="tu-file" type="file" accept="' + RECEIPT_TYPES.join(',') + '" hidden></label>' +
+        (f ? '<span class="small">' + (f.pdf ? 'PDF' : 'Фото') + ' · ' + money(Math.max(1, Math.round(f.size / 1024))) + ' КБ</span>' : '') + '</div>' +
+      (TUP.fileErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TUP.fileErr) + '</span></div>' : '') +
+      (TUP.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TUP.err) + '</span></div>' : '') +
+      '<button type="button" class="btn" id="tu-send" data-action="tu-send"' + (amt === null || !f || TUP.busy || img === 'fail' ? ' disabled' : '') + '>' +
+        (TUP.busy ? '…' : 'Отправить на проверку') + '</button>' +
+      '<div class="note">' + svg(ICON.info) + '<span>Деньги появятся на счёте, когда пополнение подтвердят. Обычно это занимает время, а не секунду.</span></div>';
+  }
+  if (TUP.hist) {
+    var mine = TUP.mine || [];
+    return bal + (TUP.fail ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TUP.fail) + '</span></div>' +
+          '<button type="button" class="btn ghost" data-action="tu-retry">Повторить</button>'
+       : TUP.mine === null ? '<div class="card quiet"><span class="small">Загружаем…</span></div>'
+       : !mine.length ? '<div class="card quiet"><span class="small">Пополнений ещё не было.</span></div>'
+       : mine.map(function (q) {
+           return '<div class="card quiet hist"><div class="row"><div class="col"><b>' + money(q.amount) + ' ฿</b>' +
+               '<span class="small">' + esc(q.when) + '</span></div><span class="st ' + TUP_ST[q.status] + '">' + esc(q.word) + '</span></div>' +
+             (q.status === 'rejected' && q.note ? '<span class="small">' + esc(q.note) + '</span>' : '') + '</div>';
+         }).join(''));
+  }
+  var way = function (name, sub, on) {
+    return on ? '<button type="button" class="way" data-action="tu-online"><span class="col"><b>' + name + '</b>' +
+        '<span class="small">' + sub + '</span></span>' + svg(ICON.chev, 'chev') + '</button>'
+      : '<div class="way off"><span class="col"><b>' + name + '</b><span class="small">' + sub + '</span></span></div>';
+  };
+  return bal + way('Онлайн', 'перевод по реквизитам клуба, с чеком', true) +
+    // касса (POST /till вид topup) в живом заморожена (Cafe13KPG#513, весь till* во FROZEN): путь не
+    // обещается — подпись по состоянию, слова designer-55; строка серая в обоих (слово владельца, #501)
+    way('Касса', closed('tillTopup') ? 'появится позже' : 'в кассе клуба', false) + way('USDT', 'пока только баты', false) +
+    '<button type="button" class="btn ghost" data-action="tu-hist">История пополнений</button>';
+}
+
+/* Пополнение переводом (Cafe13KPG#500, ручки #503, бой d1fa661). Путь — как у
+   просьбы о вступлении: реквизиты PromptPay → человек переводит сам → чек →
+   заявка; решает держатель ответственности «пополнения», согласие кладёт
+   РОВНО сумму заявки на счёт. Только баты (слово владельца). Своя история —
+   GET /topup/requests/mine; причина отказа — слово сервера (по умолчанию
+   владельца: «Мы не получили деньги»). TUP.online — форма, hist — история
+   (оба выключены — пути); mine — история (null — не загружена). */
+var TUP_STATES = { pending: 1, approved: 1, rejected: 1 };
+var TUP = { online: false, amount: '', file: null, fileErr: '', busy: false, err: '',
+            mine: null, fail: '', gen: 0, hist: false };
+function fromTopups(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.requests)) return null;
+  var out = [];
+  for (var i = 0; i < d.requests.length; i++) {
+    var q = d.requests[i], amt = q && num(q.amount);
+    if (!q || typeof q.id !== 'number' || !TUP_STATES[q.status] || !(amt > 0) || typeof q.status_ru !== 'string') return null;
+    // hint сервер больше не отдаёт (api#87, слово владельца) — не читаем
+    out.push({ id: q.id, status: q.status, word: q.status_ru, amount: amt,
+               when: askedWhen(q.created_at, true),
+               note: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' });
+  }
+  return out;
+}
+function loadTopups() {
+  var gen = ++TUP.gen;
+  TUP.fail = '';
+  api('GET', '/topup/requests/mine').then(function (r) {
+    if (gen !== TUP.gen) return;
+    var got = r.status === 200 ? fromTopups(r.data) : null;
+    if (got) TUP.mine = got;
+    else { TUP.mine = null; TUP.fail = r.status === 200 ? failText(r) : denyText(r); }
+    if (current === 'topup') render();
+  });
+}
+// сумма — целые баты или с копейками через точку/запятую; иначе null
+function tupAmount(v) {
+  var t = String(v || '').replace(/\s/g, '').replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  var n = Number(t);
+  return n > 0 ? n : null;
+}
+function sendTopup() {
+  var amt = tupAmount(TUP.amount);
+  if (TUP.busy || !TUP.file || amt === null) return;
+  TUP.busy = true; TUP.err = ''; render();
+  api('POST', '/topup/request', { amount: amt.toFixed(2), receipt_mime: TUP.file.mime,
+                                  receipt_base64: TUP.file.b64 }).then(function (r) {
+    TUP.busy = false;
+    if (r.status === 201 && r.data && typeof r.data.id === 'number') {
+      // «ждёт проверки» рисует перечитанная история, а не наша догадка
+      TUP.file = null; TUP.amount = ''; TUP.online = false; TUP.hist = true;
+    } else TUP.err = denyText(r);
+    loadTopups();
+    if (current === 'topup') render();
+  });
+}
 var TILL = ['admin', 'head', 'director', 'staff'];
 
 function canTopup() {
@@ -3060,13 +3175,18 @@ var CONSENT_FULL = [
   ['Сколько хранится',
    ['Пока вы член клуба и год после окончания — чтобы вернуться, не заводя всё заново.',
     'Записи о деньгах — дольше, по требованиям учёта; потом в книге остаётся сумма и дата без вашего имени.']],
+  // Слово владельца 29.10.2026 (Cafe13KPG#496): «давай уберем все, что не является правдой. Но можем
+  // что-то не договаривать, мы же делаем в том числе маркетинг»; на вопрос, дописать ли «исправить,
+  // забрать копию, отозвать согласие — просьбой работнику», — «оставляем маркетинг без лжи». Замер api:
+  // `GET /me` отдаёт ЧАСТЬ записанного («всё» было неправдой), ручек правки, выгрузки, удаления себя и
+  // отзыва согласия нет — снято вместе со сроком «до 30 дней», который относился к этим просьбам.
   ['Ваши права',
-   ['Посмотреть всё, что о вас записано. Исправить неверное. Забрать копию файлом.',
-    'Удалить себя: клуб удалит имя, фотографию, телефон и ваши записи. В книге денег останутся обезличенные суммы — без них не сходится бухгалтерия клуба.',
-    'Отозвать согласие. Тогда приложение перестанет вас узнавать, но членства вы не теряете: ваш учёт работник будет вести вручную.',
-    'Срок исполнения просьбы — до 30 дней.']],
+   ['Посмотреть, что о вас записано.']],
   ['Как согласие фиксируется',
-   ['Клуб сохранит дату, время и номер версии текста, который вы видели. Если текст изменится по сути, клуб покажет новый и спросит снова.',
+   // «и номер версии текста» снято (решение координатора по замеру api: в схеме два момента —
+   // `consent_data_at`, `consent_filming_at`, `consent_version` 0 вхождений; номер живёт только в
+   // памяти телефона). Карточка на то, чтобы сервер его хранил, — Cafe13KPG#530.
+   ['Клуб сохранит дату и время вашего согласия. Если текст изменится по сути, клуб покажет новый и спросит снова.',
     'Версия этого текста: черновик 0.1 от 16 октября 2026 года.']]
 ];
 
@@ -4345,14 +4465,8 @@ var SCREENS = {
         '<button type="button" class="btn" data-go="pass">' + svg('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3z"/>') + 'Показать пропуск</button>' +
       '</div>' +
 
-      '<div class="card quiet"><div class="row">' +
-        '<div class="col"><span class="label">Баланс</span><span class="big num">' + money(m.balance) + ' ฿</span></div>' +
-        // подпись называет ПУТЬ, а заморозка путь снимает (Cafe13KPG#510, #513): пока «На счёт» в кассе
-        // закрыт, путь не обещается, но и не снят: «Через кассу — позже» — слова designer-55, измерены в слоте
-        // (одна строка, 124 px из 130); прежнее «Пополнение временно недоступно» шло в две и стирало кассу
-        '<span class="small" style="text-align:right;max-width:130px">' +
-          (closed('tillTopup') ? 'Через кассу — позже' : 'Пополняется в кассе') + '</span>' +
-      '</div></div>' +
+      // карточки «Баланс» здесь больше нет: остаток живёт в шапке (v83), а две суммы на
+      // одном экране — две правды об одном (кадры #500; слово владельца 29.10 «убрать баланс из вкладки клуб»)
 
       (next ? '<div class="group"><span class="label">Вы записаны</span>' +
         '<button type="button" class="listitem accent" data-go="bookings">' +
@@ -5367,22 +5481,10 @@ var SCREENS = {
           '<span>Ошибочную запись отменяет касса отменой строки — в приложении этого пока нет.</span></div>' +
         (TOPUP.from === 'home' ? '' : '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>');
     }
-    return (FLASH ? flash() : '') +
-      // Пополнение члена клуба (Cafe13KPG#500): ПЕРЕПИСАННАЯ ветка этого же экрана, а не новый.
-      // Все три пути сегодня серые и называют причину: ручек просьбы о пополнении ещё нет
-      // (#503), а реквизиты без них обещали бы «отправьте деньги» без «и мы зачислим».
-      // ⚠ Слова — черновые до кадра, кроме «Пока только баты» (слово владельца).
-      '<div class="card strong"><span class="label">На счёте</span>' +
-        '<span class="big num">' + money(DATA.member.balance) + ' ฿</span></div>' +
-      '<div class="group"><span class="label">Как пополнить</span>' +
-        [['Онлайн', 'Приём онлайн-пополнений ещё не включён.'],
-         // у хостес пополнить МОЖНО уже сейчас (касса, POST /till вид topup) — серая только кнопка в приложении
-         ['Касса', 'Сейчас — у хостес клуба; из приложения позже.'],
-         ['USDT', 'Пока только баты.']].map(function (x) {
-          return '<button type="button" class="btn ghost" disabled>' + x[0] + '</button>' +
-            '<span class="small" style="text-align:center">' + x[1] + '</span>';
-        }).join('') + '</div>' +
-      '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>';
+    // Пополнение члена клуба (Cafe13KPG#500): ПЕРЕПИСАННАЯ ветка этого же экрана, а не новый; кадры E52*
+    return (FLASH ? flash() : '') + topupMember() +
+      // «Вернуться в меню» — только у «чужими глазами» (E52d); у остальных выход — «назад» оболочки
+      (TEST.on && TEST.as ? '<button type="button" class="btn ghost" data-go="home">Вернуться в меню</button>' : '');
   },
 
   barMoney: function () {
@@ -6304,7 +6406,11 @@ var BACK = {
   joinAbout: 'noAccess',
   bar: 'guest', drink: 'bar', barCart: 'bar', barOrder: 'bar',
   barRecipe: function () { return 'drink'; },
-  topup: function () { return TOPUP.from === 'home' ? 'home' : 'bar'; },
+  topup: function () {
+    // форма и история члена клуба — состояния того же экрана: «назад» сперва к путям (E52)
+    if (!canTopup() && (TUP.online || TUP.hist)) { TUP.online = false; TUP.hist = false; return 'topup'; }
+    return TOPUP.from === 'home' ? 'home' : 'bar';
+  },
   barMoney: function () { return BOOK.from; },
   barDay: function () { return LIVE ? DAY.from : homeOf(); },
   // съёмка открывается и с бара, и из кабинета куратора — «назад» зависит от роли
@@ -6322,12 +6428,18 @@ function backTo() {
    На экранах входа (BARE) шапка пустая: человека ещё нет. */
 var BAL = { shown: false };
 function barRight() {
+  // typeof … 'number' — вторая линия, НЕДОСТИЖИМА, пока жив разбор fromMe: все три записи
+  // DATA.member.balance берут число из fromMe, а он отвергает /me без конечного остатка
+  // (мутация arhitector-47 на #123 это и показала: снятая проверка — батарея зелёная)
   if (bare() || !DATA.member || typeof DATA.member.balance !== 'number') return '';
   return '<button type="button" class="bal" id="bal" data-action="bal-toggle" aria-pressed="' + BAL.shown + '"' +
       ' aria-label="' + (BAL.shown ? 'Скрыть баланс' : 'Показать баланс') + '">' +
       (BAL.shown ? money(DATA.member.balance) + ' ฿' : '••• ฿') + '</button>' +
     '<button type="button" class="icon-btn" id="wallet" data-go="topup" aria-label="Пополнить счёт">' + svg(ICON.wallet) + '</button>';
 }
+
+// где знака быть не должно: машиночитаемый код на экране (довод — доверие у двери, designer-55)
+var MARK_OFF = '.code-box, .qr';
 
 /* Экраны без вкладок: уйти с них можно решением, а не переключением. */
 var BARE = { consent: 1, consentFull: 1, loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
@@ -6373,6 +6485,12 @@ function render() {
   }
   var right = document.getElementById('bar-right');
   if (right) right.innerHTML = barRight();
+  /* Водяной знак (кадр E53, Cafe13KPG#509) гаснет ЭКРАНОМ ЦЕЛИКОМ там, где на нём
+     машиночитаемый код: QR пропуска (.code-box) и QR реквизитов (.qr). Признак —
+     СВОЙСТВО отрисованного экрана, а не перечень имён: пропуск рисуется и на
+     apiDown (запас с телефона), и новый экран с кодом погасит знак сам. Гасится
+     атрибутом оболочки, а не удалением узла — иначе на возврате знак мигнёт. */
+  document.body.setAttribute('data-mark', view.querySelector(MARK_OFF) ? 'off' : 'on');
 
   var tabs = document.getElementById('tabs');
   var list = bare() ? [] : tabList();
@@ -6487,6 +6605,10 @@ function go(screen, p) {
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
   if (screen === 'noAccess' && current !== 'noAccess') { JOIN.err = ''; JOIN.fileErr = ''; loadJoin(); }
   if (screen === 'joinAbout' && current !== 'joinAbout') loadAbout();
+  if (screen === 'topup' && current !== 'topup' && !canTopup()) {
+    TUP.online = false; TUP.hist = false; TUP.err = ''; TUP.fileErr = '';
+    if (LIVE && !(TEST.on && TEST.as)) loadTopups();
+  }
   if (screen === 'demo' && LIVE && !isGod()) return;
   if (screen === 'demo' && LIVE && !TEST.on && TEST.health !== 'configured' && TEST.health !== 'loading') loadHealth();
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
@@ -6920,6 +7042,17 @@ function doAction(a) {
     if (a === 'reset-consent') { if (LIVE) return; dropConsent(); go('consent'); return; }
     if (a === 'retry') { boot(); return; }
     if (a === 'bal-toggle') { BAL.shown = !BAL.shown; render(); return; }
+    // реквизиты — с сервера по подписи; в демонстрации к серверу не ходим
+    if (a === 'tu-online') { TUP.online = true; TUP.hist = false; TUP.err = ''; if (LIVE) loadRequisites('promptpay'); render(); return; }
+    if (a === 'tu-send') {
+      if (!LIVE) {   // демонстрация к серверу не ходит (как DEMO_SENDS)
+        FLASH = { text: 'Это демонстрация', note: 'В Telegram это ушло бы на сервер клуба. Здесь ничего не отправлено и не записано.' };
+        haptic('warn'); render(); return;
+      }
+      sendTopup(); return;
+    }
+    if (a === 'tu-retry') { loadTopups(); render(); return; }
+    if (a === 'tu-hist') { TUP.hist = true; TUP.online = false; render(); return; }
     // просьба о вступлении: до входа LIVE ложно, поэтому без «&& LIVE»
     if (a === 'join-retry') { loadJoin(); render(); return; }
     if (a === 'join-pay' && JOIN_PAY[arg]) { JOIN.pay = arg; loadRequisites(arg); render(); return; }
@@ -6966,6 +7099,12 @@ document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'p-find') { PEOPLE.find = ev.target.value; peopleFilter(); }
   if (ev.target && ev.target.id === 'd-note') MREQS.note = ev.target.value;
   if (ev.target && ev.target.id === 'join-said') JOIN.said = ev.target.value;
+  // сумма пополнения — в память формы, кнопка отправки без перерисовки (фокус не теряется)
+  if (ev.target && ev.target.id === 'tu-amount') {
+    TUP.amount = ev.target.value;
+    var b = document.getElementById('tu-send');
+    if (b) b.disabled = tupAmount(TUP.amount) === null || !TUP.file || TUP.busy || JOIN.img.promptpay === 'fail';
+  }
 });
 
 // Касса: набранное сразу в память формы — перерисовка от выбора способа или
@@ -6979,7 +7118,8 @@ document.addEventListener('change', function (ev) {
   var t = ev.target;
   // смена даты сразу показывает, в чей отчёт уйдёт запись
   if (t && t.id === 'b-date' && current === 'barMoney' && !BOOK.busy) { bookGrab(); render(); return; }
-  if (t && t.id === 'join-file') { if (t.files && t.files[0]) attachReceipt(t.files[0]); return; }
+  if (t && t.id === 'join-file') { if (t.files && t.files[0]) attachReceipt(t.files[0], JOIN, 'noAccess'); return; }
+  if (t && t.id === 'tu-file') { if (t.files && t.files[0]) attachReceipt(t.files[0], TUP, 'topup'); return; }
   if (!t || (t.id !== 'shot-file' && t.id !== 'bill-file')) return;
   var f = t.files && t.files[0];
   if (!f) return;
