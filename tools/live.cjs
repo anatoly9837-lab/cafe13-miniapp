@@ -498,7 +498,7 @@ if (grantsSet.length !== 1) {
     }
   }
 
-  // ── прототипы шага 3 (PROTO): привратник mayMasters у КАЖДОГО экрана прототипа и ноль запросов ──
+  // ── экраны шага 3 (с v109 на ручках, в WIRED; до того — PROTO): привратник у КАЖДОГО экрана ──
   // Свидетель запрета — глава клуба без art_director и admin: роль старшая, и сервер ей отвечает 403 —
   // «пускает главу» и есть форма поломки. Прямой go(), а не кнопка: вход в «Управлении» прячет экран, а не
   // запрещает его (мутация arhitector-47 «снят mayMasters в masters» была зелёной).
@@ -516,7 +516,8 @@ if (grantsSet.length !== 1) {
       // а не молча вне проверки (иначе следующий экран со своим привратником дал бы ложное красное или ничего)
       const split = await s.p.evaluate(() => {
         const by = { masters: [], member: [], unknown: [] };
-        Object.keys(PROTO).forEach(k => {
+        // с v109 PROTO пуст: экраны шага 3 берутся по СВОЙСТВУ имени (`master…`), а подключённость сверяется ниже
+        Object.keys(SCREENS).filter(k => /^master/.test(k)).forEach(k => {
           const src = String(SCREENS[k]);
           if (/mayMasters\(\)/.test(src)) by.masters.push(k);
           else if (/DATA\.role === 'guest'/.test(src)) by.member.push(k);
@@ -533,6 +534,7 @@ if (grantsSet.length !== 1) {
         await s.p.waitForTimeout(120);
         const cur = await s.p.evaluate(() => current), t = await s.view();
         if (cur !== sc) { bad.push(`${n}: go('${sc}') не открыл экран (стоит «${cur}»)`); continue; }
+        if (await s.p.evaluate(x => !!PROTO[x] || !WIRED[x], sc)) bad.push(`${n}: «${sc}» не подключён (в PROTO или вне WIRED) — v109 снял прототип`);
         // v109: экраны подключены к ручкам — плашки «Прототип» и «ноля запросов» больше нет; привратник — жив
         const deny = t.includes('Сюда нельзя');
         if (may && deny) bad.push(`${n}: «${sc}» — «Сюда нельзя» тому, кто решает заявки мастеров`);
@@ -544,14 +546,14 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
-    // прототипы, которые стережёт ЧЛЕНСТВО («Я мастер», masterApply): гостю — «Сюда нельзя», члену клуба без
-    // ролей — экран с плашкой «Прототип»; ноль запросов к api
+    // экраны, которые стережёт ЧЛЕНСТВО («Я мастер», masterApply): гостю — «Сюда нельзя», члену клуба без
+    // ролей — экран формы; с v109 он на ручках (места, цена, своя заявка), плашки и «ноля запросов» нет
     const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = []; guest.roles = [];
     const plain = clone(OWNER); plain.roles = [];
     for (const [n, who_, may] of [['proto-member-guest', guest, false], ['proto-member-plain', plain, true]]) {
       const s = await open(true, true, json(200, who_));
       await s.p.waitForTimeout(200);
-      const list = await s.p.evaluate(() => Object.keys(PROTO).filter(k => /DATA\.role === 'guest'/.test(String(SCREENS[k]))));
+      const list = await s.p.evaluate(() => Object.keys(SCREENS).filter(k => /^master/.test(k) && /DATA\.role === 'guest'/.test(String(SCREENS[k]))));
       if (!list.length) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — прототипов под членством нет`);
       const before = s.calls.length;
       for (const sc of list) {
@@ -565,10 +567,11 @@ if (grantsSet.length !== 1) {
         }
         if (cur !== sc) { bad.push(`${n}: go('${sc}') не открыл экран члену клуба (стоит «${cur}»)`); continue; }
         if (t.includes('Сюда нельзя')) bad.push(`${n}: «${sc}» — «Сюда нельзя» члену клуба`);
-        if (!t.includes('Прототип')) bad.push(`${n}: «${sc}» без плашки «Прототип»`);
+        if (t.includes('Прототип')) bad.push(`${n}: «${sc}» с плашкой «Прототип» — с v109 экран на ручках`);
       }
+      // гость не подаёт заявку и не спрашивает очередь арт-директора
       const sent = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
-      if (sent.length) bad.push(`${n}: прототипы спросили сервер: ${JSON.stringify(sent)}`);
+      if (!may && sent.some(u => /^POST \/master\/request$|\/master\/(requests(?!\/mine)|slots)/.test(u))) bad.push(`${n}: гостю ушли запросы мастера: ${JSON.stringify(sent)}`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
