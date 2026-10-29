@@ -636,6 +636,40 @@
   },
   "status": 422
  },
+ "master-renew-201": {
+  "request": "POST /master/requests/N/periods",
+  "shape": {
+   "about": null,
+   "amount": null,
+   "charged": null,
+   "created_at": null,
+   "decided_at": null,
+   "decision_note": null,
+   "events": [],
+   "hours": null,
+   "hours_extra": null,
+   "id": null,
+   "months": [],
+   "paid_until": null,
+   "place_id": null,
+   "place_name": null,
+   "seats": null,
+   "start_local": null,
+   "status": null,
+   "status_ru": null,
+   "title": null,
+   "weekday": null,
+   "weekday_ru": null
+  },
+  "status": 201
+ },
+ "master-renew-409-no-money": {
+  "request": "POST /master/requests/N/periods",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
  "master-request-201": {
   "request": "POST /master/request",
   "shape": {
@@ -647,6 +681,7 @@
    "hours": null,
    "hours_extra": null,
    "id": null,
+   "paid_until": null,
    "place_id": null,
    "place_name": null,
    "seats": null,
@@ -670,6 +705,7 @@
    "hours": null,
    "hours_extra": null,
    "id": null,
+   "paid_until": null,
    "place_id": null,
    "place_name": null,
    "seats": null,
@@ -724,6 +760,23 @@
   },
   "status": 409
  },
+ "master-request-422-step": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": [
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": null,
+     "loc": [],
+     "msg": null,
+     "type": null
+    }
+   ]
+  },
+  "status": 422
+ },
  "master-requests-403": {
   "request": "GET /master/requests",
   "shape": {
@@ -744,6 +797,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_until": null,
      "place_id": null,
      "place_name": null,
      "seats": null,
@@ -778,6 +832,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_until": null,
      "place_id": null,
      "place_name": null,
      "seats": null,
@@ -805,6 +860,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_until": null,
      "place_id": null,
      "place_name": null,
      "seats": null,
@@ -835,6 +891,7 @@
      "hours_extra": null,
      "id": null,
      "last_name": null,
+     "paid_until": null,
      "place_id": null,
      "place_name": null,
      "seats": null,
@@ -847,6 +904,66 @@
      "weekday_ru": null
     }
    ]
+  },
+  "status": 200
+ },
+ "master-slot-busy": {
+  "request": "GET /master/slot-busy?place_id=N&weekday=N",
+  "shape": {
+   "dates": [
+    {
+     "busy": [
+      {
+       "ends_at": null,
+       "starts_at": null,
+       "title": null
+      }
+     ],
+     "date": null
+    }
+   ],
+   "month": null,
+   "place_id": null,
+   "place_name": null,
+   "weekday": null,
+   "weekday_ru": null
+  },
+  "status": 200
+ },
+ "master-slot-busy-422": {
+  "request": "GET /master/slot-busy?place_id=N&weekday=N&start_local=N:N",
+  "shape": {
+   "detail": null
+  },
+  "status": 422
+ },
+ "master-slot-busy-time": {
+  "request": "GET /master/slot-busy?place_id=N&weekday=N&start_local=N:N&hours=N",
+  "shape": {
+   "dates": [
+    {
+     "busy": [
+      {
+       "ends_at": null,
+       "starts_at": null,
+       "title": null
+      }
+     ],
+     "conflict": {
+      "ends_label": null,
+      "starts_label": null,
+      "title": null
+     },
+     "date": null,
+     "starts_at": null
+    }
+   ],
+   "fits": null,
+   "month": null,
+   "place_id": null,
+   "place_name": null,
+   "weekday": null,
+   "weekday_ru": null
   },
   "status": 200
  },
@@ -867,6 +984,7 @@
      "hours_extra": null,
      "last_name": null,
      "membership_live": null,
+     "paid_until": null,
      "place_name": null,
      "request_id": null,
      "start_local": null,

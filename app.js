@@ -2017,9 +2017,7 @@ function refreshMe() {
     DATA.member.balance = me.member.balance;
     if (was === me.member.balance) return;
     // форма мастера держит набранное в полях — забрать его ДО перерисовки, иначе текст пропадёт
-    if (current === 'masterApply' && document.getElementById('msf-title')) {
-      MSF.title = val('msf-title'); MSF.about = val('msf-about'); MSF.seats = val('msf-seats');
-    }
+    if (current === 'masterApply') msfGrab();
     // экраны, где остаток считает что-то кроме шапки, — целиком; остальные — только шапка (остаток в ней)
     if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1 }[current]) render();
     else { var right = document.getElementById('bar-right'); if (right) right.innerHTML = barRight(); }
@@ -2926,6 +2924,47 @@ for (var msi = 0; msi < 48; msi++) MS_TIMES.push((msi < 20 ? '0' : '') + Math.fl
 // место ФИКСИРОВАНО — «Зал» (слово владельца через координатора, 29.10.2026); его номер — из `GET /places` по имени
 var MS_PLACE = 'Зал';
 function msPlace() { return EV_PLACES ? EV_PLACES.filter(function (x) { return x.name === MS_PLACE; })[0] || null : null; }
+/* Занятость дня — ОДНОЙ ручкой на все даты месяца (`GET /master/slot-busy`, снимки master-slot-busy*,
+   cafe13-api#100 `da239b1`): даты — ровно те, что сервер выпишет при согласии, клиент их не считает.
+   Слово владельца: «когда выбран день должны появиться занятые слоты… сервер должен показать это сразу еще
+   перед тем как пользователь начал выбирать время». Частичного ответа нет: пришло — показ, не пришло —
+   «не загрузилась», и отказ сервера при пересечении остаётся ПОСЛЕДНЕЙ защитой. */
+var MSB = { key: '', gen: 0, data: null, fail: '' };
+function fromBusy(d) {
+  if (!d || !Array.isArray(d.dates) || typeof d.month !== 'string') return null;
+  var bad = false;
+  var dates = d.dates.map(function (x) {
+    if (!x || typeof x.date !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(x.date) || !Array.isArray(x.busy)) { bad = true; return null; }
+    var busy = x.busy.map(function (b) {
+      var a = b && new Date(b.starts_at), z = b && new Date(b.ends_at);
+      if (!b || typeof b.title !== 'string' || isNaN(a) || isNaN(z)) { bad = true; return null; }
+      return { title: b.title, from: bkk(a).hm, to: bkk(z).hm };
+    });
+    var c = x.conflict;
+    if (c !== undefined && c !== null && (typeof c.title !== 'string' || typeof c.starts_label !== 'string' || typeof c.ends_label !== 'string')) bad = true;
+    return { day: x.date.slice(8, 10) + '.' + x.date.slice(5, 7), busy: busy, conflict: c || null };
+  });
+  if (bad || (d.fits !== undefined && typeof d.fits !== 'boolean')) return null;
+  return { dates: dates, fits: typeof d.fits === 'boolean' ? d.fits : null };
+}
+function loadBusy() {
+  var pl = msPlace(); if (!pl) return;
+  var key = pl.id + '|' + MSF.day + '|' + MSF.time + '|' + (2 + MSF.extra);
+  if (key === MSB.key && (MSB.data || MSB.fail)) return;
+  var gen = ++MSB.gen; MSB.key = key; MSB.data = null; MSB.fail = '';
+  api('GET', '/master/slot-busy?place_id=' + pl.id + '&weekday=' + MSF.day + '&start_local=' + encodeURIComponent(MSF.time) + '&hours=' + (2 + MSF.extra)).then(function (r) {
+    if (gen !== MSB.gen) return;    // поздний ответ под прежний день или время молчит
+    var d = r.status === 200 ? fromBusy(r.data) : null;
+    if (d) MSB.data = d; else MSB.fail = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r);
+    if (current === 'masterApply') { msfGrab(); render(); }
+  });
+}
+// набранное в полях формы — в MSF перед любой перерисовкой, иначе текст пропадёт
+function msfGrab() {
+  if (!document.getElementById('msf-title')) return;
+  MSF.title = val('msf-title'); MSF.about = val('msf-about'); MSF.seats = val('msf-seats');
+  if (document.getElementById('msf-time')) MSF.time = document.getElementById('msf-time').value;
+}
 // потолки — сервера (`NewMasterRequest`, master.py:75; снимок master-request-201-max: hours 12, about 2000)
 var MS_MAX_H = 12, MS_ABOUT = 2000, MS_SEATS = 500;
 function msName(p) {
@@ -6523,8 +6562,22 @@ var SCREENS = {
     var place = EV_PLACES ? (msPlace() ? '<b>' + esc(MS_PLACE) + '</b>' : '<span class="small">Места «' + esc(MS_PLACE) + '» нет среди открытых мест клуба</span>')
       : EV_PLACES_STATE === 'loading' || !EV_PLACES_STATE ? '<span class="small">Загружаем место…</span>'
       : '<div class="row"><span class="small">' + esc(EV_PLACES_STATE) + '</span><button type="button" class="btn quiet" data-action="ms-retry-places">Повторить</button></div>';
+    if (msPlace()) loadBusy();
+    var B = MSB.data, clash = B && B.fits === false;
     var why = MR.busy ? '' : typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
-      : p > bal ? 'Не хватает ' + money(p - bal) + ' ฿ на счёте.' : EV_PLACES && !msPlace() ? 'Места «' + MS_PLACE + '» нет.' : !EV_PLACES ? 'Загружаем место…' : '';
+      : p > bal ? 'Не хватает ' + money(p - bal) + ' ฿ на счёте.' : EV_PLACES && !msPlace() ? 'Места «' + MS_PLACE + '» нет.' : !EV_PLACES ? 'Загружаем место…'
+      : clash ? 'Выбранное время пересекается с занятым — выберите другое.' : '';
+    // занятость: даты месяца, занятое в каждую, и пересечение выбранного времени — ДО отправки
+    var busy = !msPlace() ? '' : !B ? (MSB.fail ? '<div class="row"><span class="small">Занятость не загрузилась: ' + esc(MSB.fail) +
+          ' Отправить можно — пересечение проверит сервер.</span><button type="button" class="btn quiet" data-action="msf-busy-retry">Повторить</button></div>'
+        : '<span class="small">Смотрим занятость…</span>')
+      : !B.dates.length ? '<span class="small">В этом месяце недель для слота не осталось.</span>'
+      : '<div class="rows">' + B.dates.map(function (x) {
+          var used = x.busy.length ? x.busy.map(function (b) { return b.from + '–' + b.to + ' «' + b.title + '»'; }).join(', ') : 'свободно';
+          return '<div><span class="small">' + esc(x.day) + '</span><b' + (x.conflict ? ' style="color:var(--clay-ink)"' : '') + '>' +
+            esc(x.conflict ? 'пересекается: ' + x.conflict.starts_label.split(' ').pop() + '–' + x.conflict.ends_label + ' «' + x.conflict.title + '»' : used) + '</b></div>';
+        }).join('') + '</div>' +
+        '<span class="small">' + (B.fits ? 'Выбранное время свободно на всех ' + B.dates.length + ' датах месяца.' : 'Красным — даты, где выбранное время занято.') + '</span>';
     return (FLASH ? flash() : '') + '<div class="mf">' +
       '<div class="field"><label>День недели</label>' + chips('msf-day', MS_DAY.map(function (d, i) { return [i + 1, d]; }), MSF.day) + '</div>' +
       '<div class="field"><label for="msf-time">Начало</label><select id="msf-time">' + MS_TIMES.map(function (t) {
@@ -6538,6 +6591,7 @@ var SCREENS = {
           : more ? msSpan(MS_DAY[MSF.day - 1], MSF.time, h) + (typeof pNext === 'number' && typeof p === 'number' ? ' · ещё час — ' + money(pNext - p) + ' ฿' : '')
           : typeof pNext === 'number' ? 'Ещё час — ' + money(pNext) + ' ฿, на счёте ' + money(bal) + ' ฿' : 'Узнаём цену…') + '</span></div>' +
       '<div class="field"><label>Место</label>' + place + '</div>' +
+      (busy ? '<div class="field"><label>Занято в этот день недели</label>' + busy + '</div>' : '') +
       '<div class="field"><label for="msf-seats">Мест</label>' +
         '<input id="msf-seats" inputmode="numeric" style="width:92px" value="' + esc(MSF.seats) + '">' +
         '<span class="small">0 — без ограничения</span></div>' +
@@ -7383,6 +7437,10 @@ document.addEventListener('input', function (ev) {
   if (tail) tail.hidden = !eh.ok;
 });
 
+// «Начало» — выбор (select): смена значения кликом не приходит, а занятость обязана перечитаться под новое время
+document.addEventListener('change', function (ev) {
+  if (ev.target && ev.target.id === 'msf-time' && current === 'masterApply') { msfGrab(); MSF.err = ''; render(); }
+});
 document.addEventListener('click', function (ev) {
   var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-place],[data-toggle],[data-manage],[data-action],[data-drink],[data-where],[data-pay],[data-exp],[data-expay]');
   if (!el) return;
@@ -7783,13 +7841,12 @@ function doAction(a) {
     if (a === 'ms-ev') { go('masterEvent', arg); return; }
     if (a.slice(0, 4) === 'msf-' || a === 'ms-send') {
       // набранное не теряется при перерисовке нажатием чипа
-      if (document.getElementById('msf-title')) { MSF.title = val('msf-title'); MSF.about = val('msf-about'); }
-      if (document.getElementById('msf-seats')) MSF.seats = val('msf-seats');
-      if (document.getElementById('msf-time')) MSF.time = document.getElementById('msf-time').value;
+      msfGrab();
       MSF.err = '';
     }
     if (a === 'ms-apply') { MSF.err = ''; go('masterApply'); return; }
     if (a === 'msf-day') { MSF.day = Number(arg); render(); return; }
+    if (a === 'msf-busy-retry') { MSB.key = ''; render(); return; }
     if (a === 'msf-plus' && 2 + MSF.extra < MS_MAX_H && MR.price[3 + MSF.extra] <= msBalance()) {
       MSF.extra += 1; loadPrice(3 + MSF.extra); render(); return;
     }
