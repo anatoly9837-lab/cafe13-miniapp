@@ -2169,7 +2169,7 @@ var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
                // «форма закрыта» и «карточка свёрнута» — разные состояния экрана.
                card: null,
                open: null, role: '', give: null, busy: false, deny: null, done: null, find: '',
-               out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null, land: null,
+               out: null, gone: null, sending: null, land: null,
                lvAsk: null, lvSending: null, back: null };
 /* Окно отмены ДО отправки — теперь ТОЛЬКО у уровня членства (v91). У ролей окна нет: слово
    владельца 29.10.2026 «снятие происходит сразу; отмена активна, пока мы не ушли с экрана или не
@@ -2178,27 +2178,36 @@ var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
    `ends_at = now()`), вернуть его нечем — поэтому у уровня окно остаётся (решение координатора).
    Цифра в полосе считается ОТСЮДА ЖЕ — разойтись с задержкой ей нечем. */
 var UNDO_MS = 5000;
+/* Окно отмены ДО отправки — ОДНО на приложение и общее для всех мест, где сервер назад не умеет:
+   снятие уровня членства (E47y, v91) и продление мастера (E59b). Своей копии у места нет: одна беда —
+   одна форма, копия разошлась бы при первой правке (кадр E59b, решение координатора 29.10.2026).
+   Механика здесь — таймер, отсчёт, кто ждёт; ЧТО ждёт и что значит «ушло» — у места (`send`). */
+var UNDO = { key: null, at: 0, timer: null, tick: null };
 function undoStop() {
-  if (PEOPLE.askTimer) clearTimeout(PEOPLE.askTimer);
-  if (PEOPLE.askTick) clearInterval(PEOPLE.askTick);
-  PEOPLE.askTimer = PEOPLE.askTick = null;
+  if (UNDO.timer) clearTimeout(UNDO.timer);
+  if (UNDO.tick) clearInterval(UNDO.tick);
+  UNDO.timer = UNDO.tick = null; UNDO.key = null;
 }
-function undoLeft() { return Math.max(0, Math.ceil((PEOPLE.askAt + UNDO_MS - Date.now()) / 1000)); }
-// lv — ключ уровня членства «k.level» (v86). Окно одно на экран.
-function undoStart(lv) {
+function undoLeft() { return Math.max(0, Math.ceil((UNDO.at + UNDO_MS - Date.now()) / 1000)); }
+// key — что ждёт отправки; send(key) — отправка по истечении окна (гард «ключ не сменился» — здесь)
+function undoStart(key, send) {
   undoStop();
-  PEOPLE.lvAsk = lv; PEOPLE.askAt = Date.now(); PEOPLE.deny = null;
-  PEOPLE.askTimer = setTimeout(function () {
-    if (PEOPLE.lvAsk !== lv) return;
-    // окно вышло — снятие уходит. НЕ через вход действий: там `PEOPLE.busy`, и если в эту
-    // секунду в пути выдача у другой карточки, снятие тихо потерялось бы (v91)
-    lvSend(lv);
+  UNDO.key = key; UNDO.at = Date.now();
+  UNDO.timer = setTimeout(function () {
+    if (UNDO.key !== key) return;
+    send(key);
   }, UNDO_MS);
   // отсчёт меняет только цифру, экран не перерисовывается
-  PEOPLE.askTick = setInterval(function () {
+  UNDO.tick = setInterval(function () {
     var el = document.querySelector('.undo .sec');
     if (el) el.textContent = String(undoLeft());
   }, 250);
+}
+// lv — ключ уровня членства «k.level» (v86). Окно вышло — снятие уходит НЕ через вход действий: там
+// `PEOPLE.busy`, и если в эту секунду в пути выдача у другой карточки, снятие тихо потерялось бы (v91)
+function lvAskStart(lv) {
+  PEOPLE.lvAsk = lv; PEOPLE.deny = null;
+  undoStart(lv, lvSend);
 }
 
 function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
@@ -7614,7 +7623,7 @@ function doAction(a) {
       if (a === 'p-lvask') {
         var lm = /^(\d+)\.(\w+)$/.exec(arg), lp = lm && PEOPLE.list && PEOPLE.list[Number(lm[1])];
         if (!lp || lp.lvKeys.indexOf(lm[2]) === -1) return;
-        undoStart(arg);
+        lvAskStart(arg);
       }
       if (a === 'p-keep') { undoStop(); PEOPLE.lvAsk = null; }
       haptic(); peopleRedraw(before);
