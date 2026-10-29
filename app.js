@@ -706,7 +706,7 @@ function closed(screen) { return LIVE && (!!FROZEN[screen] || (!WIRED[screen] &&
    Сторож ниже, после SCREENS: экран не бывает в PROTO и WIRED сразу, в теле экрана нет `api(`, и в
    PROTO живут только экраны шага 3 (имя с `master`) — иначе флаг расползётся вторым FROZEN без хозяина.
    ⚠ Предел сторожа: он читает ТЕЛО экрана, а не помощники, которые тело зовёт. */
-var PROTO = { masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1 };
+var PROTO = { masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -2876,6 +2876,62 @@ function msSpan(day, start, hours) {
   return day + ', ' + start + ' – ' + hh(Math.floor(end / 60)) + ':' + hh(end % 60);
 }
 /* Примерные данные прототипа — ДОСЛОВНО из кадров E55v/E55e/E55d (Cafe13KPG dev 51a0ff8), люди роль-словами (#495) */
+/* ── шаг 3, сторона ЧЛЕНА КЛУБА: «Я мастер» (кадры E54, E54b, E54i, E54zh, E54g, E54v, E54d, E54e — голова
+   дизайнера Cafe13KPG `ae9393b`) — ПРОТОТИП. Слово владельца 29.10.2026: «у члена клуба появляется кнопка
+   «Я мастер». Это действие списывает с его баланса 2600 бат и отправляет арт директору заявку… За каждый
+   дополнительный час сумма увеличивается на 1300 бат… В случае если арт директор отказал, то сумма
+   возвращается… И он может еще раз подать заявку».
+   Заявка живёт в ПАМЯТИ СТРАНИЦЫ (`MSM`) и кладётся в очередь арт-директора (`MS.reqs`): путь проходится
+   целиком за один запуск, в том числе «Смотреть как» в тестовом режиме, — и НИЧЕГО не уходит на сервер,
+   деньги не двигаются. Остаток — настоящий (`/me`), им решается, хватит ли (E54g); списания в прототипе нет.
+   Ключ заявки — номер человека в памяти, в разметку он не идёт. */
+var MS_PRICE = 2600, MS_HOUR = 1300;
+var MS_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+// время, места и занятость — из кадров E54b/E54zh: ручки «свободное время» на сервере нет, места — `GET /places`
+var MS_TIMES = ['10:00', '12:00', '14:00', '16:00', '18:00', '20:00'], MS_BUSY_T = ['12:00', '16:00'];
+var MS_PLACES = ['Зал', 'Сад', 'Двор'], MS_BUSY_P = { '18:00': ['Сад'], '20:00': ['Зал', 'Сад', 'Двор'] };
+var MSF = { day: 'Чт', time: '18:00', extra: 0, place: 'Зал', seats: '8', title: '', about: '', err: '' };
+var MSM = {};
+function msTotal(extra) { return MS_PRICE + MS_HOUR * extra; }
+function msBalance() { return DATA.member && typeof DATA.member.balance === 'number' ? DATA.member.balance : 0; }
+// чья заявка: в «Смотреть как» — того, чьими глазами смотрят, иначе свой номер
+function msWho() { return TEST.on && TEST.as ? 'as:' + TEST.as.id : 'me:' + String(tgUid()); }
+function msMine() { return MSM[msWho()] || null; }
+function msHours(n) { return n === 1 ? 'час' : n < 5 ? 'часа' : 'часов'; }
+// мастер уже: живое членство вида «Мастер» (кадр E54v) или согласованная заявка в этом запуске
+function msIsMaster() {
+  var lv = ((DATA.member && DATA.member.memberships) || []).map(function (m) { return m && m.level; });
+  var mine = msMine();
+  return lv.indexOf('organizer') !== -1 || !!(mine && mine.status === 'approved');
+}
+function masterOffer() {
+  if (!LIVE || DATA.role === 'guest') return '';
+  var mine = msMine(), card;
+  if (msIsMaster()) card = '<div class="card"><div class="col"><b>Вы мастер</b>' +
+      '<span class="small">Мастерство покупают один раз. Своё время и ивент — в «Ивентах».</span></div></div>';
+  else if (mine && mine.status === 'pending') card = '<div class="card quiet"><div class="row"><div class="col"><b>Заявка в мастера</b>' +
+      '<span class="small">' + esc(mine.when) + '</span></div><span class="st wait">ждёт решения</span></div>' +
+      '<span class="small">' + esc('Списано ' + money(mine.paid) + ' ฿. ' + mine.slot + '.') + '</span></div>' +
+    '<div class="note">' + svg(ICON.info) + '<span>Решение принимает арт-директор. Если он откажет, деньги вернутся на счёт.</span></div>';
+  else if (mine && mine.status === 'rejected') card = '<div class="card quiet"><div class="row"><div class="col"><b>Заявка в мастера</b>' +
+      '<span class="small">' + esc(mine.when) + '</span></div><span class="st no">отклонено</span></div>' +
+      '<span class="small">' + esc(money(mine.paid) + ' ฿ вернулись на счёт.') + '</span></div>' +
+    '<button type="button" class="btn" data-action="ms-apply">Подать заново</button>';
+  else {
+    var bal = msBalance(), short = bal < MS_PRICE;
+    // E54g: кнопка недоступна, причина — рядом, до нажатия (вариант дизайнера; второй ждёт владельца)
+    card = '<div class="card"><div class="col"><b>Стать мастером</b>' +
+        // «свой ивент», а не «своё ивент» кадра: род после переименования (вопрос дизайнеру)
+        '<span class="small">Свой слот в расписании клуба и свой ивент в афише.</span></div>' +
+        '<span class="small">' + (short ? 'Не хватает ' + money(MS_PRICE - bal) + ' ฿: нужно ' + money(MS_PRICE) + ' ฿, на счёте ' + money(bal) + ' ฿'
+          : money(MS_PRICE) + ' ฿ один раз · ивент на 2 часа каждую неделю, пока есть членство') + '</span>' +
+        '<button type="button" class="btn" data-action="ms-apply"' + (short ? ' disabled' : '') + '>Я мастер</button></div>' +
+      (short ? '<div class="note">' + svg(ICON.info) + '<span>Пополнить счёт можно на вкладке «Клуб» — кошельком в шапке.</span></div>' : '');
+  }
+  // блок стоит на НАСТОЯЩЕМ экране «Клуб», поэтому плашку прототипа несёт сам блок, а не экран
+  return '<div class="group">' + protoStrip() + card + '</div>';
+}
+
 var MS = {
   reqs: [
     { id: 1, who: '[член клуба]', when: 'сегодня, 19:40', status: 'pending', word: 'ждёт решения',
@@ -4651,6 +4707,8 @@ var SCREENS = {
           svg(ICON.chev, 'chev') +
         '</button></div>' : '') +
 
+      // шаг 3, ПРОТОТИП: «Я мастер» — под карточкой членства (кадр E54); у гостя пусто
+      masterOffer() +
       rolePanel() +
 
       (LIVE ? myRoles() +
@@ -6237,11 +6295,14 @@ var SCREENS = {
         '<div><span class="small">Списано</span><b class="num">' + money(q.paid) + ' ฿</b></div></div>' +
       '<div class="field"><label for="ms-title">Название ивента</label><input id="ms-title" value="' + esc(q.title) + '"></div>' +
       '<div class="field"><label for="ms-about">Коротко для афиши</label><textarea id="ms-about" rows="3">' + esc(q.about) + '</textarea></div>' +
-      '<button type="button" class="btn" data-action="proto">Согласовать</button>' +
+      // заявка, поданная в этом запуске (`q.who_key`), решается В ПАМЯТИ: путь мастера проходится до конца.
+      // Своя — без кнопок: сервер ответит 409 «свою заявку решает другой арт-директор» (cafe13-api#91)
+      (q.who_key && q.who_key === msWho() ? '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой арт-директор.</span></div>' :
+      '<button type="button" class="btn" data-action="' + (q.who_key ? 'ms-yes:' + q.id : 'proto') + '">Согласовать</button>' +
       '<span class="small">Ивент сразу встанет в афишу. Выключить его можно в «Ивентах».</span>' +
       // «вернуть деньги» — правда по договору cafe13-api#91: отказ пишет встречную строку книги на ту же сумму
       // (`refund_ledger_id` в ответе; со слов сервера, дым: 3540.50 → 940.50 → 3540.50 — лично не мерено)
-      '<button type="button" class="btn quiet" data-action="proto">Отказать и вернуть деньги</button>';
+      '<button type="button" class="btn quiet" data-action="' + (q.who_key ? 'ms-no:' + q.id : 'proto') + '">Отказать и вернуть деньги</button>');
   },
 
   // E55e. Выключенное не прячется: иначе включить его негде (кадр). Название и подпись — вход на экран
@@ -6271,6 +6332,56 @@ var SCREENS = {
         '<div><span class="small">Ведёт</span><b>' + esc(e.who) + '</b></div>' +
         '<div><span class="small">В афише</span><b>' + (e.on ? 'видно' : 'выключено, не видно') + '</b></div></div>' +
       '<button type="button" class="btn' + (e.on ? '' : ' quiet') + '" data-action="proto">' + (e.on ? 'Выключить' : 'Включить') + '</button>';
+  },
+
+  /* E54b + E54i (одним экраном: в живом прокрутка есть, кадр делил форму только по коробке), E54zh — когда
+     в выбранное время заняты все места. Порядок полей — кадра: от того, что человек знает твёрдо, к сочинению */
+  masterApply: function () {
+    if (!LIVE || DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Мастером становится член клуба.</span></div></div>';
+    if (msIsMaster()) return '<div class="card"><div class="col"><b>Вы мастер</b>' +
+      '<span class="small">Мастерство покупают один раз.</span></div></div>';
+    var mine = msMine();
+    if (mine && mine.status === 'pending') return '<div class="card quiet"><div class="col"><b>Заявка уже ждёт решения</b>' +
+      '<span class="small">Вторую не подать, пока арт-директор не ответил на первую.</span></div></div>';
+    var bal = msBalance(), total = msTotal(MSF.extra), more = msTotal(MSF.extra + 1) <= bal;
+    var busyP = MS_BUSY_P[MSF.time] || [], allBusy = MS_PLACES.every(function (x) { return busyP.indexOf(x) !== -1; });
+    var place = busyP.indexOf(MSF.place) === -1 ? MSF.place : '';
+    var chips = function (act, list, on, busy) {
+      return '<div class="chips">' + list.map(function (x) {
+        var b = busy.indexOf(x) !== -1;
+        return '<button type="button" class="chip' + (b ? ' busy' : x === on ? ' on' : '') + '" data-action="' + act + ':' + x + '"' +
+          (b ? ' disabled' : '') + ' aria-pressed="' + (x === on) + '">' + x + '</button>';
+      }).join('') + '</div>';
+    };
+    var why = total > bal ? 'Не хватает ' + money(total - bal) + ' ฿ на счёте.'
+      : allBusy ? 'В это время заняты все места.' : !place ? 'Выберите место.' : '';
+    return (FLASH ? flash() : '') + '<div class="mf">' +
+      '<div class="field"><label>День недели</label>' + chips('msf-day', MS_DAYS, MSF.day, []) + '</div>' +
+      '<div class="field"><label>Время</label>' + chips('msf-time', MS_TIMES, MSF.time, MS_BUSY_T) +
+        '<span class="small">Зачёркнутое — занято</span></div>' +
+      '<div class="field"><label>Часы сверх двух</label><div class="counter">' +
+        '<button type="button" class="round" data-action="msf-minus"' + (MSF.extra ? '' : ' disabled') + ' aria-label="Меньше">−</button>' +
+        '<b class="num">' + (MSF.extra ? '+' + MSF.extra + ' ' + msHours(MSF.extra) : 'нет') + '</b>' +
+        '<button type="button" class="round" data-action="msf-plus"' + (more ? '' : ' disabled') + ' aria-label="Больше">+</button></div>' +
+        // «+» гаснет там, где следующий час не покрыт остатком, и причина — рядом (кадр, слово владельца)
+        '<span class="small">' + (more ? 'Два часа уже входят' : 'Ещё час — ' + money(msTotal(MSF.extra + 1)) + ' ฿, на счёте ' + money(bal) + ' ฿') + '</span></div>' +
+      (allBusy ? '<div class="field"><label>Место</label><div class="card quiet"><div class="col"><b>В это время заняты все места</b>' +
+          '<span class="small">Выберите другое время или другой день — свободное место появится в списке.</span></div></div></div>'
+        : '<div class="field"><label>Место и мест</label>' + chips('msf-place', MS_PLACES, place, busyP) +
+          '<div class="row" style="justify-content:flex-start;gap:10px"><label for="msf-seats" class="small">Мест</label>' +
+            '<input id="msf-seats" inputmode="numeric" style="width:92px" value="' + esc(MSF.seats) + '"></div>' +
+          '<span class="small">Зачёркнутое — занято в это время</span></div>') +
+      '<div class="field"><label for="msf-title">Название ивента</label><input id="msf-title" maxlength="200" value="' + esc(MSF.title) + '"></div>' +
+      '<div class="field"><label for="msf-about">Коротко для афиши</label><textarea id="msf-about" rows="3" maxlength="500">' + esc(MSF.about) + '</textarea></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">Статус мастера · 2 часа</span><b class="num">' + money(MS_PRICE) + ' ฿</b></div>' +
+        (MSF.extra ? '<div><span class="small">Ещё ' + MSF.extra + ' ' + msHours(MSF.extra) + ' · по ' + money(MS_HOUR) + ' ฿</span><b class="num">' + money(MS_HOUR * MSF.extra) + ' ฿</b></div>' : '') +
+        '<div><span class="small">Спишется</span><b class="num">' + money(total) + ' ฿</b></div></div>' +
+      (MSF.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MSF.err) + '</span></div>' : '') +
+      '<button type="button" class="btn" data-action="ms-send"' + (why ? ' disabled' : '') + '>Отправить заявку</button>' +
+      (why ? '<span class="small">' + esc(why) + '</span>' : '') +
+    '</div>';
   },
 
   // E55d
@@ -6735,7 +6846,7 @@ var TITLES = {
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
-  masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера'
+  masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -6785,7 +6896,7 @@ var BACK = {
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
-  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters',
+  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -7482,6 +7593,51 @@ function doAction(a) {
     // шаг 3, ПРОТОТИП: ничего не уходит — построением, в этих ветках нет api(
     if (a === 'ms-open') { go('masterReq', arg); return; }
     if (a === 'ms-ev') { go('masterEvent', arg); return; }
+    // шаг 3, сторона мастера, ПРОТОТИП: всё — в памяти страницы, в этих ветках нет api(
+    if (a.slice(0, 4) === 'msf-' || a === 'ms-send') {
+      // набранное не теряется при перерисовке нажатием чипа
+      if (document.getElementById('msf-title')) { MSF.title = val('msf-title'); MSF.about = val('msf-about'); }
+      if (document.getElementById('msf-seats')) MSF.seats = val('msf-seats');
+      MSF.err = '';
+    }
+    if (a === 'ms-apply') { MSF.err = ''; go('masterApply'); return; }
+    if (a === 'msf-day') { MSF.day = arg; render(); return; }
+    if (a === 'msf-time') { MSF.time = arg; render(); return; }
+    if (a === 'msf-place') { MSF.place = arg; render(); return; }
+    if (a === 'msf-plus' && msTotal(MSF.extra + 1) <= msBalance()) { MSF.extra += 1; render(); return; }
+    if (a === 'msf-minus' && MSF.extra > 0) { MSF.extra -= 1; render(); return; }
+    if (a === 'ms-send') {
+      var seats = Number(MSF.seats), total = msTotal(MSF.extra);
+      // пределы — сервера: `events.seats CHECK (seats > 0)`, название не пустое (форма мероприятия)
+      MSF.err = !MSF.title ? 'Без названия ивент в афишу не ставится.'
+        : !(seats > 0 && Math.floor(seats) === seats) ? 'Число мест — целое, больше нуля.'
+        : total > msBalance() ? 'Не хватает денег на счёте.' : '';
+      if (MSF.err) { render(); return; }
+      var now = new Date(), hm = (now.getHours() < 10 ? '0' : '') + now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+      var slot = msSpan(MSF.day, MSF.time, 2 + MSF.extra) + (MSF.extra ? ', +' + MSF.extra + ' ' + msHours(MSF.extra) : '');
+      var req = { id: 100 + MS.reqs.length, who_key: msWho(), who: (TEST.on && TEST.as ? TEST.as.name : DATA.member.name),
+        when: 'сегодня, ' + hm, status: 'pending', word: 'ждёт решения', slot: slot,
+        sub: slot + ' · «' + MSF.title + '» · ' + money(total) + ' ฿', extra: MSF.extra ? '+' + MSF.extra + ' ' + msHours(MSF.extra) : 'нет',
+        paid: total, title: MSF.title, about: MSF.about, place: MSF.place, seats: seats, day: MSF.day, time: MSF.time, hours: 2 + MSF.extra };
+      MS.reqs.unshift(req); MSM[req.who_key] = req;
+      MSF = { day: 'Чт', time: '18:00', extra: 0, place: 'Зал', seats: '8', title: '', about: '', err: '' };
+      FLASH = { text: 'Заявка показана отправленной', note: 'Это прототип: на сервер ничего не ушло, деньги не списаны. После перезагрузки заявка исчезнет.' };
+      go('home'); return;
+    }
+    if ((a === 'ms-yes' || a === 'ms-no') && mayMasters()) {
+      var q = MS.reqs.filter(function (x) { return x.id === Number(arg); })[0];
+      if (q && q.who_key && q.who_key !== msWho() && q.status === 'pending') {
+        q.status = a === 'ms-yes' ? 'approved' : 'rejected';
+        q.word = a === 'ms-yes' ? 'согласовано' : 'отклонено';
+        if (a === 'ms-no') q.sub = q.slot + ' · деньги возвращены';
+        // согласование ставит ивент в афишу — здесь в список ивентов мастеров (слово владельца, E55g)
+        if (a === 'ms-yes') MS.events.unshift({ id: 100 + MS.events.length, title: q.title, when: msSpan(q.day, q.time, q.hours) + ' · ' + q.who,
+          slot: msSpan(q.day, q.time, q.hours), who: q.who, on: true, about: q.about });
+        FLASH = { text: a === 'ms-yes' ? 'Согласовано — в прототипе' : 'Отказано — в прототипе',
+          note: 'На сервер ничего не ушло. Заявитель увидит это у себя на «Клубе» до перезагрузки.' };
+      }
+      go('masterReqs'); return;
+    }
     if (a === 'proto' || a === 'proto-none') {
       FLASH = a === 'proto' ? { text: 'В прототипе не отправляется', note: 'Сервер для этого экрана ещё пишется. Ничего не изменилось.' }
         : { text: 'Этого экрана ещё нет', note: 'Он появится после кадра дизайнера.' };
