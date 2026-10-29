@@ -354,6 +354,9 @@ if (grantsSet.length !== 1) {
         if (await s.p.$('#tu-file')) await s.p.setInputFiles('#tu-file', pdf(900), { timeout: 60000 });
         await s.p.waitForTimeout(300);
         if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: с суммой и чеком отправка недоступна`);
+        // после чека на месте предела — вид и размер приложенного файла (PDF 900 байт → «PDF · 1 КБ»),
+        // а не подсказка до выбора: иначе человек не видит, ЧТО приложил (мутация arhitector-47 на v99)
+        if (await lim() !== 'PDF · 1 КБ') bad.push(`${n}: после чека под ним не «PDF · 1 КБ», а ${JSON.stringify(await lim())}`);
         // порог сказан ДО работы, под полем суммы (кадр E52b, #579), и держит его сервер, а не клиент:
         // сумма ниже порога отправку не гасит (слово владельца «порог на сервере»)
         const hint = await s.p.evaluate(() => { const f = document.getElementById('tu-amount').closest('.field'); const h = f && f.querySelector('.small'); return h ? h.textContent : null; });
