@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v109 · 29.10.2026';
+var VERSION = 'v110 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -2004,12 +2004,45 @@ function pollMine() {
 }
 var MINE_FAIL = '';
 
+var ME_GEN = 0;
 function refreshMe() {
+  // поздний ответ прежнего перечитывания молчит: свежее уже в пути
+  var gen = ++ME_GEN;
   api('GET', '/me').then(function (r) {
+    if (gen !== ME_GEN) return;
     var me = r.status === 200 ? fromMe(r.data) : null;
-    if (me) { DATA.member.balance = me.member.balance; if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1 }[current]) render(); }
+    // не ответил — остаток остаётся прежним, а не обнуляется: известное не затирается пустым (Cafe13KPG#638)
+    if (!me || !DATA.member) return;
+    var was = DATA.member.balance;
+    DATA.member.balance = me.member.balance;
+    if (was === me.member.balance) return;
+    // форма мастера держит набранное в полях — забрать его ДО перерисовки, иначе текст пропадёт
+    if (current === 'masterApply' && document.getElementById('msf-title')) {
+      MSF.title = val('msf-title'); MSF.about = val('msf-about'); MSF.seats = val('msf-seats');
+    }
+    // экраны, где остаток считает что-то кроме шапки, — целиком; остальные — только шапка (остаток в ней)
+    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1 }[current]) render();
+    else { var right = document.getElementById('bar-right'); if (right) right.innerHTML = barRight(); }
   });
 }
+/* Возврат в приложение — перечитать остаток (слово владельца 29.10.2026: «деньги у члена клуба появляются
+   только после перезегрузки приложения. Нужно бесшовно», Cafe13KPG#638). Сервер событие в открытое
+   приложение не толкает, поэтому «бесшовно» = «как только человек вернулся», а не «в ту же секунду». Таймера
+   нет нарочно: шум запросов ради того, кто смотрит в открытое приложение и ждёт (решение координатора).
+   Признаков возврата три, и они приходят парой: `visibilitychange` браузера, `focus` окна и `activated`
+   Telegram (Bot API 8.0; в живом Telegram не мерено). Поэтому чаще раза в 2 с не спрашиваем. */
+var BACK_AT = 0;
+function onReturn() {
+  if (!LIVE || noEntry() || document.visibilityState === 'hidden') return;
+  var now = Date.now();
+  if (now - BACK_AT < 2000) return;
+  BACK_AT = now;
+  refreshMe();
+  // своя история пополнений на экране пополнения — тоже снимок момента входа
+  if (current === 'topup' && !canTopup() && !(TEST.on && TEST.as)) loadTopups();
+}
+document.addEventListener('visibilitychange', onReturn);
+window.addEventListener('focus', onReturn);
 
 /* ── тестовый режим и просмотр чужими глазами ─────────
    Только у богов (солнышко). X-Test-Mode: 1 — запрос обслуживает тестовая
@@ -7257,6 +7290,9 @@ function go(screen, p) {
   if (screen === 'people' && current !== 'people') { PEOPLE.back = null; peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
+  // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
+  // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
+  if ({ home: 1, topup: 1, masterApply: 1 }[screen] && current !== screen && current !== 'loading' && LIVE && !noEntry()) refreshMe();
   // шаг 3: каждый вход — свежие данные сервера
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { MR.mineState = ''; }
   if ((screen === 'masters' || screen === 'masterReqs') && current !== screen && mayMasters()) { MR.qErr = ''; loadMasterQueue(); loadMineMaster(); }
@@ -8093,6 +8129,7 @@ if (tg) {
   tg.onEvent('themeChanged', applyTheme);
   tg.onEvent('safeAreaChanged', applySafeArea);              // 8.0
   tg.onEvent('contentSafeAreaChanged', applySafeArea);       // 8.0
+  tg.onEvent('activated', onReturn);                         // 8.0: приложение снова на экране
   var u = tg.initDataUnsafe && tg.initDataUnsafe.user;
   if (u && u.first_name) {
     // Только для приветствия: подпись здесь не проверена, доверять нельзя.
