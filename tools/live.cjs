@@ -348,9 +348,21 @@ if (grantsSet.length !== 1) {
         if (!(await s.p.$('#tu-send[disabled]'))) bad.push(`${n}: без суммы и чека отправка доступна`);
         await s.p.fill('#tu-amount', '1500');
         if (!(await s.p.$('#tu-send[disabled]'))) bad.push(`${n}: без чека отправка доступна`);
+        // предел чека сказан ДО выбора файла, в той же .field, что и чек (кадр E52b, #579)
+        const lim = () => s.p.evaluate(() => { const f = document.getElementById('tu-file').closest('.field'); const h = f && f.querySelector(':scope > .small'); return h ? h.textContent : null; });
+        if (await lim() !== 'снимок или PDF, до 2 МиБ') bad.push(`${n}: до чека не сказан предел «снимок или PDF, до 2 МиБ» (${JSON.stringify(await lim())})`);
         if (await s.p.$('#tu-file')) await s.p.setInputFiles('#tu-file', pdf(900), { timeout: 60000 });
         await s.p.waitForTimeout(300);
         if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: с суммой и чеком отправка недоступна`);
+        // порог сказан ДО работы, под полем суммы (кадр E52b, #579), и держит его сервер, а не клиент:
+        // сумма ниже порога отправку не гасит (слово владельца «порог на сервере»)
+        const hint = await s.p.evaluate(() => { const f = document.getElementById('tu-amount').closest('.field'); const h = f && f.querySelector('.small'); return h ? h.textContent : null; });
+        if (hint !== 'от 500 ฿') bad.push(`${n}: под полем суммы не сказан порог «от 500 ฿» (${JSON.stringify(hint)})`);
+        await s.p.fill('#tu-amount', '100');
+        await s.p.waitForTimeout(100);
+        if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: клиент сам запрещает сумму ниже порога — порог держит сервер`);
+        await s.p.fill('#tu-amount', '1500');
+        await s.p.waitForTimeout(100);
         mine = { requests: [row(9, 'pending', 'ждёт проверки')] };
         await tap(s, '#tu-send');
         const b = s.posted[0];
