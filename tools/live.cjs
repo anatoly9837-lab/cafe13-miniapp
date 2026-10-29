@@ -497,18 +497,21 @@ if (grantsSet.length !== 1) {
     }
   }
 
-  // ── прототипы шага 3 (v106, PROTO): привратник mayMasters у КАЖДОГО из пяти экранов и ноль запросов ──
+  // ── прототипы шага 3 (PROTO): привратник mayMasters у КАЖДОГО экрана прототипа и ноль запросов ──
   // Свидетель запрета — глава клуба без art_director и admin: роль старшая, и сервер ей отвечает 403 —
   // «пускает главу» и есть форма поломки. Прямой go(), а не кнопка: вход в «Управлении» прячет экран, а не
   // запрещает его (мутация arhitector-47 «снят mayMasters в masters» была зелёной).
   {
-    const MS5 = ['masters', 'masterReqs', 'masterReq', 'masterEvents', 'masterList'];
     const who = roles => { const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null })); return p; };
     for (const [n, roles, may] of [['proto-master-head', ['head'], false],
                                   ['proto-master-ad', ['art_director'], true],
                                   ['proto-master-admin', ['admin'], true]]) {
       const s = await open(true, true, json(200, who(roles)));
       await s.p.waitForTimeout(200);
+      // экраны — из PROTO самой страницы, а не списком здесь: v107 добавил masterEvent, и список из пяти
+      // его не знал. Меньше пяти — признак сломан (PROTO не прочитан), а не «прототипов стало меньше»
+      const MS5 = await s.p.evaluate(() => Object.keys(PROTO));
+      if (MS5.length < 5) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — прототипов в PROTO ${MS5.length}, ждали не меньше 5`);
       const before = s.calls.length;
       for (const sc of MS5) {
         await s.p.evaluate(x => go(x), sc);
