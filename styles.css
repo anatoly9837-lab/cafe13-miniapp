@@ -470,6 +470,11 @@ body.has-main .dup-main { display: none; }
                border: 1.5px dashed var(--clay); background: var(--deny-bg); color: var(--clay-ink); }
 .proto-strip b { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
 .proto-strip .small { color: var(--clay-ink); }
+/* Шаг 3: число ждущих > 0 — жирным зелёным (слово владельца); вход-название в карточке без облика кнопки */
+.n-wait { color: var(--sage); font-weight: 700; }
+/* ⚠ во входе `.listitem .grow b` ставит 600 и перебивал — «жирным» владельца там было полужирным (замер отрисовкой) */
+.listitem .grow .n-wait { font-weight: 700; }
+.tap { background: none; border: 0; padding: 0; margin: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; flex: 1 1 auto; }
 
 /* ── покупка в баре: отказ над кнопкой, итог, номер заказа (макеты E23б, E24) ── */
 .deny { display: flex; align-items: flex-start; gap: 10px; border-radius: 12px;

@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v106 · 29.10.2026';
+var VERSION = 'v107 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -706,7 +706,7 @@ function closed(screen) { return LIVE && (!!FROZEN[screen] || (!WIRED[screen] &&
    Сторож ниже, после SCREENS: экран не бывает в PROTO и WIRED сразу, в теле экрана нет `api(`, и в
    PROTO живут только экраны шага 3 (имя с `master`) — иначе флаг расползётся вторым FROZEN без хозяина.
    ⚠ Предел сторожа: он читает ТЕЛО экрана, а не помощники, которые тело зовёт. */
-var PROTO = { masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterList: 1 };
+var PROTO = { masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -2865,23 +2865,37 @@ function mayMasters() { return LIVE && (grant('art_director') || grant('admin'))
 function protoStrip() {
   return '<div class="proto-strip" role="note"><b>Прототип</b><span class="small">Данные примерные, нажатия ничего не отправляют.</span></div>';
 }
+/* Время слота «с — до» (слово владельца 29.10.2026: «Время только с, нету до, надо»). Конец не хранится, а
+   ВЫЧИСЛЯЕТСЯ: слот — два часа плюс «часы сверх двух» (кадр E55g; у сервера `hours`, cafe13-api#91; у ивента
+   `starts_at` + `duration_min`, migrations/004). Где кадр часов сверх двух не даёт, их ноль — слот базовый.
+   Тире — с пробелами, как в мерке дизайнера («10:00 – 11:30»). */
+function msSpan(day, start, hours) {
+  var m = /^(\d\d):(\d\d)$/.exec(start); if (!m) return day + ', ' + start;
+  var end = (Number(m[1]) * 60 + Number(m[2]) + hours * 60) % (24 * 60);
+  var hh = function (x) { return (x < 10 ? '0' : '') + x; };
+  return day + ', ' + start + ' – ' + hh(Math.floor(end / 60)) + ':' + hh(end % 60);
+}
 /* Примерные данные прототипа — ДОСЛОВНО из кадров E55v/E55e/E55d (Cafe13KPG dev 51a0ff8), люди роль-словами (#495) */
 var MS = {
   reqs: [
     { id: 1, who: '[член клуба]', when: 'сегодня, 19:40', status: 'pending', word: 'ждёт решения',
-      sub: 'Чт, 19:00, +2 часа · «Тайский для начинающих» · 5 200 ฿', slot: 'Чт, 19:00', extra: '+2 часа', paid: 5200,
+      sub: msSpan('Чт', '19:00', 4) + ', +2 часа · «Тайский для начинающих» · 5 200 ฿', slot: msSpan('Чт', '19:00', 4), extra: '+2 часа', paid: 5200,
       title: 'Тайский для начинающих', about: 'Разговорные фразы и письмо. Без домашних заданий, с чаем.' },
-    { id: 2, who: '[мастер]', when: '26.10.2026', status: 'approved', word: 'согласовано', sub: 'Вт, 16:00 · «Керамика по вечерам»' },
+    { id: 2, who: '[мастер]', when: '26.10.2026', status: 'approved', word: 'согласовано', sub: msSpan('Вт', '16:00', 2) + ' · «Керамика по вечерам»' },
     { id: 3, who: '[гость]', when: '25.10.2026', status: 'rejected', word: 'отклонено', sub: 'Слот занят · деньги возвращены' }
   ],
+  // `about` у «Тайского» — из кадра E55g; у двух других кадр подписи не даёт — строки нет вовсе, а не заглушка
   events: [
-    { title: 'Тайский для начинающих', when: 'Чт, 19:00 · [мастер]', on: true },
-    { title: 'Керамика по вечерам', when: 'Вт, 16:00 · [куратор бара]', on: false },
-    { title: 'Утренний бариста', when: 'Сб, 10:00 · [член клуба]', on: true }
+    { id: 1, title: 'Тайский для начинающих', when: msSpan('Чт', '19:00', 4) + ' · [мастер]', slot: msSpan('Чт', '19:00', 4), who: '[мастер]', on: true,
+      about: 'Разговорные фразы и письмо. Без домашних заданий, с чаем.' },
+    { id: 2, title: 'Керамика по вечерам', when: msSpan('Вт', '16:00', 2) + ' · [куратор бара]', slot: msSpan('Вт', '16:00', 2), who: '[куратор бара]', on: false,
+      about: '' },
+    { id: 3, title: 'Утренний бариста', when: msSpan('Сб', '10:00', 2) + ' · [член клуба]', slot: msSpan('Сб', '10:00', 2), who: '[член клуба]', on: true,
+      about: '' }
   ],
   masters: [
-    { who: '[мастер]', slot: 'Вт, 16:00 · «Керамика по вечерам»' },
-    { who: '[куратор бара]', slot: 'Сб, 10:00 · «Утренний бариста»' },
+    { who: '[мастер]', slot: msSpan('Вт', '16:00', 2) + ' · «Керамика по вечерам»' },
+    { who: '[куратор бара]', slot: msSpan('Сб', '10:00', 2) + ' · «Утренний бариста»' },
     { who: '[член клуба]', slot: 'слота нет' }
   ]
 };
@@ -6068,9 +6082,10 @@ var SCREENS = {
         '<span class="small">' + (TOPQ.pending !== null ? 'Ждут решения: ' + TOPQ.pending : 'Кто просит пополнить счёт') + '</span></span>' +
         svg(ICON.chev, 'chev') + '</button></div>' : '';
     // шаг 3, ПРОТОТИП: дверь «Слоты и мастера» — группой, как «Деньги» (кадр E55 правится под «Управление»)
-    var art = mayMasters() ? '<div class="group"><span class="label">Мероприятия</span>' +
+    // «Ивенты», а не «Мероприятия» — слово владельца 29.10.2026 по прототипу: «Не мероприятия а ивенты»
+    var art = mayMasters() ? '<div class="group"><span class="label">Ивенты</span>' +
       '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
-        '<span class="small">Заявки в мастера, мероприятия, слоты · прототип</span></span>' +
+        '<span class="small">Заявки в мастера, ивенты, слоты · прототип</span></span>' +
         svg(ICON.chev, 'chev') + '</button></div>' : '';
     if (!mayPeople()) return money_ + art;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
@@ -6174,12 +6189,16 @@ var SCREENS = {
         '<span class="small">' + sub + '</span></span>' + svg(ICON.chev, 'chev') + '</button>';
     };
     return (FLASH ? flash() : '') + '<div class="group"><span class="label">Слоты и мастера</span>' +
-      entry('data-go="masterReqs"', 'Заявки в мастера', wait ? 'Ждут решения: ' + wait : 'Ждущих нет') +
-      entry('data-go="masterEvents"', 'Мероприятия', 'выключить или включить в афише') +
+      // число ждущих > 0 — жирным зелёным (слово владельца 29.10.2026: «все что больше 0 делать так») — по
+      // СВОЙСТВУ `> 0`, а не по значению; цвет — токен `--sage` (у `.st.ok` он значит то же: «есть дело»)
+      entry('data-go="masterReqs"', 'Заявки в мастера', wait > 0 ? 'Ждут решения: <b class="n-wait">' + wait + '</b>' : 'Ждущих нет') +
+      entry('data-go="masterEvents"', 'Ивенты', 'выключить или включить в афише') +
       entry('data-go="masterList"', 'Мастера', 'их слоты в расписании') +
-      // у двух последних входов кадра нет — экрана за ними тоже нет, нажатие говорит это словами
-      entry('data-action="proto-none"', 'Выдать слот мастеру', 'без заявки, своим решением') +
-      entry('data-action="proto-none"', 'Выдать ответственность быть мастером', 'члену клуба, без оплаты') +
+      /* Входов РОВНО ТРИ. Оба «выдать» кадра E55b — слот и ответственность мастера — сняты ВОВСЕ, по
+         предмету, а не по готовности. Слова владельца 29.10.2026: «У арт директора нет возможности выдать
+         слот, у него есть только возможность согласовать… заявка не только на мастера, но и на слот» и
+         «выдать ответственность быть мастером тоже нельзя. Это тоже через заявку. Те у арт директора
+         3 кнопки». Сервер так и делает: решение одной транзакцией выписывает роль и недели (cafe13-api#91) */
     '</div>';
   },
 
@@ -6216,24 +6235,42 @@ var SCREENS = {
         '<div><span class="small">День и слот</span><b>' + esc(q.slot) + '</b></div>' +
         '<div><span class="small">Часы сверх двух</span><b>' + esc(q.extra) + '</b></div>' +
         '<div><span class="small">Списано</span><b class="num">' + money(q.paid) + ' ฿</b></div></div>' +
-      '<div class="field"><label for="ms-title">Название мероприятия</label><input id="ms-title" value="' + esc(q.title) + '"></div>' +
+      '<div class="field"><label for="ms-title">Название ивента</label><input id="ms-title" value="' + esc(q.title) + '"></div>' +
       '<div class="field"><label for="ms-about">Коротко для афиши</label><textarea id="ms-about" rows="3">' + esc(q.about) + '</textarea></div>' +
       '<button type="button" class="btn" data-action="proto">Согласовать</button>' +
-      '<span class="small">Мероприятие сразу встанет в афишу. Выключить его можно в «Мероприятиях».</span>' +
+      '<span class="small">Ивент сразу встанет в афишу. Выключить его можно в «Ивентах».</span>' +
       // «вернуть деньги» — правда по договору cafe13-api#91: отказ пишет встречную строку книги на ту же сумму
       // (`refund_ledger_id` в ответе; со слов сервера, дым: 3540.50 → 940.50 → 3540.50 — лично не мерено)
       '<button type="button" class="btn quiet" data-action="proto">Отказать и вернуть деньги</button>';
   },
 
-  // E55e. Выключенное не прячется: иначе включить его негде (кадр)
+  // E55e. Выключенное не прячется: иначе включить его негде (кадр). Название и подпись — вход на экран
+  // ивента (слово владельца 29.10.2026: «при клике на мероприятие хорошо попадать в экран мероприятия»);
+  // кнопка — отдельно, рядом: вложить кнопку в кнопку нельзя
   masterEvents: function () {
     if (!mayMasters()) return SCREENS.masters();
-    return (FLASH ? flash() : '') + '<div class="group"><span class="label">Мероприятия мастеров</span>' + MS.events.map(function (e) {
-      return '<div class="card"><div class="row"><div class="col"><b>' + esc(e.title) + '</b>' +
-        '<span class="small">' + esc(e.when + (e.on ? '' : ' · выключено, в афише не видно')) + '</span></div>' +
+    return (FLASH ? flash() : '') + '<div class="group"><span class="label">Ивенты мастеров</span>' + MS.events.map(function (e) {
+      return '<div class="card"><div class="row"><button type="button" class="col tap" data-action="ms-ev:' + e.id + '"><b>' + esc(e.title) + '</b>' +
+        '<span class="small">' + esc(e.when + (e.on ? '' : ' · выключено, в афише не видно')) + '</span></button>' +
         '<button type="button" class="btn mini' + (e.on ? '' : ' quiet') + '" data-action="proto">' + (e.on ? 'Выключить' : 'Включить') + '</button>' +
       '</div></div>';
     }).join('') + '</div>';
+  },
+
+  /* Экран ивента мастера — кадра НЕТ (вопрос дизайнеру). Не настоящий `event`: в живом он во FROZEN (#510),
+     и вход туда показал бы «временно недоступно». Здесь только то, что о ивенте уже есть в данных кадров */
+  masterEvent: function (id) {
+    if (!mayMasters()) return SCREENS.masters();
+    var e = MS.events.filter(function (x) { return x.id === Number(id); })[0];
+    if (!e) return '<div class="card quiet"><div class="col"><b>Такого ивента нет</b>' +
+      '<span class="small">Вернитесь к ивентам мастеров.</span></div></div>';
+    return (FLASH ? flash() : '') +
+      '<div class="card"><div class="col"><b>' + esc(e.title) + '</b>' + (e.about ? '<span class="small">' + esc(e.about) + '</span>' : '') + '</div></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">День и время</span><b>' + esc(e.slot) + '</b></div>' +
+        '<div><span class="small">Ведёт</span><b>' + esc(e.who) + '</b></div>' +
+        '<div><span class="small">В афише</span><b>' + (e.on ? 'видно' : 'выключено, не видно') + '</b></div></div>' +
+      '<button type="button" class="btn' + (e.on ? '' : ' quiet') + '" data-action="proto">' + (e.on ? 'Выключить' : 'Включить') + '</button>';
   },
 
   // E55d
@@ -6698,7 +6735,7 @@ var TITLES = {
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
-  masterEvents: 'Мероприятия', masterList: 'Мастера'
+  masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -6748,7 +6785,7 @@ var BACK = {
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
-  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterList: 'masters',
+  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -7444,6 +7481,7 @@ function doAction(a) {
     if (a === 'tq-keep' && !TOPQ.busy) { TOPQ.step = ''; TOPQ.err = ''; render(); return; }
     // шаг 3, ПРОТОТИП: ничего не уходит — построением, в этих ветках нет api(
     if (a === 'ms-open') { go('masterReq', arg); return; }
+    if (a === 'ms-ev') { go('masterEvent', arg); return; }
     if (a === 'proto' || a === 'proto-none') {
       FLASH = a === 'proto' ? { text: 'В прототипе не отправляется', note: 'Сервер для этого экрана ещё пишется. Ничего не изменилось.' }
         : { text: 'Этого экрана ещё нет', note: 'Он появится после кадра дизайнера.' };
