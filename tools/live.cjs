@@ -8285,7 +8285,9 @@ if (grantsSet.length !== 1) {
       if (!t.includes('Оставите пустым — он увидит «Мы не получили деньги».')) bad.push(`${n}: нет подсказки о причине по умолчанию (E56d)`);
       if (/вернуть деньги|вернём|возврат/i.test(t)) bad.push(`${n}: отказ обещает возврат денег, а сервер при отказе денег не двигает`);
       if (tqPosts(s).length) bad.push(`${n}: отказ ушёл без причины и без нажатия`);
-      await s.p.fill('#tq-note', 'на чеке другая сумма');
+      // поля нет — своя строка, а не обрыв батареи на page.fill
+      if (!(await s.p.$('#tq-note'))) bad.push(`${n}: после «Отказать» нет поля причины (E56d)`);
+      else await s.p.fill('#tq-note', 'на чеке другая сумма');
       await tqAct(s, 'tq-no:31'); await s.p.waitForTimeout(500);
       const pp = tqPosts(s);
       if (pp.length !== 1 || pp[0].body !== JSON.stringify({ decision: 'rejected', note: 'на чеке другая сумма' }))

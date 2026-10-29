@@ -6838,7 +6838,9 @@ function go(screen, p) {
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
   if (screen === 'topupQueue' && current !== 'topupQueue') { TOPQ.err = ''; TOPQ.step = ''; TOPQ.note = ''; if (mayTopups()) loadTopupQueue(); }
-  if (screen === 'topupReq') { TOPQ.err = ''; TOPQ.step = ''; TOPQ.note = ''; TOPQ.done = ''; topupShotFor(p); }
+  // заявку открывают и не с очереди (назад из другого экрана, тест) — без списка она не нарисуется
+  if (screen === 'topupReq') { TOPQ.err = ''; TOPQ.step = ''; TOPQ.note = ''; TOPQ.done = '';
+    if (!TOPQ.list && mayTopups()) loadTopupQueue(); else topupShotFor(p); }
   if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoinQueue(); }
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
