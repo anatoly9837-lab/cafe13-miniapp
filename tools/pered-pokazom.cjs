@@ -1,5 +1,6 @@
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 
 /* ВОРОТА ПЕРЕД ПОКАЗОМ — один запускатель на путь «код → коммит → владелец смотрит» (Cafe13KPG#605,
    #607). Ворот ТРИ, и каждое закрывает долг, который НЕ догоняется после показа:
@@ -24,10 +25,20 @@ const fs = require('fs');
    решает это правило #605 («следующая версия не публикуется, пока долг не приедет»), а не код выхода:
    строка печатает долг и предел — первую строку прибора, «Pages vN · опись vM · долг K из 3».
 
-   Запуск (дыму нужен браузер, поэтому в образе):
-     docker run --rm -v $PWD:/app:ro --entrypoint node agenthost/playwright:1.59.1 /app/tools/pered-pokazom.cjs */
+   Код 3 — ворота зелёные, но предел ДЕРЖИТ публикацию (решение координатора #607, поправка к
+   «держит правило по тексту»: вызывающий, читающий код, иначе предела не видит). Красное и «не
+   выполнено» у ворот важнее 3. Чем держит — сказано текстом: «долг K из 3» или «опись с ДРУГОГО
+   клиента» — это разные предметы, и строка у каждого своя (строки прибора).
 
-const ROOT = process.env.APP || '/app';
+   Запуск — НА ХОСТЕ, из корня дерева:  node tools/pered-pokazom.cjs
+   Предел читает git, а в контейнере git слеп: у рабочего дерева (worktree) `.git` — файл со ссылкой
+   за пределы тома, у полного клона — «dubious ownership» (замер arhitector-47 и мой, 29.10.2026).
+   Поэтому в контейнер уходит только дым — ему нужен браузер, — и уходит сам: на хосте без
+   playwright запускатель зовёт `docker run` образа ровно на `tools/smoke.cjs`. Запуск ВНУТРИ образа
+   по-прежнему работает, но предел там даст «НЕ ВЫПОЛНЕНО» на каждом прогоне. */
+
+const ROOT = process.env.APP || path.resolve(__dirname, '..');
+const IMAGE = 'agenthost/playwright:1.59.1';
 const rows = [];
 const say = (kind, name, rc, text) => rows.push({ kind, name, rc, text });
 
@@ -41,7 +52,9 @@ const first = s => String(s || '').split('\n').filter(Boolean).slice(0, 4).join(
 
 // 1. дым
 {
-  const r = run('node', [ROOT + '/tools/smoke.cjs']);
+  let here = true; try { require.resolve('playwright'); } catch (e) { here = false; }
+  const r = here ? run('node', [ROOT + '/tools/smoke.cjs'])
+    : run('docker', ['run', '--rm', '-v', ROOT + ':/app:ro', '--entrypoint', 'node', IMAGE, '/app/tools/smoke.cjs']);
   say('ворота', 'дым', [0, 1, 2].includes(r.rc) ? r.rc : 2, first(r.out));
 }
 // 2. имена и id — без флага «необязательно»: этих ворот не снимает ничто
@@ -73,11 +86,13 @@ else {
 const WORD = { 0: 'зелёное', 1: 'КРАСНОЕ', 2: 'НЕ ВЫПОЛНЕНО' };
 for (const x of rows) console.log(`${x.kind === 'ворота' ? 'ВОРОТА' : 'ПРЕДЕЛ'} ${x.name}: ${WORD[x.rc]} — ${x.text}`);
 const gates = rows.filter(x => x.kind === 'ворота'), lim = rows.find(x => x.kind === 'предел');
-const rc = gates.some(x => x.rc === 1) ? 1 : gates.some(x => x.rc === 2) ? 2 : 0;
-console.log(`ВОРОТА: ${rc} — ` + (rc === 0 ? 'показывать можно'
-  : rc === 1 ? 'НЕ ПОКАЗЫВАТЬ: есть красное'
+const gc = gates.some(x => x.rc === 1) ? 1 : gates.some(x => x.rc === 2) ? 2 : 0;
+const rc = gc === 0 && lim.rc === 1 ? 3 : gc;
+console.log(`ВОРОТА: ${gc} — ` + (gc === 0 ? 'показывать можно'
+  : gc === 1 ? 'НЕ ПОКАЗЫВАТЬ: есть красное'
   : 'НЕ ПОКАЗЫВАТЬ: красного нет, но не всё измерено — «не выполнено» не равно «зелёное»'));
 console.log(`ПРЕДЕЛ: ${lim.rc} — ` + (lim.rc === 0 ? 'долг в пределе'
-  : lim.rc === 1 ? 'ПУБЛИКАЦИЮ ДЕРЖАТЬ (правило #605): следующая версия не выходит, пока опись не приедет — ' + lim.text
+  : lim.rc === 1 ? 'ПУБЛИКАЦИЮ ДЕРЖАТЬ (правило #605' + (rc === 3 ? ', код 3' : '') + '): ' + lim.text
   : 'НЕ ВЫПОЛНЕНО — публикацию не держит, долг не измерен'));
+console.log(`КОД: ${rc}` + (rc === 3 ? ' — ворота зелёные, публикацию держит предел' : ''));
 process.exit(rc);
