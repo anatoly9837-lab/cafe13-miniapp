@@ -696,7 +696,17 @@ var FROZEN = { organizer: 1, guest: 1, events: 1, event: 1, eventNew: 1, booking
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
 // куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
 // по слову владельца серым гаснет всё, кроме двух ролей, а не только то, что было включено
-function closed(screen) { return LIVE && (!!FROZEN[screen] || !WIRED[screen]); }
+function closed(screen) { return LIVE && (!!FROZEN[screen] || (!WIRED[screen] && !PROTO[screen])); }
+/* ПРОТОТИП — третье состояние экрана, кроме «подключено» и «закрыто» (Cafe13KPG#605: показ раньше
+   проверки; решение координатора 29.10.2026). Экраны шага 3 — арт-директор и мастера (кадры E55*) —
+   стоят на примерных данных из кадров, потому что серверных ручек под ними ещё нет. Владелец обязан
+   отличить такой экран от настоящего глазом, поэтому:
+     • над экраном НЕСНИМАЕМАЯ плашка (render), снять её нечем, кроме переноса экрана в WIRED;
+     • в коде экрана нет `api(` — запрет ПОСТРОЕНИЕМ: кнопки отвечают «В прототипе не отправляется».
+   Сторож ниже, после SCREENS: экран не бывает в PROTO и WIRED сразу, в теле экрана нет `api(`, и в
+   PROTO живут только экраны шага 3 (имя с `master`) — иначе флаг расползётся вторым FROZEN без хозяина.
+   ⚠ Предел сторожа: он читает ТЕЛО экрана, а не помощники, которые тело зовёт. */
+var PROTO = { masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterList: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -2847,6 +2857,33 @@ var TOPQ = { list: null, pending: null, fail: '', gen: 0, busy: false, err: '', 
 var TOPQ_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
 var TOPQ_WAY = { transfer: 'Перевод' };         // единственный способ: CHECK в миграции 019
 function mayTopups() { return LIVE && (grant('topups') || grant('admin')); }
+
+/* шаг 3 — право арт-директора; глава и админ — чтобы владелец видел прототип у себя.
+   Кто решает на сервере, не известно: ручек ещё нет (вопрос backend-uvedomleniya-32, 29.10.2026). */
+function mayMasters() { return LIVE && (grant('art_director') || grant('head') || grant('admin')); }
+function protoStrip() {
+  return '<div class="proto-strip" role="note"><b>Прототип</b><span class="small">Данные примерные, нажатия ничего не отправляют.</span></div>';
+}
+/* Примерные данные прототипа — ДОСЛОВНО из кадров E55v/E55e/E55d (Cafe13KPG dev 51a0ff8), люди роль-словами (#495) */
+var MS = {
+  reqs: [
+    { id: 1, who: '[член клуба]', when: 'сегодня, 19:40', status: 'pending', word: 'ждёт решения',
+      sub: 'Чт, 19:00, +2 часа · «Тайский для начинающих» · 5 200 ฿', slot: 'Чт, 19:00', extra: '+2 часа', paid: 5200,
+      title: 'Тайский для начинающих', about: 'Разговорные фразы и письмо. Без домашних заданий, с чаем.' },
+    { id: 2, who: '[мастер]', when: '26.10.2026', status: 'approved', word: 'согласовано', sub: 'Вт, 16:00 · «Керамика по вечерам»' },
+    { id: 3, who: '[гость]', when: '25.10.2026', status: 'rejected', word: 'отклонено', sub: 'Слот занят · деньги возвращены' }
+  ],
+  events: [
+    { title: 'Тайский для начинающих', when: 'Чт, 19:00 · [мастер]', on: true },
+    { title: 'Керамика по вечерам', when: 'Вт, 16:00 · [куратор бара]', on: false },
+    { title: 'Утренний бариста', when: 'Сб, 10:00 · [член клуба]', on: true }
+  ],
+  masters: [
+    { who: '[мастер]', slot: 'Вт, 16:00 · «Керамика по вечерам»' },
+    { who: '[куратор бара]', slot: 'Сб, 10:00 · «Утренний бариста»' },
+    { who: '[член клуба]', slot: 'слота нет' }
+  ]
+};
 /* Одна битая заявка — отказ целиком: очередь с пропавшей строкой выглядит полной. */
 function fromTopupQueue(d) {
   if (!d || !Array.isArray(d.requests) || typeof d.pending !== 'number') return null;
@@ -6020,7 +6057,7 @@ var SCREENS = {
   manage: function () {
     // v100: две группы, каждая по своему праву — «Кто в клубе» у главы, «Деньги» у ответственного
     // за пополнения (кадр E46, Cafe13KPG#586). Ни одного права — прежний отказ.
-    if (!mayPeople() && !mayTopups()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (!mayPeople() && !mayTopups() && !mayMasters()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
     // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
     // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
@@ -6029,14 +6066,19 @@ var SCREENS = {
       '<button type="button" class="listitem" data-go="topupQueue"><span class="grow"><b>Заявки на пополнение</b>' +
         '<span class="small">' + (TOPQ.pending !== null ? 'Ждут решения: ' + TOPQ.pending : 'Кто просит пополнить счёт') + '</span></span>' +
         svg(ICON.chev, 'chev') + '</button></div>' : '';
-    if (!mayPeople()) return money_;
+    // шаг 3, ПРОТОТИП: дверь «Слоты и мастера» — группой, как «Деньги» (кадр E55 правится под «Управление»)
+    var art = mayMasters() ? '<div class="group"><span class="label">Мероприятия</span>' +
+      '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
+        '<span class="small">Заявки в мастера, мероприятия, слоты · прототип</span></span>' +
+        svg(ICON.chev, 'chev') + '</button></div>' : '';
+    if (!mayPeople()) return money_ + art;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
         '<span class="small">' + (wait !== null ? 'Ждут ответа: ' + wait : 'Кто просится в клуб') + '</span></span>' +
         svg(ICON.chev, 'chev') + '</button>' +
       '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
         '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
-    '</div>' + money_;
+    '</div>' + money_ + art;
   },
 
   // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g — подтверждение; E56d — причина; E56e — своя
@@ -6116,6 +6158,89 @@ var SCREENS = {
     return rows + check + err +
       '<button type="button" class="btn" data-action="tq-ok:' + q.id + '"' + busy + '>Зачислить</button>' +
       '<button type="button" class="btn quiet" data-action="tq-ask:' + q.id + '"' + busy + '>Отказать</button>';
+  },
+
+  /* ── шаг 3: арт-директор и мастера (кадры E55b, E55v, E55g, E55e, E55d; Cafe13KPG#534) ── ПРОТОТИП.
+     Данные — из кадров (`MS`), кнопки — `data-action="proto"`. Вход — группой в «Управлении», а не
+     во вкладке «Ивенты» кадра E55: «Ивенты» заморожены словом владельца (#510), и кадр правится под
+     это (решение координатора 29.10.2026). */
+  masters: function () {
+    if (!mayMasters()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Слотами и мастерами управляет арт-директор.</span></div></div>';
+    var wait = MS.reqs.filter(function (q) { return q.status === 'pending'; }).length;
+    var entry = function (go, what, sub) {
+      return '<button type="button" class="listitem" ' + go + '><span class="grow"><b>' + what + '</b>' +
+        '<span class="small">' + sub + '</span></span>' + svg(ICON.chev, 'chev') + '</button>';
+    };
+    return (FLASH ? flash() : '') + '<div class="group"><span class="label">Слоты и мастера</span>' +
+      entry('data-go="masterReqs"', 'Заявки в мастера', wait ? 'Ждут решения: ' + wait : 'Ждущих нет') +
+      entry('data-go="masterEvents"', 'Мероприятия', 'выключить или включить в афише') +
+      entry('data-go="masterList"', 'Мастера', 'их слоты в расписании') +
+      // у двух последних входов кадра нет — экрана за ними тоже нет, нажатие говорит это словами
+      entry('data-action="proto-none"', 'Выдать слот мастеру', 'без заявки, своим решением') +
+      entry('data-action="proto-none"', 'Выдать ответственность быть мастером', 'члену клуба, без оплаты') +
+    '</div>';
+  },
+
+  // E55v. ⚠ В кадре ждущая строка — карточка; здесь — вход на заявку (`listitem`), как у очереди
+  // пополнений (E56): иначе до E55g не дойти. Вопрос дизайнеру назван в PR
+  masterReqs: function () {
+    if (!mayMasters()) return SCREENS.masters();
+    // в карточке столбец — `.col` (как в кадре), во входе — `.grow`: без этого имя слипалось с датой
+    var row = function (q, box) {
+      return '<span class="' + box + '"><b>' + esc(q.who) + '</b><span class="small">' + esc(q.when) + '</span></span>' +
+        '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span>';
+    };
+    var wait = MS.reqs.filter(function (q) { return q.status === 'pending'; });
+    var past = MS.reqs.filter(function (q) { return q.status !== 'pending'; });
+    return (FLASH ? flash() : '') +
+      (wait.length ? '<div class="group"><span class="label">Ждут решения</span>' + wait.map(function (q) {
+        return '<button type="button" class="listitem" data-action="ms-open:' + q.id + '">' + row(q, 'grow') + svg(ICON.chev, 'chev') + '</button>' +
+          '<span class="small">' + esc(q.sub) + '</span>';
+      }).join('') + '</div>' : '') +
+      '<div class="group"><span class="label">Решённые</span>' + past.map(function (q) {
+        return '<div class="card quiet"><div class="row">' + row(q, 'col') + '</div><span class="small">' + esc(q.sub) + '</span></div>';
+      }).join('') + '</div>';
+  },
+
+  // E55g. Последствие согласования — словами владельца 29.10.2026 («сразу встаёт в афишу»), из кадра
+  masterReq: function (id) {
+    if (!mayMasters()) return SCREENS.masters();
+    var q = MS.reqs.filter(function (x) { return x.id === Number(id); })[0];
+    if (!q) return '<div class="card quiet"><div class="col"><b>Такой заявки нет</b>' +
+      '<span class="small">Вернитесь к заявкам в мастера.</span></div></div>';
+    return (FLASH ? flash() : '') +
+      '<div class="card"><div class="col"><b>' + esc(q.who) + '</b><span class="small">Заявка в мастера · ' + esc(q.when) + '</span></div></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">День и слот</span><b>' + esc(q.slot) + '</b></div>' +
+        '<div><span class="small">Часы сверх двух</span><b>' + esc(q.extra) + '</b></div>' +
+        '<div><span class="small">Списано</span><b class="num">' + money(q.paid) + ' ฿</b></div></div>' +
+      '<div class="field"><label for="ms-title">Название мероприятия</label><input id="ms-title" value="' + esc(q.title) + '"></div>' +
+      '<div class="field"><label for="ms-about">Коротко для афиши</label><textarea id="ms-about" rows="3">' + esc(q.about) + '</textarea></div>' +
+      '<button type="button" class="btn" data-action="proto">Согласовать</button>' +
+      '<span class="small">Мероприятие сразу встанет в афишу. Выключить его можно в «Мероприятиях».</span>' +
+      // «вернуть деньги» — слова кадра; вернёт ли их сервер, не мерено: ручки нет (Cafe13KPG#328 — тот же класс)
+      '<button type="button" class="btn quiet" data-action="proto">Отказать и вернуть деньги</button>';
+  },
+
+  // E55e. Выключенное не прячется: иначе включить его негде (кадр)
+  masterEvents: function () {
+    if (!mayMasters()) return SCREENS.masters();
+    return (FLASH ? flash() : '') + '<div class="group"><span class="label">Мероприятия мастеров</span>' + MS.events.map(function (e) {
+      return '<div class="card"><div class="row"><div class="col"><b>' + esc(e.title) + '</b>' +
+        '<span class="small">' + esc(e.when + (e.on ? '' : ' · выключено, в афише не видно')) + '</span></div>' +
+        '<button type="button" class="btn mini' + (e.on ? '' : ' quiet') + '" data-action="proto">' + (e.on ? 'Выключить' : 'Включить') + '</button>' +
+      '</div></div>';
+    }).join('') + '</div>';
+  },
+
+  // E55d
+  masterList: function () {
+    if (!mayMasters()) return SCREENS.masters();
+    return (FLASH ? flash() : '') + '<div class="group"><span class="label">Мастера</span>' + MS.masters.map(function (m) {
+      return '<button type="button" class="listitem" data-action="proto-none"><span class="grow"><b>' + esc(m.who) + '</b>' +
+        '<span class="small">' + esc(m.slot) + '</span></span>' + svg(ICON.chev, 'chev') + '</button>';
+    }).join('') + '</div>';
   },
 
   // E45 очередь, E45b пусто, E45g только решённые, E45v отказ со словом
@@ -6328,6 +6453,14 @@ var SCREENS = {
       '</div>';
   }
 };
+
+// сторож ПРОТОТИПА (решение координатора 29.10.2026): падает при загрузке, и дым это видит ошибкой страницы
+Object.keys(PROTO).forEach(function (k) {
+  if (!/^master/.test(k)) throw new Error('PROTO: «' + k + '» не экран шага 3 — флаг только для мастеров');
+  if (WIRED[k]) throw new Error('PROTO: «' + k + '» стоит и в WIRED — снятие прототипа сделано наполовину');
+  if (typeof SCREENS[k] !== 'function') throw new Error('PROTO: экрана «' + k + '» нет');
+  if (/\bapi\s*\(/.test(String(SCREENS[k]))) throw new Error('PROTO: в экране «' + k + '» вызов api( — прототип не отправляет');
+});
 
 function notWired(what) {
   return '<div class="card quiet"><div class="col">' +
@@ -6561,7 +6694,9 @@ var TITLES = {
   eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
   people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
-  tillDay: 'День кассы'
+  tillDay: 'День кассы',
+  masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
+  masterEvents: 'Мероприятия', masterList: 'Мастера'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -6588,7 +6723,8 @@ function tabList() {
     t.unshift(['staff', 'Касса', ICON.till]);
   // «Управление» — от права главы клуба, а не от уровня; последней, как в кадре E46 (Cafe13KPG#413)
   // v100: и у ответственного за пополнения без главенства — иначе очередь пополнений ему недостижима
-  if ((mayPeople() || mayTopups()) && !t.some(function (x) { return x[0] === 'manage'; }))
+  // шаг 3: и у арт-директора — его вход «Слоты и мастера» живёт там (решение координатора 29.10.2026)
+  if ((mayPeople() || mayTopups() || mayMasters()) && !t.some(function (x) { return x[0] === 'manage'; }))
     t.push(['manage', 'Управление', ICON.people]);
   return t;
 }
@@ -6610,6 +6746,7 @@ var BACK = {
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
+  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterList: 'masters',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -6670,8 +6807,8 @@ function render() {
   var here = current + '|' + String(param), y = window.scrollY || 0;
   var same = RENDERED === here;
   RENDERED = here;
-  view.innerHTML = (bare() ? '' : testStrip()) +
-    SCREENS[frozen(current) ? 'frozen' : LIVE && !WIRED[current] ? 'soon' : current](param);
+  view.innerHTML = (bare() ? '' : testStrip()) + (PROTO[current] ? protoStrip() : '') +
+    SCREENS[frozen(current) ? 'frozen' : LIVE && !WIRED[current] && !PROTO[current] ? 'soon' : current](param);
   // вход на замороженный экран гаснет ПО СВОЙСТВУ, а не перечнем кнопок: любой [data-go] туда
   // (Cafe13KPG#510); облик — общий .btn[disabled]
   if (LIVE) [].forEach.call(view.querySelectorAll('[data-go]'), function (b) {
@@ -7303,6 +7440,13 @@ function doAction(a) {
     if (a === 'tq-ok' && mayTopups() && !TOPQ.busy) { TOPQ.step = 'ok'; TOPQ.err = ''; render(); return; }
     if (a === 'tq-ask' && mayTopups() && !TOPQ.busy) { TOPQ.step = 'no'; TOPQ.err = ''; render(); return; }
     if (a === 'tq-keep' && !TOPQ.busy) { TOPQ.step = ''; TOPQ.err = ''; render(); return; }
+    // шаг 3, ПРОТОТИП: ничего не уходит — построением, в этих ветках нет api(
+    if (a === 'ms-open') { go('masterReq', arg); return; }
+    if (a === 'proto' || a === 'proto-none') {
+      FLASH = a === 'proto' ? { text: 'В прототипе не отправляется', note: 'Сервер для этого экрана ещё пишется. Ничего не изменилось.' }
+        : { text: 'Этого экрана ещё нет', note: 'Он появится после кадра дизайнера.' };
+      haptic('warn'); render(); return;
+    }
     if (a === 'tq-yes' && mayTopups()) { if (TOPQ.step === 'ok') decideTopup(Number(arg), 'approved'); return; }
     if (a === 'tq-no' && mayTopups()) { if (TOPQ.step === 'no') decideTopup(Number(arg), 'rejected'); return; }
     if (a === 'j-shot' && mayPeople()) { delete JOINQ.shot[Number(arg)]; joinShot(Number(arg)); render(); return; }

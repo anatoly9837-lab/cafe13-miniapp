@@ -464,6 +464,13 @@ body.has-main .dup-main { display: none; }
 }
 .test-strip .small { color: #1A1208; }
 
+/* Прототип (шаг 3, решение координатора 29.10.2026): плашка над экраном на примерных данных.
+   Штриховая рамка — «ещё не готово» тем же знаком, что ящик для чека (.box.dashed); снять нечем. */
+.proto-strip { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 12px;
+               border: 1.5px dashed var(--clay); background: var(--deny-bg); color: var(--clay-ink); }
+.proto-strip b { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+.proto-strip .small { color: var(--clay-ink); }
+
 /* ── покупка в баре: отказ над кнопкой, итог, номер заказа (макеты E23б, E24) ── */
 .deny { display: flex; align-items: flex-start; gap: 10px; border-radius: 12px;
         padding: 12px 14px; background: var(--deny-bg); border: 1px solid var(--clay); }
