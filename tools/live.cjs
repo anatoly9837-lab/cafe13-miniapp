@@ -497,6 +497,36 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── прототипы шага 3 (v106, PROTO): привратник mayMasters у КАЖДОГО из пяти экранов и ноль запросов ──
+  // Свидетель запрета — глава клуба без art_director и admin: роль старшая, и сервер ей отвечает 403 —
+  // «пускает главу» и есть форма поломки. Прямой go(), а не кнопка: вход в «Управлении» прячет экран, а не
+  // запрещает его (мутация arhitector-47 «снят mayMasters в masters» была зелёной).
+  {
+    const MS5 = ['masters', 'masterReqs', 'masterReq', 'masterEvents', 'masterList'];
+    const who = roles => { const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null })); return p; };
+    for (const [n, roles, may] of [['proto-master-head', ['head'], false],
+                                  ['proto-master-ad', ['art_director'], true],
+                                  ['proto-master-admin', ['admin'], true]]) {
+      const s = await open(true, true, json(200, who(roles)));
+      await s.p.waitForTimeout(200);
+      const before = s.calls.length;
+      for (const sc of MS5) {
+        await s.p.evaluate(x => go(x), sc);
+        await s.p.waitForTimeout(120);
+        const cur = await s.p.evaluate(() => current), t = await s.view();
+        if (cur !== sc) { bad.push(`${n}: go('${sc}') не открыл экран (стоит «${cur}»)`); continue; }
+        const deny = t.includes('Сюда нельзя'), banner = t.includes('Прототип');
+        if (may && deny) bad.push(`${n}: «${sc}» — «Сюда нельзя» тому, кто решает заявки мастеров`);
+        if (may && !banner) bad.push(`${n}: «${sc}» без плашки «Прототип» — данные примерные, а сказано не было`);
+        if (!may && !deny) bad.push(`${n}: «${sc}» открыт главе без art_director и admin — сервер ему отвечает 403`);
+      }
+      const sent = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+      if (sent.length) bad.push(`${n}: прототипы спросили сервер: ${JSON.stringify(sent)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
   // ── водяной знак (кадр E53, Cafe13KPG#509): виден, неподвижен, долей окна; гаснет ПО СВОЙСТВУ ──
   {
     // свойство одно на все экраны: есть машиночитаемый код (.code-box — QR пропуска, .qr — реквизиты) ⇔ знака не видно
