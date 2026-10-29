@@ -2032,6 +2032,10 @@ function refreshMe() {
    Признаков возврата три, и они приходят парой: `visibilitychange` браузера, `focus` окна и `activated`
    Telegram (Bot API 8.0; в живом Telegram не мерено). Поэтому чаще раза в 2 с не спрашиваем. */
 var BACK_AT = 0;
+// приложение ушло в фон в окне с политикой 'cancel' — не отправлять: таймер в фоне мог бы сработать
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden' && UNDO.key && UNDO.leave === 'cancel') { undoStop(); if (current === 'masterRenew') render(); }
+});
 function onReturn() {
   if (!LIVE || noEntry() || document.visibilityState === 'hidden') return;
   var now = Date.now();
@@ -2182,17 +2186,22 @@ var UNDO_MS = 5000;
    снятие уровня членства (E47y, v91) и продление мастера (E59b). Своей копии у места нет: одна беда —
    одна форма, копия разошлась бы при первой правке (кадр E59b, решение координатора 29.10.2026).
    Механика здесь — таймер, отсчёт, кто ждёт; ЧТО ждёт и что значит «ушло» — у места (`send`). */
-var UNDO = { key: null, at: 0, timer: null, tick: null };
+var UNDO = { key: null, at: 0, timer: null, tick: null, screen: null, send: null, leave: 'send' };
 function undoStop() {
   if (UNDO.timer) clearTimeout(UNDO.timer);
   if (UNDO.tick) clearInterval(UNDO.tick);
-  UNDO.timer = UNDO.tick = null; UNDO.key = null;
+  UNDO.timer = UNDO.tick = null; UNDO.key = null; UNDO.screen = null; UNDO.send = null;
 }
 function undoLeft() { return Math.max(0, Math.ceil((UNDO.at + UNDO_MS - Date.now()) / 1000)); }
-// key — что ждёт отправки; send(key) — отправка по истечении окна (гард «ключ не сменился» — здесь)
-function undoStart(key, send) {
+/* key — что ждёт отправки; send(key) — отправка по истечении окна (гард «ключ не сменился» — здесь).
+   opts.leave — что делать, если человек УШЁЛ с экрана в окне: 'send' — отправить (снятие уровня: денег нет,
+   решение принято) или 'cancel' — не отправлять (продление: 2 600 ฿ за нажатие, возврата нет). Решение
+   координатора 29.10.2026 по слову владельца 28.10: «закрыл приложение в эти секунды — действие НЕ
+   произошло» — при деньгах ошибаться в сторону «ничего не сделали». Политика — ПАРАМЕТР, а не вторая копия окна. */
+function undoStart(key, send, opts) {
   undoStop();
-  UNDO.key = key; UNDO.at = Date.now();
+  UNDO.key = key; UNDO.at = Date.now(); UNDO.screen = current; UNDO.send = send;
+  UNDO.leave = opts && opts.leave === 'cancel' ? 'cancel' : 'send';
   UNDO.timer = setTimeout(function () {
     if (UNDO.key !== key) return;
     send(key);
@@ -7465,12 +7474,13 @@ function go(screen, p) {
     BOOK.ask = false; BOOK.err = '';
   }
   // уход с экрана — тоже «ушли»: окно уровня уходит отправкой, а не сбросом (v91)
-  if (current === 'people' && screen !== 'people' && PEOPLE.lvAsk !== null) lvSend(PEOPLE.lvAsk);
+  // окно отмены: уход с ЕГО экрана — по политике окна (UNDO.leave), см. undoStart
+  if (UNDO.key && UNDO.screen === current && screen !== current) {
+    if (UNDO.leave === 'send') UNDO.send(UNDO.key); else undoStop();
+  }
   if (screen === 'people' && current !== 'people') { PEOPLE.back = null; peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
-  // продление: уход с экрана в окне — запрос уходит (та же форма, что у снятия уровня, E47y)
-  if (current === 'masterRenew' && screen !== 'masterRenew' && UNDO.key && /^renew:/.test(UNDO.key)) renewSend(UNDO.key);
   if (screen === 'masterRenew' && current !== 'masterRenew' && LIVE) { RNW.err = ''; RNW.key = ''; if (MR.mineState === '' || !MR.mine) loadMineMaster(); }
   // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
   // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
@@ -7974,7 +7984,7 @@ function doAction(a) {
     if (a === 'rnw-retry') { RNW.key = ''; render(); return; }
     // окно отмены ДО отправки (E59b) — общая функция снятия уровня; ключ несёт номер слота и число месяцев
     if (a === 'rnw-go' && RNW.prev && RNW.prev.enough && !RNW.busy && msOwnSlot()) {
-      RNW.err = ''; undoStart('renew:' + msOwnSlot().id + ':' + RNW.months, renewSend); render(); return;
+      RNW.err = ''; undoStart('renew:' + msOwnSlot().id + ':' + RNW.months, renewSend, { leave: 'cancel' }); render(); return;
     }
     if (a === 'rnw-keep') { if (UNDO.key && /^renew:/.test(UNDO.key)) undoStop(); render(); return; }
     if (a === 'ms-yes' && mayMasters()) { decideMaster(Number(arg), 'approved'); return; }
