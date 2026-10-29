@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v89 · 29.10.2026';
+var VERSION = 'v91 · 29.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1972,12 +1972,15 @@ var PEOPLE = { list: null, fail: '', dirs: null, dirsFail: '', gen: 0,
                // ВНУТРИ раскрытой карточки. Два смысла на одном ключе разошлись бы молча:
                // «форма закрыта» и «карточка свёрнута» — разные состояния экрана.
                card: null,
-               open: null, role: '', give: null, ask: null, busy: false, deny: null, done: null, find: '',
+               open: null, role: '', give: null, busy: false, deny: null, done: null, find: '',
                out: null, gone: null, askAt: 0, askTimer: null, askTick: null, sending: null, land: null,
-               lvAsk: null, lvSending: null };
-/* Окно отмены вместо второго подтверждения (слово владельца 28.10.2026: «убери двойное
-   подтверждение… оставь кнопку отмены на несколько секунд»; 5 секунд — число координатора,
-   кадр E47l). Цифра в полосе считается ОТСЮДА ЖЕ — разойтись с задержкой ей нечем. */
+               lvAsk: null, lvSending: null, back: null };
+/* Окно отмены ДО отправки — теперь ТОЛЬКО у уровня членства (v91). У ролей окна нет: слово
+   владельца 29.10.2026 «снятие происходит сразу; отмена активна, пока мы не ушли с экрана или не
+   выбрали другую карточку; с выдано можно делать так же» — роль уходит сразу, «Отменить» —
+   ОБРАТНОЕ действие (`backSend`). Уровень так не может: сервер срок не хранит (`revoke_level`,
+   `ends_at = now()`), вернуть его нечем — поэтому у уровня окно остаётся (решение координатора).
+   Цифра в полосе считается ОТСЮДА ЖЕ — разойтись с задержкой ей нечем. */
 var UNDO_MS = 5000;
 function undoStop() {
   if (PEOPLE.askTimer) clearTimeout(PEOPLE.askTimer);
@@ -1985,17 +1988,15 @@ function undoStop() {
   PEOPLE.askTimer = PEOPLE.askTick = null;
 }
 function undoLeft() { return Math.max(0, Math.ceil((PEOPLE.askAt + UNDO_MS - Date.now()) / 1000)); }
-// lv — ключ уровня членства «k.level» (v86): то же окно ДО отправки, другое действие. Окно одно на
-// экран: роль и уровень разом в нём не стоят.
-function undoStart(rid, lv) {
+// lv — ключ уровня членства «k.level» (v86). Окно одно на экран.
+function undoStart(lv) {
   undoStop();
-  PEOPLE.ask = lv ? null : rid; PEOPLE.lvAsk = lv || null; PEOPLE.askAt = Date.now(); PEOPLE.deny = null;
+  PEOPLE.lvAsk = lv; PEOPLE.askAt = Date.now(); PEOPLE.deny = null;
   PEOPLE.askTimer = setTimeout(function () {
-    if (lv ? PEOPLE.lvAsk !== lv : PEOPLE.ask !== rid) return;
-    undoStop(); PEOPLE.ask = null; PEOPLE.lvAsk = null;
-    // окно вышло — ровно один запрос, через общий вход действий: там защита от двойного нажатия
-    // и демонстрация (в ней снятие не уходит). Ушли с экрана до конца окна — не уходит тоже.
-    doAction(lv ? 'p-lvrevoke:' + lv : 'p-revoke:' + rid);
+    if (PEOPLE.lvAsk !== lv) return;
+    // окно вышло — снятие уходит. НЕ через вход действий: там `PEOPLE.busy`, и если в эту
+    // секунду в пути выдача у другой карточки, снятие тихо потерялось бы (v91)
+    lvSend(lv);
   }, UNDO_MS);
   // отсчёт меняет только цифру, экран не перерисовывается
   PEOPLE.askTick = setInterval(function () {
@@ -2010,10 +2011,12 @@ function mayPeople() { return LIVE && (grant('head') || grant('admin')); }
    без этой строки экран оставался запертым до перезапуска (Cafe13KPG#213). */
 function peopleReset() {
   PEOPLE.busy = false;
-  PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.give = null; PEOPLE.ask = null; PEOPLE.lvAsk = null; PEOPLE.deny = null; PEOPLE.done = null;
+  PEOPLE.open = null; PEOPLE.role = ''; PEOPLE.give = null; PEOPLE.deny = null; PEOPLE.done = null;
   PEOPLE.out = null; PEOPLE.gone = null;
-  // окно отмены, открытое на прежнем заходе, закрывается БЕЗ отправки: снятие не случается само
-  undoStop();
+  // ⚠ Окно отмены уровня здесь НЕ закрывается (v91). Прежде закрывалось БЕЗ отправки — и любое
+  // действие с карточкой в эти секунды («+ ответственность», минус, свернуть) ТИХО отменяло
+  // снятие: человек видел полосу и думал, что снял (замер 29.10.2026 по жалобе владельца).
+  // Теперь окно кончается только отправкой (таймер, уход с карточки, уход с экрана) или «Отменить».
   // и погашенная надпись прежнего захода гаснуть перестаёт: ответ на тот запрос отброшен гардом,
   // и без этой строки надпись оставалась погашенной и не нажималась до перезапуска (people-late-revoke)
   PEOPLE.sending = null; PEOPLE.lvSending = null;     // то же у погашенного уровня (v86)
@@ -2159,6 +2162,9 @@ function grantSend(role, dirId) {
     peopleReset();
     PEOPLE.land = p.uid;
     PEOPLE.done = { uid: p.uid, text: 'Выдано: ' + roleWords(body.role, dir ? dir.title : '') + '. Кто выдал и когда — записано на сервере.' };
+    // обратный ход — снять только что выданную (v91, «с выдано можно делать так же»); id — из ответа
+    if (typeof r.data.id === 'number')
+      PEOPLE.back = { uid: p.uid, kind: 'granted', rid: r.data.id, words: roleWords(body.role, dir ? dir.title : '') };
     loadRoster(); render();
   });
 }
@@ -2167,18 +2173,47 @@ function revokeSend(rid) {
   if (!p || PEOPLE.busy) return;
   var role = p.roles.filter(function (y) { return y.id === rid; })[0];
   var gen = PEOPLE.gen;
-  // отправка закрывает окно отмены сама — кто бы её ни позвал
-  undoStop(); PEOPLE.ask = null;
   PEOPLE.busy = true; PEOPLE.deny = null; PEOPLE.sending = rid; render();
   api('POST', '/roles/' + rid + '/revoke').then(function (r) {
     if (gen !== PEOPLE.gen) return;
-    PEOPLE.busy = false; PEOPLE.ask = null; PEOPLE.sending = null;
+    PEOPLE.busy = false; PEOPLE.sending = null;
     var ok = r.status === 200 && r.data && r.data.id === rid && !!r.data.revoked_at;
     if (!ok) { PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn'); render(); return; }
     haptic('ok');
     peopleReset();
     PEOPLE.land = p.uid;
     PEOPLE.done = { uid: p.uid, text: 'Снято: ' + role.words + '. Снятая роль остаётся в истории на сервере.' };
+    // обратный ход — выдать ту же роль снова (v91); живёт, пока не выбрана другая карточка
+    PEOPLE.back = { uid: p.uid, kind: 'revoked', role: role.role, dir: role.dir, words: role.words };
+    loadRoster(); render();
+  });
+}
+/* «Отменить» у выдачи и снятия роли (v91) — ОБРАТНОЕ действие, а не «не отправлять»: роль уже на
+   сервере. Снятую выдаём снова (новая строка роли, снятая остаётся историей), выданную снимаем.
+   Живёт, пока человек не выбрал другую карточку и не ушёл с экрана; держится по tg_user_id в
+   памяти, а не по номеру строки — после перечитывания списка номер может уехать. */
+function backSend() {
+  var b = PEOPLE.back;
+  if (!b || PEOPLE.busy) return;
+  var gen = PEOPLE.gen;
+  var body = { member_id: b.uid, role: b.role };
+  if (b.kind === 'revoked' && b.dir !== null) body.direction_id = b.dir;
+  PEOPLE.busy = true; PEOPLE.deny = null; render();
+  (b.kind === 'revoked' ? api('POST', '/roles', body) : api('POST', '/roles/' + b.rid + '/revoke')).then(function (r) {
+    if (gen !== PEOPLE.gen) return;
+    PEOPLE.busy = false; PEOPLE.back = null;
+    var ok = b.kind === 'revoked'
+      ? r.status === 201 && r.data && r.data.member_id === b.uid && r.data.role === b.role
+      : r.status === 200 && r.data && r.data.id === b.rid && !!r.data.revoked_at;
+    if (!ok) { PEOPLE.deny = { uid: b.uid, text: denyText(r) }; haptic('warn'); render(); return; }
+    haptic('ok');
+    peopleReset();
+    PEOPLE.land = b.uid;
+    // слова designer-55 (кадр E47c): вторая фраза ИСПРАВЛЯЕТ обещание первой — на сервере теперь
+    // две записи. Кнопки в этом состоянии нет: отменять нечего
+    PEOPLE.done = { uid: b.uid, text: b.kind === 'revoked'
+      ? 'Возвращено: ' + b.words + '. В истории останутся обе записи — и снятие, и возврат.'
+      : 'Отменено: ' + b.words + '. В истории останутся обе записи — и выдача, и снятие.' };
     loadRoster(); render();
   });
 }
@@ -2188,17 +2223,23 @@ function revokeSend(rid) {
    ⚠ Обратного хода нет: сервер ставит `ends_at = now()` и прежний срок не хранит. Поэтому «Отменить»
    — окно ДО отправки (`undoStart`), а не откат; закрыл приложение в окне — снятие не случилось.
    Отказы — словами сервера (`denyText`): 403 не глава, 409 свои уровни, 409 «этого уровня нет». */
+// ⚠ БЕЗ `PEOPLE.busy` (v91): снятие уровня уходит и досрочно — когда человек уже нажал что-то у
+// другой карточки, — и это нажатие не должно ни ждать, ни теряться. От двойной отправки держит
+// сама метка окна: отправка её снимает первой строкой, вторая отправка того же ключа не пройдёт.
 function lvSend(key) {
+  if (PEOPLE.lvAsk !== key) return;
+  undoStop(); PEOPLE.lvAsk = null;
+  // в демонстрации снятие не уходит — через вход действий, где её перехват
+  if (!LIVE) { doAction('p-lvrevoke:' + key); return; }
   var m = /^(\d+)\.(member|organizer|partner)$/.exec(String(key));
   var p = m && PEOPLE.list && PEOPLE.list[Number(m[1])];
-  if (!p || PEOPLE.busy || p.lvKeys.indexOf(m[2]) === -1) return;
+  if (!p || p.lvKeys.indexOf(m[2]) === -1) return;
   var level = m[2], words = LEVEL[level] || level;
   var gen = PEOPLE.gen;
-  undoStop(); PEOPLE.lvAsk = null;
-  PEOPLE.busy = true; PEOPLE.deny = null; PEOPLE.lvSending = key; render();
+  PEOPLE.lvSending = key; if (current === 'people') peopleRedraw([Number(m[1])]);
   api('POST', '/memberships/' + p.uid + '/revoke', { level: level }).then(function (r) {
     if (gen !== PEOPLE.gen) return;
-    PEOPLE.busy = false; PEOPLE.lvSending = null;
+    PEOPLE.lvSending = null;
     var ok = r.status === 200 && r.data && r.data.level === level && r.data.memberships_ended > 0;
     if (!ok) {
       PEOPLE.deny = { uid: p.uid, text: denyText(r) }; haptic('warn');
@@ -2207,12 +2248,16 @@ function lvSend(key) {
       render(); return;
     }
     haptic('ok');
-    peopleReset();
-    PEOPLE.land = p.uid;
+    // ⚠ Без peopleReset и без перечитывания списка (v91): снятие могло уйти досрочно, пока
+    // человек уже у другой карточки, — сброс стёр бы ЕГО действие, а перечитывание укоротило бы
+    // страницу и сдёрнуло прокрутку. Сервер подтвердил ровно этот уровень — он убирается из
+    // своей строки на месте, и перерисовывается только своя карточка.
+    var before = peopleTouched(), at = p.lvKeys.indexOf(level);
+    if (at !== -1) { p.lvKeys.splice(at, 1); p.lv.splice(at, 1); p.levels = p.lv.join(' · '); }
     // слова designer-55: непоправимость ВПЕРЁД, механизм следом — у роли вторая фраза утешает
     // («остаётся в истории»), здесь наоборот, и это главное, что человек должен унести
     PEOPLE.done = { uid: p.uid, text: 'Снято: ' + words + '. Вернуть прежний срок нечем — членство оборвано сегодняшним днём.' };
-    loadRoster(); render();
+    if (current === 'people') { before.push(Number(m[1])); peopleRedraw(before); }
   });
 }
 /* «Исключить» (кадры E47v, E47d, E47g, E47zh; Cafe13KPG#413, v74). Человек берётся по НОМЕРУ
@@ -2280,7 +2325,6 @@ function personCard(p, k) {
   var rows = (dostup ? '<div class="chips" data-chips="access">' + dostup + '</div>' : '') +
     '<div class="chips" data-chips="duty">' +
     p.roles.filter(function (r) { return HEAD_ROLES.indexOf(r.role) === -1; }).map(function (r) {
-      if (PEOPLE.ask === r.id) return '';                  // в окне отмены надписи нет (E47l)
       if (PEOPLE.sending === r.id) return '<span class="chip busy">' + esc(r.words) + X + '</span>';  // E47k
       return '<button type="button" class="chip" data-action="p-ask:' + r.id + '"' + lock + '>' + esc(r.words) + X + '</button>';
     }).join('') +
@@ -2292,8 +2336,7 @@ function personCard(p, k) {
       ' aria-expanded="' + (open ? 'true' : 'false') + '"' + lock + '>' +
       '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>ответственность</button>' +
   '</div>';
-  var askRole = null;
-  p.roles.forEach(function (r) { if (PEOPLE.ask === r.id) askRole = r; });
+  var askRole = null;                                   // окно отмены — только у уровня (v91)
   p.lvKeys.forEach(function (c, i) { if (PEOPLE.lvAsk === k + '.' + c) askRole = { words: p.lv[i] }; });
   var undo = askRole ? '<div class="undo" data-undo-of="' + k + '"><span class="small">Снимаем: ' + esc(askRole.words) + '</span>' +
     '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="p-keep">Отменить</button></div>' : '';
@@ -2362,7 +2405,13 @@ function personCard(p, k) {
   }
   var mine = function (x) { return x && x.uid === p.uid; };
   var deny = mine(PEOPLE.deny) ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(PEOPLE.deny.text) + '</span></div>' : '';
-  var done = mine(PEOPLE.done) ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(PEOPLE.done.text) + '</span></div>' : '';
+  // v91: у итога выдачи и снятия роли справа «Отменить» — обратное действие (слово владельца:
+  // «на плашку со „снято…“ повесим кнопку отмены в правой части»). Живёт, пока не выбрана
+  // другая карточка и не покинут экран. Облик — кадры E47f/E47h (Cafe13KPG#521): `btn mini quiet`
+  // справа ПРАВИЛОМ `.note.act`, а не длиной фразы (на коротком итоге кнопка вставала за словами).
+  var backBtn = PEOPLE.back && PEOPLE.back.uid === p.uid
+    ? '<button type="button" class="btn mini quiet" data-action="p-back"' + lock + '>Отменить</button>' : '';
+  var done = mine(PEOPLE.done) ? '<div class="note' + (backBtn ? ' act' : '') + '" role="status">' + svg(ICON.info) + '<span>' + esc(PEOPLE.done.text) + '</span>' + backBtn + '</div>' : '';
   var q = PEOPLE.find.trim().toLowerCase();
   // E47g/E47zh: исключённый — итогом на месте своей карточки
   if (PEOPLE.gone && PEOPLE.gone.uid === p.uid)
@@ -2444,7 +2493,7 @@ function peopleTouched() {
   [PEOPLE.card, PEOPLE.open, PEOPLE.out,
    PEOPLE.lvAsk !== null ? Number(String(PEOPLE.lvAsk).split('.')[0]) : null,
    PEOPLE.lvSending !== null ? Number(String(PEOPLE.lvSending).split('.')[0]) : null,
-   PEOPLE.ask !== null ? (function () { for (var i = 0; i < L.length; i++) if (L[i].roles.some(function (r) { return r.id === PEOPLE.ask; })) return i; return null; })() : null,
+   PEOPLE.back && at(PEOPLE.back.uid),
    PEOPLE.deny && at(PEOPLE.deny.uid), PEOPLE.done && at(PEOPLE.done.uid), PEOPLE.gone && at(PEOPLE.gone.uid)]
     .forEach(function (k) { if (typeof k === 'number' && ks.indexOf(k) === -1) ks.push(k); });
   return ks;
@@ -6388,7 +6437,7 @@ function demoWork(screen, p) {
 /* Отправки и перечитывания рабочих экранов. В демонстрации они не уходят:
    сервера нет, а «ничего не случилось» на нажатие — дефект, уже бывший у нас
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
-var DEMO_SENDS = ['p-give', 'p-revoke', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
+var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
                   'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
 
@@ -6410,7 +6459,9 @@ function go(screen, p) {
     BOOK.from = current === 'barQueue' ? 'barQueue' : homeOf();
     BOOK.ask = false; BOOK.err = '';
   }
-  if (screen === 'people' && current !== 'people') { peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
+  // уход с экрана — тоже «ушли»: окно уровня уходит отправкой, а не сбросом (v91)
+  if (current === 'people' && screen !== 'people' && PEOPLE.lvAsk !== null) lvSend(PEOPLE.lvAsk);
+  if (screen === 'people' && current !== 'people') { PEOPLE.back = null; peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'joinQueue' && current !== 'joinQueue') { JOINQ.err = ''; JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; if (mayPeople()) loadJoinQueue(); }
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
@@ -6654,6 +6705,22 @@ function doAction(a) {
       // держит p-open/p-close: peopleReset снимает блокировку.
       if (PEOPLE.busy) return;
       var before = peopleTouched();
+      /* УХОД С КАРТОЧКИ (v91, слово владельца «пока не выбрали другую карточку»). Любое действие
+         у ДРУГОГО человека: окно уровня ОТПРАВЛЯЕТ снятие досрочно (прежде сброс тихо его отменял —
+         решение координатора), «Отменить» у роли гаснет. Само действие при этом выполняется — экран
+         не заперт. Человек — по tg_user_id в памяти, не по номеру строки. */
+      var L0 = PEOPLE.list || [], tk = null;
+      if (a === 'p-open' || a === 'p-out' || a === 'p-outyes' || a === 'p-card') tk = Number(arg);
+      else if (a === 'p-lvask') tk = Number(String(arg).split('.')[0]);
+      else if (a === 'p-ask') tk = L0.findIndex(function (x) { return x.roles.some(function (r) { return r.id === Number(arg); }); });
+      else if (a === 'p-give' || a === 'p-role' || a === 'p-close') tk = PEOPLE.open;
+      else if (a === 'p-outkeep') tk = PEOPLE.out;
+      var tu = tk !== null && L0[tk] ? L0[tk].uid : null;
+      if (a !== 'p-keep' && a !== 'p-back') {
+        if (PEOPLE.back && tu !== PEOPLE.back.uid) PEOPLE.back = null;
+        var lvk = PEOPLE.lvAsk !== null ? Number(String(PEOPLE.lvAsk).split('.')[0]) : null;
+        if (lvk !== null && (a === 'p-lvask' || !L0[lvk] || tu !== L0[lvk].uid)) lvSend(PEOPLE.lvAsk);
+      }
       if (a === 'p-reload') { loadRoster(); render(); return; }
       if (a === 'p-give') {
         // Ключ строки — «роль» или «роль:направление». Приставку `p-` разобрал doAction,
@@ -6662,14 +6729,19 @@ function doAction(a) {
         grantSend(cutg === -1 ? arg : arg.slice(0, cutg), cutg === -1 ? null : Number(arg.slice(cutg + 1)));
         return;
       }
-      if (a === 'p-revoke') { revokeSend(Number(arg)); return; }
-      if (a === 'p-lvrevoke') { lvSend(arg); return; }
+      // крестик у роли — снятие СРАЗУ (v91); отмена — `p-back` на итоге
+      if (a === 'p-ask') { revokeSend(Number(arg)); return; }
+      if (a === 'p-back') { backSend(); return; }
+      if (a === 'p-lvrevoke') return;               // живой режим шлёт уровень сам (`lvSend`); здесь — только демонстрация
       if (a === 'p-outyes') { if (PEOPLE.out === Number(arg)) outSend(Number(arg)); return; }
+      // сброс карточки НЕ гасит «Отменить» у той же карточки: итог с отменой живёт, пока не выбрана
+      // ДРУГАЯ (слово владельца) — а «+ ответственность» у своей это не другая (back-gone)
+      var keepDone = PEOPLE.back && PEOPLE.done && PEOPLE.done.uid === PEOPLE.back.uid ? PEOPLE.done : null;
       // Раскрыть ЭТУ карточку: прежняя сворачивается, и вместе с ней уходит её состояние.
-      // ⚠ Окно отмены прежней карточки закрывается БЕЗ ОТПРАВКИ (это делает peopleReset) —
-      // так же, как при уходе с экрана: человек не должен получить снятие роли, которого
-      // он больше не видит. Повторное нажатие по той же карточке свёртки НЕ даёт: владелец
-      // просил «по клику разворачиваются», обратный ход у него — другой человек.
+      // ⚠ v91: окно отмены уровня прежней карточки уходит ОТПРАВКОЙ (выше, «уход с карточки»), а не
+      // закрывается без неё, как было: слово владельца «отмена активна, пока не выбрали другую
+      // карточку» — значит, выбрав другую, человек снятие подтвердил, а не отменил. Повторное нажатие
+      // по той же карточке свёртки НЕ даёт: владелец просил «по клику разворачиваются».
       if (a === 'p-card') { var kc = Number(arg); if (PEOPLE.card !== kc) { peopleReset(); PEOPLE.card = kc; } }
       // Минус живёт и в СВЁРНУТОЙ строке, поэтому вопрос об исключении обязан её раскрыть:
       // иначе `PEOPLE.out` стоял бы у карточки, которая вопроса не рисует.
@@ -6677,44 +6749,20 @@ function doAction(a) {
       if (a === 'p-outkeep') PEOPLE.out = null;
       if (a === 'p-open') { var ko2 = Number(arg); peopleReset(); PEOPLE.card = ko2; PEOPLE.open = ko2; }
       if (a === 'p-close') peopleReset();
+      if (keepDone && PEOPLE.back && !PEOPLE.done) PEOPLE.done = keepDone;
       // `p-role` больше не ВЫБИРАЕТ, а раскрывает направления, и спрашивается только у
       // DIR_ROLES: у роли без направления раскрывать нечего, а состояние, которое ничего не
       // рисует, не заводится. Второе нажатие складывает обратно — у указателя это его
       // единственный обратный ход, и `aria-expanded` в разметке обещает ровно это.
-      // Самоподстановка единственного направления снята вместе с выбором: выдаёт СТРОКА, и
-      // «выбранного» направления больше не существует.
-      // `p-dir` снят: строка направления теперь выдаёт, и делает это `p-give` с парным ключом.
       if (a === 'p-role' && DIR_ROLES.indexOf(arg) !== -1) PEOPLE.role = PEOPLE.role === arg ? '' : arg;
-      // крестик у роли: окно отмены вместо вопроса; второе окно поверх первого не открывается
-      // Окно на экране одно (v78: «второе поверх первого не открывается»). Но крестик, нажатый в
-      // это время, НЕ МОЛЧИТ: молчащая кнопка читается поломкой (demo-press, Cafe13KPG#338) —
-      // в карточке того, по кому нажали, говорится, что сначала закончить открытое снятие.
-      if ((a === 'p-ask' || a === 'p-lvask') && (PEOPLE.ask !== null || PEOPLE.lvAsk !== null)) {
-        var bk = a === 'p-lvask' ? Number(String(arg).split('.')[0]) : (PEOPLE.list || []).findIndex(function (x) {
-          return x.roles.some(function (r) { return r.id === Number(arg); }); });
-        var bp = PEOPLE.list && PEOPLE.list[bk];
-        // Слова designer-55. Экран НЕ прокручивается к полосе — слово владельца «каждый клик дергает
-        // экран… возвращайся где было» (#490); вместо прокрутки текст НАЗЫВАЕТ, что снимается, и
-        // человек найдёт полосу сам. Нужен, пока окно одно на экран (v78).
-        if (bp) {
-          var busyWords = '';
-          (PEOPLE.list || []).forEach(function (x, i) {
-            x.roles.forEach(function (r) { if (r.id === PEOPLE.ask) busyWords = r.words; });
-            x.lvKeys.forEach(function (c, j) { if (PEOPLE.lvAsk === i + '.' + c) busyWords = x.lv[j]; });
-          });
-          PEOPLE.deny = { uid: bp.uid, text: 'Идёт снятие «' + busyWords + '»: дождитесь его или отмените.' };
-          haptic('warn'); peopleRedraw(before);
-        }
-        return;
-      }
-      if (a === 'p-ask') undoStart(Number(arg));
-      // уровень: только живой у этого человека
+      // уровень: только живой у этого человека. Открытое окно уже отправлено выше — второе нажатие
+      // не молчит и не ждёт (прежде: «Идёт снятие…», v86)
       if (a === 'p-lvask') {
         var lm = /^(\d+)\.(\w+)$/.exec(arg), lp = lm && PEOPLE.list && PEOPLE.list[Number(lm[1])];
         if (!lp || lp.lvKeys.indexOf(lm[2]) === -1) return;
-        undoStart(null, arg);
+        undoStart(arg);
       }
-      if (a === 'p-keep') { undoStop(); PEOPLE.ask = null; PEOPLE.lvAsk = null; }
+      if (a === 'p-keep') { undoStop(); PEOPLE.lvAsk = null; }
       haptic(); peopleRedraw(before);
       // раскрытая форма — в вид: иначе она открылась бы за нижним краем
       var f = a === 'p-open' && document.querySelector('[data-person="' + PEOPLE.open + '"]');
