@@ -233,10 +233,10 @@
     {
      "ctx": {
       "?": [
-       "gt",
+       "ge",
        "min_length"
       ],
-      "gt": null,
+      "ge": null,
       "min_length": null
      },
      "input": null,
@@ -669,6 +669,34 @@
    "detail": null
   },
   "status": 409
+ },
+ "master-renew-preview": {
+  "request": "GET /master/requests/N/periods/preview?months=N",
+  "shape": {
+   "charged": null,
+   "enough": null,
+   "months": [],
+   "paid_until": null,
+   "per_month": null,
+   "request_id": null,
+   "short": null,
+   "weeks": null
+  },
+  "status": 200
+ },
+ "master-renew-preview-short": {
+  "request": "GET /master/requests/N/periods/preview?months=N",
+  "shape": {
+   "charged": null,
+   "enough": null,
+   "months": [],
+   "paid_until": null,
+   "per_month": null,
+   "request_id": null,
+   "short": null,
+   "weeks": null
+  },
+  "status": 200
  },
  "master-request-201": {
   "request": "POST /master/request",

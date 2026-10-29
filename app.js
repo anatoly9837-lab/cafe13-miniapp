@@ -685,7 +685,7 @@ function sendJoin() {
 var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, people: 1, joinQueue: 1, manage: 1,
               topupQueue: 1, topupReq: 1,
               // шаг 3 (v109): мастера на ручках сервера — бой `bbf09f8`, миграция 020 накачена
-              masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1,
+              masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1, masterRenew: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
@@ -2019,7 +2019,9 @@ function refreshMe() {
     // форма мастера держит набранное в полях — забрать его ДО перерисовки, иначе текст пропадёт
     if (current === 'masterApply') msfGrab();
     // экраны, где остаток считает что-то кроме шапки, — целиком; остальные — только шапка (остаток в ней)
-    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1 }[current]) render();
+    // остаток сменился — «хватит ли» на продление спросить у сервера заново (предпросмотр — снимок, не обещание)
+    if (current === 'masterRenew') RNW.key = '';
+    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, masterRenew: 1 }[current]) render();
     else { var right = document.getElementById('bar-right'); if (right) right.innerHTML = barRight(); }
   });
 }
@@ -2995,6 +2997,9 @@ function fromMasterReq(x, queue) {
             start: x.start_local, hours: x.hours, extra: x.hours_extra, amount: amount, status: x.status,
             word: x.status_ru, note: typeof x.decision_note === 'string' ? x.decision_note : '',
             iso: x.created_at, done: typeof x.decided_at === 'string' ? x.decided_at : null };
+  // `paid_until` — последний день последнего оплаченного месяца (api#99); null — ни одного; нет поля — старый сервер
+  if (x.paid_until !== undefined && x.paid_until !== null && !(typeof x.paid_until === 'string' && /^\d{4}-\d\d-\d\d$/.test(x.paid_until))) return null;
+  r.paidUntil = typeof x.paid_until === 'string' ? x.paid_until : null;
   if (queue) { if (typeof x.first_name !== 'string') return null; r.who = msName(x); }
   return r;
 }
@@ -3070,6 +3075,52 @@ function msIsMaster() {
   var lv = ((DATA.member && DATA.member.memberships) || []).map(function (m) { return m && m.level; });
   return lv.indexOf('organizer') !== -1 || !!(MR.mine && MR.mine.some(function (r) { return r.status === 'approved'; }));
 }
+/* ── продление статуса мастера (кадры E59, E59b; Cafe13KPG#632 `953a1af`) — на ручках api#99/#102.
+   Слово владельца: подписка, календарный месяц, продление оплатой без новой заявки. ЦЕНУ СЧИТАЕТ СЕРВЕР:
+   «Спишется», «Оплачено будет до» и «Не хватает» — из `GET …/periods/preview?months=N` (снимок
+   master-renew-preview*), клиентской арифметики на экране нет (решение координатора: иначе
+   «правдоподобное вместо известного» там, где сервер обрежет план или откажет членством).
+   ⚠ Кнопка тратит деньги, а ВОЗВРАТА НЕТ: защита — окно отмены ДО отправки, та же функция, что у
+   снятия уровня (`undoStart`, E47y). Окно задерживает ОТПРАВКУ, отменить на сервере нечего. */
+var RNW = { months: 1, prev: null, prevFail: '', gen: 0, key: '', busy: false, err: '' };
+function msOwnSlot() { return MR.mine ? MR.mine.filter(function (r) { return r.status === 'approved'; })[0] || null : null; }
+function msDate(ymd) { var x = String(ymd).split('-'); return x[2] + '.' + x[1] + '.' + x[0]; }
+function msMonths(n) { return n % 10 === 1 && n % 100 !== 11 ? 'месяц' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'месяца' : 'месяцев'; }
+var RNW_MAX = 12;   // предел ВВОДА сервера («защита от опечатки, а не правило клуба»)
+function moneyOf(v) { return typeof v === 'number' ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : NaN; }
+function loadRenewPreview() {
+  var own = msOwnSlot(); if (!own) return;
+  var key = own.id + '|' + RNW.months;
+  if (key === RNW.key && (RNW.prev || RNW.prevFail)) return;
+  var gen = ++RNW.gen; RNW.key = key; RNW.prev = null; RNW.prevFail = '';
+  api('GET', '/master/requests/' + own.id + '/periods/preview?months=' + RNW.months).then(function (r) {
+    if (gen !== RNW.gen) return;
+    var d = r.data, charged = d && moneyOf(d.charged), short = d && moneyOf(d.short);
+    var ok = r.status === 200 && d && isFinite(charged) && isFinite(short) && typeof d.enough === 'boolean' &&
+      typeof d.paid_until === 'string' && /^\d{4}-\d\d-\d\d$/.test(d.paid_until) && Array.isArray(d.months);
+    if (ok) RNW.prev = { charged: charged, until: d.paid_until, enough: d.enough, short: short, months: d.months.length };
+    else RNW.prevFail = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r);
+    if (current === 'masterRenew') render();
+  });
+}
+function renewSend(key) {
+  if (UNDO.key !== null && UNDO.key !== key) return;
+  undoStop();
+  var m = /^renew:(\d+):(\d+)$/.exec(String(key)); if (!m) return;
+  RNW.busy = true; RNW.err = ''; if (current === 'masterRenew') render();
+  api('POST', '/master/requests/' + m[1] + '/periods', { months: Number(m[2]) }).then(function (r) {
+    RNW.busy = false;
+    var got = r.status === 201 ? fromMasterReq(r.data, false) : null, charged = r.data && moneyOf(r.data.charged);
+    // деньги могли уйти и при неразобранном ответе — своя заявка и остаток перечитываются ВСЕГДА
+    loadMineMaster(); refreshMe(); RNW.key = '';
+    if (got && got.paidUntil) {
+      FLASH = { text: 'Продлено', note: 'Оплачено до ' + msDate(got.paidUntil) + (isFinite(charged) ? '. Списано ' + money(charged) + ' ฿.' : '.') };
+      RNW.months = 1;
+    } else RNW.err = denyText(r);
+    if (current === 'masterRenew') render();
+  });
+}
+
 function masterOffer() {
   if (!LIVE || DATA.role === 'guest') return '';
   if (MR.mineState === '') loadMineMaster();
@@ -3077,10 +3128,14 @@ function masterOffer() {
   if (MR.mineState === 'loading' && !MR.mine) return '';
   if (MR.mineState !== 'ok' && !MR.mine) return '<div class="card quiet"><div class="row"><span class="small">Заявки в мастера не загрузились: ' +
       esc(MR.mineState) + '</span><button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>';
+  var own = msOwnSlot();
   if (msIsMaster()) return '<div class="card"><div class="col"><b>Вы мастер</b>' +
       // «покупают один раз» снято — ложь при оплате по месяцам (слово владельца «Не правильно - на месяц»); слова ждут кадра
+      (own && own.paidUntil ? '<span class="small">Оплачено до ' + esc(msDate(own.paidUntil)) + '</span>' : '') +
       '<span class="small">Своё время и ивент — в «Ивентах». Слот — ' + (typeof MR.price[2] === 'number' ? money(MR.price[2]) + ' ฿' : 'оплата') +
-        ' в календарный месяц: продлевается оплатой, неоплаченный отдаётся.</span></div></div>';
+        ' в календарный месяц: продлевается оплатой, неоплаченный отдаётся.</span></div>' +
+      // продление — только у своей СОГЛАСОВАННОЙ заявки: у мастера по старому виду членства слота нет
+      (own ? '<button type="button" class="btn ghost" data-go="masterRenew">Продлить</button>' : '') + '</div>';
   var last = MR.mine[0];
   if (last && last.status === 'pending') return '<div class="card quiet"><div class="row"><div class="col"><b>Заявка в мастера</b>' +
       '<span class="small">' + esc(topupDay(last.iso, true)) + '</span></div><span class="st wait">' + esc(last.word) + '</span></div>' +
@@ -6628,6 +6683,45 @@ var SCREENS = {
     '</div>';
   },
 
+  // E59 / E59b: продление. Окно отмены — общая полоса `.undo`, как у снятия уровня
+  masterRenew: function () {
+    if (!LIVE || DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Продлевает мастер — член клуба.</span></div></div>';
+    if (!MR.mine) return MR.mineState && MR.mineState !== 'loading' && MR.mineState !== 'ok'
+      ? '<div class="card quiet"><div class="row"><span class="small">Заявки не загрузились: ' + esc(MR.mineState) + '</span>' +
+        '<button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>'
+      : '<div class="card quiet"><span class="small">Загружаем…</span></div>';
+    var own = msOwnSlot();
+    if (!own) return '<div class="card quiet"><div class="col"><b>Продлевать нечего</b>' +
+      '<span class="small">Продление — у согласованного слота мастера.</span></div></div>';
+    loadRenewPreview();
+    var P = RNW.prev, waiting = UNDO.key && /^renew:/.test(UNDO.key);
+    var busy = RNW.busy || waiting ? ' disabled' : '';
+    var top = '<div class="card"><div class="col"><b>Статус мастера</b>' +
+        '<span class="small">' + (own.paidUntil ? 'Оплачено до ' + esc(msDate(own.paidUntil)) : 'Оплаченных месяцев нет') + '</span>' +
+        '<span class="small">' + esc(MS_DAY[own.weekday - 1] + ', ' + own.start + ' · ' + own.hours + ' ' + msHours(own.hours) + ' · ' + own.place) + '</span>' +
+      '</div></div>' +
+      '<div class="field"><label>Месяцев</label><div class="counter">' +
+        '<button type="button" class="round" data-action="rnw-minus"' + (RNW.months > 1 && !busy ? '' : ' disabled') + ' aria-label="Меньше">−</button>' +
+        '<b class="num">' + RNW.months + '</b>' +
+        '<button type="button" class="round" data-action="rnw-plus"' + (RNW.months < RNW_MAX && !busy ? '' : ' disabled') + ' aria-label="Больше">+</button></div>' +
+        '<span class="small">Подряд, не больше ' + RNW_MAX + ' — это предел ввода</span></div>' +
+      (P ? '<div class="rows"><div><span class="small">Спишется</span><b class="num">' + money(P.charged) + ' ฿</b></div>' +
+             '<div><span class="small">Оплачено будет до</span><b>' + esc(msDate(P.until)) + '</b></div></div>' +
+           (P.enough ? '' : '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Не хватает ' + money(P.short) + ' ฿ на счёте.</span></div>')
+        : RNW.prevFail ? '<div class="row"><span class="small">' + esc(RNW.prevFail) + '</span><button type="button" class="btn quiet" data-action="rnw-retry">Повторить</button></div>'
+        : '<span class="small">Считаем у сервера…</span>');
+    var err = RNW.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(RNW.err) + '</span></div>' : '';
+    // E59b: окно ДО отправки; пока идёт отсчёт, запрос не ушёл
+    if (waiting) return (FLASH ? flash() : '') + top + err +
+      '<div class="undo"><span class="small">Продлеваем на ' + RNW.months + ' ' + msMonths(RNW.months) + '</span>' +
+        '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="rnw-keep">Отменить</button></div>' +
+      '<span class="small">Пока идёт отсчёт, деньги не списаны: запрос ещё не ушёл.</span>';
+    return (FLASH ? flash() : '') + top + err +
+      '<button type="button" class="btn" data-action="rnw-go"' + (!P || !P.enough || busy ? ' disabled' : '') + '>' + (RNW.busy ? 'Продлеваем…' : 'Продлить') + '</button>' +
+      '<div class="note">' + svg(ICON.info) + '<span>Оплаченный месяц не возвращается. Неоплаченный слот уходит другому мастеру.</span></div>';
+  },
+
   // E55d: мастера и их слоты (снимок master-slots), «слота нет» — `masters_without_slot`. Экрана за строкой нет
   masterList: function () {
     if (!mayMasters()) return SCREENS.masters();
@@ -7094,7 +7188,7 @@ var TITLES = {
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
-  masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера'
+  masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера', masterRenew: 'Продление'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -7144,7 +7238,7 @@ var BACK = {
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
-  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
+  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -7375,9 +7469,12 @@ function go(screen, p) {
   if (screen === 'people' && current !== 'people') { PEOPLE.back = null; peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
+  // продление: уход с экрана в окне — запрос уходит (та же форма, что у снятия уровня, E47y)
+  if (current === 'masterRenew' && screen !== 'masterRenew' && UNDO.key && /^renew:/.test(UNDO.key)) renewSend(UNDO.key);
+  if (screen === 'masterRenew' && current !== 'masterRenew' && LIVE) { RNW.err = ''; RNW.key = ''; if (MR.mineState === '' || !MR.mine) loadMineMaster(); }
   // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
   // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
-  if ({ home: 1, topup: 1, masterApply: 1 }[screen] && current !== screen && current !== 'loading' && LIVE && !noEntry()) refreshMe();
+  if ({ home: 1, topup: 1, masterApply: 1, masterRenew: 1 }[screen] && current !== screen && current !== 'loading' && LIVE && !noEntry()) refreshMe();
   // шаг 3: каждый вход — свежие данные сервера
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { MR.mineState = ''; }
   if ((screen === 'masters' || screen === 'masterReqs') && current !== screen && mayMasters()) { MR.qErr = ''; loadMasterQueue(); loadMineMaster(); }
@@ -7872,6 +7969,14 @@ function doAction(a) {
     }
     if (a === 'msf-minus' && MSF.extra > 0) { MSF.extra -= 1; render(); return; }
     if (a === 'ms-send') { sendMaster(); return; }
+    if (a === 'rnw-plus' && RNW.months < RNW_MAX && !UNDO.key) { RNW.months += 1; RNW.err = ''; render(); return; }
+    if (a === 'rnw-minus' && RNW.months > 1 && !UNDO.key) { RNW.months -= 1; RNW.err = ''; render(); return; }
+    if (a === 'rnw-retry') { RNW.key = ''; render(); return; }
+    // окно отмены ДО отправки (E59b) — общая функция снятия уровня; ключ несёт номер слота и число месяцев
+    if (a === 'rnw-go' && RNW.prev && RNW.prev.enough && !RNW.busy && msOwnSlot()) {
+      RNW.err = ''; undoStart('renew:' + msOwnSlot().id + ':' + RNW.months, renewSend); render(); return;
+    }
+    if (a === 'rnw-keep') { if (UNDO.key && /^renew:/.test(UNDO.key)) undoStop(); render(); return; }
     if (a === 'ms-yes' && mayMasters()) { decideMaster(Number(arg), 'approved'); return; }
     if (a === 'ms-no' && mayMasters()) { decideMaster(Number(arg), 'rejected'); return; }
     if (a === 'ms-hide' && mayMasters()) { slotToggle(Number(arg), false); return; }
