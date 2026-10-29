@@ -466,6 +466,17 @@ if (grantsSet.length !== 1) {
       if (!offc || offc[0] === offc[1] || offc[0] === offc[2]) bad.push(`${n}: «отменено» не тихим цветом: ${JSON.stringify(offc)}`);
       await s.ctx.close();
     }
+    // отменённая строка ИЗ ЗАЯВКИ несёт decision_note согласия (LEFT JOIN topup_requests): под ней обязана стоять
+    // судьба денег, а не заметка к согласию (мутация arhitector-47 на v103 — с пустой заметкой ветки совпадали)
+    {
+      const n = 'tu-otmena-zametka';
+      const s = await tuCase(json(200, hist([row(6, 'cancelled', 'отменено', { ledger_id: 106, decision_note: 'заметка к согласию' })])));
+      await tap(s, '[data-action="tu-hist"]');
+      const under = await s.p.$$eval('#view .hist > .small', e => e.map(x => x.textContent));
+      if (JSON.stringify(under) !== '["Зачисление отменено, деньги списаны обратно"]')
+        bad.push(`${n}: под отменённой не ровно «Зачисление отменено, деньги списаны обратно»: ${JSON.stringify(under)}`);
+      await s.ctx.close();
+    }
     // прежняя форма (только `requests`) — клиент её больше не читает: «не разобран», а не пустая история
     {
       const n = 'tu-staraya-forma';
