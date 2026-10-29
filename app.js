@@ -275,11 +275,13 @@ var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клу�
    у обеих дат (`en-CA` даёт YYYY-MM-DD) и вычитаем — так разница целая в днях и не зависит
    от часа, в который открыли экран. */
 var TILL_SOON_DNEY = 14;
-function clubDay(d) { return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); }
+// ⚠ `clubDay` НЕ заводится заново: он уже есть ниже (сутки клуба из ISO, пустая строка на
+// неразобранной дате). Моя вторая копия молча перекрывала первую — поймал сторож батареи
+// «имя объявлено на верхнем уровне больше одного раза», а не чтение.
 function tillWords(iso) {
-  var d = new Date(iso);
-  if (isNaN(d.getTime())) return null;
-  var den = clubDay(d), seg = clubDay(new Date());
+  var den = clubDay(iso);
+  if (!den) return null;
+  var seg = clubDay();
   var ostalos = Math.round((Date.parse(den + 'T00:00:00Z') - Date.parse(seg + 'T00:00:00Z')) / 86400000);
   var ch = den.split('-');
   return { text: ch[2] + '.' + ch[1] + '.' + ch[0], soon: ostalos < TILL_SOON_DNEY };

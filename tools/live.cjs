@@ -6401,10 +6401,16 @@ if (grantsSet.length !== 1) {
       lyudi.people[2].ends_at = null;     lyudi.people[2].lifelong = true;    // бессрочное
       const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
       await toPeople(s);
-      const hvosty = await s.p.$$eval('[data-person]', es => es.map(e => {
-        const t = e.querySelector('.till');
-        return { text: t ? t.textContent : null, soon: t ? t.classList.contains('soon') : null,
-                 inf: !!(t && t.querySelector('.inf')) }; }));
+      /* ⚠ Ключ — АТРИБУТ `data-person` (номер строки ОТВЕТА), а не положение в DOM:
+         `peopleOrder` ставит живые членства наверх, и порядок отрисовки ответу не равен.
+         Первая редакция случая читала по положению и дала перепутанные строки — поймал
+         прогон, а не чтение. */
+      const hvosty = await s.p.$$eval('[data-person]', es => {
+        const o = {};
+        es.forEach(e => { const t = e.querySelector('.till');
+          o[e.getAttribute('data-person')] = { text: t ? t.textContent : null,
+            soon: t ? t.classList.contains('soon') : null, inf: !!(t && t.querySelector('.inf')) }; });
+        return o; });
       if (hvosty[0].text !== ' · до 31.12.2026') bad.push(`${n}: далёкий срок «${hvosty[0].text}», ждали « · до 31.12.2026»`);
       if (hvosty[0].soon) bad.push(`${n}: далёкий срок покраснел`);
       if (hvosty[1].text !== ' · до 14.11.2026') bad.push(`${n}: близкий срок «${hvosty[1].text}», ждали « · до 14.11.2026»`);
@@ -6425,8 +6431,12 @@ if (grantsSet.length !== 1) {
       lyudi.people[2].ends_at = dat(0);  lyudi.people[2].lifelong = false;
       const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
       await toPeople(s);
-      const soon = await s.p.$$eval('[data-person]', es => es.map(e => {
-        const t = e.querySelector('.till'); return t ? t.classList.contains('soon') : null; }));
+      // тот же ключ по атрибуту: порядок отрисовки не равен порядку ответа
+      const soon = await s.p.$$eval('[data-person]', es => {
+        const o = {};
+        es.forEach(e => { const t = e.querySelector('.till');
+          o[e.getAttribute('data-person')] = t ? t.classList.contains('soon') : null; });
+        return o; });
       if (soon[0] !== false) bad.push(`${n}: ровно 14 дней покраснели — «менее 2х недель» это строго меньше`);
       if (soon[1] !== true) bad.push(`${n}: 13 дней не покраснели`);
       if (soon[2] !== true) bad.push(`${n}: последний день не покраснел`);
