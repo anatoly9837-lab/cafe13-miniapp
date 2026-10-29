@@ -71,8 +71,9 @@ const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
     // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
     ['Пожизненно', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 2],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 2],
+    // 4 = /me, /events и с v109 два запроса блока «Я мастер» на «Клубе»: /master/requests/mine, /master/price?hours=2
+    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 4],
+  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 4],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Показать пропуск', 'нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -515,13 +516,14 @@ if (grantsSet.length !== 1) {
         await s.p.waitForTimeout(120);
         const cur = await s.p.evaluate(() => current), t = await s.view();
         if (cur !== sc) { bad.push(`${n}: go('${sc}') не открыл экран (стоит «${cur}»)`); continue; }
-        const deny = t.includes('Сюда нельзя'), banner = t.includes('Прототип');
+        // v109: экраны подключены к ручкам — плашки «Прототип» и «ноля запросов» больше нет; привратник — жив
+        const deny = t.includes('Сюда нельзя');
         if (may && deny) bad.push(`${n}: «${sc}» — «Сюда нельзя» тому, кто решает заявки мастеров`);
-        if (may && !banner) bad.push(`${n}: «${sc}» без плашки «Прототип» — данные примерные, а сказано не было`);
         if (!may && !deny) bad.push(`${n}: «${sc}» открыт главе без art_director и admin — сервер ему отвечает 403`);
       }
+      // глава без права не спрашивает ручек мастера вовсе: сервер ответил бы 403
       const sent = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
-      if (sent.length) bad.push(`${n}: прототипы спросили сервер: ${JSON.stringify(sent)}`);
+      if (!may && sent.some(u => /\/master\/(requests(?!\/mine)|slots)/.test(u))) bad.push(`${n}: главе без права ушли запросы мастера: ${JSON.stringify(sent)}`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
@@ -1207,7 +1209,8 @@ if (grantsSet.length !== 1) {
     await s.p.click('[data-action="retry"]');
     await s.p.waitForTimeout(150);
     if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
-    if (s.calls.length !== 3) bad.push(`retry: запросов ${s.calls.length}, ждали 3 (/me, /me, /events)`);
+    // с v109 + два запроса блока «Я мастер» на «Клубе» (/master/requests/mine, /master/price?hours=2)
+    if (s.calls.length !== 5) bad.push(`retry: запросов ${s.calls.length}, ждали 5 (/me, /me, /events, /master/requests/mine, /master/price)`);
     await s.ctx.close();
   }
 
