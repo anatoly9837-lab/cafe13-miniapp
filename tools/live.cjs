@@ -65,30 +65,34 @@ const msLife = clone(OWNER); msLife.memberships[0].lifelong = 'true';   // ст�
 const msNoEnd = clone(OWNER); msNoEnd.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: false });
 
 /* [имя, внутри Telegram, API_ON, ответ /me, есть, нет, сколько запросов к API, после] */
+/* «Баланс» в «нет …» ниже был признаком КАБИНЕТА на экране отказа; карточка остатка ушла с главной (v87),
+   и признак ослеп бы — теперь кабинет узнаётся по «Показать пропуск». */
 const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
-    ['Пожизненно', '3 170 ฿', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
+    // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
+    ['Пожизненно', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
     ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 2],
   ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 2],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
-    ['Подпись не принята'], ['Баланс', 'нет в списке'], 1],
+    ['Подпись не принята'], ['Показать пропуск', 'нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
     // + GET /join: экран просьбы спрашивает сервер сам (Cafe13KPG#459); здесь /join тоже 403
-    ['Вас ещё нет в списке'], ['Баланс', 'Подпись не принята', 'Член клуба'], 2],
-  ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], ['Баланс'], 1],
-  ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], ['Баланс'], 1],
+    ['Вас ещё нет в списке'], ['Показать пропуск', 'Подпись не принята', 'Член клуба'], 2],
+  ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], ['Показать пропуск'], 1],
+  ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], ['Показать пропуск'], 1],
   ['html-200', true, true, { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
-    ['Ответ сервера не разобран'], ['Баланс'], 1],
-  ['finite-without-end', true, true, json(200, noEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
-  ['memberships-none', true, true, json(200, msNone), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
-  ['memberships-object', true, true, json(200, msObj), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
-  ['memberships-alien', true, true, json(200, msAlien), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
-  ['memberships-lifelong-str', true, true, json(200, msLife), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
-  ['memberships-noend', true, true, json(200, msNoEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Баланс'], 1],
-  ['network-down', true, true, 'abort', ['Сервер не ответил'], ['Баланс'], 1],
+    ['Ответ сервера не разобран'], ['Показать пропуск'], 1],
+  ['finite-without-end', true, true, json(200, noEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
+  ['memberships-none', true, true, json(200, msNone), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
+  ['memberships-object', true, true, json(200, msObj), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
+  ['memberships-alien', true, true, json(200, msAlien), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
+  ['memberships-lifelong-str', true, true, json(200, msLife), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
+  ['memberships-noend', true, true, json(200, msNoEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
+  ['network-down', true, true, 'abort', ['Сервер не ответил'], ['Показать пропуск'], 1],
   ['outside-telegram', false, true, json(200, OWNER),
-    ['Действует до 14 ноября', '1 250', 'Звуковая практика'], ['Пожизненно'], 0],
-  ['api-off', true, false, json(200, OWNER), ['Действует до 14 ноября', '1 250'], ['Пожизненно'], 0]
+    // «1 250» (демо-остаток) ушёл с главной в скрытую шапку (v87); витрину держат срок и афиша демонстрации
+    ['Действует до 14 ноября', 'Звуковая практика'], ['Пожизненно'], 0],
+  ['api-off', true, false, json(200, OWNER), ['Действует до 14 ноября'], ['Пожизненно'], 0]
 ];
 
 // Экраны отказа — списком, а не регуляркой по имени: регулярка молча
@@ -266,7 +270,8 @@ if (grantsSet.length !== 1) {
   {
     const n = 'balans-shapka';
     const who = clone(OWNER); who.roles = [];        // член клуба без прав кассы: вид «у всех остальных»
-    const s = await open(true, true, json(200, who));
+    const s = await open(true, true, json(200, who), null, null, null,
+      q => q.url().endsWith('/topup/requests/mine') ? json(200, { requests: [] }) : undefined);
     const head = () => s.p.evaluate(() => document.getElementById('bar-right').textContent);
     const pressed = () => s.p.evaluate(() => { const b = document.getElementById('bal'); return b ? b.getAttribute('aria-pressed') : null; });
     if (await pressed() === null) bad.push(`${n}: в шапке нет баланса`);
@@ -282,18 +287,145 @@ if (grantsSet.length !== 1) {
       await s.p.click('#wallet'); await s.p.waitForTimeout(150);
       if (await s.p.evaluate(() => current) !== 'topup') bad.push(`${n}: кошелёк не ведёт на пополнение`);
       const t = await s.view();
-      for (const w of ['Онлайн', 'Касса', 'USDT', 'Пока только баты.', 'Приём онлайн-пополнений ещё не включён.'])
+      // пути — кадр E52: «Онлайн» строкой-кнопкой, «Касса» и «USDT» серыми строками со своей подписью
+      for (const w of ['Онлайн', 'перевод по реквизитам клуба, с чеком', 'Касса', 'USDT', 'пока только баты'])
         if (!t.includes(w)) bad.push(`${n}: на пополнении нет «${w}»`);
-      // у хостес пополнить МОЖНО (касса, POST /till вид topup): серая только кнопка, путь не отменён
-      if (!t.includes('Сейчас — у хостес клуба')) bad.push(`${n}: у «Кассы» не сказано, что у хостес пополнить можно уже сейчас`);
-      const live = await s.p.$$eval('#view .btn', bs => bs.filter(b => /^(Онлайн|Касса|USDT)$/.test(b.textContent.trim()) && !b.disabled).map(b => b.textContent.trim()));
-      if (live.length) bad.push(`${n}: пути пополнения нажимаются без серверных ручек: ${JSON.stringify(live)}`);
+      // касса в живом заморожена (Cafe13KPG#513): путь не обещается — «появится позже» (designer-55); обратная
+      // сторона условия — в демонстрации, случай freeze
+      if (!t.includes('появится позже') || t.includes('в кассе клуба') || t.includes('сейчас у хостес'))
+        bad.push(`${n}: у «Кассы» при замороженной кассе не «появится позже» — путь обещан`);
+      const live = await s.p.$$eval('#view .way', ws => ws.filter(w => w.tagName === 'BUTTON' && !w.disabled).map(w => w.querySelector('b').textContent));
+      if (JSON.stringify(live) !== '["Онлайн"]') bad.push(`${n}: нажимаются ${JSON.stringify(live)}, ждали только «Онлайн»`);
     }
     await s.ctx.close();
     // экран входа: человека ещё нет — и баланса в шапке нет
     const s2 = await open(true, true, json(403, { detail: 'доступа нет' }));
     if (await s2.p.evaluate(() => document.getElementById('bar-right').innerHTML !== '')) bad.push(`${n}: баланс в шапке на экране входа`);
     await s2.ctx.close();
+  }
+
+  // ── «Онлайн» на ручках topup и своя история (v87, Cafe13KPG#500, бой d1fa661) ──
+  {
+    const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    const member = clone(OWNER); member.roles = [];
+    const row = (id, status, word, extra) => Object.assign({ id, amount: '1500.00', currency: 'THB', pay_method: null, status,
+      status_ru: word, created_at: '2026-10-29T01:00:00+07:00', decided_at: null, decision_note: '' }, extra || {});
+    const tuCase = async (mine, post) => {
+      const posted = [];
+      const s = await open(true, true, json(200, member), null, null, null, q => {
+        const u = q.url();
+        if (u.endsWith('/join/requisites/promptpay')) return { status: 200, contentType: 'image/png', body: PNG1 };
+        if (u.endsWith('/topup/request') && q.method() === 'POST') { posted.push(JSON.parse(q.postData())); return post || json(201, { id: 9, amount: '1500.00', currency: 'THB', status: 'pending', created_at: '2026-10-29T01:00:00+07:00' }); }
+        if (u.endsWith('/topup/requests/mine')) return typeof mine === 'function' ? mine() : mine;
+        return undefined;
+      });
+      await s.p.evaluate(() => go('topup'));
+      await s.p.waitForTimeout(250);
+      return Object.assign(s, { posted });
+    };
+    const tap = async (s, sel) => { await s.p.evaluate(q => { const e = document.querySelector(q); if (e) e.click(); }, sel); await s.p.waitForTimeout(250); };
+    const pdf = n => ({ name: 'chek.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(n, 0x25) });
+    // форма: сумма, реквизиты PromptPay по подписи, чек, отправка → «ждёт проверки» из перечитанной истории
+    {
+      const n = 'tu-forma';
+      let mine = { requests: [] };
+      const s = await tuCase(() => json(200, mine));
+      if (!(await s.p.$('[data-action="tu-hist"]'))) bad.push(`${n}: в меню пополнения нет кнопки «История пополнений»`);
+      if ((await s.view()).includes('Пополнений ещё не было.')) bad.push(`${n}: история открыта без нажатия`);
+      await tap(s, '[data-action="tu-hist"]');
+      if (!(await s.view()).includes('Пополнений ещё не было.')) bad.push(`${n}: пустая история не названа`);
+      // «назад» из истории — к путям, а не с экрана (форма и история — состояния одного экрана)
+      await s.p.evaluate(() => window.__back && window.__back());
+      await s.p.waitForTimeout(150);
+      if (!(await s.view()).includes('перевод по реквизитам клуба, с чеком') || await s.p.evaluate(() => current) !== 'topup')
+        bad.push(`${n}: «назад» из истории не вернул к путям пополнения`);
+      await tap(s, '[data-action="tu-online"]');
+      if (!(await s.p.$('#tu-amount'))) bad.push(`${n}: «Онлайн» не открыло форму`);
+      else {
+        if (!(await s.p.$('.qr img'))) bad.push(`${n}: реквизиты PromptPay не показаны`);
+        if (!s.calls.some(c => c.url.endsWith('/join/requisites/promptpay') && c.init === INIT)) bad.push(`${n}: реквизиты не спрошены с подписью`);
+        if (s.calls.some(c => c.url.endsWith('/join/requisites/usdt'))) bad.push(`${n}: спрошены реквизиты USDT — пока только баты`);
+        if (!(await s.p.$('#tu-send[disabled]'))) bad.push(`${n}: без суммы и чека отправка доступна`);
+        await s.p.fill('#tu-amount', '1500');
+        if (!(await s.p.$('#tu-send[disabled]'))) bad.push(`${n}: без чека отправка доступна`);
+        if (await s.p.$('#tu-file')) await s.p.setInputFiles('#tu-file', pdf(900), { timeout: 60000 });
+        await s.p.waitForTimeout(300);
+        if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: с суммой и чеком отправка недоступна`);
+        mine = { requests: [row(9, 'pending', 'ждёт проверки')] };
+        await tap(s, '#tu-send');
+        const b = s.posted[0];
+        if (!b || b.amount !== '1500.00' || b.receipt_mime !== 'application/pdf' || b.receipt_base64 !== pdf(900).buffer.toString('base64'))
+          bad.push(`${n}: заявка ушла так: ${JSON.stringify(b && { amount: b.amount, mime: b.receipt_mime, len: (b.receipt_base64 || '').length })}`);
+        const t = await s.view();
+        // после отправки — история (E52v) с «ждёт проверки» из перечитанного ответа сервера
+        if (!t.includes('ждёт проверки')) bad.push(`${n}: после отправки нет «ждёт проверки» из истории`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // история: зачислено и отклонено — словами сервера, у отклонённой его причина дословно
+    {
+      const n = 'tu-istoriya';
+      // hint сервер больше не отдаёт (api#87): причина — только decision_note, по умолчанию слово владельца
+      const s = await tuCase(json(200, { requests: [row(8, 'rejected', 'отклонено', { decision_note: 'Мы не получили деньги' }), row(7, 'approved', 'зачислено', { decision_note: 'заметка к зачислению' })] }));
+      await tap(s, '[data-action="tu-hist"]');
+      const t = await s.view();
+      for (const w of ['отклонено', 'зачислено', 'Мы не получили деньги']) if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      // decide пишет decision_note при ЛЮБОМ решении; причиной её показывают только у отклонённой (E52g),
+      // у зачисленной заметка не причина — с пустой заметкой обе ветки рисовали одно (мутация arhitector-47)
+      if (t.includes('заметка к зачислению')) bad.push(`${n}: заметка к зачисленной показана как причина`);
+      const cls = await s.p.$$eval('#view .hist .st', e => e.map(x => x.className));
+      if (JSON.stringify(cls) !== '["st no","st ok"]') bad.push(`${n}: статус несёт не тот цвет: ${JSON.stringify(cls)}`);
+      await s.ctx.close();
+    }
+    // отказ сервера — его словами
+    {
+      const n = 'tu-409';
+      const s = await tuCase(json(200, { requests: [] }), json(409, { detail: 'ваша заявка на пополнение уже ждёт проверки' }));
+      await tap(s, '[data-action="tu-online"]');
+      // нет формы — «не выполнено», а не обрыв по таймауту, прячущий остальное (класс #480)
+      if (!(await s.p.$('#tu-amount'))) { bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — форма не открылась`); await s.ctx.close(); }
+      else {
+      await s.p.fill('#tu-amount', '500');
+      await s.p.setInputFiles('#tu-file', pdf(700), { timeout: 60000 });
+      await s.p.waitForTimeout(300);
+      await tap(s, '#tu-send');
+      if (!(await s.view()).includes('Ваша заявка на пополнение уже ждёт проверки.')) bad.push(`${n}: отказ 409 не показан словами сервера`);
+      await s.ctx.close();
+      }
+    }
+    // чужими глазами (тестовый режим «Смотреть как»): деньги не вносятся — сказано сразу (E52d), сервер не спрошен
+    {
+      const n = 'tu-chuzhie';
+      const s = await tuCase(json(200, { requests: [] }));
+      const before = s.calls.length;
+      await s.p.evaluate(() => { TEST.on = true; TEST.as = { id: 2, name: '[член клуба]', what: 'член клуба' }; go('home'); go('topup'); });
+      await s.p.waitForTimeout(200);
+      const t = await s.view();
+      if (!t.includes('Чужими глазами пополнение недоступно: деньги вносит только сам человек.')) bad.push(`${n}: не сказано, что чужими глазами пополнить нельзя`);
+      if (await s.p.$('[data-action="tu-online"]')) bad.push(`${n}: чужими глазами открыт путь «Онлайн»`);
+      if (s.calls.slice(before).some(c => /\/topup\//.test(c.url))) bad.push(`${n}: чужими глазами спрошен сервер пополнения`);
+      await s.ctx.close();
+    }
+    // демонстрация вне Telegram: пополнение к серверу не ходит вовсе — ни история, ни реквизиты, ни отправка
+    {
+      const n = 'tu-demo';
+      const s = await open(false, true, json(200, member));
+      await s.p.evaluate(() => go('topup'));
+      await s.p.waitForTimeout(200);
+      await tap(s, '[data-action="tu-online"]');
+      if (s.calls.length) bad.push(`${n}: демонстрация спросила сервер: ${JSON.stringify(s.calls.map(c => c.url.replace(/^https:\/\/[^/]+/, '')))}`);
+      await s.ctx.close();
+    }
+    // неразобранная история — так и сказано, и есть повтор
+    {
+      const n = 'tu-ne-razobran';
+      const s = await tuCase(json(200, { requests: [{ id: 'x' }] }));
+      await tap(s, '[data-action="tu-hist"]');
+      if (!(await s.view()).includes('Ответ сервера не разобран.')) bad.push(`${n}: неразобранная история не названа`);
+      if (!(await s.p.$('[data-action="tu-retry"]'))) bad.push(`${n}: нет «Повторить» у истории`);
+      await s.ctx.close();
+    }
   }
 
   // ── Telegram есть, подписи нет — витрина, а не вход (условие arhitector-47 на v69) ──
@@ -304,7 +436,8 @@ if (grantsSet.length !== 1) {
     const t = await s.view();
     if (s.calls.length) bad.push(`${n}: без подписи ушло запросов к серверу: ${s.calls.length}`);
     if (t.includes('Подпись не принята') || t.includes('нет в списке')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
-    if (!t.includes('1 250')) bad.push(`${n}: без подписи нет витрины (демонстрационного баланса)`);
+    // признак витрины — срок демонстрационного члена («1 250» ушёл с главной в скрытую шапку, v87)
+    if (!t.includes('Действует до 14 ноября')) bad.push(`${n}: без подписи нет витрины (демонстрационного срока)`);
     await s.ctx.close();
   }
 
@@ -659,10 +792,8 @@ if (grantsSet.length !== 1) {
     if (!entries.some(e => e[1])) bad.push(`${n}: на главной владельца нет ни одного погашенного входа — проверять нечего (${JSON.stringify(entries)})`);
     entries.forEach(([g, d]) => { if (g === 'pass' && d) bad.push(`${n}: вход «Пропуск» погашен`); });
     entries.filter(e => e[1]).forEach(([g]) => { if (['pass', 'topup', 'manage', 'people', 'joinQueue', 'home'].includes(g)) bad.push(`${n}: погашен живой вход «${g}»`); });
-    // подпись у баланса называла кассу, а касса заморожена (Cafe13KPG#513): путь не называется
-    const home = await s.view();
-    if (!home.includes('Через кассу — позже') || home.includes('Пополняется в кассе'))
-      bad.push(`${n}: подпись у баланса обещает кассу, а «На счёт» в кассе заморожен`);
+    // подпись про кассу (v84, Cafe13KPG#513) переехала с главной на экран пополнения (v94, кадр E52):
+    // живая сторона условия — в balans-shapka, здесь — демонстрационная
     await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(200);
     let t = await s.view();
     if (!t.includes('Бар — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
@@ -677,8 +808,10 @@ if (grantsSet.length !== 1) {
     // демонстрация вне Telegram: ни одной серой вкладки и ни одного погашенного входа по заморозке
     const d = await open(false, false);
     const dOff = await d.p.$$eval('#tabs button[disabled], #view [data-go][disabled]', b => b.map(x => x.getAttribute('data-go')));
-    // и обратная сторона подписи: где касса не заморожена, прежний текст на месте — иначе условие декоративно
-    if (!(await d.view()).includes('Пополняется в кассе')) bad.push(`${n}: в демонстрации пропало «Пополняется в кассе» — подпись снята, а не условна`);
+    // и обратная сторона подписи: где касса не заморожена, касса названа — иначе условие декоративно
+    await d.p.evaluate(() => go('topup')); await d.p.waitForTimeout(150);
+    const dt = await d.view();
+    if (!dt.includes('в кассе клуба') || dt.includes('появится позже')) bad.push(`${n}: в демонстрации у «Кассы» нет «в кассе клуба» — подпись снята, а не условна`);
     if (dOff.length) bad.push(`${n}: в демонстрации погашено ${JSON.stringify(dOff)} — заморозка только для живого режима`);
     await d.ctx.close();
   }
@@ -1350,7 +1483,7 @@ if (grantsSet.length !== 1) {
   // (макет E23б) и кнопка пополнения из неё. Член без права кассы видит,
   // куда идти; админ — форму внести себе.
   const NOTILL = clone(OWNER); NOTILL.roles = [];
-  if (thawed('бар')) for (const [who, name, want] of [[NOTILL, 'topup-409', 'Как пополнить'], [OWNER, 'topup-409-admin', null]]) {
+  if (thawed('бар')) for (const [who, name, want] of [[NOTILL, 'topup-409', 'перевод по реквизитам клуба'], [OWNER, 'topup-409-admin', null]]) {
     const s = await open(true, true, json(200, who), null, null, null,
       bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830' }) }));
     await toBar(s);
@@ -1371,7 +1504,7 @@ if (grantsSet.length !== 1) {
     const s = await open(true, true, json(200, NOTILL), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-go="topup"]');
-    if (!(await s.view()).includes('Как пополнить')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
+    if (!(await s.view()).includes('перевод по реквизитам клуба')) bad.push('topup: кнопка «Не хватает» не ведёт к пополнению');
     if (posts(s).length) bad.push('topup: заказ ушёл при нехватке');
     await s.ctx.close();
   }
@@ -2066,7 +2199,7 @@ if (grantsSet.length !== 1) {
     }
     await s.ctx.close();
   }
-  // Без права кассы — ветка «у всех остальных» (с #500: «Как пополнить», три серых пути) и никакой формы.
+  // Без права кассы — ветка «у всех остальных» (с v87 кадр E52: пути «Онлайн / Касса / USDT») и никакой формы.
   // Путь — через бар, а он заморожен (Cafe13KPG#510).
   if (thawed('пополнение из бара (бармен без права кассы)')) {
     const poor = clone(BARMAN); poor.balance = 0;
@@ -2078,7 +2211,7 @@ if (grantsSet.length !== 1) {
       await s.p.click('#view [data-go="topup"]');
       await s.p.waitForTimeout(100);
       if (await s.p.$('#t-amount')) bad.push('topup-norole: форма внесения у бармена');
-      if (!(await s.view()).includes('Как пополнить')) bad.push('topup-norole: нет ветки «Как пополнить»');
+      if (!(await s.view()).includes('перевод по реквизитам клуба')) bad.push('topup-norole: нет ветки пополнения члена клуба (E52)');
     }
     await s.ctx.close();
   }
@@ -3411,8 +3544,8 @@ if (grantsSet.length !== 1) {
                               duration_min: 60, kind: 'free', price: '0.00', seats: 6,
                               taken: 0, seats_left: 6, booked_by_me: false })];
     const s = await open(true, true, json(200, GOST), null, null, null, evReply(json(200, NET_ZAPISEJ)), null, NOWFIX);
-    const start = await s.view();
-    if (start.includes('Баланс'))
+    // признак главной — имя экрана, а не слово «Баланс»: карточка остатка с главной ушла (v87), и слово ослепло бы
+    if (await s.p.evaluate(() => current) === 'home')
       bad.push('bookings-gost: гость начинает с «Клуба» — предусловие случая снято, и он больше не доказывает, что афиша грузится при входе на «Записи» (Cafe13KPG#360)');
     await s.p.click('#tabs [data-go="bookings"]');
     await s.p.waitForTimeout(200);
