@@ -403,6 +403,14 @@
   ],
   "status": 200
  },
+ "events-hide": {
+  "request": "POST /events/N/hide",
+  "shape": {
+   "id": null,
+   "state": null
+  },
+  "status": 200
+ },
  "events-history-member": {
   "request": "GET /events/history",
   "shape": [],
@@ -462,6 +470,14 @@
     "title": null
    }
   ],
+  "status": 200
+ },
+ "events-show": {
+  "request": "POST /events/N/show",
+  "shape": {
+   "id": null,
+   "state": null
+  },
   "status": 200
  },
  "join-decide-rejected": {
@@ -563,6 +579,324 @@
      "username": null
     }
    ]
+  },
+  "status": 200
+ },
+ "master-decide-409-decided": {
+  "request": "POST /master/requests/N/decide",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "master-decide-409-own": {
+  "request": "POST /master/requests/N/decide",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "master-decide-approved": {
+  "request": "POST /master/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "events": [],
+   "id": null,
+   "refund_ledger_id": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 200
+ },
+ "master-decide-rejected": {
+  "request": "POST /master/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "events": [],
+   "id": null,
+   "refund_ledger_id": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 200
+ },
+ "master-price": {
+  "request": "GET /master/price?hours=N",
+  "shape": {
+   "amount": null,
+   "hours": null,
+   "hours_included": null
+  },
+  "status": 200
+ },
+ "master-price-422": {
+  "request": "GET /master/price?hours=N",
+  "shape": {
+   "detail": null
+  },
+  "status": 422
+ },
+ "master-request-201": {
+  "request": "POST /master/request",
+  "shape": {
+   "about": null,
+   "amount": null,
+   "created_at": null,
+   "decided_at": null,
+   "decision_note": null,
+   "hours": null,
+   "hours_extra": null,
+   "id": null,
+   "place_id": null,
+   "place_name": null,
+   "seats": null,
+   "start_local": null,
+   "status": null,
+   "status_ru": null,
+   "title": null,
+   "weekday": null,
+   "weekday_ru": null
+  },
+  "status": 201
+ },
+ "master-request-201-max": {
+  "request": "POST /master/request",
+  "shape": {
+   "about": null,
+   "amount": null,
+   "created_at": null,
+   "decided_at": null,
+   "decision_note": null,
+   "hours": null,
+   "hours_extra": null,
+   "id": null,
+   "place_id": null,
+   "place_name": null,
+   "seats": null,
+   "start_local": null,
+   "status": null,
+   "status_ru": null,
+   "title": null,
+   "weekday": null,
+   "weekday_ru": null
+  },
+  "status": 201
+ },
+ "master-request-403-no-membership": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "master-request-404-no-place": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 404
+ },
+ "master-request-409-no-money": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "master-request-409-pending": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "master-request-409-place-hidden": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "master-request-409-slot-busy": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "master-requests-403": {
+  "request": "GET /master/requests",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "master-requests-mine-approved": {
+  "request": "GET /master/requests/mine",
+  "shape": {
+   "requests": [
+    {
+     "about": null,
+     "amount": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "hours": null,
+     "hours_extra": null,
+     "id": null,
+     "place_id": null,
+     "place_name": null,
+     "seats": null,
+     "start_local": null,
+     "status": null,
+     "status_ru": null,
+     "title": null,
+     "weekday": null,
+     "weekday_ru": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "master-requests-mine-empty": {
+  "request": "GET /master/requests/mine",
+  "shape": {
+   "requests": []
+  },
+  "status": 200
+ },
+ "master-requests-mine-pending": {
+  "request": "GET /master/requests/mine",
+  "shape": {
+   "requests": [
+    {
+     "about": null,
+     "amount": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "hours": null,
+     "hours_extra": null,
+     "id": null,
+     "place_id": null,
+     "place_name": null,
+     "seats": null,
+     "start_local": null,
+     "status": null,
+     "status_ru": null,
+     "title": null,
+     "weekday": null,
+     "weekday_ru": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "master-requests-mine-rejected": {
+  "request": "GET /master/requests/mine",
+  "shape": {
+   "requests": [
+    {
+     "about": null,
+     "amount": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "hours": null,
+     "hours_extra": null,
+     "id": null,
+     "place_id": null,
+     "place_name": null,
+     "seats": null,
+     "start_local": null,
+     "status": null,
+     "status_ru": null,
+     "title": null,
+     "weekday": null,
+     "weekday_ru": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "master-requests-queue": {
+  "request": "GET /master/requests",
+  "shape": {
+   "pending": null,
+   "requests": [
+    {
+     "about": null,
+     "amount": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "first_name": null,
+     "hours": null,
+     "hours_extra": null,
+     "id": null,
+     "last_name": null,
+     "place_id": null,
+     "place_name": null,
+     "seats": null,
+     "start_local": null,
+     "status": null,
+     "status_ru": null,
+     "title": null,
+     "username": null,
+     "weekday": null,
+     "weekday_ru": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "master-slots": {
+  "request": "GET /master/slots",
+  "shape": {
+   "masters_without_slot": [
+    {
+     "first_name": null,
+     "last_name": null,
+     "username": null
+    }
+   ],
+   "slots": [
+    {
+     "first_name": null,
+     "hours": null,
+     "hours_extra": null,
+     "last_name": null,
+     "membership_live": null,
+     "place_name": null,
+     "request_id": null,
+     "start_local": null,
+     "state": null,
+     "title": null,
+     "username": null,
+     "weekday": null,
+     "weekday_ru": null,
+     "weeks_off": null,
+     "weeks_on": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "master-slots-hide": {
+  "request": "POST /master/slots/N/hide",
+  "shape": {
+   "request_id": null,
+   "state": null,
+   "weeks": null
+  },
+  "status": 200
+ },
+ "master-slots-show": {
+  "request": "POST /master/slots/N/show",
+  "shape": {
+   "request_id": null,
+   "state": null,
+   "weeks": null
   },
   "status": 200
  },
@@ -1235,6 +1569,26 @@
   },
   "status": 200
  },
+ "topup-history-mine": {
+  "request": "GET /topup/requests/mine",
+  "shape": {
+   "history": [
+    {
+     "amount": null,
+     "at": null,
+     "decision_note": null,
+     "ledger_id": null,
+     "method": null,
+     "request_id": null,
+     "source": null,
+     "source_ru": null,
+     "status": null,
+     "status_ru": null
+    }
+   ]
+  },
+  "status": 200
+ },
  "topup-request-create": {
   "request": "POST /topup/request",
   "shape": {
@@ -1252,6 +1606,13 @@
    "detail": null
   },
   "status": 409
+ },
+ "topup-request-under-min": {
+  "request": "POST /topup/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 422
  },
  "topup-requests-denied": {
   "request": "GET /topup/requests",
@@ -1290,6 +1651,20 @@
  "topup-requests-mine": {
   "request": "GET /topup/requests/mine",
   "shape": {
+   "history": [
+    {
+     "amount": null,
+     "at": null,
+     "decision_note": null,
+     "ledger_id": null,
+     "method": null,
+     "request_id": null,
+     "source": null,
+     "source_ru": null,
+     "status": null,
+     "status_ru": null
+    }
+   ],
    "requests": [
     {
      "amount": null,
@@ -1297,7 +1672,6 @@
      "currency": null,
      "decided_at": null,
      "decision_note": null,
-     "hint": null,
      "id": null,
      "pay_method": null,
      "status": null,
