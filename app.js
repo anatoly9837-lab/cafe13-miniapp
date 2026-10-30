@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v113 · 29.10.2026';
+var VERSION = 'v114 · 30.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -924,6 +924,36 @@ function failText(r) {
        : 'Сервер ответил кодом ' + r.status + '.';
 }
 
+/* Слово сервера — `detail` строкой, и только оно. Фраза кода ответа по стандарту HTTP («Not Found»
+   на 404, «Method Not Allowed» на 405) словом сервера НЕ является: её подставляет сам FastAPI/
+   Starlette, когда ручки нет или метод не тот, — сервер клуба так не отвечает нигде (ast-проход по
+   боевой a1984f2: 178 HTTPException, без detail 0, с фразой своего кода 0; Cafe13KPG#649). Печатать
+   её — сказать человеку по-английски о причине, которой нет; такой ответ идёт в failText («кодом N»).
+   ⚠ Перечень — ВПИСАННЫЙ, и это законно: фразы задаёт внешний стандарт (RFC 9110, таблица
+   http.HTTPStatus), а не наше состояние, поэтому он не стареет молча, как перечни экранов. Обходным
+   признаком («латиница», «короче N») его НЕ заменять: тот погасит законный отказ. Где стандарт фразу
+   переименовал (RFC 7231 → 9110), стоят обе: какую напечатает сервер, решает версия его Python. */
+var HTTP_PHRASE = {
+  400: ['Bad Request'], 401: ['Unauthorized'], 402: ['Payment Required'], 403: ['Forbidden'],
+  404: ['Not Found'], 405: ['Method Not Allowed'], 406: ['Not Acceptable'],
+  407: ['Proxy Authentication Required'], 408: ['Request Timeout'], 409: ['Conflict'], 410: ['Gone'],
+  411: ['Length Required'], 412: ['Precondition Failed'],
+  413: ['Content Too Large', 'Request Entity Too Large'], 414: ['URI Too Long', 'Request-URI Too Long'],
+  415: ['Unsupported Media Type'], 416: ['Range Not Satisfiable', 'Requested Range Not Satisfiable'],
+  417: ['Expectation Failed'], 418: ["I'm a Teapot"], 421: ['Misdirected Request'],
+  422: ['Unprocessable Content', 'Unprocessable Entity'], 423: ['Locked'], 424: ['Failed Dependency'],
+  425: ['Too Early'], 426: ['Upgrade Required'], 428: ['Precondition Required'], 429: ['Too Many Requests'],
+  431: ['Request Header Fields Too Large'], 451: ['Unavailable For Legal Reasons'],
+  500: ['Internal Server Error'], 501: ['Not Implemented'], 502: ['Bad Gateway'], 503: ['Service Unavailable'],
+  504: ['Gateway Timeout'], 505: ['HTTP Version Not Supported'], 506: ['Variant Also Negotiates'],
+  507: ['Insufficient Storage'], 508: ['Loop Detected'], 510: ['Not Extended'], 511: ['Network Authentication Required']
+};
+function detailOf(r) {
+  var d = r && r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var stock = (HTTP_PHRASE[r && r.status] || []).map(function (s) { return s.toLowerCase(); });
+  return d && stock.indexOf(d.trim().replace(/\.$/, '').toLowerCase()) !== -1 ? '' : d;
+}
+
 /* Направление «Бар» — общее для меню и очереди. done(текст отказа | '') */
 /* WHO — поколение «под кого собрано»: растёт при смене человека в тестовом
    режиме. Ответ, ушедший под прежнего и вернувшийся после смены, молчит —
@@ -1051,7 +1081,7 @@ function shiftAct(open) {
                  : api('POST', '/shifts/close?direction_id=' + dir, {});
   req.then(function (r) {
     var ok = r.status === (open ? 201 : 200);
-    var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+    var detail = detailOf(r);
     loadBar(function (err) {
       SHIFT_BUSY = false;
       if (err) {
@@ -1230,7 +1260,7 @@ function topupSend() {
   api('POST', '/till', { kind: 'topup', amount: amt, method: TOPUP.method, member_id: uid }).then(function (r) {
     var d = r.data;
     var ok = r.status === 201 && !!d && d.kind === 'topup' && num(d.amount) === amt && d.member_id === uid;
-    var detail = d && typeof d.detail === 'string' ? d.detail : '';
+    var detail = detailOf(r);
     api('GET', '/me').then(function (m) {
       var me = m.status === 200 ? fromMe(m.data) : null;
       if (me) DATA.member.balance = me.member.balance;
@@ -1303,7 +1333,7 @@ function fromTillPerson(d, code) {
 
 // Ответ сервера с текстом — текст дословно, с заглавной; иначе — код ответа.
 function said(r) {
-  var t = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var t = detailOf(r);
   return t ? t[0].toUpperCase() + t.slice(1) : failText(r);
 }
 
@@ -1707,7 +1737,7 @@ function bookSend() {
       (!body.at || clubDay(d.at) === body.at) &&
       (inc ? d.method === body.method
            : d.expense_cat === body.expense_cat && d.expense_kind === body.expense_kind && d.paid_by === body.paid_by);
-    var detail = d && typeof d.detail === 'string' ? d.detail : '';
+    var detail = detailOf(r);
     var what = inc ? 'Доход' : 'Расход';
     BOOK.busy = false;
     if (ok) {
@@ -1786,7 +1816,7 @@ function loadDay() {
     api('GET', '/bar/day?direction_id=' + BAR.id).then(function (r) {
       if (gen !== DAY.gen) return;
       var d = r.status === 200 ? fromDay(r.data) : null;
-      var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+      var detail = detailOf(r);
       if (d && d !== 'mismatch') DAY.data = d;
       else DAY.fail = d === 'mismatch' ? 'Суммы отчёта не сходятся со строками — показывать их нельзя. Сообщите администратору клуба.'
                     : r.status === 403 ? 'Отчёт за день видит куратор направления.'
@@ -1859,7 +1889,7 @@ function setState(oid, state) {
       haptic('ok');
     } else {
       haptic('warn');
-      var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+      var detail = detailOf(r);
       FLASH = { text: 'Не изменилось',
                 note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r) };
     }
@@ -1941,7 +1971,7 @@ function placeOrder(items, place, pay) {
       return;
     }
     haptic('warn');
-    var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+    var detail = detailOf(r);
     if (r.status === 0 || r.status === 201) {
       // Ответ мог потеряться ПОСЛЕ того, как заказ создан, или прийти неразобранным:
       // объявить заказ несозданным — значит подтолкнуть ко второму. Спрашиваем сервер.
@@ -2089,7 +2119,7 @@ function loadHealth() {
 function loadPeople() {
   TEST.people = null; TEST.fail = '';
   api('GET', '/act-as/people').then(function (r) {
-    var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+    var detail = detailOf(r);
     var ppl = r.status === 200 ? fromPeople(r.data) : null;
     if (ppl) TEST.people = ppl;
     else TEST.fail = r.status === 403 ? 'Вам просмотр не положен' + (detail ? ': ' + detail + '.' : '.')
@@ -2110,7 +2140,7 @@ function switchTo(on, as) {
     TEST.busy = false;
     var me = r.status === 200 ? fromMe(r.data) : null;
     if (!me) {
-      var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+      var detail = detailOf(r);
       TEST.on = was.on; TEST.as = was.as;
       if (!was.on && on === false) { FAIL = failText(r); FAIL_NET = r.status === 0; go('apiDown'); return; }
       FLASH = { text: 'Не переключилось', note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r) };
@@ -2328,7 +2358,7 @@ function fromDirList(d) {
   return d.filter(function (x) { return x.is_active; }).map(function (x) { return { id: x.id, title: x.title }; });
 }
 function denyText(r) {
-  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var detail = detailOf(r);
   // 201 с чужим телом — тоже «не разобран», а не «ответил кодом 201»: код успеха отказом не назвать
   return detail ? cap(detail) + '.' : r.status === 422 ? 'Сервер не принял запрос (код 422).'
        : r.status >= 200 && r.status < 300 ? 'Ответ сервера не разобран.' : failText(r);
@@ -3906,7 +3936,7 @@ function cancelBooking(id) {
    обрыв связи могли случиться потому, что экран устарел. Состоялось ли
    задуманное, решает перечитанное, а не код ответа. */
 function afterBooking(r, id, want) {
-  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var detail = detailOf(r);
   api('GET', '/events').then(function (g) {
     var list = g.status === 200 ? fromEvents(g.data) : null;
     if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
@@ -3956,7 +3986,7 @@ function cancelEvent(id) {
 /* Успех — не код ответа, а перечитанная афиша: отменённое мероприятие в ней
    не публикуется, поэтому исчезновение и есть подтверждение. */
 function afterEventCancel(r, id) {
-  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var detail = detailOf(r);
   api('GET', '/events').then(function (g) {
     var list = g.status === 200 ? fromEvents(g.data) : null;
     if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
@@ -4065,7 +4095,7 @@ function fromSigned(d) {
 }
 
 function signedFail(r) {
-  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var detail = detailOf(r);
   // Привратник доступа и отказ прав приходят одним кодом; у них разные
   // следующие шаги, поэтому и строки разные.
   if (r.status === 403 && /доступа нет/.test(detail))
@@ -4393,7 +4423,7 @@ function sameAsSent(e, sent) {
 }
 
 function afterEventCreate(r, sent) {
-  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var detail = detailOf(r);
   var id = r.data && typeof r.data.id === 'number' ? String(r.data.id) : null;
   api('GET', '/events').then(function (g) {
     var list = g.status === 200 ? fromEvents(g.data) : null;
@@ -4495,7 +4525,7 @@ function fromRecipe(d) {
 }
 
 function recipeFail(r) {
-  var detail = r.data && typeof r.data.detail === 'string' ? r.data.detail : '';
+  var detail = detailOf(r);
   // «Рецепта нет» и «не открылось» — разные вещи: первое чинится письмом
   // рецепта, второе — правами или сетью.
   //
