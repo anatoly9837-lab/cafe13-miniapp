@@ -5293,7 +5293,10 @@ var SCREENS = {
         : mine.length % 10 >= 2 && mine.length % 10 <= 4 && (mine.length % 100 < 10 || mine.length % 100 >= 20) ? 'события' : 'событий') : '');
     return seg + nav + grid + '<div class="daynote">' + esc(note) + '</div>' +
       (shown.length ? '<div class="group">' + shown.map(eventRow).join('') + '</div>'
-        : '<div class="card quiet"><span class="small">' + (mine.length ? 'На эту часть дня ничего не назначено.' : 'В этот день ивентов нет') + '</span></div>') +
+        // пустая афиша ЦЕЛИКОМ — не пустой день: /events отдаёт всё будущее без диапазона (бой 455dcdd: условие
+        // только «не кончилось»), значит клиент ЗНАЕТ, что листать нечего, и говорит это прежними словами
+        : '<div class="card quiet"><span class="small">' + (!list.length ? 'В афише пока ничего нет.'
+            : mine.length ? 'На эту часть дня ничего не назначено.' : 'В этот день ивентов нет') + '</span></div>') +
       (mayCreateEvent() ? '<button type="button" class="btn" data-go="eventNew">' +
         svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' : '') +
       /* Переключатель в режим управления стоит ЗДЕСЬ, а не отдельной
