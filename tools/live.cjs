@@ -836,8 +836,8 @@ if (grantsSet.length !== 1) {
       {
         const n = 'rnw-send-lost', o = { post: () => json(502, '<html>bad gateway</html>') };
         const { s, ok } = await rnwOpen(n, o);
+        const before = ok ? s.calls.length : 0;   // ДО нажатия: без окна POST и перечитывание успевают внутри tapIf
         if (ok && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
-          const before = s.calls.length;
           await s.p.waitForTimeout(5800);
           const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
           const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
