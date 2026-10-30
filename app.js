@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v118 · 30.10.2026';
+var VERSION = 'v119 · 30.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3833,6 +3833,10 @@ function bkk(d) {
   };
 }
 
+/* Короткая дата для левой колонки строки (50 px): «6 ноя». Еженедельный слот мастера даёт строки с одним
+   названием и временем — без даты их не различить (снимок владельца 30.10.2026: две «12:00 ДЕНЬ Кошкин
+   дом» подряд на «Клубе», Cafe13KPG#675). Форма — кадр E61 (`9315b3f`). */
+function dayShort(p) { var x = p.ymd.split('-'); return Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '').slice(0, 3); }
 function dayLabel(p, now) {
   if (p.ymd === bkk(now).ymd) return 'Сегодня, ' + p.dow;
   if (p.ymd === bkk(new Date(now.getTime() + 86400000)).ymd) return 'Завтра, ' + p.dow;
@@ -3870,7 +3874,7 @@ function fromEvents(d) {
     var p = bkk(start), fin = bkk(new Date(ends));
     out.push({
       id: String(e.id), eid: e.id, at: start.getTime(),
-      title: e.title, day: dayLabel(p, now), time: p.hm, until: fin.hm,
+      title: e.title, day: dayLabel(p, now), date: dayShort(p), time: p.hm, until: fin.hm,
       seg: partOf(p.hm),
       // «Идёт» верно только до конца события: часовая практика,
       // начавшаяся два часа назад, идущей не является — это было бы
@@ -3970,7 +3974,7 @@ function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 
 /* «Записываться пока не нужно» — слово владельца 30.10.2026 (Cafe13KPG#670, шаг 4): афиша открыта всем, а
    записывается только человек с ЖИВЫМ членством. По свойству, а не по роли: членство есть и у мастера,
-   и у куратора, и у бармена. ⚠ Запрет КЛИЕНТСКИЙ — сервер его не держит (бой a1984f2: `POST /bookings`
+   и у куратора, и у бармена. ⚠ Запрет КЛИЕНТСКИЙ — сервер его не держит (боевая ревизия по /health 30.10.2026: `POST /bookings`
    охраняет только допуск, `caller`, членства не спрашивает). «Пока» — срок: когда запись понадобится шире,
    снимается и этот запрет, и решается, проверять ли членство на сервере (#670). */
 function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
@@ -4678,7 +4682,7 @@ function afishaHome() {
     '<div class="card quiet"><span class="small">В афише пока ничего нет.</span></div></div>';
   return '<div class="group"><div class="row"><span class="label">Афиша</span>' +
     '<button type="button" class="btn quiet" data-go="events">Вся афиша</button></div>' +
-    EVENTS.slice(0, 2).map(eventRow).join('') + '</div>';
+    EVENTS.slice(0, 2).map(function (e) { return eventRow(e, { date: true }); }).join('') + '</div>';
 }
 
 /* Карточка события на живых данных. Запись и отмена здесь ЕСТЬ: обе живут в
@@ -5044,7 +5048,7 @@ function organizerLive() {
     '<div class="group"><span class="label">Свои в афише</span>' +
       (mine.length ? mine.map(function (e) {
         return '<button type="button" class="listitem" data-event="' + esc(e.id) + '">' +
-          '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.day.split(',')[0]) + '</span></span>' +
+          '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.date) + '</span></span>' +
           '<span class="grow"><b>' + esc(e.title) + '</b>' +
           '<span class="small">записалось ' + takenOf(e) + (e.unl ? ' · мест ' + NO_LIMIT : ' из ' + e.of) +
             // Слово берётся из афиши (`eventRow`), а не сочиняется второй
@@ -7146,8 +7150,11 @@ function eventRow(e, o) {
      день появится там, где его не просили. Опасность в ФОРМЕ проверки, а
      не в `map`. */
   var bez = o && typeof o === 'object' && o.bezStatusa;
+  // без заголовков дня (афиша на «Клубе») вторая строка колонки — ДАТА, а не часть дня: иначе неделя слота
+  // неотличима от следующей (#675)
+  var withDate = o && typeof o === 'object' && o.date && e.date;
   return '<button type="button" class="listitem' + (e.kind === 'paid' ? ' accent' : '') + '" data-event="' + esc(e.id) + '">' +
-    '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(e.part) + '</span></span>' +
+    '<span class="time"><b>' + esc(e.time) + '</b><span>' + esc(withDate ? e.date : e.part) + '</span></span>' +
     '<span class="grow"><b>' + esc(e.title) + '</b>' +
     '<span class="small">' + (bez
       ? 'ведёт ' + esc(e.master)

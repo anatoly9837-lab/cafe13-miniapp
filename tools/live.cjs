@@ -4382,6 +4382,31 @@ if (grantsSet.length !== 1) {
   }
 
 
+  // ── «Клуб»: недели одного слота различимы датой (Cafe13KPG#675, кадр E61) ──
+  // Снимок владельца 30.10.2026: две «12:00 ДЕНЬ Кошкин дом» подряд — еженедельный слот мастера даёт строки с одним
+  // названием и временем. Без заголовков дня вторая строка колонки обязана быть ДАТОЙ. Пара — та же строка через
+  // неделю: часть дня у них совпадает, дата — нет. Читается textContent (заглавные — это CSS, не данные).
+  {
+    const n = 'klub-data-v-stroke';
+    const MON = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    const short = off => { const [, mo, d] = bkkDay(off).split('-'); return Number(d) + ' ' + MON[Number(mo) - 1]; };
+    const SLOT = id => EV({ id, title: 'Кошкин дом', starts_at: atBkk(id === 51 ? 1 : 8, 12), duration_min: 60,
+      kind: 'free', price: '0.00', seats: 10, taken: 0, seats_left: 10, booked_by_me: false });
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, [SLOT(51), SLOT(52)])), null, NOWFIX);
+    const rows = await s.p.$$eval('#view [data-event]', b => b.map(x => [x.getAttribute('data-event'),
+      (x.querySelector('.time span') || {}).textContent || '']));
+    const want = [['51', short(1)], ['52', short(8)]];
+    if (JSON.stringify(rows) !== JSON.stringify(want))
+      bad.push(`${n}: на «Клубе» колонка строк ${JSON.stringify(rows)}, ждали ${JSON.stringify(want)} — недели слота не различить`);
+    if (rows.some(r => r[1] === 'день')) bad.push(`${n}: в колонке строки часть дня «день» вместо даты`);
+    // на самой афише день стоит в заголовке группы — там колонка по-прежнему часть дня
+    await s.p.click('[data-go="events"]'); await s.p.waitForTimeout(150);
+    const af = await s.p.$$eval('#view [data-event]', b => b.map(x => (x.querySelector('.time span') || {}).textContent || ''));
+    if (!af.length || af.some(x => x !== 'день')) bad.push(`${n}: на афише колонка ${JSON.stringify(af)}, ждали «день» — дата там дублировала бы заголовок дня`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, AFISHA)), null, NOWFIX);
     const home = await s.view();
