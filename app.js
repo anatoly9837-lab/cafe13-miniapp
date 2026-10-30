@@ -3817,6 +3817,22 @@ var EV_PLACES = null;       // места клуба для формы или nu
 var EV_PLACES_STATE = '';   // '' — не спрашивали, 'loading', 'ok', иначе отказ
 var EV_PLACES_GEN = 0;      // ответ старого запроса, пришедший позже, молчит
 var SEG = 'все';            // выбранная часть дня на экране афиши
+var WK = { off: 0, day: null };   // неделя афиши от текущей (0 — эта) и выбранный день (ymd острова)
+var DOW_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+// даты — строками ymd острова; арифметика в UTC полдень, чтобы смена часов не сдвигала день
+function ymdAdd(ymd, n) { var d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function ymdMonday(ymd) { var w = new Date(ymd + 'T12:00:00Z').getUTCDay(); return ymdAdd(ymd, -((w + 6) % 7)); }
+function weekRange(a, b) {
+  var x = a.split('-'), y = b.split('-');
+  return x[1] === y[1] ? Number(x[2]) + ' – ' + Number(y[2]) + ' ' + MONTHS[Number(y[1]) - 1]
+    : Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1] + ' – ' + Number(y[2]) + ' ' + MONTHS[Number(y[1]) - 1];
+}
+// день события на острове; у демо-набора даты нет — его «Сегодня/Завтра» и переводится в дату
+function evYmd(e) {
+  if (typeof e.at === 'number') return bkk(new Date(e.at)).ymd;
+  var today = bkk(new Date()).ymd;
+  return /^Сегодня/.test(e.day) ? today : /^Завтра/.test(e.day) ? ymdAdd(today, 1) : ymdAdd(today, 2);
+}
 var TZ = 'Asia/Bangkok';    // афиша клуба живёт по острову, а не по поясу телефона
 
 var SEGS = [['все', 'Все'], ['утро', 'Утро'], ['день', 'День'], ['вечер', 'Вечер']];
@@ -5242,26 +5258,42 @@ var SCREENS = {
       (MREQS.ask ? noteBox('Отказ не закрывает дорогу: отклонённая заявка закрыта, и человек может подать новую. Согласие членства не создаёт — его создаёт касса, приняв деньги.') : '');
   },
 
+  /* E60 (вариант А владельца, 30.10.2026): сетка недели + список ВЫБРАННОГО дня — половина варианта, а не
+     улучшение: полоска говорит «тут что-то есть», что именно — список. Названий в сетке нет по построению
+     (колонка ≈47 px) — это выбранный размен, а не дефект. Переход по неделям — решение координатора после
+     выбора; «‹» на текущей неделе погашен: /events прошедших не отдаёт, и прошлая неделя читалась бы
+     «ивентов нет» там, где они были. «Сегодня» — только не на текущей неделе (E60d). */
   events: function () {
     var list = eventList();
     if (!list) return eventsWait();
-    var shown = list.filter(function (e) { return SEG === 'все' || segOf(e) === SEG; });
-    var days = [];
-    shown.forEach(function (e) { if (days.indexOf(e.day) === -1) days.push(e.day); });
-    return '<div class="seg">' + SEGS.map(function (s) {
-        return '<button type="button" data-action="seg:' + s[0] + '" aria-pressed="' +
-          (SEG === s[0]) + '">' + s[1] + '</button>';
-      }).join('') + '</div>' +
-      (shown.length ? days.map(function (d) {
-        return '<div class="group"><span class="label">' + esc(d) + '</span>' +
-          shown.filter(function (e) { return e.day === d; }).map(eventRow).join('') +
-        '</div>';
-      }).join('')
-      : '<div class="card quiet"><span class="small">' +
-        (list.length ? 'На эту часть дня ничего не назначено.' : 'В афише пока ничего нет.') +
-        '</span></div>') +
-      // Вход в форму стоит у того, кто имеет право завести: гостю кнопка не
-      // показывается вовсе, а не отказывает по нажатию.
+    var today = bkk(new Date()).ymd, mon = ymdAdd(ymdMonday(today), WK.off * 7);
+    var days = [0, 1, 2, 3, 4, 5, 6].map(function (i) { return ymdAdd(mon, i); });
+    var on = {}; list.forEach(function (e) { var k = evYmd(e); (on[k] = on[k] || []).push(e); });
+    var sel = WK.day && days.indexOf(WK.day) !== -1 ? WK.day
+      : WK.off === 0 ? today : (days.filter(function (d) { return on[d]; })[0] || mon);
+    var mine = on[sel] || [];
+    // фильтр части дня ОСТАЁТСЯ до слова владельца (снятие живого элемента — через координатора, designer-55):
+    // календарь выбирает день, фильтр сужает список внутри него; подпись дня считает ВСЕ события дня
+    var shown = mine.filter(function (e) { return SEG === 'все' || segOf(e) === SEG; });
+    var seg = '<div class="seg">' + SEGS.map(function (s) {
+        return '<button type="button" data-action="seg:' + s[0] + '" aria-pressed="' + (SEG === s[0]) + '">' + s[1] + '</button>';
+      }).join('') + '</div>';
+    var nav = '<div class="wknav"><button type="button" class="round" data-action="wk-prev" aria-label="Неделя назад"' + (WK.off > 0 ? '' : ' disabled') + '>‹</button>' +
+      '<b>' + esc(weekRange(days[0], days[6])) + '</b>' +
+      (WK.off !== 0 ? '<button type="button" class="btn quiet mini" data-action="wk-today">Сегодня</button>' : '') +
+      '<button type="button" class="round" data-action="wk-next" aria-label="Неделя вперёд">›</button></div>';
+    var grid = '<div class="wk">' + days.map(function (d, i) {
+      var n = (on[d] || []).length, bars = '';
+      for (var k = 0; k < Math.max(2, Math.min(n, 3)); k++) bars += '<span class="' + (k < n ? 'ev' : 'no') + '"></span>';
+      return '<button type="button" data-action="wk-day:' + d + '"' + (d === sel ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"') + '>' +
+        '<span class="d">' + DOW_SHORT[i] + '</span><span class="n">' + Number(d.slice(8)) + '</span>' + bars + '</button>';
+    }).join('') + '</div>';
+    var x = sel.split('-'), note = DOW_SHORT[days.indexOf(sel)] + ', ' + Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1] +
+      (mine.length ? ' · ' + mine.length + ' ' + (mine.length % 10 === 1 && mine.length % 100 !== 11 ? 'событие'
+        : mine.length % 10 >= 2 && mine.length % 10 <= 4 && (mine.length % 100 < 10 || mine.length % 100 >= 20) ? 'события' : 'событий') : '');
+    return seg + nav + grid + '<div class="daynote">' + esc(note) + '</div>' +
+      (shown.length ? '<div class="group">' + shown.map(eventRow).join('') + '</div>'
+        : '<div class="card quiet"><span class="small">' + (mine.length ? 'На эту часть дня ничего не назначено.' : 'В этот день ивентов нет') + '</span></div>') +
       (mayCreateEvent() ? '<button type="button" class="btn" data-go="eventNew">' +
         svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' : '') +
       /* Переключатель в режим управления стоит ЗДЕСЬ, а не отдельной
@@ -7962,6 +7994,10 @@ function doAction(a) {
     }
 
   {
+    if (a === 'wk-prev' && WK.off > 0) { WK.off -= 1; WK.day = null; haptic(); render(); return; }
+    if (a === 'wk-next') { WK.off += 1; WK.day = null; haptic(); render(); return; }
+    if (a === 'wk-today') { WK.off = 0; WK.day = null; haptic(); render(); return; }
+    if (a === 'wk-day' && /^\d{4}-\d\d-\d\d$/.test(arg)) { WK.day = arg; haptic(); render(); return; }
     if (a === 'seg' && SEGS.some(function (s) { return s[0] === arg; })) {
       SEG = arg; haptic(); render(); return;
     }

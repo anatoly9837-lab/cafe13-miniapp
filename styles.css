@@ -750,3 +750,22 @@ body.has-main .dup-main { display: none; }
 .note.act .btn { margin-left: auto; }
 .card.dense.open .note { background: var(--paper); }
 .card.dense.open .undo { background: var(--paper); }
+
+/* ── афиша неделей (E60, вариант А владельца): семь колонок РАВНОЙ доли — фиксированные на 390 вылезли бы
+   за край; полоска без текста — признание предела (название в ≈47 px не входит), что именно — список дня ── */
+.wknav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+.wknav .round { border: 1px solid var(--line); width: 34px; height: 34px; border-radius: 50%;
+                font-size: 17px; color: var(--ink); background: var(--card); }
+.wknav .round[disabled] { color: var(--muted); opacity: .45; cursor: default; }
+.wk { display: flex; gap: 4px; }
+/* кнопка центрирует содержимое по высоте — у дня с тремя полосками число съезжало вверх (снимок): прижато к верху */
+.wk > button { flex: 1 1 0; min-width: 0; text-align: center; font: inherit; color: var(--ink); cursor: pointer;
+               display: flex; flex-direction: column; justify-content: flex-start;
+               border: 1px solid var(--line); border-radius: 10px; padding: 7px 2px 8px; background: var(--card); }
+.wk > button.on { border-color: var(--accent); background: var(--surface); }
+.wk .d { display: block; font-size: 11px; color: var(--muted); }
+.wk .n { display: block; font-size: 15px; font-weight: 600; margin-top: 1px; }
+/* вторая полоска того же цвета: глина — семейство отказа, красная полоска обещала бы беду (designer-55) */
+.wk .ev { display: block; height: 5px; border-radius: 3px; margin: 4px 3px 0; background: var(--gold); }
+.wk .no { display: block; height: 5px; margin: 4px 3px 0; }
+.daynote { font-size: 12px; color: var(--muted); margin-top: 2px; }
