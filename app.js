@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v117 · 30.10.2026';
+var VERSION = 'v118 · 30.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -686,13 +686,15 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               topupQueue: 1, topupReq: 1,
               // шаг 3 (v109): мастера на ручках сервера — бой `bbf09f8`, миграция 020 накачена
               masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1, masterRenew: 1,
+              // шаг 4 (слово владельца 30.10.2026, Cafe13KPG#670): афиша доступна всем — из FROZEN обратно сюда
+              events: 1, event: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
    всех»; «не удаляем — делаем временно недоступным». Экраны ниже были в `WIRED` и стоят на данных
    сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
    тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
-var FROZEN = { organizer: 1, guest: 1, events: 1, event: 1, eventNew: 1, bookings: 1,
+var FROZEN = { organizer: 1, guest: 1, eventNew: 1, bookings: 1,
                bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1, barQueue: 1, barMoney: 1, barDay: 1,
                barCards: 1, barCard: 1, staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
@@ -3966,7 +3968,13 @@ var BOOK_ASK = false;      // у отмены спрашивают: место �
 
 function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 
-function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY; }
+/* «Записываться пока не нужно» — слово владельца 30.10.2026 (Cafe13KPG#670, шаг 4): афиша открыта всем, а
+   записывается только человек с ЖИВЫМ членством. По свойству, а не по роли: членство есть и у мастера,
+   и у куратора, и у бармена. ⚠ Запрет КЛИЕНТСКИЙ — сервер его не держит (бой a1984f2: `POST /bookings`
+   охраняет только допуск, `caller`, членства не спрашивает). «Пока» — срок: когда запись понадобится шире,
+   снимается и этот запрет, и решается, проверять ли членство на сервере (#670). */
+function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
+function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents(); }
 // сколько записалось: без ограничения — `taken` сервера (из «мест» не вычесть), иначе — мест минус осталось
 function takenOf(e) { return e.unl ? e.taken : e.of - e.seats; }
 // ВРЕМЕННЫЕ слова «без ограничения» — до кадра дизайнера (Cafe13KPG#639)
@@ -4730,6 +4738,12 @@ function bookBlock(e) {
         '</div>';
     return err + '<button type="button" class="btn ghost" data-action="book-cancel">Отменить запись</button>';
   }
+  // без живого членства (E37k): кнопка ОСТАЁТСЯ, погашена, причина вплотную под ней; подсказка оплаты
+  // снята — она про то, что будет после нажатия, а нажатия не будет (designer-55)
+  if (!mayBookEvents() && !e.done)
+    return err + '<div style="display:flex;flex-direction:column;gap:9px">' +
+      '<button type="button" class="btn" disabled aria-disabled="true">Записаться</button>' +
+      '<span class="small" style="text-align:center">Пока записываются только члены клуба.</span></div>';
   if (!canBookEvent(e)) {
     // Объяснение — там, где человек мог ждать кнопку: мест нет. Кончившемуся
     // событию объяснять нечего, у него всё сказано карточкой.
@@ -7260,12 +7274,12 @@ function queueCard(o) {
 /* ── навигация ───────────────────────────────────────── */
 
 var TABS = {
-  guest:     [['guest', 'Услуги', ICON.plus], ['bookings', 'Ивенты', ICON.cal]],
-  member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['bookings', 'Ивенты', ICON.cal]],
+  guest:     [['guest', 'Услуги', ICON.plus], ['events', 'Ивенты', ICON.cal]],
+  member:    [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus], ['events', 'Ивенты', ICON.cal]],
   organizer: [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
-              ['organizer', 'События', ICON.star], ['bookings', 'Ивенты', ICON.cal]],
+              ['organizer', 'События', ICON.star], ['events', 'Ивенты', ICON.cal]],
   partner:   [['home', 'Клуб', ICON.home], ['guest', 'Услуги', ICON.plus],
-              ['partner', 'Моё дело', ICON.case], ['bookings', 'Ивенты', ICON.cal]],
+              ['partner', 'Моё дело', ICON.case], ['events', 'Ивенты', ICON.cal]],
   staff:     [['staff', 'Касса', ICON.till], ['home', 'Клуб', ICON.home]],
   bar:       [['barQueue', 'Заказы', ICON.bell], ['barShot', 'Съёмка', ICON.cam],
               ['barDay', 'День', ICON.chart], ['barExpense', 'Затраты', ICON.coin]],
@@ -7273,7 +7287,10 @@ var TABS = {
               ['barExpense', 'Затраты', ICON.coin], ['home', 'Клуб', ICON.home]]
 };
 // порядок вкладок у человека с несколькими членствами: оба своих экрана — между «Услугами» и «Записями»
-var TAB_ORDER = ['home', 'guest', 'organizer', 'partner', 'bookings'];
+/* Вкладка «Ивенты» ведёт на афишу, а не на «мои записи»: слово владельца 30.10.2026 «на вкладке ивенты
+   должен быть календарь на неделю» (Cafe13KPG#670). «Мои записи» (`bookings`) заморожены; куда они
+   встанут при разморозке — решение координатора, не следствие этой строки. */
+var TAB_ORDER = ['home', 'guest', 'organizer', 'partner', 'events'];
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои ивенты', staff: 'Касса', demo: 'Демо-режим',
