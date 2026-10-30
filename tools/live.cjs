@@ -758,6 +758,117 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // ── продление мастера (v113, кадры E59/E59b, Cafe13KPG#651): окно ДО отправки с политикой ухода 'cancel' ──
+    // Перенос пяти проб arhitector-47 (ревью #173) словами автора; rnw-send-lost и rnw-lock — его же «не покрыто».
+    // Деньги сверяются без пробелов (в т.ч. неразрывных): разрядка — дело money(), а не случая.
+    {
+      const flat = t => t.replace(/[\s  ]/g, '');
+      const rnwApi = (o, prev) => { const api = masterApi(o); return q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
+        const pm = u.match(/^\/master\/requests\/901\/periods\/preview\?months=(\d+)$/);
+        if (pm) { const N = Number(pm[1]); o.prevAsked.push(N); return json(200, Object.assign({ request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
+          per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', paid_until: N === 2 ? '2027-01-31' : '2026-12-31', enough: true, short: '0.00' }, prev || {})); }
+        if (u === '/master/requests/901/periods' && m === 'POST') { o.renewed.push(JSON.parse(q.postData() || '{}'));
+          return o.post ? o.post() : json(201, Object.assign(mreq(901, 'approved', { paid_until: '2027-01-31' }), { charged: '5400.00', months: [] })); }
+        return api(q);
+      }; };
+      // общий вход: мастер с оплатой до 30.11.2026, «Клуб» → «Продлить»
+      const rnwOpen = async (n, o, prev, wrap) => {
+        o.mine = () => [mreq(901, 'approved', { paid_until: '2026-11-30' })]; o.posted = []; o.prevAsked = []; o.renewed = [];
+        const api = rnwApi(o, prev);
+        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, wrap ? wrap(api) : api);
+        await s.p.waitForTimeout(300);
+        if (!(await s.view()).includes('Оплачено до 30.11.2026')) bad.push(`${n}: на «Клубе» нет «Оплачено до 30.11.2026»`);
+        const ok = await tapIf(s, n, '#view [data-go="masterRenew"]', '«Продлить» на «Клубе»');
+        await s.p.waitForTimeout(300);
+        return { s, ok };
+      };
+      // 1. отправка: два месяца — цена и дата от сервера; до конца окна запроса нет, после — ровно один {months:2}
+      {
+        const n = 'rnw-send', o = {};
+        const { s, ok } = await rnwOpen(n, o);
+        if (ok && await tapIf(s, n, '[data-action="rnw-plus"]', '«+» месяца')) {
+          await s.p.waitForTimeout(300);
+          const t = flat(await s.view());
+          if (!o.prevAsked.includes(2)) bad.push(`${n}: предпросмотр не спрошен с months=2: ${JSON.stringify(o.prevAsked)}`);
+          if (!t.includes('5400฿')) bad.push(`${n}: на экране нет «5 400 ฿» от сервера за два месяца`);
+          if (!t.includes('31.01.2027')) bad.push(`${n}: на экране нет «31.01.2027» от сервера`);
+          if (await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
+            await s.p.waitForTimeout(500);
+            if (o.renewed.length) bad.push(`${n}: продление ушло до конца окна отмены (через 0,5 с)`);
+            await s.p.waitForTimeout(5500);
+            if (o.renewed.length !== 1 || o.renewed[0].months !== 2) bad.push(`${n}: после окна ждали один POST {months:2}, ушло ${JSON.stringify(o.renewed)}`);
+          }
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // 2–4. окно закрыто без отправки: ушёл с экрана, свернул приложение, нажал «Отменить»
+      for (const [n, how] of [['rnw-leave', 'go'], ['rnw-hidden', 'hide'], ['rnw-keep', 'keep']]) {
+        const o = {};
+        const { s, ok } = await rnwOpen(n, o);
+        if (ok && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
+          await s.p.waitForTimeout(300);
+          if (how === 'go') await s.p.evaluate(() => go('home'));
+          if (how === 'hide') await s.p.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+          if (how === 'keep') await tapIf(s, n, '[data-action="rnw-keep"]', '«Отменить»');
+          await s.p.waitForTimeout(6000);
+          if (o.renewed.length) bad.push(`${n}: продление ушло (${o.renewed.length}) — ${{ go: 'ушёл с экрана', hide: 'свернул приложение', keep: 'нажал «Отменить»' }[how]} в окне, а деньги списаны`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // 5. денег меньше: «Продлить» погашен, недостача — словами сервера; вторая линия — обработчик
+      {
+        const n = 'rnw-short', o = {};
+        const { s, ok } = await rnwOpen(n, o, { enough: false, short: '1300.00' });
+        if (ok) {
+          const off = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? b.disabled : null; });
+          if (off !== true) bad.push(`${n}: при enough false «Продлить» нажимается (${JSON.stringify(off)})`);
+          if (!flat(await s.view()).includes('Нехватает1300฿')) bad.push(`${n}: недостача не названа словами сервера (ждали «Не хватает 1 300 ฿»)`);
+          await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); if (b) { b.disabled = false; b.click(); } });
+          await s.p.waitForTimeout(200);
+          if (await s.p.$('.undo')) bad.push(`${n}: обработчик «Продлить» открыл окно при enough false — сверки нет`);
+        }
+        await s.ctx.close();
+      }
+      // 6. неразобранный ответ на продление: деньги могли уйти — своя заявка и остаток перечитаны, человек на экране
+      {
+        const n = 'rnw-send-lost', o = { post: () => json(502, '<html>bad gateway</html>') };
+        const { s, ok } = await rnwOpen(n, o);
+        const before = ok ? s.calls.length : 0;   // ДО нажатия: без окна POST и перечитывание успевают внутри tapIf
+        if (ok && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
+          await s.p.waitForTimeout(5800);
+          const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+          const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
+          if (o.renewed.length !== 1) bad.push(`${n}: POST продления ушёл ${o.renewed.length} раз, ждали 1`);
+          else if (miss.length) bad.push(`${n}: после неразобранного ответа не перечитано ${JSON.stringify(miss)} — деньги могли уйти: ${JSON.stringify(after)}`);
+          if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после неразобранного ответа экран продления закрылся`);
+          if (!(await s.view()).includes('кодом 502')) bad.push(`${n}: отказ не назван (ждали «кодом 502»)`);
+        }
+        await s.ctx.close();
+      }
+      // 7. в окне число месяцев не меняется: «−»/«+» погашены; вторая линия — обработчики
+      {
+        const n = 'rnw-lock', o = {};
+        const { s, ok } = await rnwOpen(n, o);
+        if (ok && await tapIf(s, n, '[data-action="rnw-plus"]', '«+» месяца') && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
+          if (!(await s.p.$('.undo'))) bad.push(`${n}: окна отмены нет после «Продлить»`);
+          else {
+            for (const [act, w] of [['rnw-minus', '«−»'], ['rnw-plus', '«+»']]) {
+              const off = await s.p.evaluate(x => { const b = document.querySelector(`[data-action="${x}"]`); return b ? b.disabled : null; }, act);
+              if (off !== true) bad.push(`${n}: в окне ${w} месяца нажимается (${JSON.stringify(off)}) — сумма меняется после «Продлить»`);
+              await s.p.evaluate(x => { const b = document.querySelector(`[data-action="${x}"]`); if (b) { b.disabled = false; b.click(); } }, act);
+              await s.p.waitForTimeout(150);
+              const mo = await s.p.evaluate(() => RNW.months);
+              if (mo !== 2) bad.push(`${n}: обработчик ${w} в окне сменил число месяцев на ${mo} — сверки окна нет`);
+              if (mo !== 2) await s.p.evaluate(() => { RNW.months = 2; });   // вернуть, иначе одна поломка спишется на другую кнопку
+            }
+          }
+        }
+        await s.ctx.close();
+      }
+    }
   }
 
   // ── остаток перечитывается по возврату в приложение (v110, Cafe13KPG#638) ──
