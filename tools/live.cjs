@@ -697,6 +697,42 @@ if (grantsSet.length !== 1) {
       }
       await s.ctx.close();
     }
+    // отказ подачи словами сервера (Cafe13KPG#663, api b017764): ЛЮБОЙ HTTPException подачи несёт
+    // «. Деньги не списаны, заявка не подана» без знака в конце — точку ставит denyText. Занятость (`_free_weeks`
+    // → `_check_free`) — тот 409, ради которого фраза и писалась: время выбрано из свободного, место заняли
+    {
+      const n = 'ms-busy-409';
+      const DETAIL = 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00. Деньги не списаны, заявка не подана';
+      const o = { mine: () => [], posted: [] };
+      const api = masterApi(o);
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/master/request' && q.method() === 'POST') { o.posted.push(1); return json(409, { detail: DETAIL }); }
+        return api(q);
+      });
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(300);
+        if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
+        const before = s.calls.length;   // ДО нажатия (см. rnw-send-lost)
+        if (await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»')) {
+          await s.p.waitForTimeout(400);
+          const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+          const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
+          if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
+          if (await s.p.evaluate(() => current) !== 'masterApply') bad.push(`${n}: после 409 форма закрылась`);
+          if (!alert.includes('Неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00.')) bad.push(`${n}: слова сервера о занятом месте не показаны плашкой отказа: ${JSON.stringify(alert)}`);
+          if (!alert.includes('Деньги не списаны, заявка не подана.')) bad.push(`${n}: не сказано, что деньги не списаны: ${JSON.stringify(alert)}`);
+          if ((await s.view()).includes('Заявка отправлена')) bad.push(`${n}: после 409 сказано «Заявка отправлена»`);
+          const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
+          if (miss.length) bad.push(`${n}: после 409 не перечитано ${JSON.stringify(miss)}`);
+          const title = await s.p.evaluate(() => { const e = document.getElementById('msf-title'); return e ? e.value : null; });
+          if (title !== 'Проба мастера') bad.push(`${n}: после 409 набранное название пропало (${JSON.stringify(title)}) — человеку набирать заново`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
     // своя заявка арт-директора — по номеру из ЕГО /master/requests/mine: без «Согласовать»/«Отказать»
     {
       const n = 'offer-own-ad';
