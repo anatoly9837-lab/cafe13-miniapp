@@ -766,7 +766,7 @@ if (grantsSet.length !== 1) {
       const rnwApi = (o, prev) => { const api = masterApi(o); return q => {
         const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
         const pm = u.match(/^\/master\/requests\/901\/periods\/preview\?months=(\d+)$/);
-        if (pm) { const N = Number(pm[1]); o.prevAsked.push(N); return json(200, Object.assign({ request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
+        if (pm) { const N = Number(pm[1]); o.prevAsked.push(N); if (o.prevReply) return o.prevReply(N); return json(200, Object.assign({ request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
           per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', paid_until: N === 2 ? '2027-01-31' : '2026-12-31', enough: true, short: '0.00' }, prev || {})); }
         if (u === '/master/requests/901/periods' && m === 'POST') { o.renewed.push(JSON.parse(q.postData() || '{}'));
           return o.post ? o.post() : json(201, Object.assign(mreq(901, 'approved', { paid_until: '2027-01-31' }), { charged: '5400.00', months: [] })); }
@@ -846,6 +846,29 @@ if (grantsSet.length !== 1) {
           if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после неразобранного ответа экран продления закрылся`);
           if (!(await s.view()).includes('кодом 502')) bad.push(`${n}: отказ не назван (ждали «кодом 502»)`);
         }
+        await s.ctx.close();
+      }
+      // отказ предпросмотра (Cafe13KPG#649, detailOf v114): слова сервера печатаются, а стандартная фраза СВОЕГО
+      // кода от FastAPI — нет (замер: несуществующий путь отдаёт {"detail":"Not Found"}), и русский экран не отвечает
+      // чужим языком. det-* — перенос проб arhitector-47 его словами; rnw-404-* — мои. «Продлить» без расчёта погашен
+      for (const [n, code, body, want, not] of [
+        ['det-stock', 404, { detail: 'Not Found' }, 'кодом 404', 'Not Found'],
+        ['det-stock-dot', 405, { detail: 'method not allowed.' }, 'кодом 405', 'allowed'],
+        ['det-own', 409, { detail: 'нет согласованного слота' }, 'Нет согласованного слота', 'кодом 409'],
+        ['det-near', 404, { detail: 'Not Found here' }, 'Not Found here', 'кодом 404'],
+        ['det-other-code', 409, { detail: 'Not Found' }, 'Not Found', 'кодом 409'],   // фраза ЧУЖОГО кода не глотается
+        ['rnw-404-words', 404, { detail: 'заявка не найдена' }, 'Заявка не найдена.', 'кодом 404'],
+        ['rnw-404-empty', 404, '', 'Сервер ответил кодом 404.', null]]) {
+        const o = { prevReply: () => json(code, body) };
+        const { s, ok } = await rnwOpen(n, o);
+        if (ok) {
+          const t = await s.view();
+          if (!t.includes(want)) bad.push(`${n}: на ${code} ${JSON.stringify(body)} нет «${want}»`);
+          if (not && t.includes(not)) bad.push(`${n}: на ${code} ${JSON.stringify(body)} на экране «${not}»`);
+          const off = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? b.disabled : null; });
+          if (off !== true) bad.push(`${n}: без расчёта сервера «Продлить» нажимается (${JSON.stringify(off)})`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
       }
       // 7. в окне число месяцев не меняется: «−»/«+» погашены; вторая линия — обработчики
