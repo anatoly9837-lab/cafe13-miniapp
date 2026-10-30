@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v119 · 30.10.2026';
+var VERSION = 'v120 · 30.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -688,13 +688,15 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1, masterRenew: 1,
               // шаг 4 (слово владельца 30.10.2026, Cafe13KPG#670): афиша доступна всем — из FROZEN обратно сюда
               events: 1, event: 1,
+              // шаг 4, пункт третий — «Свои ивенты» мастеру и правка недели (кадры E55k/E55l, ручка `POST /events/{id}/edit`)
+              organizer: 1, eventEdit: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
    всех»; «не удаляем — делаем временно недоступным». Экраны ниже были в `WIRED` и стоят на данных
    сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
    тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
-var FROZEN = { organizer: 1, guest: 1, eventNew: 1, bookings: 1,
+var FROZEN = { guest: 1, eventNew: 1, bookings: 1,
                bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1, barQueue: 1, barMoney: 1, barDay: 1,
                barCards: 1, barCard: 1, staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
@@ -3874,7 +3876,7 @@ function fromEvents(d) {
     var p = bkk(start), fin = bkk(new Date(ends));
     out.push({
       id: String(e.id), eid: e.id, at: start.getTime(),
-      title: e.title, day: dayLabel(p, now), date: dayShort(p), time: p.hm, until: fin.hm,
+      title: e.title, day: dayLabel(p, now), date: dayShort(p), time: p.hm, until: fin.hm, mins: e.duration_min,
       seg: partOf(p.hm),
       // «Идёт» верно только до конца события: часовая практика,
       // начавшаяся два часа назад, идущей не является — это было бы
@@ -3977,6 +3979,9 @@ function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
    и у куратора, и у бармена. ⚠ Запрет КЛИЕНТСКИЙ — сервер его не держит (боевая ревизия по /health 30.10.2026: `POST /bookings`
    охраняет только допуск, `caller`, членства не спрашивает). «Пока» — срок: когда запись понадобится шире,
    снимается и этот запрет, и решается, проверять ли членство на сервере (#670). */
+// ⚠ `!LIVE ||` сегодня не исполняется НИ ОДНИМ путём (замер frontend-11 по 706edea): canBookEvent/bookBlock
+// зовутся только из живых веток, демо-карточка рисует «Записаться» своей веткой. Оставлено как страховка:
+// у демо-человека членств нет, и демо-путь, начавший звать canBookEvent, без неё закрыл бы запись витрине
 function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
 function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents(); }
 // сколько записалось: без ограничения — `taken` сервера (из «мест» не вычесть), иначе — мест минус осталось
@@ -4034,6 +4039,44 @@ function afterBooking(r, id, want) {
 var EV_BUSY = false;       // отмена мероприятия в пути: второе нажатие молчит
 var EV_ERR = '';           // чем кончилась неудачная отмена — текст на карточке
 var EV_ASK = false;        // спрашиваем: отмена мероприятия снимает записи людей
+/* Правка недели (шаг 4, E55k/E55l, `POST /events/{id}/edit` — на бою с 455dcdd). Ручка берёт ТОЛЬКО `seats`
+   (0–500, 0 — без ограничения) и `about` (до 2000); ответ — строка без имён ведущего, поэтому после 200
+   афиша перечитывается. Условие показа — то же, что у сервера: своё и не кончившееся (он отказывает «уже
+   прошло» по КОНЦУ, идущее править можно). Права решает сервер; его отказ печатается словами. */
+var EDT = { id: null, seats: '', about: '', busy: false, err: '' };
+function canEditEvent(e) { return isMyEvent(e) && !e.done && mayOwnEvents(); }
+function editGrab() {
+  if (!document.getElementById('edt-seats')) return;
+  EDT.seats = document.getElementById('edt-seats').value; EDT.about = document.getElementById('edt-about').value;
+}
+// набранное — в EDT на каждый ввод: перерисовка (поздний ответ афиши) иначе вернула бы прежнее
+document.addEventListener('input', function (ev) { if (ev.target && /^edt-/.test(ev.target.id)) editGrab(); });
+function editSave() {
+  var e = eventById(EDT.id);
+  if (EDT.busy || !canEditEvent(e)) return;
+  editGrab();
+  var seats = Number(EDT.seats);
+  EDT.err = !(String(EDT.seats).trim() !== '' && Math.floor(seats) === seats && seats >= 0 && seats <= 500) ? 'Число мест — целое, от 0 до 500; 0 — без ограничения.'
+    : EDT.about.length > 2000 ? 'Описание длиннее 2000 знаков: сократите.' : '';
+  if (EDT.err) { render(); return; }
+  EDT.busy = true; render();
+  var id = EDT.id;
+  api('POST', '/events/' + e.eid + '/edit', { seats: seats, about: EDT.about }).then(function (r) {
+    api('GET', '/events').then(function (g) {
+      var list = g.status === 200 ? fromEvents(g.data) : null;
+      if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
+      EDT.busy = false;
+      if (r.status === 200 && r.data && r.data.id === e.eid) {
+        haptic('ok'); FLASH = { text: 'Сохранено', note: 'Только на эту неделю: ' + e.day.split(',')[0].toLowerCase() + '.' };
+        if (current === 'eventEdit') go('event', id);
+        return;
+      }
+      haptic('warn');
+      EDT.err = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r);
+      if (current === 'eventEdit') render();
+    });
+  });
+}
 
 /* «Своё» мероприятие — это organizer_id из афиши против своего tg id из /me.
    Сервер отдаёт в organizer_id именно Telegram id (миграция 004: bigint NOT
@@ -4299,7 +4342,9 @@ function manageBlock(e) {
       '<span class="small">Записи всех, кто записался, будут сняты, и мероприятие уйдёт из афиши. Вернуть его нельзя — только завести новое. Перепишите, кто записался: после отмены список не вернуть, а приложение гостей не предупредит.</span></div></div>' +
       '<button type="button" class="btn ghost" data-action="event-cancel-yes:' + esc(e.id) + '">Да, отменить</button>' +
       '<button type="button" class="btn quiet" data-action="event-cancel-no">Оставить</button></div>';
-  return head + '<button type="button" class="btn ghost" data-action="event-cancel">Отменить мероприятие</button></div>';
+  // правка — НАД отменой: необратимое последним; слово называет, что изменится (designer-55, E55k)
+  return head + '<button type="button" class="btn ghost" data-action="event-edit:' + esc(e.id) + '">Изменить описание и места</button>' +
+    '<button type="button" class="btn ghost" data-action="event-cancel">Отменить мероприятие</button></div>';
 }
 
 /* ── завести мероприятие ───────────────────────────────
@@ -4322,6 +4367,10 @@ function mayCreateEvent() {
                   grant('head') || grant('curator') ||
                   DATA.role === 'organizer' || DATA.role === 'partner');
 }
+/* «Свои мероприятия» — шире, чем «завести»: мастер правит и смотрит свои, но не заводит (слово владельца
+   30.10.2026: «в нём он может модерировать своё мероприятие… вкладка ивенты, но только с его собственным»,
+   Cafe13KPG#670 шаг 4). Создание — по-прежнему `mayCreateEvent()`: мастер кнопки «Создать» не получает. */
+function mayOwnEvents() { return mayCreateEvent() || (LIVE && msIsMaster()); }
 
 /* Форма → тело запроса. Пределы здесь те же, что в подписях полей: подпись
    говорит до ввода, проверка — после, и расходиться им нельзя. */
@@ -5064,7 +5113,7 @@ function organizerLive() {
       svg('<path d="M12 5v14M5 12h14"/>') + 'Создать мероприятие</button>' : '') +
     '<button type="button" class="btn ghost" data-go="events">' + svg(ICON.chevBack) + 'Назад к афише</button>' +
     '<div class="note">' + svg(ICON.info) +
-      '<span>Список записавшихся и отмена — внутри мероприятия. Изменить назначенное нельзя: сервер правки не умеет, можно только снять.</span>' +
+      '<span>Список записавшихся, отмена и правка — внутри мероприятия. Править можно число мест и описание, по одной неделе.</span>' +
     '</div>';
 }
 
@@ -5270,7 +5319,7 @@ var SCREENS = {
          Cafe13KPG, со слов координатора — первоисточник в шлюзе не поднимается).
          Право то же, что у формы: кто не может завести, тому и управлять нечем,
          и кнопки он не видит вовсе, а не получает отказ по нажатию. */
-      (mayCreateEvent() ? '<button type="button" class="btn ghost" data-go="organizer">' +
+      (mayOwnEvents() ? '<button type="button" class="btn ghost" data-go="organizer">' +
         svg(ICON.star) + 'Управление своими</button>' : '');
   },
 
@@ -5278,7 +5327,7 @@ var SCREENS = {
     if (LIVE) {
       if (!EVENTS) return eventsWait();
       var le = eventById(id);
-      return le ? eventLive(le)
+      return le ? (FLASH ? flash() : '') + eventLive(le)
         : '<div class="card quiet"><span class="small">Этого мероприятия в афише больше нет.</span></div>';
     }
     var e = byId(id) || DATA.events[0];
@@ -5728,6 +5777,27 @@ var SCREENS = {
       // Единственное место, где человек ещё может перечитать поля: правок у
       // мероприятия не существует, исправляют снятием.
       '<span class="small" style="text-align:center">Исправить потом нельзя: только снять, а снятие гости видят как отмену. Перечитайте поля.</span>';
+  },
+
+  // E55k/E55l: правка ОДНОЙ недели — число мест и описание; остальное справкой словами сервера
+  eventEdit: function (id) {
+    var e = eventById(id);
+    if (!e) return EVENTS ? '<div class="card quiet"><span class="small">Этого мероприятия в афише больше нет.</span></div>' : eventsWait();
+    if (!canEditEvent(e)) return '<div class="card quiet"><span class="small">' +
+      (e.done ? 'Мероприятие завершилось: править его уже нельзя.' : 'Править это мероприятие может его ведущий.') + '</span></div>';
+    var on = e.day.split(',')[0], when = /^(Сегодня|Завтра)$/.test(on) ? on.toLowerCase() : on;
+    var h = Math.round(e.mins / 60 * 10) / 10;
+    return '<div class="card quiet"><div class="col"><b>' + esc(e.title) + '</b>' +
+        '<span class="small">' + esc(e.day + ' · ' + e.time + ' · ' + (h % 1 ? h : h + ' ' + msHours(h)) + (e.place ? ' · ' + e.place : '')) + '</span>' +
+        '<span class="small">Название, время, длительность и место мероприятия здесь не меняются.</span></div></div>' +
+      '<div class="field"><label for="edt-seats">Мест</label><input id="edt-seats" type="number" inputmode="numeric" min="0" max="500" value="' + esc(EDT.seats) + '">' +
+        '<span class="small">0 — без ограничения</span></div>' +
+      '<div class="field"><label for="edt-about">Коротко для афиши</label><textarea id="edt-about" maxlength="2000">' + esc(EDT.about) + '</textarea>' +
+        '<span class="small">До 2000 знаков</span></div>' +
+      (EDT.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(EDT.err) + '</span></div>'
+        : '<div class="note">' + svg(ICON.info) + '<span>Правка только на эту неделю. Следующие недели придут такими, как в заявке.</span></div>') +
+      '<button type="button" class="btn" data-action="edt-save"' + (EDT.busy ? ' disabled' : '') + '>' +
+        (EDT.busy ? 'Сохраняем…' : 'Сохранить на ' + esc(when)) + '</button>';
   },
 
   eventManage: function (id) {
@@ -6514,7 +6584,7 @@ var SCREENS = {
   manage: function () {
     // v100: две группы, каждая по своему праву — «Кто в клубе» у главы, «Деньги» у ответственного
     // за пополнения (кадр E46, Cafe13KPG#586). Ни одного права — прежний отказ.
-    if (!mayPeople() && !mayTopups() && !mayMasters()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (!mayPeople() && !mayTopups() && !mayMasters() && !(LIVE && msIsMaster())) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
     // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
     // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
@@ -6525,10 +6595,13 @@ var SCREENS = {
         svg(ICON.chev, 'chev') + '</button></div>' : '';
     // шаг 3: дверь «Слоты и мастера» — группой, как «Деньги» (слово владельца: «во вкладке управление — управление этими ивентами»)
     // «Ивенты», а не «Мероприятия» — слово владельца 29.10.2026 по прототипу: «Не мероприятия а ивенты»
-    var art = mayMasters() ? '<div class="group"><span class="label">Ивенты</span>' +
-      '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
+    // шаг 4: «Свои ивенты» — в той же группе, у всякого, кто ведёт свои (мастер, организатор, работник)
+    var own = mayOwnEvents() ? '<button type="button" class="listitem" data-go="organizer"><span class="grow"><b>Свои ивенты</b>' +
+        '<span class="small">Записавшиеся, места и описание</span></span>' + svg(ICON.chev, 'chev') + '</button>' : '';
+    var art = mayMasters() || own ? '<div class="group"><span class="label">Ивенты</span>' +
+      (mayMasters() ? '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
         '<span class="small">Заявки в мастера, ивенты, слоты</span></span>' +
-        svg(ICON.chev, 'chev') + '</button></div>' : '';
+        svg(ICON.chev, 'chev') + '</button>' : '') + own + '</div>' : '';
     if (!mayPeople()) return money_ + art;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
@@ -7306,7 +7379,7 @@ var TITLES = {
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
-  eventManage: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
+  eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
   people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
@@ -7339,7 +7412,10 @@ function tabList() {
   // «Управление» — от права главы клуба, а не от уровня; последней, как в кадре E46 (Cafe13KPG#413)
   // v100: и у ответственного за пополнения без главенства — иначе очередь пополнений ему недостижима
   // шаг 3: и у арт-директора — его вход «Слоты и мастера» живёт там (решение координатора 29.10.2026)
-  if ((mayPeople() || mayTopups() || mayMasters()) && !t.some(function (x) { return x[0] === 'manage'; }))
+  // шаг 4: и у МАСТЕРА — его «Ивенты» со СВОИМИ живут там (слово владельца 30.10.2026: «мастер должен начать
+  // видеть раздел управление»). Именно мастеру, а не всем с `mayOwnEvents()`: партнёру, куратору и организатору
+  // вкладку никто не давал, у них свой вход «Управление своими» на афише
+  if ((mayPeople() || mayTopups() || mayMasters() || LIVE && msIsMaster()) && !t.some(function (x) { return x[0] === 'manage'; }))
     t.push(['manage', 'Управление', ICON.people]);
   return t;
 }
@@ -7360,6 +7436,8 @@ var BACK = {
   // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
   eventNew: function () { return LIVE ? 'events' : 'organizer'; },
   eventManage: 'organizer',
+  // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
+  eventEdit: function () { return { s: 'event', p: EDT.id }; },
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -7381,6 +7459,7 @@ var BACK = {
   // съёмка открывается и с бара, и из кабинета куратора — «назад» зависит от роли
   barShot: function () { return DATA.role === 'curator' ? 'curator' : 'barQueue'; }
 };
+function goBack() { var b = backTo(); if (b && typeof b === 'object') go(b.s, b.p); else go(b); }
 function backTo() {
   var b = BACK[current];
   if (typeof b === 'function') b = b();
@@ -7567,6 +7646,9 @@ var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-relo
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
+  if (screen === 'eventEdit' && (current !== 'eventEdit' || EDT.id !== p)) {
+    var ee = eventById(p); EDT = { id: p, seats: ee ? String(ee.unl ? 0 : ee.of) : '', about: ee ? ee.about : '', busy: false, err: '' };
+  }
   if (!LIVE && MS_DEMO[screen]) msDemoFill();
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
   if (screen === 'noAccess' && current !== 'noAccess') { JOIN.err = ''; JOIN.fileErr = ''; loadJoin(); }
@@ -8116,6 +8198,8 @@ function doAction(a) {
 
     if (a === 'scan') { scanPass(); return; }
     if (a === 'book' && LIVE) { bookEvent(arg); return; }
+    if (a === 'event-edit' && LIVE) { go('eventEdit', arg); return; }
+    if (a === 'edt-save' && LIVE) { editSave(); return; }
     if (a === 'event-cancel' && LIVE) { EV_ASK = true; EV_ERR = ''; haptic(); render(); return; }
     if (a === 'event-cancel-yes' && LIVE) { cancelEvent(arg); return; }
     if (a === 'event-cancel-no') { EV_ASK = false; haptic(); render(); return; }
@@ -8180,7 +8264,7 @@ document.addEventListener('error', function (ev) {
 }, true);
 
 document.getElementById('back').addEventListener('click', function () {
-  go(backTo());
+  goBack();
 });
 /* Солнышко — только у богов (god, god_mentor), решение владельца 20.10:
    у остальных переключение работало некорректно. Кнопки нет в разметке
@@ -8337,7 +8421,7 @@ function tgChrome() {
     if (backHandler) { tg.BackButton.offClick(backHandler); backHandler = null; }
     // до входа «назад» есть, только если она ведёт на экран входа: свойство, а не список экранов (#458, v74)
     if ((!noEntry() || BARE[backTo()]) && (BACK[current] || !tabList().some(function (t) { return t[0] === current; }))) {
-      backHandler = function () { go(backTo()); };
+      backHandler = goBack;
       tg.BackButton.onClick(backHandler);
       tg.BackButton.show();
     } else {

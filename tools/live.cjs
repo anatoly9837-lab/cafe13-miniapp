@@ -1416,7 +1416,9 @@ if (grantsSet.length !== 1) {
     for (const [name, me, want] of [
       ['tabs-dva-member-vyigral', who('member', ['member', 'partner']), ['home', 'guest', 'partner', 'events']],
       ['tabs-dva-partner-vyigral', who('partner', ['member', 'partner']), ['home', 'guest', 'partner', 'events']],
-      ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'events']],
+      // уровень organizer — мастер по `msIsMaster()`, и «Управление» ему дано (решение координатора,
+      // комментарий координатора 30.10.2026 в Cafe13KPG#670); партнёру — нет (tabs-dva-partner-vyigral)
+      ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'events', 'manage']],
       ['tabs-tolko-member', who('member', ['member']), ['home', 'guest', 'events']],
       ['tabs-gost', who(null, []), ['guest', 'events']],
       // было `tabs-vse-sem` («все семь»): до v72 вкладок было семь. Имя без числа нарочно —
@@ -1521,11 +1523,12 @@ if (grantsSet.length !== 1) {
     if (!t.includes('Бар — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
     if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
     // шаг 4 (Cafe13KPG#670) размораживает ТОЛЬКО афишу: «Мои ивенты» и «Новое мероприятие» по-прежнему заморожены
-    for (const [g, cold] of [['events', false], ['eventNew', true], ['bookings', true]]) {
+    // шаг 4, п.3: «Свои ивенты» мастеру и правка недели — organizer и eventEdit разморожены; «Новое мероприятие» — нет
+    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', true]]) {
       await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
       const said = (await s.view()).includes('временно недоступно');
       if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — шаг 4 размораживает только афишу (Cafe13KPG#670)`);
-      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — афиша открыта всем словом владельца 30.10.2026 (Cafe13KPG#670)`);
+      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — шаг 4 его разморозил (Cafe13KPG#670)`);
     }
     await s.p.evaluate(() => go('partner')); await s.p.waitForTimeout(200);
     t = await s.view();
@@ -5125,7 +5128,7 @@ if (grantsSet.length !== 1) {
   // ── управление своим мероприятием (#98): видно ТОЛЬКО ведущему ──
   // Чужое событие в фикстуре стоит ПОСЛЕ своего: иначе снятый фильтр «своё»
   // остался бы зелёным — первая карточка и так своя.
-  if (thawed('управление своим мероприятием')) {
+  {
     const MINE = over => EV(Object.assign({ id: 4, title: 'Мой вечер', organizer_id: 1,
       starts_at: atBkk(1, 19), seats: 12, taken: 3, seats_left: 9 }, over || {}));
     const FOREIGN = EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) });
@@ -5314,12 +5317,151 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── «Свои ивенты» мастера и правка недели (шаг 4, п.3; кадры E55k/E55l; Cafe13KPG#670) ──
+  // Слово владельца 30.10.2026: мастер видит «Управление» и модерирует ТОЛЬКО своё; время, длительность и название
+  // менять не может, остальное — да. Вкладка — по `msIsMaster()`, включая уровень organizer (решение координатора,
+  // комментарий координатора 30.10.2026 в Cafe13KPG#670). Мастер здесь — ЧИСТЫЙ: ни ролей, ни права заводить (строка членства member,
+  // уровень organizer только в списке): у главы `mayCreateEvent()` истинно и прикрыло бы и вход, и правку.
+  {
+    const MASTER = clone(OWNER);
+    MASTER.roles = []; MASTER.membership = { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true };
+    MASTER.memberships = [MASTER.membership, { level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }];
+    const MINE = over => EV(Object.assign({ id: 4, title: 'Мой вечер', organizer_id: 1, starts_at: atBkk(1, 19), seats: 12, taken: 3, seats_left: 9 }, over || {}));
+    const LIST = () => [MINE(), EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) }),
+      MINE({ id: 9, title: 'Мой прошедший', starts_at: new Date(NOWFIX - 9000e3).toISOString(), duration_min: 60 })];
+    const openM = (handler) => open(true, true, json(200, MASTER), null, null, null, handler, null, NOWFIX);
+    const card = async (s, id) => { await s.p.evaluate(x => go('event', x), id); await s.p.waitForTimeout(150); };
+    const editBtn = s => s.p.$$eval('#view [data-action^="event-edit:"]', b => b.map(x => x.getAttribute('data-action')));
+
+    // 1. вход: вкладка «Управление» → «Свои ивенты» → свой список, без «Создать»
+    {
+      const n = 'master-svoi';
+      const s = await openM(evReply(json(200, LIST())));
+      const tabs = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
+      if (!tabs.includes('manage')) bad.push(`${n}: у мастера нет вкладки «Управление» (${JSON.stringify(tabs)})`);
+      else {
+        await s.p.click('#tabs [data-go="manage"]'); await s.p.waitForTimeout(200);
+        const door = await s.p.$('#view [data-go="organizer"]');
+        if (!door || !(await door.textContent()).includes('Свои ивенты')) bad.push(`${n}: в «Управлении» мастера нет входа «Свои ивенты»`);
+        else {
+          // щелчок изнутри страницы: у погашенного (замороженного) входа page.click ждал бы 30 с и оборвал батарею
+          await door.evaluate(x => x.click()); await s.p.waitForTimeout(200);
+          const t = await s.view();
+          if (await s.p.evaluate(() => current) !== 'organizer') bad.push(`${n}: «Свои ивенты» открыли не свой список`);
+          if (!t.includes('Мой вечер')) bad.push(`${n}: своего мероприятия в «Своих ивентах» нет`);
+          if (t.includes('Чужой вечер')) bad.push(`${n}: в «Своих ивентах» чужое мероприятие`);
+          if (t.includes('временно недоступно')) bad.push(`${n}: «Свои ивенты» заморожены`);
+          if (t.includes('Создать мероприятие')) bad.push(`${n}: мастеру предложено «Создать мероприятие» — заводить он не может (слово владельца)`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // 2. кнопка правки — только на СВОЁМ и не кончившемся; над отменой (необратимое последним, E55k)
+    {
+      const n = 'edt-knopka';
+      const s = await openM(evReply(json(200, LIST())));
+      await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(150);
+      await card(s, '4');
+      const mine = await editBtn(s);
+      if (JSON.stringify(mine) !== JSON.stringify(['event-edit:4'])) bad.push(`${n}: на своём мероприятии правка ${JSON.stringify(mine)}, ждали ["event-edit:4"]`);
+      const order = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-action]')].map(x => x.getAttribute('data-action'))
+        .filter(a => /^event-(edit|cancel)/.test(a)).map(a => a.split(':')[0]));
+      if (JSON.stringify(order) !== JSON.stringify(['event-edit', 'event-cancel'])) bad.push(`${n}: порядок ${JSON.stringify(order)}, ждали правку над отменой`);
+      await card(s, '7');
+      if ((await editBtn(s)).length) bad.push(`${n}: на ЧУЖОМ мероприятии есть «Изменить описание и места»`);
+      await card(s, '9');
+      if ((await editBtn(s)).length) bad.push(`${n}: на кончившемся своём есть «Изменить описание и места» — сервер откажет «уже прошло»`);
+      // прямой заход мимо кнопки: экран сам говорит, почему нельзя, и формы не даёт
+      for (const [id, why] of [['7', 'Править это мероприятие может его ведущий.'], ['9', 'Мероприятие завершилось: править его уже нельзя.']]) {
+        await s.p.evaluate(x => go('eventEdit', x), id); await s.p.waitForTimeout(150);
+        if (await s.p.$('[data-action="edt-save"]')) bad.push(`${n}: экран правки мероприятия ${id} дал «Сохранить» — ${why}`);
+        if (!(await s.view()).includes(why)) bad.push(`${n}: экран правки мероприятия ${id} не сказал «${why}»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // 3. форма и ответы сервера. Ручка берёт ТОЛЬКО seats и about (api 455dcdd); после 200 афиша перечитывается
+    // (ответ — строка без имён ведущего). Отказ — словами сервера, набранное цело, «Сохранить» снова жива.
+    for (const [n, reply, want] of [
+      ['edt-200', () => json(200, Object.assign(MINE(), { seats: 20, about: 'Новое описание' })), null],
+      ['edt-409', () => json(409, { detail: 'мероприятие уже прошло' }), 'Мероприятие уже прошло.'],
+      ['edt-422', () => json(422, { detail: [{ type: 'less_than_equal', loc: ['body', 'seats'], msg: 'x' }] }), 'Сервер не принял запрос (код 422).'],
+      ['edt-lost', () => 'abort', 'Сервер не ответил.']]) {
+      const posts = [];
+      const s = await openM(q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/events/4/edit' && q.method() === 'POST') { posts.push(q.postData()); return reply(); }
+        if (u === '/events') return json(200, LIST());
+        return undefined;
+      });
+      await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(150);
+      await card(s, '4');
+      if (!(await s.p.$('#view [data-action="event-edit:4"]'))) { bad.push(`${n}: нечего нажать — «Изменить описание и места»`); await s.ctx.close(); continue; }
+      await s.p.click('#view [data-action="event-edit:4"]'); await s.p.waitForTimeout(150);
+      const init = await s.p.evaluate(() => [current, (document.getElementById('edt-seats') || {}).value, (document.getElementById('edt-about') || {}).value]);
+      if (JSON.stringify(init) !== JSON.stringify(['eventEdit', '12', 'Живой звук, место у сцены']))
+        bad.push(`${n}: экран правки открылся с ${JSON.stringify(init)}, ждали ["eventEdit","12","Живой звук, место у сцены"]`);
+      if (!(await s.view()).includes('Название, время, длительность и место мероприятия здесь не меняются.')) bad.push(`${n}: не сказано, что название и время не меняются`);
+      await s.p.fill('#edt-seats', '20'); await s.p.fill('#edt-about', 'Новое описание');
+      const before = s.calls.length;
+      await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(500);
+      const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+      if (posts.length !== 1) bad.push(`${n}: POST правки ушёл ${posts.length} раз, ждали 1`);
+      else if (JSON.stringify(JSON.parse(posts[0] || '{}')) !== JSON.stringify({ seats: 20, about: 'Новое описание' }))
+        bad.push(`${n}: тело правки ${posts[0]}, ждали {"seats":20,"about":"Новое описание"} — ручка берёт только их`);
+      if (!after.includes('GET /events')) bad.push(`${n}: после правки афиша не перечитана: ${JSON.stringify(after)}`);
+      const t = await s.view(), cur = await s.p.evaluate(() => current);
+      if (!want) {
+        if (cur !== 'event') bad.push(`${n}: после 200 экран «${cur}», ждали карточку мероприятия`);
+        if (!t.includes('Сохранено')) bad.push(`${n}: после 200 не сказано «Сохранено»`);
+      } else {
+        const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
+        if (cur !== 'eventEdit') bad.push(`${n}: после отказа экран правки закрылся («${cur}»)`);
+        if (!alert.includes(want)) bad.push(`${n}: отказ не назван плашкой (ждали «${want}», есть ${JSON.stringify(alert)})`);
+        if (t.includes('Сохранено')) bad.push(`${n}: после отказа сказано «Сохранено»`);
+        const kept = await s.p.evaluate(() => [(document.getElementById('edt-seats') || {}).value, (document.getElementById('edt-about') || {}).value]);
+        if (JSON.stringify(kept) !== JSON.stringify(['20', 'Новое описание'])) bad.push(`${n}: после отказа набранное ${JSON.stringify(kept)} — набирать заново`);
+        const sv = await s.p.evaluate(() => { const b = document.querySelector('[data-action="edt-save"]'); return b ? b.disabled : null; });
+        if (sv !== false) bad.push(`${n}: после отказа «Сохранить» не вернулась (${JSON.stringify(sv)})`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // 4. своя проверка до сервера и «назад» — на ТУ ЖЕ карточку (пара {s, p})
+    {
+      const n = 'edt-mesta-nazad';
+      const posts = [];
+      const s = await openM(q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/events/4/edit') { posts.push(1); return json(200, MINE()); }
+        if (u === '/events') return json(200, LIST());
+        return undefined;
+      });
+      await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(150);
+      await card(s, '4');
+      await s.p.evaluate(() => go('eventEdit', '4')); await s.p.waitForTimeout(150);
+      await s.p.fill('#edt-seats', '600');
+      await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300);
+      if (posts.length) bad.push(`${n}: 600 мест ушло на сервер — предел 500 клиент не держит`);
+      if (!(await s.view()).includes('Число мест — целое, от 0 до 500; 0 — без ограничения.')) bad.push(`${n}: на 600 мест не сказано, каков предел`);
+      await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(200);
+      const back = await s.p.evaluate(() => current);
+      if (back !== 'event' || !(await s.view()).includes('Мой вечер')) bad.push(`${n}: «назад» с правки увела на «${back}», а не на карточку «Мой вечер»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
   /* ── рецепт позиции бара (#176) ──
      Формы ответа — из снимков `recipe-th.json`, `recipe-en-fallback.json`,
      `recipe-net.json`, `recipe-denied-guest.json` (прогон координатора на
      `2dedaa9`): `lang` — язык ПОКАЗАННОГО, `asked_lang` — запрошенный,
      `exact` — совпали ли; «рецепта нет» — 404 с текстом, а не пустое тело. */
-  if (thawed('управление своим мероприятием')) {
+  if (thawed('рецепт позиции бара')) {
     const R_TH = { product_id: 11, lang: 'th', asked_lang: 'th', exact: true,
                    body: 'ชา: ใบชา 5 กรัม, น้ำ 90 องศา, 3 นาที', created_at: '2026-10-22T05:29:11.317057Z' };
     const R_RU = { product_id: 11, lang: 'ru', asked_lang: 'en', exact: false,
@@ -9249,8 +9391,9 @@ if (grantsSet.length !== 1) {
       const lv = l => ({ level: l, starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-11-01T00:00:00+07:00', lifelong: false });
       const who = roles => { const m = clone(OWNER); m.membership = lv('partner'); m.membership_active = true;
         m.memberships = ['member', 'organizer', 'partner'].map(lv); m.roles = roles; return m; };
-      // семь: касса и бар без права главы; восемь: роли OWNER (глава и админ) — плюс «Управление»
-      for (const [k, roles, count] of [['семь', [{ role: 'staff', direction_id: null }, { role: 'bar', direction_id: 7 }], 7],
+      // восемь без главы: касса и бар; уровень organizer в наборе — мастер, и «Управление» у него есть (шаг 4,
+      // комментарий координатора 30.10.2026 в Cafe13KPG#670) — набора «семь» с organizer больше нет. Восемь: роли OWNER (глава и админ)
+      for (const [k, roles, count] of [['восемь без главы', [{ role: 'staff', direction_id: null }, { role: 'bar', direction_id: 7 }], 8],
                                        ['восемь', OWNER.roles, 8]]) {
         for (const w of [360]) {
           const s = await open(true, true, json(200, who(roles)));
