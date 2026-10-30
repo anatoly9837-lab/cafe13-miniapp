@@ -107,10 +107,63 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
   p.on('pageerror', e => errs.push('pageerror: ' + e.message));
 
   const text = () => p.evaluate(() => document.getElementById('view').textContent);
-  const shot = async (n) => { await p.waitForTimeout(260); await p.screenshot({ path: `/work/${n}.png` }); };
+  /* ⚠ СНИМОК ПРИНИМАЕТСЯ, ТОЛЬКО ЕСЛИ ДВА ПОДРЯД СОВПАЛИ БАЙТ В БАЙТ.
+     Прежде съёмка ждала 260 мс и верила им. Замер 30.10.2026 (свой): два
+     прогона ОДНОГО дерева ОДНОЙ командой разошлись на 42 снимках из 43 —
+     при всех зелёных проверках, без ошибок консоли, все отличия на ~28 байт
+     в одну сторону; совпал ровно `02-consent-full`, единственный экран без
+     общей шапки. Причина не найдена, и сторож нарочно построен НЕ от неё:
+     неустойчивость кадра ловится сравнением, какой бы она ни была. Цена —
+     один лишний снимок в память на каждый кадр.
+     Не устоялся за ПОПЫТОК раз — это «не выполнено», а не «снимки те же». */
+  const ПОПЫТОК = 4;
+  const неустойчивые = [];
+  const shot = async (n) => {
+    await p.waitForTimeout(260);
+    let a = await p.screenshot();
+    for (let i = 0; i < ПОПЫТОК; i++) {
+      await p.waitForTimeout(140);
+      const b = await p.screenshot();
+      if (Buffer.compare(a, b) === 0) { fs.writeFileSync(`/work/${n}.png`, b); return; }
+      a = b;
+    }
+    неустойчивые.push(n);
+    fs.writeFileSync(`/work/${n}.png`, a);
+  };
 
   await p.goto('file:///app/index.html', { waitUntil: 'networkidle' });
   console.log('control: clientWidth =', await p.evaluate(() => document.documentElement.clientWidth), '(ждём 390)');
+
+  /* ⚠ ШРИФТЫ ОБЯЗАНЫ ПРИМЕНИТЬСЯ, и спрашивается это ПОСЛЕ `networkidle`:
+     `index.html` грузит Prata и Golos Text с fonts.googleapis.com, то есть
+     опись зависит от ВНЕШНЕГО сервиса в момент съёмки. Замер (свой,
+     30.10.2026): с запретом `fonts.googleapis.com` выходит полный комплект
+     снимков в подменном шрифте, и все 43 проходят проверку признака —
+     признак смотрит ТЕКСТ. Отказ загрузки виден только ошибкой консоли,
+     поэтому здесь падающая проверка, а не надежда на неё.
+     Своих шрифтов в `vendor/` нет (решение облика — зона дизайнера), и
+     когда появятся, эта проверка остаётся: «лежит рядом» ≠ «применился». */
+  /* ⚠ `document.fonts.check()` ЗДЕСЬ НЕ ГОДИТСЯ, и это замер, а не осторожность:
+     на запрещённом `fonts.googleapis.com` он вернул ИСТИНУ для обоих семейств,
+     и сторож пропустил полный комплект снимков в подменном шрифте (свой прогон
+     30.10.2026). Причина в самом `check`: незнакомое семейство он считает
+     доступным — «нечего грузить, возьмём подстановку». То есть признак был
+     ШИРЕ предмета: спрашивал «можно ли нарисовать», а нужно «ПРИШЛО ли».
+     Спрашиваем ЗАГРУЖЕННОЕ: что лежит в наборе со статусом `loaded`. */
+  await p.evaluate(() => document.fonts.ready);
+  const пришли = await p.evaluate(() =>
+    Array.from(document.fonts).filter((f) => f.status === 'loaded')
+      .map((f) => f.family.replace(/^["']|["']$/g, '')));
+  const ждём = ['Prata', 'Golos Text'];
+  const нет = ждём.filter((f) => пришли.indexOf(f) === -1);
+  if (нет.length) {
+    console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: не ЗАГРУЗИЛИСЬ шрифты: ' + нет.join(', ') +
+                ' (пришло: ' + (пришли.join(', ') || 'ничего') + ') — снимки вышли бы в ' +
+                'подменном шрифте и прошли бы проверку признака');
+    await b.close();
+    process.exit(2);
+  }
+  console.log('control: шрифты загрузились — ' + ждём.join(', '));
 
   // ── функциональные проверки до съёмки: разметка без действий ничего не значит
   await p.evaluate(() => { giveConsent(); DATA.role = 'member'; go('bar'); });
@@ -178,6 +231,11 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
 
   console.log(errs.length ? 'ОШИБКИ КОНСОЛИ:\n  ' + errs.join('\n  ') : '✓ ошибок консоли нет');
   console.log(bad.length ? '\nОТКАЗЫ (' + bad.length + '):\n  ' + bad.join('\n  ') : '\n✓ все ' + manifest.length + ' снимков прошли проверку признака');
+  if (неустойчивые.length) {
+    console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: кадр не устоялся за ' + ПОПЫТОК + ' попыток у ' +
+                неустойчивые.length + ' снимков: ' + неустойчивые.join(' ') +
+                ' — это «не выполнено», а не «снимки те же»');
+  }
   await b.close();
-  process.exit(bad.length ? 1 : 0);
+  process.exit(неустойчивые.length ? 2 : (bad.length ? 1 : 0));
 })();
