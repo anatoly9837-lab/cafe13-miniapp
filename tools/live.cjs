@@ -728,6 +728,9 @@ if (grantsSet.length !== 1) {
           if (miss.length) bad.push(`${n}: после 409 не перечитано ${JSON.stringify(miss)}`);
           const title = await s.p.evaluate(() => { const e = document.getElementById('msf-title'); return e ? e.value : null; });
           if (title !== 'Проба мастера') bad.push(`${n}: после 409 набранное название пропало (${JSON.stringify(title)}) — человеку набирать заново`);
+          // подать заново человек обязан мочь: MR.busy снят ответом (arhitector-47)
+          const send = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
+          if (!send || send.off || send.txt !== 'Отправить заявку') bad.push(`${n}: после 409 «Отправить заявку» не вернулась (${JSON.stringify(send)}) — подать заново нечем`);
         }
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
@@ -881,6 +884,9 @@ if (grantsSet.length !== 1) {
           else if (miss.length) bad.push(`${n}: после неразобранного ответа не перечитано ${JSON.stringify(miss)} — деньги могли уйти: ${JSON.stringify(after)}`);
           if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после неразобранного ответа экран продления закрылся`);
           if (!(await s.view()).includes('кодом 502')) bad.push(`${n}: отказ не назван (ждали «кодом 502»)`);
+          // перечитанный предпросмотр отвечает 200 — повторить продление человек обязан мочь (arhitector-47)
+          const go = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
+          if (!go || go.off || go.txt !== 'Продлить') bad.push(`${n}: после 502 «Продлить» не вернулась (${JSON.stringify(go)}) — повторить нечем`);
         }
         await s.ctx.close();
       }
@@ -911,12 +917,18 @@ if (grantsSet.length !== 1) {
       // концом окна. Сервер (`_renew_plan` → `_check_free`, api a1984f2) не пишет НИЧЕГО — ни денег, ни месяцев, ни
       // недель. Человек остаётся на экране, видит слова сервера, своё и остаток перечитаны; предпросмотр спрошен
       // заново тем же кодом и теперь тоже 409 — «Продлить» гаснет. Подлог «фикстура 409» без этого случая — 0 красных
-      {
-        const n = 'rnw-busy-409';
+      // Тексты разведены, как у сервера (api main, `RENEW_NOT_CHARGED`): хвост «. Деньги не списаны, месяц не продлён»
+      // получает ТОЛЬКО отказ POST, предпросмотр — нет. Фраза о деньгах в плашке поэтому может прийти лишь от отправки
+      // (граница arhitector-47: строка предпросмотра, нарисованная плашкой, иначе подменяла бы отказ отправки).
+      // E59v (Cafe13KPG#667, v116): один отказ — одно сообщение; тот же отказ предпросмотра — «Цена не пересчитана»,
+      // иной (502) — печатается целиком. Вторая строка — тот самый «иной».
+      for (const [n, prevAfter] of [
+        ['rnw-busy-409', () => json(409, { detail: 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00' })],
+        ['rnw-busy-409-502', () => json(502, '<html>bad gateway</html>')]]) {
         const BUSY = 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00';
         let taken = false;
-        const o = { post: () => { taken = true; return json(409, { detail: BUSY }); },
-          prevReply: N => taken ? json(409, { detail: BUSY }) : json(200, { request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
+        const o = { post: () => { taken = true; return json(409, { detail: BUSY + '. Деньги не списаны, месяц не продлён' }); },
+          prevReply: N => taken ? prevAfter() : json(200, { request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
             per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', paid_until: '2026-12-31', enough: true, short: '0.00' }) };
         const { s, ok } = await rnwOpen(n, o);
         const before = ok ? s.calls.length : 0;   // ДО нажатия (см. rnw-send-lost)
@@ -924,17 +936,29 @@ if (grantsSet.length !== 1) {
           await s.p.waitForTimeout(5800);
           const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
           const t = await s.view();
-          // слова — в плашке отказа (role=alert); та же фраза строкой предпросмотра под «Повторить» отказом отправки не считается
+          // слова — в плашке отказа (role=alert); строка предпросмотра под «Повторить» отказом отправки не считается
           const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
           if (o.renewed.length !== 1) bad.push(`${n}: POST продления ушёл ${o.renewed.length} раз, ждали 1`);
           if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после 409 экран продления закрылся`);
           if (!alert.includes('Неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00.')) bad.push(`${n}: слова сервера о занятом месте не показаны плашкой отказа: ${JSON.stringify(alert)}`);
+          if (!alert.includes('Деньги не списаны, месяц не продлён.')) bad.push(`${n}: в плашке не сказано, что деньги не списаны: ${JSON.stringify(alert)}`);
+          const times = (t.match(/слота пересекается/g) || []).length;
+          if (times !== 1) bad.push(`${n}: слова о занятом месте на экране ${times} раз, ждали 1 — один отказ, одно сообщение (Cafe13KPG#667)`);
+          if (n === 'rnw-busy-409') {
+            if (!t.includes('Цена не пересчитана')) bad.push(`${n}: тот же отказ предпросмотра не назван «Цена не пересчитана»`);
+            if (!(await s.p.$('[data-action="rnw-retry"]'))) bad.push(`${n}: у непересчитанной цены нет «Повторить»`);
+          } else {
+            if (!t.includes('Сервер ответил кодом 502.')) bad.push(`${n}: иной отказ предпросмотра не напечатан целиком (ждали «Сервер ответил кодом 502.»)`);
+            if (t.includes('Цена не пересчитана')) bad.push(`${n}: иной отказ (502) выдан за тот же — «Цена не пересчитана»`);
+          }
           if (t.includes('Продлено')) bad.push(`${n}: после 409 сказано «Продлено»`);
           const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
           if (miss.length) bad.push(`${n}: после 409 не перечитано ${JSON.stringify(miss)}`);
           if (!after.some(u => /^GET \/master\/requests\/901\/periods\/preview/.test(u))) bad.push(`${n}: после 409 предпросмотр не спрошен заново — «Продлить» живёт по старому расчёту`);
-          const off = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? b.disabled : null; });
-          if (off !== true) bad.push(`${n}: после 409 «Продлить» нажимается (${JSON.stringify(off)}) — место уже занято`);
+          const go = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
+          if (!go || go.off !== true) bad.push(`${n}: после 409 «Продлить» нажимается (${JSON.stringify(go)}) — место уже занято`);
+          // погашена ПО ЗАМЫСЛУ (предпросмотра нет), поэтому занятость читается подписью: «Продлеваем…» = ответ не дошёл до RNW.busy
+          if (go && go.txt !== 'Продлить') bad.push(`${n}: после ответа на кнопке «${go.txt}» — отправка так и висит (RNW.busy)`);
         }
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
@@ -4360,6 +4384,31 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+
+  // ── «Клуб»: недели одного слота различимы датой (Cafe13KPG#675, кадр E61) ──
+  // Снимок владельца 30.10.2026: две «12:00 ДЕНЬ Кошкин дом» подряд — еженедельный слот мастера даёт строки с одним
+  // названием и временем. Без заголовков дня вторая строка колонки обязана быть ДАТОЙ. Пара — та же строка через
+  // неделю: часть дня у них совпадает, дата — нет. Читается textContent (заглавные — это CSS, не данные).
+  {
+    const n = 'klub-data-v-stroke';
+    const MON = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    const short = off => { const [, mo, d] = bkkDay(off).split('-'); return Number(d) + ' ' + MON[Number(mo) - 1]; };
+    const SLOT = id => EV({ id, title: 'Кошкин дом', starts_at: atBkk(id === 51 ? 1 : 8, 12), duration_min: 60,
+      kind: 'free', price: '0.00', seats: 10, taken: 0, seats_left: 10, booked_by_me: false });
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, [SLOT(51), SLOT(52)])), null, NOWFIX);
+    const rows = await s.p.$$eval('#view [data-event]', b => b.map(x => [x.getAttribute('data-event'),
+      (x.querySelector('.time span') || {}).textContent || '']));
+    const want = [['51', short(1)], ['52', short(8)]];
+    if (JSON.stringify(rows) !== JSON.stringify(want))
+      bad.push(`${n}: на «Клубе» колонка строк ${JSON.stringify(rows)}, ждали ${JSON.stringify(want)} — недели слота не различить`);
+    if (rows.some(r => r[1] === 'день')) bad.push(`${n}: в колонке строки часть дня «день» вместо даты`);
+    // на самой афише день стоит в заголовке группы — там колонка по-прежнему часть дня
+    await s.p.click('[data-go="events"]'); await s.p.waitForTimeout(150);
+    const af = await s.p.$$eval('#view [data-event]', b => b.map(x => (x.querySelector('.time span') || {}).textContent || ''));
+    if (!af.length || af.some(x => x !== 'день')) bad.push(`${n}: на афише колонка ${JSON.stringify(af)}, ждали «день» — дата там дублировала бы заголовок дня`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
 
   {
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, AFISHA)), null, NOWFIX);
