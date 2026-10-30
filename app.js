@@ -710,6 +710,12 @@ function closed(screen) { return LIVE && (!!FROZEN[screen] || (!WIRED[screen] &&
    ⚠ Предел сторожа: он читает ТЕЛО экрана, а не помощники, которые тело зовёт. */
 // v109: экраны шага 3 подключены к ручкам и ушли в WIRED; флаг и сторож остаются механизмом на следующий прототип
 var PROTO = {};
+/* Витрина вне Telegram (Cafe13KPG#637): экраны шага 3 рисуются на демо-наборе, а не отказом и не
+   «Загружаем…». Над ними — плашка прототипа: данные примерные, нажатия ничего не отправляют (загрузчики и
+   отправки модуля мастеров вне LIVE возвращаются, не позвав сервер). Демо-человек — МАСТЕР со своим
+   согласованным слотом (решение координатора): живы «Клуб» с «Продлить», продление и «Вы мастер».
+   Форму E54b и «Заявка уже ждёт решения» снимает опись своей фикстурой (`MR.mine = []` / `[pending]`). */
+var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1, masterRenew: 1 };
 
 /* ── пропуск ───────────────────────────────────────────
    Код выдаёт сервер (GET /pass) один раз и больше не меняет, поэтому его
@@ -2998,7 +3004,7 @@ function fromBusy(d) {
   return { dates: dates, fits: typeof d.fits === 'boolean' ? d.fits : null };
 }
 function loadBusy() {
-  var pl = msPlace(); if (!pl) return;
+  var pl = msPlace(); if (!pl || !LIVE) return;
   var key = pl.id + '|' + MSF.day + '|' + MSF.time + '|' + (2 + MSF.extra);
   if (key === MSB.key && (MSB.data || MSB.fail)) return;
   var gen = ++MSB.gen; MSB.key = key; MSB.data = null; MSB.fail = '';
@@ -3071,6 +3077,7 @@ var MR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail:
 // мест по умолчанию 0 = «не ограничено» (слово владельца); ⚠ схема сервера ноль пока не принимает (seats ≥ 1)
 var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
 function loadMineMaster() {
+  if (!LIVE) return;
   var gen = ++MR.mineGen; MR.mineState = 'loading';
   api('GET', '/master/requests/mine').then(function (r) {
     if (gen !== MR.mineGen) return;
@@ -3080,6 +3087,7 @@ function loadMineMaster() {
   });
 }
 function loadMasterQueue() {
+  if (!LIVE) return;
   var gen = ++MR.qGen; MR.qFail = '';
   api('GET', '/master/requests').then(function (r) {
     if (gen !== MR.qGen) return;
@@ -3089,6 +3097,7 @@ function loadMasterQueue() {
   });
 }
 function loadSlots() {
+  if (!LIVE) return;
   var gen = ++MR.sGen; MR.sFail = '';
   api('GET', '/master/slots').then(function (r) {
     if (gen !== MR.sGen) return;
@@ -3100,6 +3109,7 @@ function loadSlots() {
 /* Цена — у сервера (`GET /master/price?hours=N`, снимок master-price: amount строкой «3900»), а не
    константой: клиент не обещает суммы, которой сервер не спишет */
 function loadPrice(h) {
+  if (!LIVE) return;
   if (MR.price[h] !== undefined || MR.priceAsk[h] || h > MS_MAX_H) return;
   MR.priceAsk[h] = true;
   api('GET', '/master/price?hours=' + h).then(function (r) {
@@ -3108,6 +3118,41 @@ function loadPrice(h) {
     MR.price[h] = a === null ? null : a;
     if ({ home: 1, masterApply: 1 }[current]) render();
   });
+}
+/* Демо-набор модуля мастеров — только вне LIVE (см. MS_DEMO). Люди — роль-словами: клиент публичный.
+   Формы — те же, что отдают разборщики живых ответов (fromMasterReq/fromSlots/fromBusy/fromPlaces). */
+function msDemoFill() {
+  if (LIVE || MR.demo) return;
+  MR.demo = true;
+  var own = { id: 901, title: 'Звуковая практика', about: 'Чаши, гонг, голос.', seats: 0, place: 'Зал', weekday: 4, start: '18:30',
+              hours: 2, extra: 0, amount: 2600, status: 'approved', word: 'одобрена', note: '', iso: '2026-10-20T10:00:00+07:00',
+              done: '2026-10-21T10:00:00+07:00', paidUntil: '2026-11-30' };
+  MR.mine = [own]; MR.mineState = 'ok';
+  MR.q = [Object.assign({}, own, { id: 902, title: 'Утренняя растяжка', weekday: 2, start: '08:00', status: 'pending', word: 'ждёт решения',
+                                   done: null, paidUntil: null, iso: '2026-10-29T09:00:00+07:00', who: '[член клуба]' }),
+          Object.assign({}, own, { who: '[мастер]' })];
+  MR.pending = 1;
+  MR.slots = [{ id: 901, title: 'Звуковая практика', weekday: 4, start: '18:30', hours: 2, place: 'Зал', who: '[мастер]', on: true, weeksOn: 4, weeksOff: 0, live: true },
+              { id: 903, title: 'Йога на закате', weekday: 6, start: '17:00', hours: 2, place: 'Зал', who: '[второй мастер]', on: false, weeksOn: 0, weeksOff: 4, live: true }];
+  MR.without = ['[мастер без слота]'];
+  MR.price = { 2: 2600, 3: 3900, 4: 5200, 5: 6500 };
+  if (!EV_PLACES) { EV_PLACES = [{ id: 1, name: 'Зал', capacity: null }]; EV_PLACES_STATE = 'ok'; MR.demoPlaces = true; }
+  MSB.data = { dates: [{ day: '05.11', busy: [], conflict: null }, { day: '12.11', busy: [{ title: 'Чайная церемония', from: '16:00', to: '17:30' }], conflict: null },
+                       { day: '19.11', busy: [], conflict: null }, { day: '26.11', busy: [], conflict: null }], fits: true };
+}
+// предпросмотр продления в витрине: те же поля, что у `fromPreview`; цена примерная, как и всё под плашкой
+function msDemoPreview(own, months) {
+  var x = own.paidUntil.split('-'), y = Number(x[0]), m = Number(x[1]) + months;
+  y += Math.floor((m - 1) / 12); m = (m - 1) % 12 + 1;
+  var last = new Date(Date.UTC(y, m, 0)).getUTCDate(), charged = 2600 * months, bal = msBalance();
+  return { charged: charged, until: y + '-' + (m < 10 ? '0' : '') + m + '-' + last, enough: charged <= bal, short: Math.max(0, charged - bal), months: months };
+}
+// вход состоялся — демо уходит целиком, иначе живой экран взял бы примерное за ответ сервера
+function msDemoClear() {
+  if (!MR.demo) return;
+  MR.demo = false; MR.mine = null; MR.mineState = ''; MR.q = null; MR.pending = null; MR.slots = null; MR.without = null;
+  MR.price = {}; MR.priceAsk = {}; RNW.prev = null; RNW.key = ''; MSB.data = null; MSB.key = '';
+  if (MR.demoPlaces) { MR.demoPlaces = false; EV_PLACES = null; EV_PLACES_STATE = ''; }
 }
 function msBalance() { return DATA.member && typeof DATA.member.balance === 'number' ? DATA.member.balance : 0; }
 function msIsMaster() {
@@ -3131,6 +3176,7 @@ function loadRenewPreview() {
   var own = msOwnSlot(); if (!own) return;
   var key = own.id + '|' + RNW.months;
   if (key === RNW.key && (RNW.prev || RNW.prevFail)) return;
+  if (!LIVE) { RNW.key = key; RNW.prev = msDemoPreview(own, RNW.months); return; }
   var gen = ++RNW.gen; RNW.key = key; RNW.prev = null; RNW.prevFail = '';
   api('GET', '/master/requests/' + own.id + '/periods/preview?months=' + RNW.months).then(function (r) {
     if (gen !== RNW.gen) return;
@@ -3146,6 +3192,7 @@ function renewSend(key) {
   if (UNDO.key !== null && UNDO.key !== key) return;
   undoStop();
   var m = /^renew:(\d+):(\d+)$/.exec(String(key)); if (!m) return;
+  if (!LIVE) { if (current === 'masterRenew') render(); return; }
   RNW.busy = true; RNW.err = ''; if (current === 'masterRenew') render();
   api('POST', '/master/requests/' + m[1] + '/periods', { months: Number(m[2]) }).then(function (r) {
     RNW.busy = false;
@@ -3208,6 +3255,7 @@ function sendMaster() {
     : !msPlace() ? 'Места «' + MS_PLACE + '» нет среди открытых мест клуба.' : typeof p !== 'number' ? 'Цена ещё не пришла от сервера.'
     : p > msBalance() ? 'Не хватает денег на счёте.' : '';
   if (MSF.err) { render(); return; }
+  if (!LIVE) return;   // витрина: нажатие ничего не отправляет (плашка прототипа это говорит)
   MR.busy = true; render();
   api('POST', '/master/request', { title: MSF.title, about: MSF.about, seats: seats, place_id: msPlace().id,
     weekday: MSF.day, start_local: MSF.time, hours: h }).then(function (r) {
@@ -3225,7 +3273,7 @@ function sendMaster() {
   });
 }
 function decideMaster(id, decision) {
-  if (MR.busy) return;
+  if (MR.busy || !LIVE) return;
   MR.busy = true; MR.qErr = ''; render();
   api('POST', '/master/requests/' + id + '/decide', { decision: decision, note: '' }).then(function (r) {
     MR.busy = false;
@@ -3241,7 +3289,7 @@ function decideMaster(id, decision) {
   });
 }
 function slotToggle(id, show) {
-  if (MR.busy) return;
+  if (MR.busy || !LIVE) return;
   MR.busy = true; MR.sErr = ''; render();
   api('POST', '/master/slots/' + id + '/' + (show ? 'show' : 'hide'), {}).then(function (r) {
     MR.busy = false;
@@ -3607,6 +3655,7 @@ function boot() {
       return;
     }
     LIVE = true;
+    msDemoClear();
     SELF = me.roles;
     applyMe(me);
     go(startScreen());
@@ -3860,6 +3909,7 @@ function fromPlaces(d) {
 }
 
 function loadPlaces() {
+  if (!LIVE) return;
   EV_PLACES_STATE = 'loading';
   var gen = ++EV_PLACES_GEN;
   api('GET', '/places').then(function (r) {
@@ -6543,7 +6593,7 @@ var SCREENS = {
   /* ── шаг 3: арт-директор и мастера (кадры E55b, E55v, E55g, E55e, E55d; Cafe13KPG#534) — на ручках сервера.
      Вход — группой в «Управлении» (слово владельца: «во вкладке управление — управление этими ивентами»). */
   masters: function () {
-    if (!mayMasters()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (LIVE && !mayMasters()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Слотами и мастерами управляет арт-директор.</span></div></div>';
     var entry = function (go, what, sub) {
       return '<button type="button" class="listitem" ' + go + '><span class="grow"><b>' + what + '</b>' +
@@ -6562,7 +6612,7 @@ var SCREENS = {
 
   // E55v. Ждущая строка — вход на заявку (как у очереди пополнений E56)
   masterReqs: function () {
-    if (!mayMasters()) return SCREENS.masters();
+    if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!MR.q) return MR.qFail ? '<div class="card strong"><h2>Заявки не загрузились</h2><p>' + esc(MR.qFail) + '</p>' +
         '<button type="button" class="btn" data-action="ms-retry-q">Попробовать снова</button></div>'
       : '<div class="card quiet"><span class="small">Загружаем заявки…</span></div>';
@@ -6588,7 +6638,7 @@ var SCREENS = {
 
   // E55g. Название и аннотация — ЧТЕНИЕМ: правки заявки у сервера нет, поле ввода обещало бы её
   masterReq: function (id) {
-    if (!mayMasters()) return SCREENS.masters();
+    if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!MR.q) return SCREENS.masterReqs();
     var q = MR.q.filter(function (x) { return x.id === Number(id); })[0];
     if (!q) return '<div class="card quiet"><div class="col"><b>Такой заявки нет</b>' +
@@ -6616,7 +6666,7 @@ var SCREENS = {
 
   // E55e. Единица — СЛОТ (снимок master-slots), выключенный не прячется: иначе включить его негде
   masterEvents: function () {
-    if (!mayMasters()) return SCREENS.masters();
+    if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!MR.slots) return MR.sFail ? '<div class="card strong"><h2>Ивенты не загрузились</h2><p>' + esc(MR.sFail) + '</p>' +
         '<button type="button" class="btn" data-action="ms-retry-s">Попробовать снова</button></div>'
       : '<div class="card quiet"><span class="small">Загружаем ивенты…</span></div>';
@@ -6635,7 +6685,7 @@ var SCREENS = {
 
   // экран слота: только то, что отдаёт сервер (снимок master-slots). «Коротко для афиши» у слота сервер НЕ отдаёт
   masterEvent: function (id) {
-    if (!mayMasters()) return SCREENS.masters();
+    if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!MR.slots) return SCREENS.masterEvents();
     var e = MR.slots.filter(function (x) { return x.id === Number(id); })[0];
     if (!e) return '<div class="card quiet"><div class="col"><b>Такого ивента нет</b>' +
@@ -6659,7 +6709,7 @@ var SCREENS = {
      место — из `GET /places` (только `active`), число мест — поле: оба требует схема (`events.seats NOT NULL`,
      место у недели обязательно), а не перечень владельца */
   masterApply: function () {
-    if (!LIVE || DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Мастером становится член клуба.</span></div></div>';
     if (msIsMaster()) return '<div class="card"><div class="col"><b>Вы мастер</b>' +
       '<span class="small">Новая заявка не нужна: слот продлевается оплатой.</span></div></div>';
@@ -6724,7 +6774,7 @@ var SCREENS = {
 
   // E59 / E59b: продление. Окно отмены — общая полоса `.undo`, как у снятия уровня
   masterRenew: function () {
-    if (!LIVE || DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Продлевает мастер — член клуба.</span></div></div>';
     if (!MR.mine) return MR.mineState && MR.mineState !== 'loading' && MR.mineState !== 'ok'
       ? '<div class="card quiet"><div class="row"><span class="small">Заявки не загрузились: ' + esc(MR.mineState) + '</span>' +
@@ -6763,7 +6813,7 @@ var SCREENS = {
 
   // E55d: мастера и их слоты (снимок master-slots), «слота нет» — `masters_without_slot`. Экрана за строкой нет
   masterList: function () {
-    if (!mayMasters()) return SCREENS.masters();
+    if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!MR.slots) return SCREENS.masterEvents();
     var rows = MR.slots.map(function (e) { return [e.who, msWhen(e) + ' · «' + e.title + '»']; })
       .concat(MR.without.map(function (w) { return [w, 'слота нет']; }));
@@ -7338,7 +7388,7 @@ function render() {
   var here = current + '|' + String(param), y = window.scrollY || 0;
   var same = RENDERED === here;
   RENDERED = here;
-  view.innerHTML = (bare() ? '' : testStrip()) + (PROTO[current] ? protoStrip() : '') +
+  view.innerHTML = (bare() ? '' : testStrip()) + (PROTO[current] || !LIVE && MS_DEMO[current] ? protoStrip() : '') +
     SCREENS[frozen(current) ? 'frozen' : LIVE && !WIRED[current] && !PROTO[current] ? 'soon' : current](param);
   // вход на замороженный экран гаснет ПО СВОЙСТВУ, а не перечнем кнопок: любой [data-go] туда
   // (Cafe13KPG#510); облик — общий .btn[disabled]
@@ -7483,6 +7533,7 @@ var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-relo
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
+  if (!LIVE && MS_DEMO[screen]) msDemoFill();
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
   if (screen === 'noAccess' && current !== 'noAccess') { JOIN.err = ''; JOIN.fileErr = ''; loadJoin(); }
   if (screen === 'joinAbout' && current !== 'joinAbout') loadAbout();
