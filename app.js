@@ -688,7 +688,7 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1, masterRenew: 1,
               // шаг 4 (слово владельца 30.10.2026, Cafe13KPG#670): афиша доступна всем — из FROZEN обратно сюда
               events: 1, event: 1,
-              // шаг 4, п.3: «Свои ивенты» мастеру и правка недели (кадры E55k/E55l, ручка `POST /events/{id}/edit`)
+              // шаг 4, пункт третий — «Свои ивенты» мастеру и правка недели (кадры E55k/E55l, ручка `POST /events/{id}/edit`)
               organizer: 1, eventEdit: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
