@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v115 · 30.10.2026';
+var VERSION = 'v116 · 30.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3121,7 +3121,7 @@ function msIsMaster() {
    «правдоподобное вместо известного» там, где сервер обрежет план или откажет членством).
    ⚠ Кнопка тратит деньги, а ВОЗВРАТА НЕТ: защита — окно отмены ДО отправки, та же функция, что у
    снятия уровня (`undoStart`, E47y). Окно задерживает ОТПРАВКУ, отменить на сервере нечего. */
-var RNW = { months: 1, prev: null, prevFail: '', gen: 0, key: '', busy: false, err: '' };
+var RNW = { months: 1, prev: null, prevFail: '', prevCode: 0, gen: 0, key: '', busy: false, err: '', errCode: 0 };
 function msOwnSlot() { return MR.mine ? MR.mine.filter(function (r) { return r.status === 'approved'; })[0] || null : null; }
 function msDate(ymd) { var x = String(ymd).split('-'); return x[2] + '.' + x[1] + '.' + x[0]; }
 function msMonths(n) { return n % 10 === 1 && n % 100 !== 11 ? 'месяц' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'месяца' : 'месяцев'; }
@@ -3131,14 +3131,14 @@ function loadRenewPreview() {
   var own = msOwnSlot(); if (!own) return;
   var key = own.id + '|' + RNW.months;
   if (key === RNW.key && (RNW.prev || RNW.prevFail)) return;
-  var gen = ++RNW.gen; RNW.key = key; RNW.prev = null; RNW.prevFail = '';
+  var gen = ++RNW.gen; RNW.key = key; RNW.prev = null; RNW.prevFail = ''; RNW.prevCode = 0;
   api('GET', '/master/requests/' + own.id + '/periods/preview?months=' + RNW.months).then(function (r) {
     if (gen !== RNW.gen) return;
     var d = r.data, charged = d && moneyOf(d.charged), short = d && moneyOf(d.short);
     var ok = r.status === 200 && d && isFinite(charged) && isFinite(short) && typeof d.enough === 'boolean' &&
       typeof d.paid_until === 'string' && /^\d{4}-\d\d-\d\d$/.test(d.paid_until) && Array.isArray(d.months);
     if (ok) RNW.prev = { charged: charged, until: d.paid_until, enough: d.enough, short: short, months: d.months.length };
-    else RNW.prevFail = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r);
+    else { RNW.prevFail = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r); RNW.prevCode = r.status; }
     if (current === 'masterRenew') render();
   });
 }
@@ -3146,7 +3146,7 @@ function renewSend(key) {
   if (UNDO.key !== null && UNDO.key !== key) return;
   undoStop();
   var m = /^renew:(\d+):(\d+)$/.exec(String(key)); if (!m) return;
-  RNW.busy = true; RNW.err = ''; if (current === 'masterRenew') render();
+  RNW.busy = true; RNW.err = ''; RNW.errCode = 0; if (current === 'masterRenew') render();
   api('POST', '/master/requests/' + m[1] + '/periods', { months: Number(m[2]) }).then(function (r) {
     RNW.busy = false;
     var got = r.status === 201 ? fromMasterReq(r.data, false) : null, charged = r.data && moneyOf(r.data.charged);
@@ -3155,9 +3155,19 @@ function renewSend(key) {
     if (got && got.paidUntil) {
       FLASH = { text: 'Продлено', note: 'Оплачено до ' + msDate(got.paidUntil) + (isFinite(charged) ? '. Списано ' + money(charged) + ' ฿.' : '.') };
       RNW.months = 1;
-    } else RNW.err = denyText(r);
+    } else { RNW.err = denyText(r); RNW.errCode = r.status; }
     if (current === 'masterRenew') render();
   });
+}
+/* E59v, Cafe13KPG#667: один отказ — одно сообщение. После отказа отправки предпросмотр перечитывается (цена
+   могла измениться — НЕ гасить) и получает тот же отказ: общий `_renew_plan`. Тогда строка предпросмотра
+   говорит не отказ второй раз, а то, ради чего в ней «Повторить», — «Цена не пересчитана». Тот же — это
+   тот же код и текст отправки НАЧИНАЕТСЯ с текста предпросмотра: к отправке сервер дописывает «Деньги не
+   списаны, месяц не продлён» (api#103), к предпросмотру нарочно нет. Другой отказ (сеть, иной код, иные
+   слова) — второй отказ, а не копия, и печатается целиком. */
+function rnwSameRefusal() {
+  return !!RNW.err && !!RNW.prevFail && RNW.errCode === RNW.prevCode && RNW.prevCode >= 400 && RNW.prevCode < 500 &&
+    RNW.err.indexOf(RNW.prevFail.replace(/\.$/, '')) === 0;
 }
 
 function masterOffer() {
@@ -6748,7 +6758,7 @@ var SCREENS = {
       (P ? '<div class="rows"><div><span class="small">Спишется</span><b class="num">' + money(P.charged) + ' ฿</b></div>' +
              '<div><span class="small">Оплачено будет до</span><b>' + esc(msDate(P.until)) + '</b></div></div>' +
            (P.enough ? '' : '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Не хватает ' + money(P.short) + ' ฿ на счёте.</span></div>')
-        : RNW.prevFail ? '<div class="row"><span class="small">' + esc(RNW.prevFail) + '</span><button type="button" class="btn quiet" data-action="rnw-retry">Повторить</button></div>'
+        : RNW.prevFail ? '<div class="row"><span class="small">' + esc(rnwSameRefusal() ? 'Цена не пересчитана' : RNW.prevFail) + '</span><button type="button" class="btn quiet" data-action="rnw-retry">Повторить</button></div>'
         : '<span class="small">Считаем у сервера…</span>');
     var err = RNW.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(RNW.err) + '</span></div>' : '';
     // E59b: окно ДО отправки; пока идёт отсчёт, запрос не ушёл
