@@ -2833,104 +2833,42 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
-  // ── внести себе на счёт ──
-  // POST /till отвечает строкой книги (RETURNING id, at, kind, amount,
-  // method, member_id, note — cafe13-api app/routers/till.py, по коду, не
-  // по снимку). Баланс после — только из перечитанного /me.
+  // ── пополнение — ТОЛЬКО заявкой (Cafe13KPG#677) ──
+  // Слово владельца 30.10.2026: «Не должен человек вносить себе на счёт. Все пополнения делаются только по схеме…
+  // заявка на пополнение → пополнение»; «Пополнение возможно через заявку. Других путей нет». Прямое внесение себе (`POST /till` со своим id, кнопка «Внести себе на счёт»)
+  // снято; случаи topup/topup-amount/topup-lost/-alien/-kind/-sum/-nome/-403/-nogrow стерегли СНЯТЫЙ путь и сняты с ним.
+  // Строка книги и счёт её POST остаются — ими пользуются случаи кассы ниже.
+  // POST /till отвечает строкой книги (RETURNING id, at, kind, amount, method, member_id, note — cafe13-api
+  // app/routers/till.py, по коду, не по снимку).
   const TILL_ROW = { id: 90, at: '2026-10-20T10:00:00+00:00', kind: 'topup', amount: '500.00', method: 'card', member_id: 1, note: '' };
-  function till(o) {
-    o = Object.assign({ reply: q => json(201, Object.assign({}, TILL_ROW,
-                                                           (({ amount, method, member_id }) => ({ amount: String(amount) + '.00', method, member_id }))(JSON.parse(q.postData())))),
-                        after: 3670 }, o);
-    const st = { posted: false };
-    return r => {
-      const u = r.url();
-      if (r.method() === 'POST' && u.endsWith('/till')) {
-        if (o.reply === 'abort') { st.posted = true; return 'abort'; }
-        const x = o.reply(r); st.posted = r.postData && x.status < 300; return x;
-      }
-      if (u.endsWith('/me') && st.posted) {
-        if (o.meFail) return json(500, { detail: 'x' });
-        const m = clone(o.who || OWNER); m.balance = o.after; return json(200, m);
-      }
-      return undefined;
-    };
-  }
   const tillPosts = s => s.calls.filter(c => c.method === 'POST' && c.url.endsWith('/till'));
-  async function toTopup(s, amount) {
-    if (!(await s.p.$('#view [data-go="topup"]'))) { bad.push('topup: на главной нет «Внести себе на счёт»'); return false; }
-    await s.p.click('#view [data-go="topup"]');
-    await s.p.waitForTimeout(150);
-    if (!(await s.p.$('#t-amount'))) { bad.push('topup: нет поля суммы'); return false; }
-    await s.p.fill('#t-amount', amount);
-    return true;
-  }
-  // Админ вносит себе картой: два нажатия, одно тело, баланс — из /me.
-  for (const _ of [0]) {
-    const s = await open(true, true, json(200, OWNER), null, null, null, till());
-    if (await toTopup(s, '500')) {
-      await s.p.click('[data-action="t-method:card"]');
-      await s.p.click('[data-action="t-ask"]');
-      await s.p.waitForTimeout(150);
-      if (tillPosts(s).length || !(await s.p.$('[data-action="t-keep"]'))) { bad.push('topup: внесено с первого нажатия'); await s.ctx.close(); continue; }
-      let t = await s.view();
-      if (!t.includes('Внести 500 ฿ картой на свой счёт?')) bad.push('topup: подтверждение не называет сумму и способ: ' + t.slice(0, 200));
-      await s.p.click('[data-action="t-keep"]');
-      if (tillPosts(s).length || (await s.p.$('[data-action="t-send"]'))) bad.push('topup: «Не вносить» не сработало');
-      await s.p.click('[data-action="t-ask"]');
-      await s.p.click('[data-action="t-send"]');
-      await s.p.waitForTimeout(400);
-      const tp = tillPosts(s);
-      if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'topup', amount: 500, method: 'card', member_id: OWNER.member.tg_user_id }))
-        bad.push('topup: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
-      t = await s.view();
-      if (!t.includes('Внесено 500 ฿') || !t.includes('На счёте сейчас 3 670 ฿')) bad.push('topup: нет итога с перечитанным балансом');
-      await s.p.screenshot({ path: `${OUT}/live-topup-form.png`, fullPage: true });
-    }
-    if (s.errs.length) bad.push('topup: ошибки страницы ' + s.errs.join('; '));
-    await s.ctx.close();
-  }
-  // Не сумма — не отправляется.
-  for (const bad_ of ['abc', '0', '-5', '1.234']) {
-    const s = await open(true, true, json(200, OWNER), null, null, null, till());
-    if (await toTopup(s, bad_)) {
-      await s.p.click('[data-action="t-ask"]');
-      if (!(await s.view()).includes('Сумма — число больше нуля') || (await s.p.$('[data-action="t-send"]')))
-        bad.push(`topup-amount: «${bad_}» принято как сумма`);
-    }
-    await s.ctx.close();
-  }
-  // Ответ потерян — «неизвестно», не «внесено» и не «повторите».
-  for (const [name, reply, want] of [
-    ['topup-lost', 'abort', 'Сервер не ответил'],
-    // 201, баланс вырос, но строка не та — каждое поле своим случаем:
-    // иначе проверка поля перекрыта соседней и мутация её не видит.
-    ['topup-alien', q => json(201, Object.assign({}, TILL_ROW, { member_id: 2 })), 'Ответ сервера не разобран'],
-    ['topup-kind', q => json(201, Object.assign({}, TILL_ROW, { kind: 'membership' })), 'Ответ сервера не разобран'],
-    ['topup-sum', q => json(201, Object.assign({}, TILL_ROW, { amount: '5000.00' })), 'Ответ сервера не разобран'],
-    // записано, а /me не ответил — не «ответ не разобран»: разобран был /till
-    ['topup-nome', 'nome', 'баланс прочитать не удалось'],
-    ['topup-403', q => json(403, { detail: 'нужна роль staff' }), 'Нужна роль staff'],
-    // 201 с верными полями, а баланс не вырос (так сервер обходится с
-    // method=cash/card, замер архитектора к #15): не «Внесено».
-    ['topup-nogrow', undefined, 'на счёт не попало']]) {
-    const s = await open(true, true, json(200, OWNER), null, null, null,
-      till(Object.assign({ after: name === 'topup-403' || name === 'topup-nogrow' ? 3170 : 3670, meFail: reply === 'nome' },
-                         reply && reply !== 'nome' ? { reply } : {})));
-    if (await toTopup(s, '500')) {
-      await s.p.click('[data-action="t-ask"]');
-      await s.p.waitForTimeout(150);
-      if (!(await s.p.$('[data-action="t-send"]'))) { bad.push(`${name}: нет подтверждения перед внесением`); await s.ctx.close(); continue; }
-      await s.p.click('[data-action="t-send"]');
-      await s.p.waitForTimeout(400);
+  // Пара: работник с правом кассы (глава — роли OWNER; кассир — staff) и член клуба без ролей. Экран у всех ОДИН —
+  // заявка (E52); ⚠ сервер прямой путь не запрещает, поэтому сервер здесь /till ПРИНЯЛ бы (201) — держит клиент.
+  {
+    const STAFF = clone(OWNER); STAFF.roles = [{ role: 'staff', direction_id: null }];
+    const MEMBER = clone(OWNER); MEMBER.roles = [];
+    for (const [n, me] of [['topup-zayavka-glava', OWNER], ['topup-zayavka-kassir', STAFF], ['topup-zayavka-chlen', MEMBER]]) {
+      const s = await open(true, true, json(200, me), null, null, null, q =>
+        q.method() === 'POST' && q.url().endsWith('/till') ? json(201, TILL_ROW) : undefined);
+      const home = await s.view();
+      if (home.includes('Внести себе на счёт')) bad.push(`${n}: на «Клубе» есть «Внести себе на счёт» — путь снят словом владельца (Cafe13KPG#677)`);
+      if (await s.p.$('#view [data-go="topup"]')) bad.push(`${n}: на «Клубе» вход на пополнение помимо кошелька в шапке`);
+      if (!(await s.p.$('#wallet[data-go="topup"]'))) { bad.push(`${n}: нет кошелька в шапке — единственного входа на пополнение`); await s.ctx.close(); continue; }
+      await s.p.evaluate(() => document.getElementById('wallet').click()); await s.p.waitForTimeout(200);
       const t = await s.view();
-      if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
-      if (t.includes('Внесено 500')) bad.push(`${name}: выдано за успех`);
-      if (['topup-lost', 'topup-alien', 'topup-kind', 'topup-sum', 'topup-nome'].includes(name)) { if (!t.includes('Сверьте, прежде чем вносить снова')) bad.push(`${name}: не предупреждено о двойном внесении`); }
-      if (name === 'topup-nogrow' && !t.includes('Не вносите снова')) bad.push(`${name}: не предупреждено о двойном внесении`);
-      if (name === 'topup-403' && !t.includes('Не внесено')) bad.push(`${name}: отказ не назван`);
+      if (await s.p.evaluate(() => current) !== 'topup') bad.push(`${n}: кошелёк открыл не пополнение`);
+      if (!t.includes('перевод по реквизитам клуба') || !t.includes('История пополнений')) bad.push(`${n}: нет экрана заявки E52 («Онлайн — перевод по реквизитам клуба», «История пополнений»)`);
+      if (t.includes('Сколько внести себе') || await s.p.$('#t-amount')) bad.push(`${n}: на пополнении форма прямого внесения себе`);
+      if (await s.p.$('[data-action="t-send"], [data-action="t-ask"]')) bad.push(`${n}: на пополнении есть действие прямого внесения`);
+      // запрет построением: обработчика нет вовсе — и прямой вызов действий ничего не шлёт
+      const fn = await s.p.evaluate(() => typeof window.topupSend);
+      if (fn !== 'undefined') bad.push(`${n}: функция прямого внесения topupSend осталась (${fn})`);
+      await s.p.evaluate(() => { for (const a of ['t-ask', 't-send']) { try { doAction(a); } catch (e) {} } });
+      await s.p.waitForTimeout(300);
+      if (tillPosts(s).length) bad.push(`${n}: POST /till ушёл ${tillPosts(s).length} раз — внесение себе мимо заявки`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
     }
-    await s.ctx.close();
   }
   // Без права кассы — ветка «у всех остальных» (с v87 кадр E52: пути «Онлайн / Касса / USDT») и никакой формы.
   // Путь — через бар, а он заморожен (Cafe13KPG#510).
