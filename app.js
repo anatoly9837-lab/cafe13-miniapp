@@ -3908,7 +3908,13 @@ var BOOK_ASK = false;      // у отмены спрашивают: место �
 
 function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 
-function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY; }
+/* «Записываться пока не нужно» — слово владельца 30.10.2026 (Cafe13KPG#670, шаг 4): афиша открыта всем, а
+   записывается только человек с ЖИВЫМ членством. По свойству, а не по роли: членство есть и у мастера,
+   и у куратора, и у бармена. ⚠ Запрет КЛИЕНТСКИЙ — сервер его не держит (бой a1984f2: `POST /bookings`
+   охраняет только допуск, `caller`, членства не спрашивает). «Пока» — срок: когда запись понадобится шире,
+   снимается и этот запрет, и решается, проверять ли членство на сервере (#670). */
+function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
+function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents(); }
 // сколько записалось: без ограничения — `taken` сервера (из «мест» не вычесть), иначе — мест минус осталось
 function takenOf(e) { return e.unl ? e.taken : e.of - e.seats; }
 // ВРЕМЕННЫЕ слова «без ограничения» — до кадра дизайнера (Cafe13KPG#639)
@@ -4672,6 +4678,12 @@ function bookBlock(e) {
         '</div>';
     return err + '<button type="button" class="btn ghost" data-action="book-cancel">Отменить запись</button>';
   }
+  // без живого членства (E37k): кнопка ОСТАЁТСЯ, погашена, причина вплотную под ней; подсказка оплаты
+  // снята — она про то, что будет после нажатия, а нажатия не будет (designer-55)
+  if (!mayBookEvents() && !e.done)
+    return err + '<div style="display:flex;flex-direction:column;gap:9px">' +
+      '<button type="button" class="btn" disabled aria-disabled="true">Записаться</button>' +
+      '<span class="small" style="text-align:center">Пока записываются только члены клуба.</span></div>';
   if (!canBookEvent(e)) {
     // Объяснение — там, где человек мог ждать кнопку: мест нет. Кончившемуся
     // событию объяснять нечего, у него всё сказано карточкой.
