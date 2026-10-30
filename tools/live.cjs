@@ -871,6 +871,38 @@ if (grantsSet.length !== 1) {
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
       }
+      // 409 по занятости на продлении (Cafe13KPG, наряд coordinator-2 30.10): место заняли между предпросмотром и
+      // концом окна. Сервер (`_renew_plan` → `_check_free`, api a1984f2) не пишет НИЧЕГО — ни денег, ни месяцев, ни
+      // недель. Человек остаётся на экране, видит слова сервера, своё и остаток перечитаны; предпросмотр спрошен
+      // заново тем же кодом и теперь тоже 409 — «Продлить» гаснет. Подлог «фикстура 409» без этого случая — 0 красных
+      {
+        const n = 'rnw-busy-409';
+        const BUSY = 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00';
+        let taken = false;
+        const o = { post: () => { taken = true; return json(409, { detail: BUSY }); },
+          prevReply: N => taken ? json(409, { detail: BUSY }) : json(200, { request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
+            per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', paid_until: '2026-12-31', enough: true, short: '0.00' }) };
+        const { s, ok } = await rnwOpen(n, o);
+        const before = ok ? s.calls.length : 0;   // ДО нажатия (см. rnw-send-lost)
+        if (ok && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
+          await s.p.waitForTimeout(5800);
+          const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+          const t = await s.view();
+          // слова — в плашке отказа (role=alert); та же фраза строкой предпросмотра под «Повторить» отказом отправки не считается
+          const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
+          if (o.renewed.length !== 1) bad.push(`${n}: POST продления ушёл ${o.renewed.length} раз, ждали 1`);
+          if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после 409 экран продления закрылся`);
+          if (!alert.includes('Неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00.')) bad.push(`${n}: слова сервера о занятом месте не показаны плашкой отказа: ${JSON.stringify(alert)}`);
+          if (t.includes('Продлено')) bad.push(`${n}: после 409 сказано «Продлено»`);
+          const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
+          if (miss.length) bad.push(`${n}: после 409 не перечитано ${JSON.stringify(miss)}`);
+          if (!after.some(u => /^GET \/master\/requests\/901\/periods\/preview/.test(u))) bad.push(`${n}: после 409 предпросмотр не спрошен заново — «Продлить» живёт по старому расчёту`);
+          const off = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? b.disabled : null; });
+          if (off !== true) bad.push(`${n}: после 409 «Продлить» нажимается (${JSON.stringify(off)}) — место уже занято`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
       // 7. в окне число месяцев не меняется: «−»/«+» погашены; вторая линия — обработчики
       {
         const n = 'rnw-lock', o = {};
