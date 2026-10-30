@@ -51,6 +51,23 @@ const OWNER = {
           { role: 'god_mentor', direction_id: null }]
 };
 const clone = o => JSON.parse(JSON.stringify(o));
+// E60 (вариант А владельца, комментарий координатора 30.10.2026 в Cafe13KPG#670): список афиши — только ВЫБРАННОГО
+// дня. Строку другого дня человек открывает выбором дня в сетке недели — так и здесь: перебор дней и недель до строки.
+// Вне афиши (сетки нет) — прямой щелчок, как прежде.
+async function showRow(s, id) {
+  const sel = `#view [data-event="${id}"]`;
+  for (let w = 0; w < 4 && !(await s.p.$(sel)); w++) {
+    const days = await s.p.$$eval('#view .wk [data-action^="wk-day:"]', b => b.map(x => x.getAttribute('data-action')));
+    for (const d of days) {
+      if (await s.p.$(sel)) break;
+      await s.p.evaluate(a => document.querySelector(`[data-action="${a}"]`).click(), d); await s.p.waitForTimeout(60);
+    }
+    if (await s.p.$(sel) || !(await s.p.$('#view [data-action="wk-next"]'))) break;
+    await s.p.evaluate(() => document.querySelector('#view [data-action="wk-next"]').click()); await s.p.waitForTimeout(60);
+  }
+  return !!(await s.p.$(sel));
+}
+async function openRow(s, id) { await showRow(s, id); await s.p.click(`#view [data-event="${id}"]`); }
 const json = (status, body) => ({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 const finite = clone(OWNER);
@@ -4340,10 +4357,11 @@ if (grantsSet.length !== 1) {
     if (JSON.stringify(rows) !== JSON.stringify(want))
       bad.push(`${n}: на «Клубе» колонка строк ${JSON.stringify(rows)}, ждали ${JSON.stringify(want)} — недели слота не различить`);
     if (rows.some(r => r[1] === 'день')) bad.push(`${n}: в колонке строки часть дня «день» вместо даты`);
-    // на самой афише день стоит в заголовке группы — там колонка по-прежнему часть дня
+    // на афише день выбран в сетке недели и назван над списком (E60) — там колонка по-прежнему часть дня
     await s.p.click('[data-go="events"]'); await s.p.waitForTimeout(150);
+    await s.p.evaluate(d => { const b = document.querySelector(`[data-action="wk-day:${d}"]`); if (b) b.click(); }, bkkDay(1)); await s.p.waitForTimeout(100);
     const af = await s.p.$$eval('#view [data-event]', b => b.map(x => (x.querySelector('.time span') || {}).textContent || ''));
-    if (!af.length || af.some(x => x !== 'день')) bad.push(`${n}: на афише колонка ${JSON.stringify(af)}, ждали «день» — дата там дублировала бы заголовок дня`);
+    if (JSON.stringify(af) !== '["день"]') bad.push(`${n}: на афише в выбранном дне колонка ${JSON.stringify(af)}, ждали ["день"] — дата дублировала бы подпись дня`);
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
@@ -4360,16 +4378,35 @@ if (grantsSet.length !== 1) {
 
     await s.p.click('[data-go="events"]');
     await s.p.waitForTimeout(100);
+    // E60, вариант А владельца (комментарий координатора 30.10.2026 в Cafe13KPG#670): сетка недели от понедельника
+    // ПО ОСТРОВУ, выбран сегодняшний день, список — только его; «‹» на текущей неделе погашен, «Сегодня» — только на
+    // другой неделе. NOWFIX — среда 2 декабря 2026 на острове: неделя 30 ноября – 6 декабря.
+    const wk = () => s.p.evaluate(() => ({
+      range: (document.querySelector('#view .wknav b') || {}).textContent || '',
+      days: [...document.querySelectorAll('#view .wk [data-action^="wk-day:"]')]
+        .map(b => [b.getAttribute('data-action').slice(7), b.getAttribute('aria-pressed'), b.querySelectorAll('.ev').length]),
+      note: (document.querySelector('#view .daynote') || {}).textContent || '',
+      prev: (document.querySelector('#view [data-action="wk-prev"]') || {}).disabled,
+      today: !!document.querySelector('#view [data-action="wk-today"]'),
+      rows: [...document.querySelectorAll('#view [data-event]')].map(x => x.getAttribute('data-event'))
+    }));
+    const tap = a => s.p.evaluate(x => { const b = document.querySelector(`#view [data-action="${x}"]`); if (b) b.click(); return !!b; }, a);
+    const W0 = [0, 1, 2, 3, 4, 5, 6].map(i => bkkDay(i - 2));
+    let w = await wk();
+    if (JSON.stringify(w.days.map(d => d[0])) !== JSON.stringify(W0)) bad.push(`events: дни сетки ${JSON.stringify(w.days.map(d => d[0]))}, ждали ${JSON.stringify(W0)} — неделя не с понедельника острова`);
+    if (w.range !== '30 ноября – 6 декабря') bad.push(`events: неделя названа «${w.range}», ждали «30 ноября – 6 декабря»`);
+    if (JSON.stringify(w.days.filter(d => d[1] === 'true').map(d => d[0])) !== JSON.stringify([bkkDay(0)])) bad.push(`events: выбран не сегодняшний день (${JSON.stringify(w.days.filter(d => d[1] === 'true'))})`);
+    // полоски — число событий дня, не больше трёх: сегодня три, завтра одно
+    if (JSON.stringify(w.days.map(d => d[2])) !== '[0,0,3,1,0,0,0]') bad.push(`events: полоски по дням ${JSON.stringify(w.days.map(d => d[2]))}, ждали [0,0,3,1,0,0,0]`);
+    if (w.note !== 'Ср, 2 декабря · 3 события') bad.push(`events: подпись дня «${w.note}», ждали «Ср, 2 декабря · 3 события»`);
+    if (w.prev !== true) bad.push('events: на текущей неделе «‹» нажимается — прошлой недели сервер не отдаёт');
+    if (w.today) bad.push('events: «Сегодня» на текущей неделе');
+    if (JSON.stringify(w.rows.slice().sort()) !== '["1","7","8"]') bad.push(`events: в списке сегодня ${JSON.stringify(w.rows)}, ждали только сегодняшние 1, 7, 8`);
     const t = await s.view();
-    ['Сегодня,', 'Завтра,', 'Утро у воды', 'Вечер ханга', 'Уже начался', '400 ฿', 'Бесплатно',
-     'Донейшн', 'вы записаны', 'мест нет', 'идёт', 'Образец'].forEach(x => {
+    ['Утро у воды', 'Уже начался', 'Уже закончился', 'Бесплатно', 'Донейшн', 'мест нет', 'идёт', 'Образец'].forEach(x => {
       if (!t.includes(x)) bad.push(`events: нет «${x}»`); });
-    ['400.00', 'Звуковая практика', 'Утренняя практика', '[мастер]', 'ещё не подключено'].forEach(x => {
+    ['Вечер ханга', '400.00', 'Звуковая практика', 'Утренняя практика', '[мастер]', 'ещё не подключено'].forEach(x => {
       if (t.includes(x)) bad.push(`events: есть лишнее «${x}»`); });
-    // Чужая запись и «ничья» (booked_by_me null) своей не становятся.
-    const mine = await s.p.evaluate(() => [...document.querySelectorAll('#view .listitem')]
-      .filter(e => e.textContent.includes('вы записаны')).length);
-    if (mine !== 1) bad.push(`events: строк «вы записаны» ${mine}, ждали 1`);
     // Кончившееся событие идущим не называется: «идёт» верно только до конца.
     const rowOf = t => s.p.evaluate(x => {
       const e = [...document.querySelectorAll('#view .listitem')].find(n => n.textContent.includes(x));
@@ -4381,16 +4418,40 @@ if (grantsSet.length !== 1) {
     if (!/идёт/.test(live)) bad.push('events: идущее событие не помечено идущим: «' + live.slice(0, 70) + '»');
     await s.p.screenshot({ path: `${OUT}/live-events.png` });
 
-    // Сегмент дня фильтрует, а не подсвечивается: вечернее из «Утра» уходит.
-    await s.p.click('[data-action="seg:утро"]');
-    await s.p.waitForTimeout(100);
-    const m = await s.view();
-    if (!m.includes('Утро у воды') || m.includes('Вечер ханга')) bad.push('events: сегмент «Утро» не отфильтровал');
-    await s.p.click('[data-action="seg:все"]');
-    await s.p.waitForTimeout(100);
+    // Часть дня сужает ВЫБРАННЫЙ день (фильтр оставлен до слова владельца); подпись дня считает все события дня.
+    await tap('seg:вечер'); await s.p.waitForTimeout(100);
+    w = await wk();
+    if (w.rows.length || !(await s.view()).includes('На эту часть дня ничего не назначено.')) bad.push(`events: «Вечер» сегодня не сузил список (${JSON.stringify(w.rows)})`);
+    if (w.note !== 'Ср, 2 декабря · 3 события') bad.push(`events: под фильтром подпись дня «${w.note}» — считает не все события дня`);
+    await tap('seg:все'); await s.p.waitForTimeout(100);
+
+    // Завтра — выбором дня в сетке: в списке только его строка, своя запись помечена.
+    await tap(`wk-day:${bkkDay(1)}`); await s.p.waitForTimeout(100);
+    w = await wk();
+    if (JSON.stringify(w.rows) !== '["4"]') bad.push(`events: в выбранном завтра ${JSON.stringify(w.rows)}, ждали только 4`);
+    if (w.note !== 'Чт, 3 декабря · 1 событие') bad.push(`events: подпись выбранного дня «${w.note}», ждали «Чт, 3 декабря · 1 событие»`);
+    const tm = await s.view();
+    ['Вечер ханга', '400 ฿', 'вы записаны'].forEach(x => { if (!tm.includes(x)) bad.push(`events: в выбранном завтра нет «${x}»`); });
+    // Чужая запись и «ничья» (booked_by_me null) своей не становятся.
+    const mine = await s.p.evaluate(() => [...document.querySelectorAll('#view .listitem')]
+      .filter(e => e.textContent.includes('вы записаны')).length);
+    if (mine !== 1) bad.push(`events: строк «вы записаны» ${mine}, ждали 1`);
+
+    // Неделя вперёд: «‹» жив, «Сегодня» есть; событий нет — выбран понедельник, сказано, что пусто. «Сегодня» возвращает.
+    await tap('wk-next'); await s.p.waitForTimeout(100);
+    w = await wk();
+    if (w.range !== '7 – 13 декабря') bad.push(`events: следующая неделя «${w.range}», ждали «7 – 13 декабря»`);
+    if (w.prev !== false) bad.push('events: на следующей неделе «‹» погашен — назад не вернуться');
+    if (!w.today) bad.push('events: вне текущей недели нет «Сегодня»');
+    if (JSON.stringify(w.days.filter(d => d[1] === 'true').map(d => d[0])) !== JSON.stringify([bkkDay(5)])) bad.push(`events: на пустой неделе выбран ${JSON.stringify(w.days.filter(d => d[1] === 'true'))}, ждали понедельник ${bkkDay(5)}`);
+    if (w.rows.length || !(await s.view()).includes('В этот день ивентов нет')) bad.push(`events: пустой день не сказан (${JSON.stringify(w.rows)})`);
+    await tap('wk-today'); await s.p.waitForTimeout(100);
+    w = await wk();
+    if (w.range !== '30 ноября – 6 декабря' || JSON.stringify(w.days.filter(d => d[1] === 'true').map(d => d[0])) !== JSON.stringify([bkkDay(0)]))
+      bad.push(`events: «Сегодня» вернуло ${w.range} / ${JSON.stringify(w.days.filter(d => d[1] === 'true'))}, ждали текущую неделю и сегодня`);
 
     // Карточка — из той же выдачи, без обещаний демонстрации.
-    await s.p.click('[data-event="4"]');
+    await openRow(s, '4');
     await s.p.waitForTimeout(100);
     const c = await s.view();
     ['Вечер ханга', 'Вы записаны', '400 ฿', 'Живой звук', 'Съёмки на этом событии нет', 'Образец', '11 из 12']
@@ -4410,7 +4471,7 @@ if (grantsSet.length !== 1) {
     await s.p.waitForTimeout(100);
     await s.p.click('#view [data-go="events"]');
     await s.p.waitForTimeout(100);
-    await s.p.click('[data-event="1"]');
+    await openRow(s, '1');
     await s.p.waitForTimeout(100);
     const f = await s.view();
     // Запись подключена, но на событие без мест её не предлагают: отказ,
@@ -4504,7 +4565,7 @@ if (grantsSet.length !== 1) {
     const s = await open(true, true, json(200, OWNER), null, null, null, handler, null, NOWFIX);
     await s.p.evaluate(() => go('events'));
     await s.p.waitForTimeout(120);
-    await s.p.click('[data-event="4"]');
+    await openRow(s, '4');
     await s.p.waitForTimeout(120);
     return s;
   };
@@ -4611,7 +4672,7 @@ if (grantsSet.length !== 1) {
     for (const [id, kind, zhdyom] of [[4, 'paid', true], [10, 'free', false], [11, 'donation', false]]) {
       await s.p.evaluate(() => go('events'));
       await s.p.waitForTimeout(120);
-      await s.p.click(`[data-event="${id}"]`);
+      await openRow(s, id);
       await s.p.waitForTimeout(120);
       const t = await s.view();
       const est = t.includes(FRAZA_271);
@@ -5008,11 +5069,11 @@ if (grantsSet.length !== 1) {
         return undefined;
       }, null, NOWFIX);
       await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(120);
-      if (!(await s.p.$('[data-event="4"]'))) {
+      if (!(await showRow(s, '4'))) {
         bad.push(`${n}: на афише нет мероприятия — афиша ${guest ? 'гостю' : 'члену клуба'} не открылась (Cafe13KPG#670 «доступным для всех»)`);
         await s.ctx.close(); continue;
       }
-      await s.p.click('[data-event="4"]'); await s.p.waitForTimeout(120);
+      await openRow(s, '4'); await s.p.waitForTimeout(120);
       const btn = () => s.p.evaluate(() => {
         const b = [...document.querySelectorAll('#view button')].find(x => x.textContent.trim() === 'Записаться');
         return b ? { off: b.disabled, aria: b.getAttribute('aria-disabled'), act: b.getAttribute('data-action') } : null;
@@ -5113,7 +5174,7 @@ if (grantsSet.length !== 1) {
         q => q.url().endsWith('/events') ? pair() : undefined, null, NOWFIX);
       await s.p.evaluate(() => go('events'));
       await s.p.waitForTimeout(120);
-      await s.p.click('[data-event="7"]');
+      await openRow(s, '7');
       await s.p.waitForTimeout(120);
       const t = await s.view();
       if (t.includes('Управление')) bad.push('manage-chuzhoy: управление показано на ЧУЖОМ мероприятии');
@@ -6250,7 +6311,7 @@ if (grantsSet.length !== 1) {
           else if (!(await s.p.$('[data-event="21"]')))
             bad.push('kabinet-put: пункта своего мероприятия нет вовсе — открывать нечего');
           else {
-            await s.p.click('[data-event="21"]');
+            await openRow(s, '21');
             await s.p.waitForTimeout(200);
             const c = await s.view();
             if (!c.includes('Управление'))
@@ -6356,7 +6417,7 @@ if (grantsSet.length !== 1) {
       }, null, NOWFIX);
       await s.p.evaluate(() => go('events'));
       await s.p.waitForTimeout(120);
-      await s.p.click('[data-event="4"]');
+      await openRow(s, '4');
       await s.p.waitForTimeout(300);
       return s;
     };
@@ -6455,11 +6516,11 @@ if (grantsSet.length !== 1) {
       }, null, NOWFIX);
       await s.p.evaluate(() => go('events'));
       await s.p.waitForTimeout(120);
-      await s.p.click('[data-event="4"]');
+      await openRow(s, '4');
       await s.p.waitForTimeout(100);                 // ответ по первому ещё в пути
       await s.p.evaluate(() => go('events'));
       await s.p.waitForTimeout(80);
-      await s.p.click('[data-event="8"]');
+      await openRow(s, '8');
       await s.p.waitForTimeout(1200);                // поздний ответ по первому уже пришёл
       const t = await s.view();
       if (!t.includes('ВТОРОГО-СОБЫТИЯ-ГОСТЬ'))
@@ -6517,7 +6578,7 @@ if (grantsSet.length !== 1) {
       const s = await openSigned(json(200, LIST()));
       await s.p.evaluate(() => go('events'));
       await s.p.waitForTimeout(120);
-      await s.p.click('[data-event="7"]');
+      await openRow(s, '7');
       await s.p.waitForTimeout(300);
       const t = await s.view();
       // «Образец» — имя ведущего, оно стоит на КАЖДОЙ карточке; признаком
@@ -6643,9 +6704,18 @@ if (grantsSet.length !== 1) {
       'America/New_York', NOWFIX);
     await s.p.evaluate(() => go('events'));
     await s.p.waitForTimeout(150);
+    // E60: событие лежит в ДНЕ острова. Суббота 5-го (день UTC и телефона) пуста; воскресенье 6-го — его день,
+    // и подпись дня называет его так, как прежде заголовок группы
+    const pick = d => s.p.evaluate(x => { const b = document.querySelector(`#view [data-action="wk-day:${x}"]`); if (b) b.click(); return !!b; }, d);
+    await pick('2026-12-05'); await s.p.waitForTimeout(100);
+    const sat = await s.p.$$eval('#view [data-event]', b => b.length);
+    if (sat) bad.push('events-tz: событие стоит в субботе 5 декабря — день взят по UTC или телефону, а не по острову');
+    if (!(await pick('2026-12-06'))) bad.push('events-tz: в сетке нет воскресенья 6 декабря');
+    await s.p.waitForTimeout(100);
     const t = await s.view();
+    const note = await s.p.evaluate(() => (document.querySelector('#view .daynote') || {}).textContent || '');
     if (!t.includes(hm)) bad.push(`events-tz: нет времени клуба «${hm}», а есть «${t.slice(0, 80)}»`);
-    if (!t.includes(label)) bad.push(`events-tz: нет дня клуба «${label}»`);
+    if (note !== 'Вс, 6 декабря · 1 событие') bad.push(`events-tz: подпись дня «${note}», ждали «Вс, 6 декабря · 1 событие» (прежде заголовок «${label}»)`);
     if (t.includes('18:30')) bad.push('events-tz: на экране 18:30 — это UTC, а не пояс клуба');
     if (t.includes('13:30')) bad.push('events-tz: на экране 13:30 — это пояс телефона, а не клуба');
     // День считается там же, где время: в Бангкоке полночь уже прошла.
@@ -6653,6 +6723,28 @@ if (grantsSet.length !== 1) {
     if (t.includes('суббота')) bad.push('events-tz: на экране суббота — день недели взят не в поясе клуба');
     if (s.errs.length) bad.push('events-tz: ошибки страницы ' + s.errs.join('; '));
     await s.p.screenshot({ path: `${OUT}/live-events-tz.png` });
+    await s.ctx.close();
+  }
+
+  // ── неделя афиши — от понедельника ПО ОСТРОВУ, а не по поясу телефона (E60) ──
+  // 30.11.2026 00:30 UTC: на острове понедельник 07:30, в Нью-Йорке ещё воскресенье 29-го. Неделя по телефону
+  // была бы 23–29 ноября — сдвиг на целую неделю, и «сегодня» стояло бы в чужой.
+  {
+    const n = 'wk-poyas';
+    const s = await open(true, true, json(200, OWNER), null, null, null,
+      evReply(json(200, [EV({ id: 4, starts_at: '2026-11-30T12:00:00Z' })])), 'America/New_York', Date.parse('2026-11-30T00:30:00Z'));
+    await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(150);
+    const w = await s.p.evaluate(() => ({
+      range: (document.querySelector('#view .wknav b') || {}).textContent || '',
+      on: [...document.querySelectorAll('#view .wk [aria-pressed="true"]')].map(b => b.getAttribute('data-action')),
+      note: (document.querySelector('#view .daynote') || {}).textContent || '',
+      rows: [...document.querySelectorAll('#view [data-event]')].map(x => x.getAttribute('data-event'))
+    }));
+    if (w.range !== '30 ноября – 6 декабря') bad.push(`${n}: неделя «${w.range}», ждали «30 ноября – 6 декабря» — взят пояс телефона`);
+    if (JSON.stringify(w.on) !== '["wk-day:2026-11-30"]') bad.push(`${n}: выбран ${JSON.stringify(w.on)}, ждали сегодняшний понедельник острова 2026-11-30`);
+    if (w.note !== 'Пн, 30 ноября · 1 событие') bad.push(`${n}: подпись дня «${w.note}», ждали «Пн, 30 ноября · 1 событие»`);
+    if (JSON.stringify(w.rows) !== '["4"]') bad.push(`${n}: в списке ${JSON.stringify(w.rows)}, ждали событие острова 4`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
 
