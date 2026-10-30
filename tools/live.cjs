@@ -728,6 +728,9 @@ if (grantsSet.length !== 1) {
           if (miss.length) bad.push(`${n}: после 409 не перечитано ${JSON.stringify(miss)}`);
           const title = await s.p.evaluate(() => { const e = document.getElementById('msf-title'); return e ? e.value : null; });
           if (title !== 'Проба мастера') bad.push(`${n}: после 409 набранное название пропало (${JSON.stringify(title)}) — человеку набирать заново`);
+          // подать заново человек обязан мочь: MR.busy снят ответом (arhitector-47)
+          const send = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
+          if (!send || send.off || send.txt !== 'Отправить заявку') bad.push(`${n}: после 409 «Отправить заявку» не вернулась (${JSON.stringify(send)}) — подать заново нечем`);
         }
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
@@ -881,6 +884,9 @@ if (grantsSet.length !== 1) {
           else if (miss.length) bad.push(`${n}: после неразобранного ответа не перечитано ${JSON.stringify(miss)} — деньги могли уйти: ${JSON.stringify(after)}`);
           if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после неразобранного ответа экран продления закрылся`);
           if (!(await s.view()).includes('кодом 502')) bad.push(`${n}: отказ не назван (ждали «кодом 502»)`);
+          // перечитанный предпросмотр отвечает 200 — повторить продление человек обязан мочь (arhitector-47)
+          const go = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
+          if (!go || go.off || go.txt !== 'Продлить') bad.push(`${n}: после 502 «Продлить» не вернулась (${JSON.stringify(go)}) — повторить нечем`);
         }
         await s.ctx.close();
       }
@@ -911,12 +917,18 @@ if (grantsSet.length !== 1) {
       // концом окна. Сервер (`_renew_plan` → `_check_free`, api a1984f2) не пишет НИЧЕГО — ни денег, ни месяцев, ни
       // недель. Человек остаётся на экране, видит слова сервера, своё и остаток перечитаны; предпросмотр спрошен
       // заново тем же кодом и теперь тоже 409 — «Продлить» гаснет. Подлог «фикстура 409» без этого случая — 0 красных
-      {
-        const n = 'rnw-busy-409';
+      // Тексты разведены, как у сервера (api main, `RENEW_NOT_CHARGED`): хвост «. Деньги не списаны, месяц не продлён»
+      // получает ТОЛЬКО отказ POST, предпросмотр — нет. Фраза о деньгах в плашке поэтому может прийти лишь от отправки
+      // (граница arhitector-47: строка предпросмотра, нарисованная плашкой, иначе подменяла бы отказ отправки).
+      // E59v (Cafe13KPG#667, v116): один отказ — одно сообщение; тот же отказ предпросмотра — «Цена не пересчитана»,
+      // иной (502) — печатается целиком. Вторая строка — тот самый «иной».
+      for (const [n, prevAfter] of [
+        ['rnw-busy-409', () => json(409, { detail: 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00' })],
+        ['rnw-busy-409-502', () => json(502, '<html>bad gateway</html>')]]) {
         const BUSY = 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00';
         let taken = false;
-        const o = { post: () => { taken = true; return json(409, { detail: BUSY }); },
-          prevReply: N => taken ? json(409, { detail: BUSY }) : json(200, { request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
+        const o = { post: () => { taken = true; return json(409, { detail: BUSY + '. Деньги не списаны, месяц не продлён' }); },
+          prevReply: N => taken ? prevAfter() : json(200, { request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
             per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', paid_until: '2026-12-31', enough: true, short: '0.00' }) };
         const { s, ok } = await rnwOpen(n, o);
         const before = ok ? s.calls.length : 0;   // ДО нажатия (см. rnw-send-lost)
@@ -924,17 +936,29 @@ if (grantsSet.length !== 1) {
           await s.p.waitForTimeout(5800);
           const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
           const t = await s.view();
-          // слова — в плашке отказа (role=alert); та же фраза строкой предпросмотра под «Повторить» отказом отправки не считается
+          // слова — в плашке отказа (role=alert); строка предпросмотра под «Повторить» отказом отправки не считается
           const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
           if (o.renewed.length !== 1) bad.push(`${n}: POST продления ушёл ${o.renewed.length} раз, ждали 1`);
           if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после 409 экран продления закрылся`);
           if (!alert.includes('Неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00.')) bad.push(`${n}: слова сервера о занятом месте не показаны плашкой отказа: ${JSON.stringify(alert)}`);
+          if (!alert.includes('Деньги не списаны, месяц не продлён.')) bad.push(`${n}: в плашке не сказано, что деньги не списаны: ${JSON.stringify(alert)}`);
+          const times = (t.match(/слота пересекается/g) || []).length;
+          if (times !== 1) bad.push(`${n}: слова о занятом месте на экране ${times} раз, ждали 1 — один отказ, одно сообщение (Cafe13KPG#667)`);
+          if (n === 'rnw-busy-409') {
+            if (!t.includes('Цена не пересчитана')) bad.push(`${n}: тот же отказ предпросмотра не назван «Цена не пересчитана»`);
+            if (!(await s.p.$('[data-action="rnw-retry"]'))) bad.push(`${n}: у непересчитанной цены нет «Повторить»`);
+          } else {
+            if (!t.includes('Сервер ответил кодом 502.')) bad.push(`${n}: иной отказ предпросмотра не напечатан целиком (ждали «Сервер ответил кодом 502.»)`);
+            if (t.includes('Цена не пересчитана')) bad.push(`${n}: иной отказ (502) выдан за тот же — «Цена не пересчитана»`);
+          }
           if (t.includes('Продлено')) bad.push(`${n}: после 409 сказано «Продлено»`);
           const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
           if (miss.length) bad.push(`${n}: после 409 не перечитано ${JSON.stringify(miss)}`);
           if (!after.some(u => /^GET \/master\/requests\/901\/periods\/preview/.test(u))) bad.push(`${n}: после 409 предпросмотр не спрошен заново — «Продлить» живёт по старому расчёту`);
-          const off = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? b.disabled : null; });
-          if (off !== true) bad.push(`${n}: после 409 «Продлить» нажимается (${JSON.stringify(off)}) — место уже занято`);
+          const go = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
+          if (!go || go.off !== true) bad.push(`${n}: после 409 «Продлить» нажимается (${JSON.stringify(go)}) — место уже занято`);
+          // погашена ПО ЗАМЫСЛУ (предпросмотра нет), поэтому занятость читается подписью: «Продлеваем…» = ответ не дошёл до RNW.busy
+          if (go && go.txt !== 'Продлить') bad.push(`${n}: после ответа на кнопке «${go.txt}» — отправка так и висит (RNW.busy)`);
         }
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
