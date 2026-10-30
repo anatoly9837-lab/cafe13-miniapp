@@ -481,9 +481,20 @@ body.has-main .dup-main { display: none; }
 .mf button.chip { font-size: 13px; padding: 8px 11px; cursor: pointer; color: var(--ink); }
 .mf .chip.on { border-color: var(--accent); background: var(--surface); font-weight: 600; }
 .mf .chip.busy { color: var(--muted); text-decoration: line-through; cursor: default; }
-/* «Начало» — выбор из 48 значений с шагом 30 минут (слово владельца): облик поля ввода, ширина по значению */
-.mf select { min-height: 46px; width: 120px; border: 1px solid var(--line); border-radius: 9px; padding: 0 12px;
-             background: var(--paper); color: var(--ink); font-family: 'Golos Text', sans-serif; font-size: 15px; }
+/* Поле выбора — облик поля ввода, ширина по значению: «Начало» из 48 значений с шагом 30 минут (слово
+   владельца) короче строки ввода, и по ширине видно, что набирать нечего (designer-55, Cafe13KPG#666).
+   Правило на `.field select`, а не на одну форму: следующее поле выбора получит облик само.
+   Стрелка — наш `.chev` (ICON.chev, повёрнутый вниз: 18 px, штрих 1.9, концы круглые, цвет --muted), а не
+   системная: `appearance: none` снимает и её, и фаску движка. У `<select>` нет детей под svg, поэтому
+   стрелка — фоном, и ЦВЕТ В data: ЗАПЕЧЁН: var() внутри него не работает. Отсюда второе объявление в
+   тёмной теме. ⚠ Меняется --muted — меняются оба %23-цвета ниже. Раскрытый список рисует движок, и
+   тему он берёт из `color-scheme` (:root, обе темы). */
+.field select { min-height: 46px; width: 120px; border: 1px solid var(--line); border-radius: 9px; padding: 0 36px 0 12px;
+                color: var(--ink); font-family: 'Golos Text', sans-serif; font-size: 15px;
+                -webkit-appearance: none; appearance: none; cursor: pointer;
+                background: var(--paper) url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235A5F63' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center / 18px 18px; }
+:root[data-theme="dark"] .field select {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23B8B6AE' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); }
 .counter { display: flex; align-items: center; gap: 14px; }
 .counter .num { min-width: 86px; text-align: center; }
 .counter .round { border: 1px solid var(--line); width: 34px; height: 34px; font-size: 17px; color: var(--ink); }
