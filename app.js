@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v121 · 30.10.2026';
+var VERSION = 'v122 · 30.10.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -1260,50 +1260,6 @@ function topupAmount(v) {
   var t = String(v || '').trim().replace(',', '.');
   return /^\d+(\.\d{1,2})?$/.test(t) && Number(t) > 0 ? Number(t) : null;
 }
-function topupSend() {
-  if (TOPUP.busy) return;
-  var amt = topupAmount(TOPUP.amount);
-  if (amt === null) return;
-  TOPUP.busy = true; TOPUP.ask = false;
-  render();
-  var before = DATA.member.balance, uid = DATA.member.uid;
-  api('POST', '/till', { kind: 'topup', amount: amt, method: TOPUP.method, member_id: uid }).then(function (r) {
-    var d = r.data;
-    var ok = r.status === 201 && !!d && d.kind === 'topup' && num(d.amount) === amt && d.member_id === uid;
-    var detail = detailOf(r);
-    api('GET', '/me').then(function (m) {
-      var me = m.status === 200 ? fromMe(m.data) : null;
-      if (me) DATA.member.balance = me.member.balance;
-      var now = me ? 'На счёте сейчас ' + money(me.member.balance) + ' ฿.' : 'Баланс не перечитался — откройте экран заново.';
-      var grew = !!me && Math.abs(me.member.balance - before - amt) < 0.005;
-      TOPUP.busy = false;
-      if (ok && grew) {
-        TOPUP.amount = '';
-        FLASH = { text: 'Внесено ' + money(amt) + ' ฿', note: now };
-        haptic('ok');
-      } else if (ok && !me) {
-        FLASH = { text: 'Записано, но баланс не перечитался',
-                  note: 'Сервер принял внесение, а баланс прочитать не удалось. Было ' + money(before) +
-                        ' ฿. Откройте экран заново. Сверьте, прежде чем вносить снова.' };
-        haptic('warn');
-      } else if (ok && me) {
-        FLASH = { text: 'Записано, но на счёт не попало',
-                  note: 'Сервер принял внесение, а баланс не вырос: было ' + money(before) + ' ฿. ' + now +
-                        ' Не вносите снова — сообщите администратору клуба.' };
-        haptic('warn');
-      } else if (r.status === 0 || r.status === 201) {
-        FLASH = { text: 'Неизвестно, внесено ли',
-                  note: (r.status === 0 ? 'Сервер не ответил. ' : 'Ответ сервера не разобран. ') + now +
-                        ' Было ' + money(before) + ' ฿. Сверьте, прежде чем вносить снова.' };
-        haptic('warn');
-      } else {
-        FLASH = { text: 'Не внесено', note: detail ? detail[0].toUpperCase() + detail.slice(1) + '.' : failText(r) };
-        haptic('warn');
-      }
-      if (current === 'topup') render();
-    });
-  });
-}
 
 /* ── касса: человек по коду пропуска ────────────────────
    Цепочка экранов (staff → tillPerson → tillMembership | tillTopup), чтобы системная
@@ -2083,7 +2039,7 @@ function onReturn() {
   BACK_AT = now;
   refreshMe();
   // своя история пополнений на экране пополнения — тоже снимок момента входа
-  if (current === 'topup' && !canTopup() && !(TEST.on && TEST.as)) loadTopups();
+  if (current === 'topup' && !(TEST.on && TEST.as)) loadTopups();
 }
 document.addEventListener('visibilitychange', onReturn);
 window.addEventListener('focus', onReturn);
@@ -5161,7 +5117,6 @@ var SCREENS = {
       rolePanel() +
 
       (LIVE ? myRoles() +
-        (canTopup() ? '<button type="button" class="btn ghost" data-go="topup">Внести себе на счёт</button>' : '') +
         // Одна группа «Работа»: бар и «Заявки на членство» (кадр E42g, Cafe13KPG#428) —
         // при барной роли строка главы клуба встаёт в ту же группу, а не во вторую «Работу».
         // «Люди» отсюда уехали во вкладку «Управление» (E46, Cafe13KPG#413): рабочее
@@ -6178,33 +6133,12 @@ var SCREENS = {
 
   /* Пополнения в приложении нет: деньги принимает касса клуба. Экран честно
      говорит, где пополнить, а не показывает выключенную кнопку без причины. */
+  /* Пополнение — ТОЛЬКО заявкой (слово владельца 30.10.2026: «Не должен человек вносить себе на счёт. Все
+     пополнения — только заявка → пополнение»; «Пополнение возможно через заявку. Других путей нет», Cafe13KPG#677).
+     Прямое внесение себе работником с правом кассы (`POST /till` со своим id) снято: у него тот же путь заявки,
+     что у всех. ⚠ Сервер этот путь НЕ запрещает — `POST /till kind=topup` кассир по-прежнему может звать со своим
+     id; запрет клиентский, серверная половина — решение координатора (касса за шагом 4). */
   topup: function () {
-    if (canTopup()) {
-      var amt = topupAmount(TOPUP.amount);
-      var how = TOPUP.method === 'card' ? 'картой' : 'наличными';
-      return (FLASH ? flash() : '') +
-        '<div class="card strong"><span class="label">На счёте</span>' +
-          '<span class="big num">' + money(DATA.member.balance) + ' ฿</span></div>' +
-        '<div class="field"><label for="t-amount">Сколько внести себе, ฿</label>' +
-          '<input id="t-amount" type="text" inputmode="decimal" value="' + esc(TOPUP.amount) + '" placeholder="500"' +
-          (TOPUP.ask || TOPUP.busy ? ' disabled' : '') + '></div>' +
-        (TOPUP.err ? '<span class="small" style="color:var(--clay)">' + esc(TOPUP.err) + '</span>' : '') +
-        '<div class="group"><span class="label">Чем</span><div class="seg">' +
-          [['cash', 'Наличные'], ['card', 'Карта']].map(function (x) {
-            return '<button type="button" data-action="t-method:' + x[0] + '"' +
-              (TOPUP.method === x[0] ? ' aria-pressed="true"' : '') + (TOPUP.ask || TOPUP.busy ? ' disabled' : '') + '>' + x[1] + '</button>';
-          }).join('') + '</div></div>' +
-        (TOPUP.busy ? '<button type="button" class="btn" disabled>Вносим…</button>'
-         : TOPUP.ask && amt !== null
-           ? '<div class="card"><b>Внести ' + money(amt) + ' ฿ ' + how + ' на свой счёт?</b>' +
-               '<span class="small">Это настоящая запись в книге клуба: внесли вы, себе.</span>' +
-               '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="t-keep">Не вносить</button>' +
-               '<button type="button" class="btn" data-action="t-send">Внести</button></span></div>'
-           : '<button type="button" class="btn" data-action="t-ask">Внести себе на счёт</button>') +
-        '<div class="note">' + svg(ICON.info) +
-          '<span>Ошибочную запись отменяет касса отменой строки — в приложении этого пока нет.</span></div>' +
-        (TOPUP.from === 'home' ? '' : '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>');
-    }
     // Пополнение члена клуба (Cafe13KPG#500): ПЕРЕПИСАННАЯ ветка этого же экрана, а не новый; кадры E52*
     return (FLASH ? flash() : '') + topupMember() +
       // «Вернуться в меню» — только у «чужими глазами» (E52d); у остальных выход — «назад» оболочки
@@ -7486,7 +7420,7 @@ var BACK = {
   barRecipe: function () { return 'drink'; },
   topup: function () {
     // форма и история члена клуба — состояния того же экрана: «назад» сперва к путям (E52)
-    if (!canTopup() && (TUP.online || TUP.hist)) { TUP.online = false; TUP.hist = false; return 'topup'; }
+    if (TUP.online || TUP.hist) { TUP.online = false; TUP.hist = false; return 'topup'; }
     return TOPUP.from === 'home' ? 'home' : 'bar';
   },
   barMoney: function () { return BOOK.from; },
@@ -7688,7 +7622,7 @@ function go(screen, p) {
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
   if (screen === 'noAccess' && current !== 'noAccess') { JOIN.err = ''; JOIN.fileErr = ''; loadJoin(); }
   if (screen === 'joinAbout' && current !== 'joinAbout') loadAbout();
-  if (screen === 'topup' && current !== 'topup' && !canTopup()) {
+  if (screen === 'topup' && current !== 'topup') {
     TUP.online = false; TUP.hist = false; TUP.err = ''; TUP.fileErr = '';
     if (LIVE && !(TEST.on && TEST.as)) loadTopups();
   }
@@ -7886,14 +7820,6 @@ function doAction(a) {
       return;
     }
     if (a === 'q-making' || a === 'q-ready' || a === 'q-served') { setState(Number(arg), a.slice(2)); return; }
-    if ((a === 't-method' || a === 't-ask') && document.getElementById('t-amount'))
-      TOPUP.amount = document.getElementById('t-amount').value;
-    if (a === 't-method') { TOPUP.method = arg === 'card' ? 'card' : 'cash'; render(); return; }
-    if (a === 't-ask') {
-      TOPUP.err = topupAmount(TOPUP.amount) === null ? 'Сумма — число больше нуля, например 500.' : '';
-      TOPUP.ask = !TOPUP.err; render(); return;
-    }
-    if (a === 't-keep') { TOPUP.ask = false; render(); return; }
     if (a === 'tp-find') { tillFind(val('tp-code')); return; }
     if (a === 'tp-next') { tillReset(); TP.code = ''; go('staff'); return; }
     if (a === 'tp-open') { TP.done = null; tillOpen(arg); return; }
@@ -7939,7 +7865,6 @@ function doAction(a) {
       if (BOOK.err && a !== 'b-ask') BOOK.err = bookMissing() && BOOK.err;
       haptic(); render(); return;
     }
-    if (a === 't-send') { topupSend(); return; }
     if (a.slice(0, 2) === 'c-' && (current === 'barCards' || current === 'barCard')) {
       if (CARD.busy) return;
       grabCard();
