@@ -2944,6 +2944,11 @@ if (grantsSet.length !== 1) {
       if (await r.p.$('#tu-send:not([disabled])')) { await r.p.click('#tu-send'); await r.p.waitForTimeout(400); }
       const req = r.calls.filter(c => c.method === 'POST' && c.url.endsWith('/topup/request')).length;
       if (req !== 1) bad.push(`${n}: заявка на пополнение ушла ${req} раз, ждали 1 — пары «путь есть» нет`);
+      // и на ЕДИНСТВЕННОМ пути, который реально отправляет (обход до sendTopup не доходит — без чека она выходит
+      // первой строкой), внесения себе нет тоже (подлог arhitector-47: /till перед /topup/request — был зелёным)
+      const selfR = r.calls.filter(c => c.method === 'POST' && c.url.endsWith('/till')).filter(c => {
+        try { const b = JSON.parse(c.body || '{}'); return b.kind === 'topup' && b.member_id === own; } catch (e) { return true; } });
+      if (selfR.length) bad.push(`${n}: заявка отправлена вместе с внесением себе — POST /till ${JSON.stringify(selfR.map(c => c.body))}`);
       await r.ctx.close();
     }
   }
