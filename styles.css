@@ -10,6 +10,45 @@
   --paper: #F2F2EE;
   --card: #FFFFFF;
   --surface: #EDEDE8;
+  /* ⚠ ДВЕ РОЛИ У ЭТИХ ДВУХ ТОКЕНОВ, и порог у них РАЗНЫЙ.
+     --line — разделитель и группировка: карточка-контейнер, rows, paper,
+     панель вкладок, шапка, shot, пилюля, пунктирные ЗАГЛУШКИ (ph.none,
+     tile.empty, qr .place). Порога у них нет: по этим линиям элемент
+     управления не опознают.
+     --muted — подпись (ТЕКСТ, порог 4.5) и ГРАНИЦА ЭЛЕМЕНТА УПРАВЛЕНИЯ
+     (порог 3.0, WCAG 2.1 SC 1.4.11 «Non-text Contrast»): поля, select,
+     textarea, тихая и погашенная кнопки, сегменты, шаговик, круглые
+     кнопки, чипы, строки списка, «выдать», остаток в шапке, кнопки
+     недели, способ пополнения (.way), выбор файла чека (.box.dashed) и
+     карточка в КНОПОЧНОЙ форме (button.card) — восемнадцать правил
+     (Cafe13KPG#712).
+     ⚠ ПУНКТИР ДЕЛИТСЯ ПО РОЛИ, а не по начертанию: заглушка «тут будет
+     картинка» порога не имеет, а `.box.dashed` — это `<label for>` выбора
+     файла, то есть единственный контур поля, и порог у него есть.
+     ⚠ И КЛАСС, СЛУЖАЩИЙ ДВУМ РОЛЯМ, разводится ТЕГОМ: `.card` —
+     контейнер, `button.card` — элемент управления. Правило стоит у самой
+     `.card`; три последних случая нашёл `arhitector-47` на ревью, мой
+     прибор их не достал (его подлежащим был список селекторов, а не все
+     рамки экрана).
+     На --line рамки управления давали 1.12 светлая / 1.21 тёмная при норме
+     3.0; стало 5.50 / 8.15 — это худшая пара среди рамок ПОКОЯ, у состояний
+     свои цвета и свои числа. Рамка мерится с ДВУХ сторон (внутри заливка
+     самого элемента, снаружи подложка родителя) и судится по лучшей: нажатый
+     сегмент залит тушью и рамку имеет ту же, и по внутренней паре здоровое
+     состояние краснело бы. Числа сняты ОТРИСОВКОЙ 31.10.2026: из токенов
+     выходит 1.17/1.31, потому что поле лежит на --surface, а не на --card.
+     Взят существующий токен, а не новый цвет: выбор владельца 31.10.2026
+     по трём отрисованным вариантам — новых значений в палитре не появилось.
+     ⚠ СОСТОЯНИЯ НЕ ТРОНУТЫ, и это куплено отрисовкой, а не осторожностью:
+     граница бывает единственной приметой выбора — латунь у `.mf .chip.on`
+     и `.wk > button.on`, тушь у `.seg button[aria-pressed="true"]`, глина у
+     `.listitem.warm`, латунь у `.chip.paid`. Здесь их держит специфичность
+     (у состояния класс лишний), и это проверено отрисовкой обеих тем.
+     Первый вариант, отрисованный владельцу, поднимал контраст ОДНИМ
+     правилом поверх чипов и стёр выбранный день — а пара рамка/фон при
+     этом честно выросла с 1.12 до 3.02, то есть прибор контраста был бы
+     зелёный на сломанном экране. Поднимая контраст покоя, спрашивай каждое
+     состояние, чья примета — граница. */
   --line: #E2E1D9;
   --muted: #5A5F63;
   --gold: #C89B4A;
@@ -115,7 +154,7 @@ main { position: relative; z-index: 1; }
 
 .bar-right { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; }
 .bar-right:empty { display: none; }
-.bal { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink);
+.bal { border: 1px solid var(--muted); border-radius: 999px; background: transparent; color: var(--ink);
        min-height: 32px; padding: 0 12px; font-family: 'Golos Text', sans-serif; font-size: 14px; font-weight: 600;
        font-variant-numeric: tabular-nums; cursor: pointer; }
 .bal[aria-pressed="false"] { color: var(--muted); letter-spacing: 1px; }
@@ -181,6 +220,20 @@ b.num, .big { white-space: nowrap; }
 /* «не закончено», а не запрет: исход приёма неизвестен (кадр E34zh) */
 .card.warm { background: var(--deny-bg); border-color: var(--clay); }
 .card.warm b, .card.warm .small { color: var(--clay-ink); }
+
+/* ⚠ КЛАСС, СЛУЖАЩИЙ И КОНТЕЙНЕРОМ, И КНОПКОЙ, получает порог ТОЛЬКО В
+   КНОПОЧНОЙ ФОРМЕ. `.card` — разделитель, порога у него нет (см. блок у
+   токенов). Но строка человека в «Членах клуба» — это `<button class="card
+   dense fold">`, то есть элемент управления, и опознаётся он этой самой
+   рамкой; своей границы у `.card.dense.fold` нет вовсе, она берётся у
+   `.card`. Поэтому порог даётся ТЕГУ, а не классу: перевести `.card`
+   целиком значило бы сделать правку шире предмета — уехали бы границы всех
+   карточек-контейнеров, у которых порога нет.
+   Нашёл `arhitector-47` на ревью `Cafe13KPG#712`; мой прибор этого не достал,
+   потому что подлежащим у него был СПИСОК селекторов, а не все рамки экрана.
+   ⚠ Состояния выше по специфичности и переживают это правило: `.card.quiet`
+   и `.card.dense.open` снимают границу вовсе (0,2,0 и 0,3,0 против 0,1,1). */
+button.card { border-color: var(--muted); }
 /* возврат автору в строке списка (E39): незакрытое, ждёт действия — глина */
 .listitem.warm { background: var(--deny-bg); border-color: var(--clay); }
 .said { font-size: 12px; color: var(--clay-ink); }
@@ -194,12 +247,12 @@ b.num, .big { white-space: nowrap; }
   cursor: pointer; padding: 0 16px;
 }
 .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
-.btn.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); min-height: 42px; font-size: 13px; width: auto; align-self: flex-start; padding: 0 14px; white-space: nowrap; }
+.btn.quiet { background: transparent; color: var(--muted); border: 1px solid var(--muted); min-height: 42px; font-size: 13px; width: auto; align-self: flex-start; padding: 0 14px; white-space: nowrap; }
 .btn.mini { min-height: 38px; width: auto; font-size: 13px; padding: 0 14px; white-space: nowrap; }
 .btn[disabled] {
   /* серое с рамкой = нельзя, на всех экранах одним обликом; прежние .55 по латуни
      давали подписи контраст около 2.45 — нечитаемо (designer-55, к Cafe13KPG#459) */
-  background: var(--surface); color: var(--muted); border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted); border: 1px solid var(--muted);
   opacity: 1;          /* иначе прежняя прозрачность глушит и новые цвета */
   cursor: default;
 }
@@ -208,7 +261,7 @@ b.num, .big { white-space: nowrap; }
 .seg { display: flex; gap: 8px; }
 .seg button {
   flex: 1 1 0; min-height: 44px;
-  border: 1px solid var(--line); border-radius: 9px;
+  border: 1px solid var(--muted); border-radius: 9px;
   background: var(--paper); color: var(--muted);
   font-family: 'Golos Text', sans-serif; font-size: 13px; font-weight: 600;
   cursor: pointer;
@@ -230,13 +283,13 @@ b.num, .big { white-space: nowrap; }
 .qr .place span { font-size: 11px; color: var(--muted); }
 /* Пополнение (кадры E52*): строки путей, ящик чека, статус заявки словом. */
 .way { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px;
-       border-radius: 12px; background: var(--card); border: 1px solid var(--line); width: 100%;
+       border-radius: 12px; background: var(--card); border: 1px solid var(--muted); width: 100%;
        text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .way.off { background: var(--surface); border-color: transparent; color: var(--muted); cursor: default; }
 .way .col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .way .chev { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: var(--muted); stroke-width: 2; }
 .box.dashed { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 12px;
-              border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); cursor: pointer; }
+              border: 1px dashed var(--muted); border-radius: 9px; color: var(--muted); cursor: pointer; }
 .box.dashed svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 .st { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .st.wait { color: var(--muted); }
@@ -255,7 +308,7 @@ b.num, .big { white-space: nowrap; }
 iframe.about { flex: 1 1 auto; display: block; width: 100%; border: 0; }
 
 .listitem {
-  border: 1px solid var(--line); border-radius: 12px;
+  border: 1px solid var(--muted); border-radius: 12px;
   padding: 13px 15px;
   display: flex; align-items: center; gap: 12px;
   background: var(--paper);
@@ -288,7 +341,7 @@ iframe.about { flex: 1 1 auto; display: block; width: 100%; border: 0; }
 .field label { font-size: 12px; color: var(--muted); }
 .field input {
   width: 100%; min-width: 0;
-  min-height: 46px; border: 1px solid var(--line); border-radius: 9px;
+  min-height: 46px; border: 1px solid var(--muted); border-radius: 9px;
   padding: 0 14px; background: var(--paper); color: var(--ink);
   font-family: 'Golos Text', sans-serif; font-size: 15px;
 }
@@ -314,7 +367,7 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .field textarea {
   width: 100%; min-width: 0; min-height: 120px; resize: vertical;
-  border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px;
+  border: 1px solid var(--muted); border-radius: 9px; padding: 12px 14px;
   background: var(--paper); color: var(--ink); font-family: 'Golos Text', sans-serif; font-size: 15px; line-height: 1.4;
 }
 
@@ -430,7 +483,7 @@ body.has-main .dup-main { display: none; }
 .stepper { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
 .stepper button {
   width: 36px; height: 36px; border-radius: 9px;
-  border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+  border: 1px solid var(--muted); background: var(--paper); color: var(--ink);
   font-family: 'Golos Text', sans-serif; font-size: 18px; font-weight: 700; line-height: 1;
   cursor: pointer;
 }
@@ -489,7 +542,7 @@ body.has-main .dup-main { display: none; }
    стрелка — фоном, и ЦВЕТ В data: ЗАПЕЧЁН: var() внутри него не работает. Отсюда второе объявление в
    тёмной теме. ⚠ Меняется --muted — меняются оба %23-цвета ниже. Раскрытый список рисует движок, и
    тему он берёт из `color-scheme` (:root, обе темы). */
-.field select { min-height: 46px; width: 120px; border: 1px solid var(--line); border-radius: 9px; padding: 0 36px 0 12px;
+.field select { min-height: 46px; width: 120px; border: 1px solid var(--muted); border-radius: 9px; padding: 0 36px 0 12px;
                 color: var(--ink); font-family: 'Golos Text', sans-serif; font-size: 15px;
                 -webkit-appearance: none; appearance: none; cursor: pointer;
                 background: var(--paper) url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235A5F63' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center / 18px 18px; }
@@ -497,7 +550,7 @@ body.has-main .dup-main { display: none; }
   background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23B8B6AE' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); }
 .counter { display: flex; align-items: center; gap: 14px; }
 .counter .num { min-width: 86px; text-align: center; }
-.counter .round { border: 1px solid var(--line); width: 34px; height: 34px; font-size: 17px; color: var(--ink); }
+.counter .round { border: 1px solid var(--muted); width: 34px; height: 34px; font-size: 17px; color: var(--ink); }
 .counter .round[disabled] { color: var(--muted); opacity: .45; cursor: default; }
 .tap { background: none; border: 0; padding: 0; margin: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; flex: 1 1 auto; }
 
@@ -613,7 +666,7 @@ body.has-main .dup-main { display: none; }
    («Ждут ответа» / «Кто в клубе и с какими уровнями»): это клиентский `.small`. */
 .chip { display: inline-flex; align-items: center; gap: 6px;
         font-size: 12px; color: var(--muted); background: var(--paper);
-        border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px;
+        border: 1px solid var(--muted); border-radius: 8px; padding: 5px 8px;
         font-family: 'Golos Text', sans-serif; line-height: 1.15; }
 
 .chip svg { width: 13px; height: 13px; flex: 0 0 auto; fill: none;
@@ -674,7 +727,7 @@ body.has-main .dup-main { display: none; }
    ловится (поймал снимок designer-55; у нас на это стоит случай с длинным именем). */
 .outbtn { font-family: 'Golos Text', sans-serif; font-size: 12px; font-weight: 700;
           color: var(--clay); background: var(--paper);
-          border: 1px solid var(--line); border-radius: 8px;
+          border: 1px solid var(--muted); border-radius: 8px;
           padding: 5px 8px; line-height: 1.15;
           white-space: nowrap; cursor: pointer; }
 
@@ -711,7 +764,7 @@ body.has-main .dup-main { display: none; }
 
 .grant { display: flex; align-items: center; justify-content: space-between;
          gap: 10px; padding: 9px 12px; border-radius: 9px;
-         background: var(--paper); border: 1px solid var(--line); }
+         background: var(--paper); border: 1px solid var(--muted); }
 
 .grant.off { background: var(--surface); border-color: transparent; color: var(--muted); }
 
@@ -754,14 +807,14 @@ body.has-main .dup-main { display: none; }
 /* ── афиша неделей (E60, вариант А владельца): семь колонок РАВНОЙ доли — фиксированные на 390 вылезли бы
    за край; полоска без текста — признание предела (название в ≈47 px не входит), что именно — список дня ── */
 .wknav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
-.wknav .round { border: 1px solid var(--line); width: 34px; height: 34px; border-radius: 50%;
+.wknav .round { border: 1px solid var(--muted); width: 34px; height: 34px; border-radius: 50%;
                 font-size: 17px; color: var(--ink); background: var(--card); }
 .wknav .round[disabled] { color: var(--muted); opacity: .45; cursor: default; }
 .wk { display: flex; gap: 4px; }
 /* кнопка центрирует содержимое по высоте — у дня с тремя полосками число съезжало вверх (снимок): прижато к верху */
 .wk > button { flex: 1 1 0; min-width: 0; text-align: center; font: inherit; color: var(--ink); cursor: pointer;
                display: flex; flex-direction: column; justify-content: flex-start;
-               border: 1px solid var(--line); border-radius: 10px; padding: 7px 2px 8px; background: var(--card); }
+               border: 1px solid var(--muted); border-radius: 10px; padding: 7px 2px 8px; background: var(--card); }
 .wk > button.on { border-color: var(--accent); background: var(--surface); }
 .wk .d { display: block; font-size: 11px; color: var(--muted); }
 .wk .n { display: block; font-size: 15px; font-weight: 600; margin-top: 1px; }
