@@ -265,7 +265,9 @@ var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клу�
                   // Cafe13KPG#503). Роль общая, без направления; выдаёт глава клуба (Cafe13KPG#514).
                   // Подпись — слово владельца 29.10.2026: «все ответственности на русском, а эта из кода —
                   // „Пополнение онлайн“». Имя роли в схеме остаётся `topups`; меняется только подпись
-                  topups: 'Пополнение онлайн' };
+                  topups: 'Пополнение онлайн',
+                  // роль мастера (api миграция 020); без ключа печаталось сырое `master` латиницей (Cafe13KPG#682)
+                  master: 'Мастер' };
 
 /* Дата конца членства в строке имени — ЧИСЛАМИ (кадр E47p: «· до 12.11.2026»), а не словами:
    `ruDate` даёт «12 ноября 2026» и в строку рядом с именем не помещается.
@@ -3184,14 +3186,9 @@ function masterOffer() {
   if (MR.mineState === 'loading' && !MR.mine) return '';
   if (MR.mineState !== 'ok' && !MR.mine) return '<div class="card quiet"><div class="row"><span class="small">Заявки в мастера не загрузились: ' +
       esc(MR.mineState) + '</span><button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>';
-  var own = msOwnSlot();
-  if (msIsMaster()) return '<div class="card"><div class="col"><b>Вы мастер</b>' +
-      // «покупают один раз» снято — ложь при оплате по месяцам (слово владельца «Не правильно - на месяц»); слова ждут кадра
-      (own && own.paidUntil ? '<span class="small">Оплачено до ' + esc(msDate(own.paidUntil)) + '</span>' : '') +
-      '<span class="small">Своё время и ивент — в «Ивентах». Слот — ' + (typeof MR.price[2] === 'number' ? money(MR.price[2]) + ' ฿' : 'оплата') +
-        ' в календарный месяц: продлевается оплатой, неоплаченный отдаётся.</span></div>' +
-      // продление — только у своей СОГЛАСОВАННОЙ заявки: у мастера по старому виду членства слота нет
-      (own ? '<button type="button" class="btn ghost" data-go="masterRenew">Продлить</button>' : '') + '</div>';
+  // блок «Вы мастер» снят (E68, Cafe13KPG#682): условие слота живёт на «Продлении» числами, а дверь
+  // туда — «Продлить» под ролями (masterRenewDoor)
+  if (msIsMaster()) return '';
   var last = MR.mine[0];
   if (last && last.status === 'pending') return '<div class="card quiet"><div class="row"><div class="col"><b>Заявка в мастера</b>' +
       '<span class="small">' + esc(topupDay(last.iso, true)) + '</span></div><span class="st wait">' + esc(last.word) + '</span></div>' +
@@ -5095,12 +5092,14 @@ var SCREENS = {
     var m = DATA.member;
     var next = LIVE ? null : DATA.upcoming[0];
     return (FLASH ? flash() : '') +
+      // E68 (Cafe13KPG#682): «Активно» в строке заголовка, «Пропуск» — короткой кнопкой справа в плашке.
+      // Подпись короткая по замеру дизайнера: «Показать пропуск» — 145 px и перенос даты на вторую строку
       '<div class="card strong">' +
         '<div class="row top">' +
-          '<div class="col"><h2>' + esc(m.level) + '</h2><span class="small">' + esc(untilText(m)) + '</span></div>' +
-          '<span class="pill on">Активно</span>' +
+          '<div class="col grow"><div class="row" style="justify-content:flex-start;gap:8px"><h2>' + esc(m.level) + '</h2><span class="pill on">Активно</span></div>' +
+            '<span class="small">' + esc(untilText(m)) + '</span></div>' +
+          '<button type="button" class="btn quiet mini" data-go="pass">Пропуск</button>' +
         '</div>' +
-        '<button type="button" class="btn" data-go="pass">' + svg('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3z"/>') + 'Показать пропуск</button>' +
       '</div>' +
 
       // карточки «Баланс» здесь больше нет: остаток живёт в шапке (v83), а две суммы на
@@ -7120,14 +7119,21 @@ function notWired(what) {
   '</div></div>';
 }
 
+// E68: «Продлить» — прямо под ролями, а не в конце экрана: прочтя роль, мастер видит, где платить.
+// Только у своей СОГЛАСОВАННОЙ заявки: у мастера по старому виду членства слота нет
+function masterRenewDoor() {
+  return LIVE && msIsMaster() && msOwnSlot() ? '<button type="button" class="btn ghost" data-go="masterRenew">Продлить</button>' : '';
+}
+
 function myRoles() {
-  if (!DATA.roles || !DATA.roles.length) return '';
+  var door = masterRenewDoor();
+  if (!DATA.roles || !DATA.roles.length) return door;
   return '<div class="group"><span class="label">Ваши роли</span><div class="card quiet"><div class="row" style="flex-wrap:wrap;gap:6px;justify-content:flex-start">' +
     // head и god_mentor у владельца — одно и то же звание: одна плашка
     DATA.roles.map(function (r) { return ROLE_NAME[r] || r; })
       .filter(function (n, i, all) { return all.indexOf(n) === i; })
       .map(function (n) { return '<span class="pill">' + esc(n) + '</span>'; }).join('') +
-  '</div></div></div>';
+  '</div></div>' + door + '</div>';
 }
 
 /* У каждой роли свои действия. Пересечений нет: организатор не заводит
