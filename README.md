@@ -58,9 +58,40 @@ python3 -I tools/keys.py <тот же каталог> > tools/api-keys.json
 серверу не ходит):
 
 ```bash
-docker run --rm -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
+docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /app/tools/live.cjs
 ```
+
+⚠ **`--memory` и `--memory-swap` обязательны у КАЖДОГО запуска образа, и
+`--rm` тоже.** Клетка
+сессии контейнер не ограничивает: `systemd-run --user --scope -p MemoryMax=2G`
+доезжает до обёртки, но не до контейнера — внутри `memory.max` равен `max`
+(замер мой, 31.10.2026, пара с отрицательным контролем: с `--memory=2g`
+там `2147483648`; то же независимо снял `designer-55` — его числа стоят у
+`indocker()` в `tools/pered-mergem.sh`). Без предела прогон, съевший
+память, роняет ЧУЖИЕ прогоны на
+хосте, а своя смерть от нехватки выглядит как `ENOENT` на файле в
+смонтированном томе, а не как «убит».
+
+Почему 2 ГБ: пики, снятые изнутри образа по `/sys/fs/cgroup/memory.peak` под
+`--memory=2g` (31.10.2026, дерево `ae99b12`) — `shots.cjs` **629 МБ**,
+`live.cjs` **500**, `vidimost.cjs` **157**. У `shots.cjs` это МАКСИМУМ из
+четырёх наблюдений (629 · 238 · 235 · 233): числа разъезжаются в 2,7 раза,
+причина не найдена, поэтому в предел заложен максимум, а не среднее. У двух
+других — ОДНО наблюдение каждое, то есть не максимум, а просто замер; знать,
+насколько они разъезжаются, пока нечем. Запас втрое к худшему известному.
+Не уложится — предел правят ЗАМЕРОМ, названным числом, а не снимают.
+
+⚠ Второй флаг не для красоты: **без `--memory-swap` docker ставит
+`memory.swap.max` равным самому пределу** (замер 31.10.2026: `--memory=2g` →
+`memory.swap.max=2147483648`; с `--memory-swap=2g` → `0`). То есть на хосте с
+подкачкой потолок выходит ВДВОЕ выше названного — и это не запас на будущее:
+подкачка тут ЕСТЬ, `SwapTotal` 8 ГБ по `/proc/meminfo` (перемерено
+01.11.2026, занято 2,2 ГБ). Без второго флага потолок у этих прогонов —
+настоящие 4 ГБ, а не названные 2. ⚠ Прежняя редакция абзаца говорила
+«подкачки нет, флаг стоит ради других хостов»: НЕ ВОСПРОИЗВЕЛОСЬ, и вывод был
+обратный правильному. Канон требует того же для процессов хоста
+(`-p MemorySwapMax=0`).
 
 Что выкладываемый `app.js` действительно живой — `node tools/api-on.cjs`
 (без браузера, секунда): падает, если `var API_ON = true;` нет, если значение
@@ -84,7 +115,7 @@ docker run --rm -v $PWD:/app:ro -v <каталог-снимков>:/work -w /wor
 собирает `tools/catalog.py`.
 
 ```bash
-docker run --rm -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
+docker run --rm --memory=2g --memory-swap=2g -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /work/shots.cjs
 python3 tools/catalog.py <каталог-снимков>
 ```
@@ -115,7 +146,7 @@ python3 tools/catalog.py <каталог-снимков>
 
 ```bash
 # путь шести живых людей по входам клиента — считает САМ клиент, второй реализации нет
-docker run --rm -v $PWD:/app:ro -v $PWD/screens:/work -w /work \
+docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v $PWD/screens:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /work/vidimost.cjs
 # стадия против реестра ВЫЛОЖЕННОГО клиента — падающая проверка
 python3 -I tools/check-stages.py                 # 0 сошлось · 1 красное · 2 не выполнено
