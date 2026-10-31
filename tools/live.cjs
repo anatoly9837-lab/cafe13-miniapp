@@ -82,8 +82,10 @@ const msLife = clone(OWNER); msLife.memberships[0].lifelong = 'true';   // ст�
 const msNoEnd = clone(OWNER); msNoEnd.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: false });
 
 /* [имя, внутри Telegram, API_ON, ответ /me, есть, нет, сколько запросов к API, после] */
-/* «Баланс» в «нет …» ниже был признаком КАБИНЕТА на экране отказа; карточка остатка ушла с главной (v87),
-   и признак ослеп бы — теперь кабинет узнаётся по «Показать пропуск». */
+/* Кабинет на экране отказа узнаётся ДВЕРЬЮ к пропуску `#view [data-go="pass"]` (CABINET ниже), а не подписью:
+   признак-текст слеп дважды — «Баланс» ушёл с главной (v87), «Показать пропуск» стал «Пропуск» (v124,
+   Cafe13KPG#682), и все «нет …» с ним молча зеленели. Предел: переименуют data-go — ослепнет и дверь, но
+   тогда покраснеет пара «дверь есть» у кабинетов. */
 const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
     // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
@@ -93,21 +95,21 @@ const CASES = [
     ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 5],
   ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 5],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
-    ['Подпись не принята'], ['Показать пропуск', 'нет в списке'], 1],
+    ['Подпись не принята'], ['нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
     // + GET /join: экран просьбы спрашивает сервер сам (Cafe13KPG#459); здесь /join тоже 403
-    ['Вас ещё нет в списке'], ['Показать пропуск', 'Подпись не принята', 'Член клуба'], 2],
-  ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], ['Показать пропуск'], 1],
-  ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], ['Показать пропуск'], 1],
+    ['Вас ещё нет в списке'], ['Подпись не принята', 'Член клуба'], 2],
+  ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], [], 1],
+  ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], [], 1],
   ['html-200', true, true, { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
-    ['Ответ сервера не разобран'], ['Показать пропуск'], 1],
-  ['finite-without-end', true, true, json(200, noEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
-  ['memberships-none', true, true, json(200, msNone), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
-  ['memberships-object', true, true, json(200, msObj), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
-  ['memberships-alien', true, true, json(200, msAlien), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
-  ['memberships-lifelong-str', true, true, json(200, msLife), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
-  ['memberships-noend', true, true, json(200, msNoEnd), ['Ответ сервера не разобран'], ['Пожизненно', 'Показать пропуск'], 1],
-  ['network-down', true, true, 'abort', ['Сервер не ответил'], ['Показать пропуск'], 1],
+    ['Ответ сервера не разобран'], [], 1],
+  ['finite-without-end', true, true, json(200, noEnd), ['Ответ сервера не разобран'], ['Пожизненно'], 1],
+  ['memberships-none', true, true, json(200, msNone), ['Ответ сервера не разобран'], ['Пожизненно'], 1],
+  ['memberships-object', true, true, json(200, msObj), ['Ответ сервера не разобран'], ['Пожизненно'], 1],
+  ['memberships-alien', true, true, json(200, msAlien), ['Ответ сервера не разобран'], ['Пожизненно'], 1],
+  ['memberships-lifelong-str', true, true, json(200, msLife), ['Ответ сервера не разобран'], ['Пожизненно'], 1],
+  ['memberships-noend', true, true, json(200, msNoEnd), ['Ответ сервера не разобран'], ['Пожизненно'], 1],
+  ['network-down', true, true, 'abort', ['Сервер не ответил'], [], 1],
   ['outside-telegram', false, true, json(200, OWNER),
     // «1 250» (демо-остаток) ушёл с главной в скрытую шапку (v87); витрину держат срок и афиша демонстрации
     ['Действует до 14 ноября', 'Звуковая практика'], ['Пожизненно'], 0],
@@ -120,6 +122,13 @@ const REFUSAL = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200
                          'finite-without-end', 'network-down']);
 // Опечатка в имени молча выключила бы проверку для случая — ловим здесь.
 REFUSAL.forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('REFUSAL: нет случая ' + n); });
+// признак кабинета: дверь к пропуску на главной. На экранах отказа её нет, у кабинетов — есть (пара: без неё
+// отсутствие на отказах доказывало бы только, что признак мёртв)
+const CABINET = '#view [data-go="pass"]';
+const NO_CABINET = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200', 'html-200', 'finite-without-end',
+  'memberships-none', 'memberships-object', 'memberships-alien', 'memberships-lifelong-str', 'memberships-noend', 'network-down']);
+const HAS_CABINET = new Set(['owner-lifelong', 'finite', 'outside-telegram', 'api-off']);
+[...NO_CABINET, ...HAS_CABINET].forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('CABINET: нет случая ' + n); });
 
 // выключатель ищется в любом положении: тест сам ставит нужное. Не один —
 // падаем сразу и своим текстом, а не таймаутом на подменённой странице.
@@ -215,6 +224,9 @@ if (grantsSet.length !== 1) {
       bad.push(`${name}: плашек «Глава клуба» ${pills.filter(x => x === 'Глава клуба').length}, ждали 1`);
     if (s.calls.length !== n) bad.push(`${name}: запросов к API ${s.calls.length}, ждали ${n}`);
     s.calls.forEach(c => { if (c.init !== INIT) bad.push(`${name}: заголовок подписи «${c.init}»`); });
+    const cab = !!(await s.p.$(CABINET));
+    if (NO_CABINET.has(name) && cab) bad.push(`${name}: на экране отказа дверь к пропуску — показан кабинет`);
+    if (HAS_CABINET.has(name) && !cab) bad.push(`${name}: в кабинете нет двери к пропуску ${CABINET} — признак кабинета мёртв`);
     if (REFUSAL.has(name) && await s.tabsShown())
       bad.push(`${name}: на экране отказа видны вкладки`);
     if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
@@ -834,11 +846,37 @@ if (grantsSet.length !== 1) {
         const api = rnwApi(o, prev);
         const s = await open(true, true, json(200, mem(9000, [])), null, null, null, wrap ? wrap(api) : api);
         await s.p.waitForTimeout(300);
-        if (!(await s.view()).includes('Оплачено до 30.11.2026')) bad.push(`${n}: на «Клубе» нет «Оплачено до 30.11.2026»`);
         const ok = await tapIf(s, n, '#view [data-go="masterRenew"]', '«Продлить» на «Клубе»');
         await s.p.waitForTimeout(300);
+        // срок слота — на «Продлении», а не на «Клубе» (E68, Cafe13KPG#682: блок «Вы мастер» снят)
+        if (ok && !(await s.view()).includes('Оплачено до 30.11.2026')) bad.push(`${n}: на «Продлении» нет «Оплачено до 30.11.2026»`);
         return { s, ok };
       };
+      // «Клуб» мастера по E68 (Cafe13KPG#682): роль по-русски, «Продлить» сразу под карточкой ролей и только у своего
+      // СОГЛАСОВАННОГО слота; блока «Вы мастер» со сроком на «Клубе» нет. Мастер без слота — по уровню organizer
+      for (const [n, slot] of [['klub-master-dver', true], ['klub-master-bez-slota', false]]) {
+        const o = { mine: () => slot ? [mreq(901, 'approved', { paid_until: '2026-11-30' })] : [] };
+        const me = mem(9000, ['master']);
+        if (!slot) me.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-01-31T00:00:00+00:00', lifelong: false });
+        const s = await open(true, true, json(200, me), null, null, null, rnwApi(o));
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        const f = await s.p.evaluate(() => {
+          const d = document.querySelector('#view [data-go="masterRenew"]'), pills = [...document.querySelectorAll('#view .pill')].map(e => e.textContent);
+          const prev = d && d.previousElementSibling, g = d && d.closest('.group');
+          return { door: !!d, pills, afterRoles: !!prev && prev.matches('.card') && !!prev.querySelector('.pill'),
+            group: g ? (g.querySelector('.label') || {}).textContent : null };
+        });
+        if (/\bmaster\b/.test(t)) bad.push(`${n}: на «Клубе» латинское «master» — роль без русского имени`);
+        if (!f.pills.includes('Мастер')) bad.push(`${n}: роли «Мастер» на «Клубе» нет: ${JSON.stringify(f.pills)}`);
+        if (t.includes('Вы мастер') || t.includes('Оплачено до')) bad.push(`${n}: на «Клубе» блок «Вы мастер» со сроком — по E68 он снят`);
+        if (slot) {
+          if (!f.door) bad.push(`${n}: у мастера с согласованным слотом нет «Продлить» на «Клубе»`);
+          else if (!f.afterRoles || f.group !== 'Ваши роли') bad.push(`${n}: «Продлить» не сразу под карточкой ролей (${JSON.stringify(f)})`);
+        } else if (f.door) bad.push(`${n}: у мастера без согласованного слота есть «Продлить» — продлевать нечего`);
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
       // 1. отправка: два месяца — цена и дата от сервера; до конца окна запроса нет, после — ровно один {months:2}
       {
         const n = 'rnw-send', o = {};
