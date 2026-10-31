@@ -58,11 +58,12 @@ python3 -I tools/keys.py <тот же каталог> > tools/api-keys.json
 серверу не ходит):
 
 ```bash
-docker run --rm --memory=2g -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
+docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /app/tools/live.cjs
 ```
 
-⚠ **`--memory` обязателен у КАЖДОГО запуска образа, и `--rm` тоже.** Клетка
+⚠ **`--memory` и `--memory-swap` обязательны у КАЖДОГО запуска образа, и
+`--rm` тоже.** Клетка
 сессии контейнер не ограничивает: `systemd-run --user --scope -p MemoryMax=2G`
 доезжает до обёртки, но не до контейнера — внутри `memory.max` равен `max`
 (замер 31.10.2026, пара с отрицательным контролем: с `--memory=2g` там
@@ -77,6 +78,14 @@ docker run --rm --memory=2g -v $PWD:/app:ro -v <каталог-снимков>:/
 причина не найдена, поэтому в предел заложен максимум, а не среднее. У двух
 других — ОДНО наблюдение каждое, то есть не максимум, а просто замер; знать,
 насколько они разъезжаются, пока нечем. Запас втрое к худшему известному. Не уложится — предел правят ЗАМЕРОМ, названным числом, а не снимают.
+
+⚠ Второй флаг не для красоты: **без `--memory-swap` docker ставит
+`memory.swap.max` равным самому пределу** (замер 31.10.2026: `--memory=2g` →
+`memory.swap.max=2147483648`; с `--memory-swap=2g` → `0`). То есть на хосте с
+подкачкой потолок выходит ВДВОЕ выше названного. На `fr-hbd06` подкачки нет
+(`Swap: 0`), и сегодня флаг не меняет ничего — он стоит ради других хостов и
+ради того, чтобы названное число было потолком, а не половиной его. Канон
+требует того же для процессов хоста (`-p MemorySwapMax=0`).
 
 Что выкладываемый `app.js` действительно живой — `node tools/api-on.cjs`
 (без браузера, секунда): падает, если `var API_ON = true;` нет, если значение
@@ -100,7 +109,7 @@ docker run --rm --memory=2g -v $PWD:/app:ro -v <каталог-снимков>:/
 собирает `tools/catalog.py`.
 
 ```bash
-docker run --rm --memory=2g -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
+docker run --rm --memory=2g --memory-swap=2g -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /work/shots.cjs
 python3 tools/catalog.py <каталог-снимков>
 ```
@@ -131,7 +140,7 @@ python3 tools/catalog.py <каталог-снимков>
 
 ```bash
 # путь шести живых людей по входам клиента — считает САМ клиент, второй реализации нет
-docker run --rm --memory=2g -v $PWD:/app:ro -v $PWD/screens:/work -w /work \
+docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v $PWD/screens:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /work/vidimost.cjs
 # стадия против реестра ВЫЛОЖЕННОГО клиента — падающая проверка
 python3 -I tools/check-stages.py                 # 0 сошлось · 1 красное · 2 не выполнено
