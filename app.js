@@ -3041,7 +3041,7 @@ function msNoteSync() {
   var t = document.getElementById('ms-note'); if (!t) return;
   MR.note = t.value;
   var b = document.querySelector('#view [data-action^="ms-no:"]'), w = document.getElementById('ms-why'), empty = !MR.note.trim();
-  if (b) b.disabled = empty || MR.busy;
+  if (b) { b.disabled = empty || MR.busy; b.setAttribute('aria-disabled', String(b.disabled)); }
   if (w) w.hidden = !empty;
 }
 document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'ms-note') msNoteSync(); });
@@ -6746,13 +6746,16 @@ var SCREENS = {
       : MR.ask === q.id ? '<div class="field"><label for="ms-note">Почему отказ и что исправить</label>' +
           '<textarea id="ms-note" rows="4" maxlength="500">' + esc(MR.note) + '</textarea>' +
           '<span class="small">Мастер прочтёт это в своей заявке. До 500 знаков.</span></div>' +
-        '<button type="button" class="btn" data-action="ms-no:' + q.id + '"' + (MR.busy || !MR.note.trim() ? ' disabled' : '') +
+        '<button type="button" class="btn" data-action="ms-no:' + q.id + '"' + (MR.busy || !MR.note.trim() ? ' disabled aria-disabled="true"' : ' aria-disabled="false"') +
           ' aria-describedby="ms-why">' + (MR.busy ? 'Отправляем…' : 'Отказать и вернуть деньги') + '</button>' +
         '<span class="small" id="ms-why"' + (MR.note.trim() ? ' hidden' : '') + '>Сначала причина — без неё мастер не узнает, что исправить.</span>' +
         '<button type="button" class="btn quiet" data-action="ms-keep"' + busy + '>Назад</button>'
       : '<button type="button" class="btn" data-action="ms-yes:' + q.id + '"' + busy + '>' + (MR.busy ? 'Отправляем…' : 'Согласовать') + '</button>' +
         '<span class="small">Ивент сразу встанет в афишу. Выключить его можно в «Ивентах».</span>' +
-        '<button type="button" class="btn quiet" data-action="ms-ask:' + q.id + '"' + busy + '>Отказать и вернуть деньги</button>');
+        // кадр E55ж (Cafe13KPG#726): короткий вход «Отказать», а возврат денег назван в точке выбора подписью;
+        // «…и вернуть деньги» стоит на кнопке ОТПРАВКИ — там, где возврат случается
+        '<button type="button" class="btn quiet" data-action="ms-ask:' + q.id + '"' + busy + '>Отказать</button>' +
+        '<span class="small">Деньги вернутся мастеру на счёт.</span>');
   },
 
   // E55e. Единица — СЛОТ (снимок master-slots), выключенный не прячется: иначе включить его негде
