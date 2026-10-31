@@ -4017,6 +4017,7 @@ var EV_ASK = false;        // спрашиваем: отмена меропри�
    прошло» по КОНЦУ, идущее править можно). Права решает сервер; его отказ печатается словами. */
 var EDT = { id: null, seats: '', about: '', busy: false, err: '' };
 function canEditEvent(e) { return isMyEvent(e) && !e.done && mayOwnEvents(); }
+function hmMin(t) { var m = /^(\d{1,2}):(\d{2})$/.exec(t || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; }
 function editGrab() {
   if (!document.getElementById('edt-seats')) return;
   EDT.seats = document.getElementById('edt-seats').value; EDT.about = document.getElementById('edt-about').value;
@@ -4025,7 +4026,8 @@ function editGrab() {
 document.addEventListener('input', function (ev) { if (ev.target && /^edt-/.test(ev.target.id)) editGrab(); });
 function editSave() {
   var e = eventById(EDT.id);
-  if (EDT.busy || !canEditEvent(e)) return;
+  // вне Telegram экран виден (#691), а «Сохранить» в сеть не ходит: витрину открыли посмотреть
+  if (!LIVE || EDT.busy || !canEditEvent(e)) return;
   editGrab();
   var seats = Number(EDT.seats);
   EDT.err = !(String(EDT.seats).trim() !== '' && Math.floor(seats) === seats && seats >= 0 && seats <= 500) ? 'Число мест — целое, от 0 до 500; 0 — без ограничения.'
@@ -5773,12 +5775,16 @@ var SCREENS = {
   eventEdit: function (id) {
     var e = eventById(id);
     if (!e) return EVENTS ? '<div class="card quiet"><span class="small">Этого мероприятия в афише больше нет.</span></div>' : eventsWait();
-    if (!canEditEvent(e)) return '<div class="card quiet"><span class="small">' +
+    // Домашняя форма v117 (Cafe13KPG#691): отказ «не ваше» — только в живом режиме. Вне Telegram
+    // `isMyEvent` ложен по построению, и витрина с описью видели отказ вместо экрана
+    if (e.done || LIVE && !canEditEvent(e)) return '<div class="card quiet"><span class="small">' +
       (e.done ? 'Мероприятие завершилось: править его уже нельзя.' : 'Править это мероприятие может его ведущий.') + '</span></div>';
     var on = e.day.split(',')[0], when = /^(Сегодня|Завтра)$/.test(on) ? on.toLowerCase() : on;
-    var h = Math.round(e.mins / 60 * 10) / 10;
+    // у демо-афиши длительности нет полем — она считается из «с»–«до»
+    var mins = typeof e.mins === 'number' ? e.mins : hmMin(e.until) - hmMin(e.time);
+    var h = Math.round(mins / 60 * 10) / 10;
     return '<div class="card quiet"><div class="col"><b>' + esc(e.title) + '</b>' +
-        '<span class="small">' + esc(e.day + ' · ' + e.time + ' · ' + (h % 1 ? h : h + ' ' + msHours(h)) + (e.place ? ' · ' + e.place : '')) + '</span>' +
+        '<span class="small">' + esc(e.day + ' · ' + e.time + (h > 0 ? ' · ' + (h % 1 ? h : h + ' ' + msHours(h)) : '') + (e.place ? ' · ' + e.place : '')) + '</span>' +
         '<span class="small">Название, время, длительность и место мероприятия здесь не меняются.</span></div></div>' +
       '<div class="field"><label for="edt-seats">Мест</label><input id="edt-seats" type="number" inputmode="numeric" min="0" max="500" value="' + esc(EDT.seats) + '">' +
         '<span class="small">0 — без ограничения</span></div>' +
