@@ -763,7 +763,7 @@ if (grantsSet.length !== 1) {
       await s.p.evaluate(() => go('masterReqs')); await s.p.waitForTimeout(300);
       await s.p.evaluate(() => go('masterReq', 501)); await s.p.waitForTimeout(300);
       const t = await s.view();
-      if (await s.p.$('[data-action^="ms-yes"], [data-action^="ms-no"]')) bad.push(`${n}: у своей заявки есть «Согласовать»/«Отказать» — сервер ответит 409`);
+      if (await s.p.$('[data-action^="ms-yes"], [data-action^="ms-no"], [data-action^="ms-ask"]')) bad.push(`${n}: у своей заявки есть «Согласовать»/«Отказать» — сервер ответит 409`);
       if (!t.includes('Свою заявку решает другой арт-директор')) bad.push(`${n}: не сказано, кто решает свою заявку`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
