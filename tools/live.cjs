@@ -984,6 +984,8 @@ if (grantsSet.length !== 1) {
           // Cafe13KPG#685: и здесь предпросмотр пуст — причина у погасшей кнопки «цена не посчитана», а не про деньги
           const why = await rnwWhy(s);
           if (!why || !RNW_PRICE.test(why.txt) || /не хватает/i.test(why.txt)) bad.push(`${n}: у погасшей после 409 «Продлить» причина не «цена не посчитана»: ${JSON.stringify(why)}`);
+          // предпросмотр после 409 отвечает 409 (отказ) или 502 (сбой) — «отказал» только в первом
+          else if (/отказал/i.test(why.txt) !== (n === 'rnw-busy-409')) bad.push(`${n}: ${n === 'rnw-busy-409' ? 'отказ предпросмотра (409) не назван отказом' : 'сбой предпросмотра (502) выдан за отказ сервера'}: ${JSON.stringify(why.txt)}`);
         }
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
@@ -992,9 +994,11 @@ if (grantsSet.length !== 1) {
       // названной причины и «Повторить», которая не называет предмет. Приговоров ДВА, и они не склеиваются: предпросмотр
       // отказал — «цена не посчитана»; денег мало — «Не хватает N ฿», и про цену ни слова. Причину читаем по
       // `aria-describedby` кнопки (только видимые адресаты), а не со всего экрана: строка отказа предпросмотра стоит и выше
-      for (const [n, reply] of [
-        ['rnw-why-409', () => json(409, { detail: 'неделя 1 слота пересекается: место «Зал» занято «Мастер-класс», 03.12 18:00–20:00' })],
-        ['rnw-why-502', () => json(502, '<html>bad gateway</html>')]]) {
+      // Отказ сервера (4xx) и сбой (сеть, 5xx) у причины РАЗНЫЕ: «отказал» говорится только про 4xx — подлог
+      // arhitector-47 (ревью #204), поменявший две подписи местами, иначе проходил зелёным
+      for (const [n, reply, refused] of [
+        ['rnw-why-409', () => json(409, { detail: 'неделя 1 слота пересекается: место «Зал» занято «Мастер-класс», 03.12 18:00–20:00' }), true],
+        ['rnw-why-502', () => json(502, '<html>bad gateway</html>'), false]]) {
         const o = { prevReply: reply };
         const { s, ok } = await rnwOpen(n, o);
         if (ok) {
@@ -1002,6 +1006,8 @@ if (grantsSet.length !== 1) {
           if (!why || why.off !== true) bad.push(`${n}: без расчёта сервера «Продлить» нажимается (${JSON.stringify(why)})`);
           else if (!RNW_PRICE.test(why.txt)) bad.push(`${n}: у погасшей «Продлить» причина не «цена не посчитана»: ${JSON.stringify(why)}`);
           if (why && /не хватает/i.test(why.txt)) bad.push(`${n}: отказ предпросмотра выдан за недостачу денег: ${JSON.stringify(why.txt)}`);
+          if (why && refused && !/отказал/i.test(why.txt)) bad.push(`${n}: отказ сервера (4xx) не назван отказом: ${JSON.stringify(why.txt)}`);
+          if (why && !refused && /отказал/i.test(why.txt)) bad.push(`${n}: сбой (502) выдан за отказ сервера: ${JSON.stringify(why.txt)}`);
           const lab = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-retry"]'); return b ? ((b.getAttribute('aria-label') || '') + ' ' + b.textContent).trim() : null; });
           if (lab === null) bad.push(`${n}: у непосчитанной цены нет кнопки повтора`);
           else if (!/цен|счита/i.test(lab) || /слот/i.test(lab)) bad.push(`${n}: подпись повтора «${lab}» не называет счёт цены — читается как повтор слота`);
