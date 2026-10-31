@@ -116,9 +116,21 @@ docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v <каталог-
 
 ```bash
 docker run --rm --memory=2g --memory-swap=2g -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
-  --entrypoint node agenthost/playwright:1.59.1 /work/shots.cjs
+  --entrypoint node agenthost/playwright:1.59.1 /app/tools/shots.cjs
 python3 tools/catalog.py <каталог-снимков>
 ```
+
+⚠ **Скрипт зовётся из `/app/tools/`, а не копией из `/work`, и это замер, а не
+вкус.** Прежняя запись (`/work/shots.cjs`, `/work/vidimost.cjs`) из чистого
+клона НЕ РАБОТАЛА вовсе: в `screens/` скриптов нет, а про копирование здесь не
+было сказано — проверено 01.11.2026, `Error: Cannot find module
+'/work/vidimost.cjs'`. Ворота звали `/app/tools/…` за всю свою историю —
+`git log -S'/work/shots.cjs' -- tools/pered-mergem.sh` и то же про
+`vidimost.cjs` дают ПУСТО, — то есть запуск был ОДИН рабочий и ОДИН
+написанный, и расходились они молча: прибора на «рецепты из этого файла
+исполняются» у нас нет. Рецепт `live.cjs` выше при этом верен с самого начала
+(строка 62), так что в одном файле жили обе формы. Отсюда правило: рецепт здесь — та же строка, что у ворот. Разошлись —
+прав прогон, а не файл.
 
 `shots.cjs` — не только съёмка: он же проверяет поведение (заказ уходит с
 выбранными местом и оплатой, «Принять» меняет состояние у гостя и у бара,
@@ -162,7 +174,7 @@ PDF». Копии команд здесь НЕТ нарочно — вторая
 ```bash
 # путь шести живых людей по входам клиента — считает САМ клиент, второй реализации нет
 docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v $PWD/screens:/work -w /work \
-  --entrypoint node agenthost/playwright:1.59.1 /work/vidimost.cjs
+  --entrypoint node agenthost/playwright:1.59.1 /app/tools/vidimost.cjs
 # стадия против реестра ВЫЛОЖЕННОГО клиента — падающая проверка
 python3 -I tools/check-stages.py                 # 0 сошлось · 1 красное · 2 не выполнено
 python3 -I tools/check-stages.py --самопроверка
