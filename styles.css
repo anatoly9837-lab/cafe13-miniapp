@@ -11,14 +11,25 @@
   --card: #FFFFFF;
   --surface: #EDEDE8;
   /* ⚠ ДВЕ РОЛИ У ЭТИХ ДВУХ ТОКЕНОВ, и порог у них РАЗНЫЙ.
-     --line — разделитель и группировка: карточка, rows, paper, панель
-     вкладок, шапка, way, shot, пилюля, пунктирные заглушки. Порога у них
-     нет: по этим линиям элемент управления не опознают.
+     --line — разделитель и группировка: карточка-контейнер, rows, paper,
+     панель вкладок, шапка, shot, пилюля, пунктирные ЗАГЛУШКИ (ph.none,
+     tile.empty, qr .place). Порога у них нет: по этим линиям элемент
+     управления не опознают.
      --muted — подпись (ТЕКСТ, порог 4.5) и ГРАНИЦА ЭЛЕМЕНТА УПРАВЛЕНИЯ
      (порог 3.0, WCAG 2.1 SC 1.4.11 «Non-text Contrast»): поля, select,
      textarea, тихая и погашенная кнопки, сегменты, шаговик, круглые
      кнопки, чипы, строки списка, «выдать», остаток в шапке, кнопки
-     недели — пятнадцать правил (Cafe13KPG#712).
+     недели, способ пополнения (.way), выбор файла чека (.box.dashed) и
+     карточка в КНОПОЧНОЙ форме (button.card) — восемнадцать правил
+     (Cafe13KPG#712).
+     ⚠ ПУНКТИР ДЕЛИТСЯ ПО РОЛИ, а не по начертанию: заглушка «тут будет
+     картинка» порога не имеет, а `.box.dashed` — это `<label for>` выбора
+     файла, то есть единственный контур поля, и порог у него есть.
+     ⚠ И КЛАСС, СЛУЖАЩИЙ ДВУМ РОЛЯМ, разводится ТЕГОМ: `.card` —
+     контейнер, `button.card` — элемент управления. Правило стоит у самой
+     `.card`; три последних случая нашёл `arhitector-47` на ревью, мой
+     прибор их не достал (его подлежащим был список селекторов, а не все
+     рамки экрана).
      На --line рамки управления давали 1.12 светлая / 1.21 тёмная при норме
      3.0; стало 5.50 / 8.15 — это худшая пара среди рамок ПОКОЯ, у состояний
      свои цвета и свои числа. Рамка мерится с ДВУХ сторон (внутри заливка
@@ -209,6 +220,20 @@ b.num, .big { white-space: nowrap; }
 /* «не закончено», а не запрет: исход приёма неизвестен (кадр E34zh) */
 .card.warm { background: var(--deny-bg); border-color: var(--clay); }
 .card.warm b, .card.warm .small { color: var(--clay-ink); }
+
+/* ⚠ КЛАСС, СЛУЖАЩИЙ И КОНТЕЙНЕРОМ, И КНОПКОЙ, получает порог ТОЛЬКО В
+   КНОПОЧНОЙ ФОРМЕ. `.card` — разделитель, порога у него нет (см. блок у
+   токенов). Но строка человека в «Членах клуба» — это `<button class="card
+   dense fold">`, то есть элемент управления, и опознаётся он этой самой
+   рамкой; своей границы у `.card.dense.fold` нет вовсе, она берётся у
+   `.card`. Поэтому порог даётся ТЕГУ, а не классу: перевести `.card`
+   целиком значило бы сделать правку шире предмета — уехали бы границы всех
+   карточек-контейнеров, у которых порога нет.
+   Нашёл `arhitector-47` на ревью `Cafe13KPG#712`; мой прибор этого не достал,
+   потому что подлежащим у него был СПИСОК селекторов, а не все рамки экрана.
+   ⚠ Состояния выше по специфичности и переживают это правило: `.card.quiet`
+   и `.card.dense.open` снимают границу вовсе (0,2,0 и 0,3,0 против 0,1,1). */
+button.card { border-color: var(--muted); }
 /* возврат автору в строке списка (E39): незакрытое, ждёт действия — глина */
 .listitem.warm { background: var(--deny-bg); border-color: var(--clay); }
 .said { font-size: 12px; color: var(--clay-ink); }
@@ -258,13 +283,13 @@ b.num, .big { white-space: nowrap; }
 .qr .place span { font-size: 11px; color: var(--muted); }
 /* Пополнение (кадры E52*): строки путей, ящик чека, статус заявки словом. */
 .way { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px;
-       border-radius: 12px; background: var(--card); border: 1px solid var(--line); width: 100%;
+       border-radius: 12px; background: var(--card); border: 1px solid var(--muted); width: 100%;
        text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .way.off { background: var(--surface); border-color: transparent; color: var(--muted); cursor: default; }
 .way .col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .way .chev { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: var(--muted); stroke-width: 2; }
 .box.dashed { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 12px;
-              border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); cursor: pointer; }
+              border: 1px dashed var(--muted); border-radius: 9px; color: var(--muted); cursor: pointer; }
 .box.dashed svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 .st { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .st.wait { color: var(--muted); }
