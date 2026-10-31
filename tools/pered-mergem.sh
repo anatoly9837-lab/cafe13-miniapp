@@ -87,7 +87,14 @@ echo "образ:   $IMAGE"
 
 indocker() { # <каталог для /work> <путь скрипта внутри образа> …
     local out=$1; shift
-    docker run --rm -v "$T:/app:ro" -v "$out:/work" -w /work \
+    # ⚠ --memory обязателен: клетка сессии контейнер НЕ ограничивает (внутри
+    # memory.max = max даже под systemd-run -p MemoryMax). Без предела упавший
+    # прогон роняет чужие на хосте. 2g — запас втрое к наблюдённым пикам: по
+    # /sys/fs/cgroup/memory.peak shots 629 МБ (МАКСИМУМ из 4 наблюдений:
+    # 629 · 238 · 235 · 233 — разъезд в 2,7 раза, причина не найдена), live
+    # 500 (1 наблюдение), vidimost 157 (1). Замер 31.10.2026, дерево ae99b12.
+    # Не уложится — предел правят ЗАМЕРОМ с числом, а не снимают. README.
+    docker run --rm --memory="${PM_MEM:-2g}" -v "$T:/app:ro" -v "$out:/work" -w /work \
         -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 \
         --entrypoint node "$IMAGE" "$@"
 }
