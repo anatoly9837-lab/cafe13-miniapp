@@ -6748,7 +6748,7 @@ var SCREENS = {
           '<span class="small">Мастер прочтёт это в своей заявке. До 500 знаков.</span></div>' +
         '<button type="button" class="btn" data-action="ms-no:' + q.id + '"' + (MR.busy || !MR.note.trim() ? ' disabled' : '') +
           ' aria-describedby="ms-why">' + (MR.busy ? 'Отправляем…' : 'Отказать и вернуть деньги') + '</button>' +
-        '<span class="small" id="ms-why"' + (MR.note.trim() ? ' hidden' : '') + '>Без причины отказ не отправить.</span>' +
+        '<span class="small" id="ms-why"' + (MR.note.trim() ? ' hidden' : '') + '>Сначала причина — без неё мастер не узнает, что исправить.</span>' +
         '<button type="button" class="btn quiet" data-action="ms-keep"' + busy + '>Назад</button>'
       : '<button type="button" class="btn" data-action="ms-yes:' + q.id + '"' + busy + '>' + (MR.busy ? 'Отправляем…' : 'Согласовать') + '</button>' +
         '<span class="small">Ивент сразу встанет в афишу. Выключить его можно в «Ивентах».</span>' +
