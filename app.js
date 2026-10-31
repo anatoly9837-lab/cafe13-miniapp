@@ -3955,7 +3955,9 @@ function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 // зовутся только из живых веток, демо-карточка рисует «Записаться» своей веткой. Оставлено как страховка:
 // у демо-человека членств нет, и демо-путь, начавший звать canBookEvent, без неё закрыл бы запись витрине
 function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
-function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents(); }
+// На своё мероприятие мастер не записывается (слово владельца, Cafe13KPG#700): признак тот же, что у
+// управления, и через этот предикат он доходит и до главной кнопки (`mainFor`), и до самой записи (`bookEvent`)
+function canBookEvent(e) { return !!e && !e.booked && !e.done && !isMyEvent(e) && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents(); }
 // сколько записалось: без ограничения — `taken` сервера (из «мест» не вычесть), иначе — мест минус осталось
 function takenOf(e) { return e.unl ? e.taken : e.of - e.seats; }
 // ВРЕМЕННЫЕ слова «без ограничения» — до кадра дизайнера (Cafe13KPG#639)
@@ -4763,6 +4765,10 @@ function bookBlock(e) {
         '</div>';
     return err + '<button type="button" class="btn ghost" data-action="book-cancel">Отменить запись</button>';
   }
+  // Своё — вместо кнопки строка с причиной: пустое место под «Управлением» читается как поломка (#700).
+  // Раньше членства: причина здесь не в нём. Уже записанному (запись старше этой правки) отмена выше остаётся
+  if (isMyEvent(e))
+    return err + (e.done ? '' : '<div class="card quiet"><span class="small">Это ваше мероприятие.</span></div>');
   // без живого членства (E37k): кнопка ОСТАЁТСЯ, погашена, причина вплотную под ней; подсказка оплаты
   // снята — она про то, что будет после нажатия, а нажатия не будет (designer-55)
   if (!mayBookEvents() && !e.done)
