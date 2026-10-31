@@ -6866,9 +6866,9 @@ var SCREENS = {
         '<button type="button" class="round" data-action="rnw-plus"' + (RNW.months < RNW_MAX && !busy ? '' : ' disabled') + ' aria-label="Больше">+</button></div>' +
         '<span class="small">Подряд, не больше ' + RNW_MAX + ' — это предел ввода</span></div>' +
       (P ? '<div class="rows"><div><span class="small">Спишется</span><b class="num">' + money(P.charged) + ' ฿</b></div>' +
-             '<div><span class="small">Оплачено будет до</span><b>' + esc(msDate(P.until)) + '</b></div></div>' +
-           (P.enough ? '' : '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Не хватает ' + money(P.short) + ' ฿ на счёте.</span></div>')
-        : RNW.prevFail ? '<div class="row"><span class="small">' + esc(rnwSameRefusal() ? 'Цена не пересчитана' : RNW.prevFail) + '</span><button type="button" class="btn quiet" data-action="rnw-retry">Повторить</button></div>'
+             '<div><span class="small">Оплачено будет до</span><b>' + esc(msDate(P.until)) + '</b></div></div>'
+        // «Посчитать снова», а не «Повторить» (Cafe13KPG#685): повторяется запрос ЦЕНЫ, в слоте ничего не повторяется
+        : RNW.prevFail ? '<div class="row"><span class="small">' + esc(rnwSameRefusal() ? 'Цена не пересчитана' : RNW.prevFail) + '</span><button type="button" class="btn quiet" data-action="rnw-retry">Посчитать снова</button></div>'
         : '<span class="small">Считаем у сервера…</span>');
     var err = RNW.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(RNW.err) + '</span></div>' : '';
     // E59b: окно ДО отправки; пока идёт отсчёт, запрос не ушёл
@@ -6876,8 +6876,15 @@ var SCREENS = {
       '<div class="undo"><span class="small">Продлеваем на ' + RNW.months + ' ' + msMonths(RNW.months) + '</span>' +
         '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="rnw-keep">Отменить</button></div>' +
       '<span class="small">Пока идёт отсчёт, деньги не списаны: запрос ещё не ушёл.</span>';
+    // почему «Продлить» не нажимается — строкой у самой кнопки (Cafe13KPG#685), связана с ней aria-describedby.
+    // Два приговора не склеиваются: недостача — плашкой отказа, как и была; «цены нет» — подписью, как «почему»
+    // у «Отправить заявку», а слова отказа остаются дословно в строке предпросмотра и здесь не повторяются
+    var why = P ? (P.enough ? '' : '<div class="deny" role="alert" id="rnw-why">' + svg(ICON.info) + '<span>Не хватает ' + money(P.short) + ' ฿ на счёте.</span></div>')
+      : RNW.prevFail ? '<span class="small" id="rnw-why">' + (RNW.prevCode >= 400 && RNW.prevCode < 500 ? 'Цена не посчитана: сервер отказал.' : 'Цена не посчитана.') + '</span>' : '';
+    if (RNW.busy) why = '';
     return (FLASH ? flash() : '') + top + err +
-      '<button type="button" class="btn" data-action="rnw-go"' + (!P || !P.enough || busy ? ' disabled' : '') + '>' + (RNW.busy ? 'Продлеваем…' : 'Продлить') + '</button>' +
+      '<button type="button" class="btn" data-action="rnw-go"' + (!P || !P.enough || busy ? ' disabled' : '') + (why ? ' aria-describedby="rnw-why"' : '') + '>' + (RNW.busy ? 'Продлеваем…' : 'Продлить') + '</button>' +
+      why +
       '<div class="note">' + svg(ICON.info) + '<span>Оплаченный месяц не возвращается. Неоплаченный слот уходит другому мастеру.</span></div>';
   },
 
