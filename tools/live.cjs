@@ -2887,6 +2887,66 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
   }
+  // ── «Других путей нет» — СВОЙСТВО, а не перечень кнопок (Cafe13KPG#677, просьба координатора 30.10.2026) ──
+  // Обход: каждый экран из WIRED, каждое действие на нём (`doAction`). Ни одно не шлёт `POST /till` вида topup со
+  // СВОИМ id — ни у кассира, ни у члена клуба; фикстура /till принимает (201), держит клиент. Перечень устарел бы с
+  // первой новой кнопкой, обход — нет. Различитель: обход живой (экраны открывались, действия жались, хоть какие-то
+  // POST ушли), и рядом путь, который запрос ДАЁТ, — заявка: `POST /topup/request` ровно один.
+  // ⚠ Граница: замороженные экраны (касса tillTopup — пополнение человека по коду пропуска, в том числе своего)
+  // в обход не входят, пока заморожены; разморозка кассы обязана сперва закрыть самовнесение — Cafe13KPG#681.
+  {
+    const STAFF = clone(OWNER); STAFF.roles = [{ role: 'staff', direction_id: null }];
+    const MEMBER = clone(OWNER); MEMBER.roles = [];
+    const pdfR = n => ({ name: 'chek.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(n, 0x25) });
+    const PNG_R = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    for (const [n, me] of [['topup-net-puti-kassir', STAFF], ['topup-net-puti-chlen', MEMBER]]) {
+      const s = await open(true, true, json(200, me), null, null, null, q => {
+        const u = q.url();
+        if (q.method() === 'POST' && u.endsWith('/till')) return json(201, TILL_ROW);
+        if (q.method() === 'POST' && u.endsWith('/topup/request')) return json(201, { id: 5, amount: '500.00', status: 'pending' });
+        // обход жмёт и согласие, и пропуск: без своих ответов open() отдал бы им null (consentReply/passReply не заданы)
+        if (u.endsWith('/me/consent') || u.endsWith('/pass')) return json(200, me);
+        return undefined;
+      });
+      s.p.on('dialog', d => d.dismiss().catch(() => {}));
+      const swept = await s.p.evaluate(async () => {
+        const pause = ms => new Promise(r => setTimeout(r, ms));
+        let screens = 0, acts = 0;
+        for (const sc of Object.keys(WIRED)) {
+          if (['loading', 'noSign', 'noAccess', 'apiDown'].includes(sc)) continue;
+          try { go(sc); } catch (e) { continue; }
+          await pause(40);
+          if (current !== sc) continue;
+          screens += 1;
+          const seen = [...new Set([...document.querySelectorAll('#view [data-action]')].map(b => b.getAttribute('data-action')))];
+          for (const a of seen) { try { go(sc); await pause(10); doAction(a); acts += 1; } catch (e) {} await pause(25); }
+        }
+        return { screens, acts };
+      });
+      await s.p.waitForTimeout(800);
+      const own = me.member.tg_user_id;
+      const self = s.calls.filter(c => c.method === 'POST' && c.url.endsWith('/till')).filter(c => {
+        try { const b = JSON.parse(c.body || '{}'); return b.kind === 'topup' && b.member_id === own; } catch (e) { return true; } });
+      const posts = s.calls.filter(c => c.method === 'POST').length;
+      if (self.length) bad.push(`${n}: внесение себе мимо заявки — POST /till ${JSON.stringify(self.map(c => c.body))}`);
+      if (swept.screens < 8 || swept.acts < 15 || !posts) bad.push(`${n}: обход не состоялся (экранов ${swept.screens}, действий ${swept.acts}, POST ${posts}) — «ни одного внесения» ничего не значит`);
+      await s.ctx.close();
+      // пара: путь заявки ДАЁТ запрос, и ровно один — в СВЕЖЕМ запуске (после обхода состояние экрана нажато насквозь)
+      // реквизиты PromptPay — картинкой: без неё «Отправить» гаснет по замыслу (img === 'fail')
+      const r = await open(true, true, json(200, me), null, null, null, q =>
+        q.url().endsWith('/join/requisites/promptpay') ? { status: 200, contentType: 'image/png', body: PNG_R }
+          : q.method() === 'POST' && q.url().endsWith('/topup/request') ? json(201, { id: 5, amount: '500.00', status: 'pending' }) : undefined);
+      await r.p.evaluate(() => document.getElementById('wallet').click()); await r.p.waitForTimeout(200);
+      await r.p.evaluate(() => doAction('tu-online')); await r.p.waitForTimeout(200);
+      if (await r.p.$('#tu-amount')) await r.p.fill('#tu-amount', '500');
+      if (await r.p.$('#tu-file')) await r.p.setInputFiles('#tu-file', pdfR(700), { timeout: 60000 });
+      await r.p.waitForTimeout(300);
+      if (await r.p.$('#tu-send:not([disabled])')) { await r.p.click('#tu-send'); await r.p.waitForTimeout(400); }
+      const req = r.calls.filter(c => c.method === 'POST' && c.url.endsWith('/topup/request')).length;
+      if (req !== 1) bad.push(`${n}: заявка на пополнение ушла ${req} раз, ждали 1 — пары «путь есть» нет`);
+      await r.ctx.close();
+    }
+  }
   // Без права кассы — ветка «у всех остальных» (с v87 кадр E52: пути «Онлайн / Касса / USDT») и никакой формы.
   // Путь — через бар, а он заморожен (Cafe13KPG#510).
   if (thawed('пополнение из бара (бармен без права кассы)')) {
