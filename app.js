@@ -2900,7 +2900,9 @@ document.addEventListener('input', function (ev) {
    ⚠ Свою заявку сервер решить не даёт (409 «свою заявку решает другой ответственный»), поэтому
    у своей строки кнопок НЕТ вовсе, а не погашены (кадр E56e): у владельца роль одна, и своя
    заявка появится у него в первом же тесте.
-   ⚠ «Зачислить» необратимо — строка в книгу; отсюда шаг подтверждения (E56g).
+   ⚠ «Зачислить» необратимо — строка в книгу, и шага подтверждения (E56g) у него НЕТ: слово владельца
+   31.10.2026 (Cafe13KPG#695) — «Промах правит касса», то есть встречной строкой через
+   `POST /till/{entry_id}/cancel`. Поэтому сумма стоит на самой кнопке: другой защиты от промаха здесь нет.
    ⚠ Пустая причина отказа — не пустота: сервер ставит «Мы не получили деньги». Подсказка под
    полем говорит это вслух (E56d), иначе «необязательно» читалось бы как «причины не будет». */
 var TOPQ = { list: null, pending: null, fail: '', gen: 0, busy: false, err: '', step: '', note: '', shot: {}, who: 0, done: '' };
@@ -6581,7 +6583,7 @@ var SCREENS = {
     '</div>' + money_ + art;
   },
 
-  // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g — подтверждение; E56d — причина; E56e — своя
+  // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g (подтверждение) снят по #695; E56d — причина; E56e — своя
   topupQueue: function () {
     // слова отказа — сервера (`_may_decide`, 403) буквой
     if (!mayTopups()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
@@ -6626,15 +6628,6 @@ var SCREENS = {
     if (q.status !== 'pending') return rows + err + '<div class="card quiet"><div class="row"><span class="small">Решено ' +
         esc(topupDay(q.done, true)) + '</span><span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div>' +
         (q.answer ? '<span class="small">' + esc(q.answer) + '</span>' : '') + '</div>';
-    // E56g: подтверждение — без чека, как в кадре
-    if (TOPQ.step === 'ok' && !q.mine) return rows + err +
-      '<div class="card"><div class="col"><b>Зачислить ' + money(q.sum) + ' ฿?</b>' +
-        // кадр E56g (Cafe13KPG#603, dev 9b4dbc3): фраза — про ЭТОТ экран, а не про мир, поэтому верна и после
-        // разморозки кассы. Прежняя редакция («отменить зачисление» вообще нельзя) стала бы ложью, когда кассир
-        // сможет отменить строку книги
-        '<span class="small">Деньги появятся на счёте сразу, и запись останется в книге клуба. Отсюда отменить нельзя.</span></div>' +
-        '<button type="button" class="btn" data-action="tq-yes:' + q.id + '"' + busy + '>' + (TOPQ.busy ? 'Зачисляем…' : 'Да, зачислить') + '</button>' +
-        '<button type="button" class="btn quiet" data-action="tq-keep"' + busy + '>Назад</button></div>';
     // E56d. ⚠ Кнопка в кадре — «Отказать и вернуть деньги»; сервер при отказе денег не двигает
     // (`decide_request`: только статус и причина) — обещание возврата не ставлю (вопрос designer-55)
     if (TOPQ.step === 'no' && !q.mine) return rows + err +
@@ -6656,7 +6649,7 @@ var SCREENS = {
     // E56e: своя заявка — кнопок НЕТ вовсе, а не погашены
     if (q.mine) return rows + check + '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой ответственный за пополнения.</span></div>';
     return rows + check + err +
-      '<button type="button" class="btn" data-action="tq-ok:' + q.id + '"' + busy + '>Зачислить</button>' +
+      '<button type="button" class="btn" data-action="tq-ok:' + q.id + '"' + busy + '>' + (TOPQ.busy ? 'Зачисляем…' : 'Зачислить ' + money(q.sum) + ' ฿') + '</button>' +
       '<button type="button" class="btn quiet" data-action="tq-ask:' + q.id + '"' + busy + '>Отказать</button>';
   },
 
@@ -8128,7 +8121,7 @@ function doAction(a) {
     if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
     if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
     if (a === 'tq-shot' && mayTopups()) { delete TOPQ.shot[Number(arg)]; topupShot(Number(arg)); render(); return; }
-    if (a === 'tq-ok' && mayTopups() && !TOPQ.busy) { TOPQ.step = 'ok'; TOPQ.err = ''; render(); return; }
+    if (a === 'tq-ok' && mayTopups() && !TOPQ.busy) { decideTopup(Number(arg), 'approved'); return; }   // без вопроса (#695)
     if (a === 'tq-ask' && mayTopups() && !TOPQ.busy) { TOPQ.step = 'no'; TOPQ.err = ''; render(); return; }
     if (a === 'tq-keep' && !TOPQ.busy) { TOPQ.step = ''; TOPQ.err = ''; render(); return; }
     // шаг 3: мастера — на ручках сервера (v109)
@@ -8163,7 +8156,6 @@ function doAction(a) {
     if (a === 'ms-retry-q' && mayMasters()) { loadMasterQueue(); render(); return; }
     if (a === 'ms-retry-s' && mayMasters()) { loadSlots(); render(); return; }
     if (a === 'ms-retry-places') { loadPlaces(); render(); return; }
-    if (a === 'tq-yes' && mayTopups()) { if (TOPQ.step === 'ok') decideTopup(Number(arg), 'approved'); return; }
     if (a === 'tq-no' && mayTopups()) { if (TOPQ.step === 'no') decideTopup(Number(arg), 'rejected'); return; }
     if (a === 'j-shot' && mayPeople()) { delete JOINQ.shot[Number(arg)]; joinShot(Number(arg)); render(); return; }
 
