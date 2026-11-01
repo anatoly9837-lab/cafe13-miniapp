@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v132 · 01.11.2026';
+var VERSION = 'v133 · 01.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3966,7 +3966,9 @@ function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 // зовутся только из живых веток, демо-карточка рисует «Записаться» своей веткой. Оставлено как страховка:
 // у демо-человека членств нет, и демо-путь, начавший звать canBookEvent, без неё закрыл бы запись витрине
 function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
-function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents() && !shortOf(e); }
+// На своё мероприятие мастер не записывается (слово владельца, Cafe13KPG#700): признак тот же, что у
+// управления, и через этот предикат он доходит и до главной кнопки (`mainFor`), и до самой записи (`bookEvent`)
+function canBookEvent(e) { return !!e && !e.booked && !e.done && !isMyEvent(e) && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents() && !shortOf(e); }
 /* Вход списывается со счёта ПРИ ЗАПИСИ, и только у платного (api#113, бой 36073d3: `price if kind == "paid" else 0`):
    у донейшна цена — ориентир, она не списывается. Нехватка — до нажатия, остатком из /me; остатка не знаем — не
    держим, решит сервер своим отказом (Cafe13KPG#748, кадры E62/E62b/E62v) */
@@ -4794,6 +4796,10 @@ function bookBlock(e) {
         '</div>';
     return err + '<button type="button" class="btn ghost" data-action="book-cancel">Отменить запись</button>';
   }
+  // Своё — вместо кнопки строка с причиной: пустое место под «Управлением» читается как поломка (#700).
+  // Раньше членства: причина здесь не в нём. Уже записанному (запись старше этой правки) отмена выше остаётся
+  if (isMyEvent(e))
+    return err + (e.done ? '' : '<div class="card quiet"><span class="small">Это ваше мероприятие.</span></div>');
   // без живого членства (E37k): кнопка ОСТАЁТСЯ, погашена, причина вплотную под ней; подсказка оплаты
   // снята — она про то, что будет после нажатия, а нажатия не будет (designer-55)
   if (!mayBookEvents() && !e.done)
