@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v130 · 31.10.2026';
+var VERSION = 'v132 · 01.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -2017,7 +2017,7 @@ function refreshMe() {
     // экраны, где остаток считает что-то кроме шапки, — целиком; остальные — только шапка (остаток в ней)
     // остаток сменился — «хватит ли» на продление спросить у сервера заново (предпросмотр — снимок, не обещание)
     if (current === 'masterRenew') RNW.key = '';
-    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, masterRenew: 1 }[current]) render();
+    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, masterRenew: 1, event: 1 }[current]) render();
     else { var right = document.getElementById('bar-right'); if (right) right.innerHTML = barRight(); }
   });
 }
@@ -3821,6 +3821,12 @@ function dayLabel(p, now) {
 /* Ответ /events → строки, которые рисует экран: имена полей те же, что у
    демонстрационных событий, чтобы разметка осталась одна. Битое событие —
    отказ целиком: афиша с пропавшей строкой выглядит полной. */
+// деньги строкой («400.00») или null/нет поля → число или null; иное — undefined: строка битая
+function moneyOrNull(x) {
+  if (x === undefined || x === null) return null;
+  var n = typeof x === 'string' && /^\d+(\.\d+)?$/.test(x) ? Number(x) : NaN;
+  return isFinite(n) ? n : undefined;
+}
 function fromEvents(d) {
   if (!Array.isArray(d)) return null;
   var now = new Date(), out = [];
@@ -3842,6 +3848,8 @@ function fromEvents(d) {
     if ((pid === null) !== (pname === null)) return null;
     var price = num(e.price);
     if (!(price >= 0)) return null;
+    var paid = moneyOrNull(e.my_entry_paid), refund = moneyOrNull(e.my_refund_now);
+    if (paid === undefined || refund === undefined) return null;
     var start = new Date(e.starts_at);
     if (isNaN(start.getTime())) return null;
     var ends = start.getTime() + e.duration_min * 60000;
@@ -3866,6 +3874,9 @@ function fromEvents(d) {
       booked: !!e.booked_by_me,
       // номер своей записи — им отменяют; его читает `bookBlock`: нет номера — нет и кнопки
       bookingId: typeof e.my_booking_id === 'number' ? e.my_booking_id : null,
+      // шаг 7 (api#113/#114): уплаченный СО СЧЁТА вход своей записи и что вернёт снятие сейчас — числа сервера,
+      // клиент возврат не считает. null — входа со счёта нет; поля нет — сервер до шага 7
+      paid: paid, refund: refund,
       place: pname, placeId: pid
     });
   }
@@ -3957,7 +3968,16 @@ function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
 // На своё мероприятие мастер не записывается (слово владельца, Cafe13KPG#700): признак тот же, что у
 // управления, и через этот предикат он доходит и до главной кнопки (`mainFor`), и до самой записи (`bookEvent`)
-function canBookEvent(e) { return !!e && !e.booked && !e.done && !isMyEvent(e) && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents(); }
+function canBookEvent(e) { return !!e && !e.booked && !e.done && !isMyEvent(e) && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents() && !shortOf(e); }
+/* Вход списывается со счёта ПРИ ЗАПИСИ, и только у платного (api#113, бой 36073d3: `price if kind == "paid" else 0`):
+   у донейшна цена — ориентир, она не списывается. Нехватка — до нажатия, остатком из /me; остатка не знаем — не
+   держим, решит сервер своим отказом (Cafe13KPG#748, кадры E62/E62b/E62v) */
+function bookWord(e) { return entryOf(e) > 0 ? 'Записаться за ' + money(entryOf(e)) + ' ฿' : 'Записаться'; }
+function entryOf(e) { return e.kind === 'paid' ? e.price : 0; }
+function shortOf(e) {
+  var bal = DATA.member && DATA.member.balance;
+  return LIVE && typeof bal === 'number' && entryOf(e) > bal ? entryOf(e) - bal : 0;
+}
 // сколько записалось: без ограничения — `taken` сервера (из «мест» не вычесть), иначе — мест минус осталось
 function takenOf(e) { return e.unl ? e.taken : e.of - e.seats; }
 // ВРЕМЕННЫЕ слова «без ограничения» — до кадра дизайнера (Cafe13KPG#639)
@@ -3988,6 +4008,7 @@ function cancelBooking(id) {
    задуманное, решает перечитанное, а не код ответа. */
 function afterBooking(r, id, want) {
   var detail = detailOf(r);
+  refreshMe();     // вход списан или возвращён — шапка и нехватка на других карточках по новому остатку
   api('GET', '/events').then(function (g) {
     var list = g.status === 200 ? fromEvents(g.data) : null;
     if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
@@ -4756,6 +4777,16 @@ function bookBlock(e) {
     // это сказано прямо, а не спрятано за кнопкой, которая откажет.
     if (typeof e.bookingId !== 'number')
       return err + '<div class="card quiet"><span class="small">Отменить запись из приложения пока нельзя.</span></div>';
+    // уплачено со счёта — спрос по кадрам E66/E66b: сколько заплатил и сколько вернётся, оба числа сервера
+    if (BOOK_ASK && e.paid > 0 && typeof e.refund === 'number')
+      return err + '<div class="card strong"><div class="col"><b>Снять запись?</b></div>' +
+          '<div class="rows"><div><span class="small">Вы заплатили</span><b class="num">' + money(e.paid) + ' ฿</b></div>' +
+          '<div><span class="small">Вернётся</span><b class="num">' + money(e.refund) + ' ฿</b></div></div>' +
+          '<button type="button" class="btn ghost" data-action="book-cancel-yes:' + esc(e.id) + '">Снять запись</button>' +
+          '<span class="small" style="text-align:center">' + (e.refund >= e.paid ? 'До начала больше трёх дней — вернётся всё.'
+            : 'До начала меньше трёх дней — вернётся половина.') + '</span>' +
+          '<button type="button" class="btn quiet" data-action="book-cancel-no">Оставить запись</button>' +
+        '</div>';
     if (BOOK_ASK)
       return err + '<div class="card strong"><div class="col">' +
           '<b>Отменить запись?</b>' +
@@ -4775,6 +4806,10 @@ function bookBlock(e) {
     return err + '<div style="display:flex;flex-direction:column;gap:9px">' +
       '<button type="button" class="btn" disabled aria-disabled="true">Записаться</button>' +
       '<span class="small" style="text-align:center">Пока записываются только члены клуба.</span></div>';
+  if (shortOf(e) && !e.done && (e.unl || e.seats > 0))
+    return err + '<div style="display:flex;flex-direction:column;gap:9px">' +
+      '<button type="button" class="btn" disabled aria-disabled="true">Записаться за ' + money(entryOf(e)) + ' ฿</button>' +
+      '<span class="small" style="text-align:center">Не хватает ' + money(shortOf(e)) + ' ฿.</span></div>';
   if (!canBookEvent(e)) {
     // Объяснение — там, где человек мог ждать кнопку: мест нет. Кончившемуся
     // событию объяснять нечего, у него всё сказано карточкой.
@@ -4782,44 +4817,14 @@ function bookBlock(e) {
       ? '<div class="card quiet"><span class="small">Мест нет. Если кто-то снимет запись, место вернётся в афишу.</span></div>'
       : '');
   }
-  /* Подпись отвечает на то, чего человек не знает и что решает за него
-     сервер: достанется ли место сразу, когда платить и кто может запись
-     снять. Текст платного принят командой дословно и лежит адресом в
-     Cafe13KPG#271, а не в переписке; менять его здесь нельзя.
-
-     Прежняя редакция этого комментария говорила: «Про отмену здесь не
-     сказано ни слова: отменить из приложения сегодня нечем, а обещание,
-     данное ДО записи, человек прочитает как право, которого у него не
-     будет». Решение осталось верным, и снято с него только одно: речь шла
-     о ПРАВЕ ЧЕЛОВЕКА отменить, которого нет. «Снять запись может работник
-     клуба» — не право, а предупреждение, и оно шире, чем было: на бою
-     `POST /bookings/{id}/cancel` в ветке `_is_staff` условия «только
-     неоплаченную» НЕТ (замер designer-55 по боевому fa2cebc, 25.10.2026),
-     то есть снять могут и оплаченную.
-
-     Про деньги при снятии не сказано НИЧЕГО, и это решение, а не недоделка:
-     ответа про возврат нет ни на сервере, ни у владельца (Cafe13KPG#290 в
-     Backlog, им не открыта), а фраза про возврат была бы обещанием
-     механизма — тем самым, что этот экран и снимает.
-
-     Цены в подписи НЕТ нарочно: она уже названа строкой «Участие» выше
-     (`:2840` в живой ветке, `:3292` в демонстрационной), и второе предложение
-     стоит ровно так, как в кадре описи E37g (`Cafe13KPG` dev `ab7fb83`, замер
-     мой): «При записи со счёта не списывается». Своя, третья редакция этой
-     фразы здесь была и снята возвратом архитектора — клиент и опись обязаны
-     говорить одними словами, иначе чинить буквы придётся дважды.
-
-     Бесплатному и донейшну фраза НЕ даётся: «Оплата — на месте» у
-     бесплатного обещает платёж, которого нет, а у донейшна своя строка
-     точнее — взнос по желанию и на запись не влияет. */
-  var hint = e.kind === 'paid'
-    ? 'Место закрепляется за вами сразу. Оплата — на месте; снять запись может работник клуба. При записи со счёта не списывается.'
-    : e.kind === 'donation'
-    ? 'Взнос — по желанию и на запись не влияет: передать можно мастеру на месте.'
-    : '';
+  /* Подпись — про деньги, потому что их теперь трогает сама запись (шаг 7, Cafe13KPG#748). Прежняя подпись («оплата
+     на месте», «при записи не трогается счёт») стала ложью с выкладкой api#113 (бой 36073d3). Вторая фраза кадра E62
+     («Поблагодарить мастера можно после мероприятия») НЕ дана: кнопки благодарности в клиенте ещё нет (E65 — следующей
+     заявкой), и обещание пути, которого нет, было бы той же поломкой. */
+  var hint = entryOf(e) > 0 ? 'Спишется со счёта сразу.' : 'Со счёта ничего не спишется.';
   return err +
     '<div class="group">' +
-      '<button type="button" class="btn dup-main" data-action="book:' + esc(e.id) + '">Записаться</button>' +
+      '<button type="button" class="btn dup-main" data-action="book:' + esc(e.id) + '">' + bookWord(e) + '</button>' +
       (hint ? '<span class="small" style="text-align:center">' + hint + '</span>' : '') +
     '</div>';
 }
@@ -5338,11 +5343,9 @@ var SCREENS = {
       // 24.10.2026), и неоплаченная запись держит место вечно. В живом
       // режиме этой лжи не было никогда — она жила здесь и в описи, то есть
       // ровно там, где по продукту судят.
-      foot = '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
-             '<span class="small" style="text-align:center">' +
-             // Фраза держится ОДНИМ литералом нарочно: разорванная переносом, она
-             // даёт ноль на построчном признаке, хотя на экране цела.
-             'Место закрепляется за вами сразу. Оплата — на месте; снять запись может работник клуба. При записи со счёта не списывается.</span>';
+      // С шагом 7 вход списывается при записи (Cafe13KPG#748) — витрина говорит то же, что живая карточка.
+      foot = '<button type="button" class="btn dup-main" data-action="book">Записаться за ' + money(e.price) + ' ฿</button>' +
+             '<span class="small" style="text-align:center">Спишется со счёта сразу.</span>';
     } else if (e.kind === 'free') {
       foot = '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
              '<span class="small" style="text-align:center">Если передумали — отмените запись, чтобы место досталось другому.</span>';
@@ -8377,11 +8380,10 @@ function mainFor() {
     if (LIVE) {
       var le = eventById(param);
       if (!canBookEvent(le)) return null;              // кончилось, занято, уже записан — кнопки нет
-      return { text: le.kind === 'paid' ? 'Записаться · ' + money(le.price) + ' ฿ на месте' : 'Записаться',
-               a: 'book:' + le.id };
+      return { text: bookWord(le), a: 'book:' + le.id };
     }
     var e = byId(param) || DATA.events[0];
-    return { text: e && e.kind === 'paid' ? 'Оплатить ' + e.price + ' ฿ и записаться' : 'Записаться', a: 'book' };
+    return { text: e && e.kind === 'paid' ? 'Записаться за ' + money(e.price) + ' ฿' : 'Записаться', a: 'book' };
   }
   return null;
 }
