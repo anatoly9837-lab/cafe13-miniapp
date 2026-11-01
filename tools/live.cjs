@@ -768,6 +768,106 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // ── отказ в мастерстве — с причиной, обязательно (слово владельца, Cafe13KPG#696; кадр E55ж) ──
+    // Арт-директор решает ЧУЖИЕ заявки 601 и 602. Причина уходит в теле `note` обрезанной; пустая и из одних
+    // пробелов не уходит НИ кнопкой, ни прямым вызовом decideMaster. Согласие причины не просит (note '').
+    {
+      const AD = mem(9000, ['art_director']);
+      const qrow = id => Object.assign({ first_name: '[мастер]', last_name: '', username: 'm' + id }, mreq(id, 'pending'));
+      const adOpen = async (decided) => {
+        const o = { mine: () => [], queue: [qrow(601), qrow(602)], posted: [] };
+        const api = masterApi(o);
+        const s = await open(true, true, json(200, AD), null, null, null, q => {
+          const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+          const m = u.match(/^\/master\/requests\/(\d+)\/decide$/);
+          if (m && q.method() === 'POST') { const b = JSON.parse(q.postData() || '{}'); decided.push({ id: Number(m[1]), b });
+            return json(200, Object.assign(mreq(Number(m[1]), b.decision), { decision_note: b.note, events: [] })); }
+          return api(q);
+        });
+        await s.p.waitForTimeout(300);
+        await s.p.evaluate(() => go('masterReqs')); await s.p.waitForTimeout(300);
+        await s.p.evaluate(() => go('masterReq', 601)); await s.p.waitForTimeout(300);
+        return s;
+      };
+      const formNow = s => s.p.evaluate(() => {
+        const b = document.querySelector('#view [data-action="ms-no:601"]'), w = document.getElementById('ms-why');
+        return { note: !!document.getElementById('ms-note'), no: b ? { off: b.disabled, aria: b.getAttribute('aria-disabled') } : null,
+                 why: w ? !w.hidden : null, text: document.getElementById('view').textContent };
+      });
+      // путь целиком: «Отказать» → форма, погашено до причины, причина → кнопка жива → один POST с обрезанной причиной
+      {
+        const n = 'ms-otkaz-prichina', decided = [];
+        const s = await adOpen(decided);
+        let t = await s.view();
+        if (!t.includes('Деньги вернутся мастеру на счёт.')) bad.push(`${n}: у входа «Отказать» нет «Деньги вернутся мастеру на счёт.»`);
+        if (await s.p.$('[data-action^="ms-no:"]')) bad.push(`${n}: «Отказать и вернуть деньги» стоит до формы причины — отказ уходит без неё`);
+        if (await tapIf(s, n, '#view [data-action="ms-ask:601"]', '«Отказать»')) {
+          let f = await formNow(s);
+          if (!f.note) bad.push(`${n}: после «Отказать» нет поля причины`);
+          if (!f.text.includes('Почему отказ и что исправить')) bad.push(`${n}: у поля нет подписи «Почему отказ и что исправить»`);
+          if (!f.no || f.no.off !== true || f.no.aria !== 'true') bad.push(`${n}: без причины «Отказать и вернуть деньги» не погашена (${JSON.stringify(f.no)})`);
+          if (f.why !== true) bad.push(`${n}: без причины не сказано, почему кнопка погашена (ms-why)`);
+          await s.p.evaluate(() => decideMaster(601, 'rejected')); await s.p.waitForTimeout(300);
+          if (decided.length) bad.push(`${n}: отказ без причины ушёл прямым вызовом decideMaster — охрана только в разметке`);
+          await s.p.fill('#ms-note', '  Нет фото работ. Пришлите три  ');
+          await s.p.waitForTimeout(100);
+          f = await formNow(s);
+          if (!f.no || f.no.off !== false || f.no.aria !== 'false') bad.push(`${n}: с причиной кнопка не ожила (${JSON.stringify(f.no)})`);
+          if (f.why !== false) bad.push(`${n}: с причиной строка «Сначала причина…» осталась`);
+          await tapIf(s, n, '#view [data-action="ms-no:601"]', '«Отказать и вернуть деньги»');
+          await s.p.waitForTimeout(300);
+          if (decided.length !== 1) bad.push(`${n}: отказ ушёл ${decided.length} раз, ждали 1`);
+          else if (decided[0].id !== 601 || JSON.stringify(decided[0].b) !== JSON.stringify({ decision: 'rejected', note: 'Нет фото работ. Пришлите три' }))
+            bad.push(`${n}: тело отказа не то: ${JSON.stringify(decided[0])}`);
+          t = await s.view();
+          if (!t.includes('Отказано')) bad.push(`${n}: после отказа нет «Отказано»`);
+        }
+        await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // причина из одних пробелов — не причина: кнопка погашена, прямой вызов не уходит
+      {
+        const n = 'ms-otkaz-probely', decided = [];
+        const s = await adOpen(decided);
+        if (await tapIf(s, n, '#view [data-action="ms-ask:601"]', '«Отказать»')) {
+          await s.p.fill('#ms-note', '   \n  ');
+          await s.p.waitForTimeout(100);
+          const f = await formNow(s);
+          if (!f.no || f.no.off !== true) bad.push(`${n}: причина из пробелов оживила кнопку (${JSON.stringify(f.no)})`);
+          await s.p.evaluate(() => decideMaster(601, 'rejected')); await s.p.waitForTimeout(300);
+          if (decided.length) bad.push(`${n}: отказ с причиной из пробелов ушёл на сервер`);
+        }
+        await s.ctx.close();
+      }
+      // «Назад» и уход к другой заявке закрывают форму: причина, набранная для 601, не уходит отказом 602
+      {
+        const n = 'ms-otkaz-nazad', decided = [];
+        const s = await adOpen(decided);
+        if (await tapIf(s, n, '#view [data-action="ms-ask:601"]', '«Отказать»')) {
+          await s.p.fill('#ms-note', 'Причина для первой');
+          await tapIf(s, n, '#view [data-action="ms-keep"]', '«Назад»');
+          if (await s.p.$('#ms-note')) bad.push(`${n}: «Назад» не закрыл форму причины`);
+          await tapIf(s, n, '#view [data-action="ms-ask:601"]', '«Отказать»');
+          await s.p.fill('#ms-note', 'Причина для первой');
+          await s.p.evaluate(() => go('masterReq', 602)); await s.p.waitForTimeout(300);
+          if (await s.p.$('#ms-note')) bad.push(`${n}: на другой заявке открыта форма причины прежней`);
+          await s.p.evaluate(() => decideMaster(602, 'rejected')); await s.p.waitForTimeout(300);
+          if (decided.length) bad.push(`${n}: отказ 602 ушёл с причиной, набранной для 601 (${JSON.stringify(decided)})`);
+        }
+        await s.ctx.close();
+      }
+      // согласие причины не просит: один POST, note пустая
+      {
+        const n = 'ms-soglasie', decided = [];
+        const s = await adOpen(decided);
+        await tapIf(s, n, '#view [data-action="ms-yes:601"]', '«Согласовать»');
+        await s.p.waitForTimeout(300);
+        if (decided.length !== 1 || JSON.stringify(decided[0].b) !== JSON.stringify({ decision: 'approved', note: '' }))
+          bad.push(`${n}: согласие ушло не одним POST с пустой причиной: ${JSON.stringify(decided)}`);
+        await s.ctx.close();
+      }
+    }
     // занятость слота (v112, `GET /master/slot-busy`): fits false — «Отправить» погашен и причина названа ДО
     // нажатия; fits true — жив, заявка уходит. Запрос — с выбранными часами: «+» спрашивает сервер заново.
     // ⚠ Второй линии нет НАРОЧНО: sendMaster пересечения не проверяет, последняя защита — 409 сервера (код v112).
