@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v134 · 01.11.2026';
+var VERSION = 'v135 · 01.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3035,7 +3035,18 @@ function fromSlots(d) {
 }
 var MR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail: '', qGen: 0,
            slots: null, without: null, sFail: '', sGen: 0, price: {}, priceAsk: {},
-           busy: false, err: '', qErr: '', sErr: '' };
+           busy: false, err: '', qErr: '', sErr: '', ask: 0, note: '' };
+/* Отказ в мастерстве — с причиной и рекомендациями, обязательно (слово владельца 31.10.2026, Cafe13KPG#696).
+   Поле одно: «причину» от «рекомендаций» машине не отличить, поэтому подпись просит оба, а проверка меряет
+   непустоту. Кнопка гаснет и включается на ВВОДЕ, без перерисовки — иначе набор терял бы фокус. */
+function msNoteSync() {
+  var t = document.getElementById('ms-note'); if (!t) return;
+  MR.note = t.value;
+  var b = document.querySelector('#view [data-action^="ms-no:"]'), w = document.getElementById('ms-why'), empty = !MR.note.trim();
+  if (b) { b.disabled = empty || MR.busy; b.setAttribute('aria-disabled', String(b.disabled)); }
+  if (w) w.hidden = !empty;
+}
+document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'ms-note') msNoteSync(); });
 // мест по умолчанию 0 = «не ограничено» (слово владельца); ⚠ схема сервера ноль пока не принимает (seats ≥ 1)
 var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
 function loadMineMaster() {
@@ -3240,14 +3251,16 @@ function sendMaster() {
   });
 }
 function decideMaster(id, decision) {
-  if (MR.busy || !LIVE) return;
+  var note = decision === 'rejected' ? MR.note.trim() : '';
+  if (MR.busy || !LIVE || decision === 'rejected' && (MR.ask !== id || !note)) return;
   MR.busy = true; MR.qErr = ''; render();
-  api('POST', '/master/requests/' + id + '/decide', { decision: decision, note: '' }).then(function (r) {
+  api('POST', '/master/requests/' + id + '/decide', { decision: decision, note: note }).then(function (r) {
     MR.busy = false;
     if (r.status === 200 && r.data && r.data.status === decision) {
       FLASH = { text: decision === 'approved' ? 'Согласовано' : 'Отказано',
                 note: decision === 'approved' ? 'Ивент встал в афишу: недель ' + (Array.isArray(r.data.events) ? r.data.events.length : '—') + '.'
                                               : 'Деньги вернулись на счёт заявителя.' };
+      MR.ask = 0; MR.note = '';
       loadMasterQueue(); loadSlots(); go('masterReqs'); return;
     }
     MR.qErr = denyText(r);
@@ -6737,9 +6750,20 @@ var SCREENS = {
       (q.status !== 'pending' ? '<div class="card quiet"><div class="row"><span class="small">Решено ' + esc(topupDay(q.done, true)) + '</span>' +
           '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div></div>'
       : own ? '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой арт-директор.</span></div>'
+      // отказ (#696): форма причины, как у пополнений; почему кнопка не нажимается — строкой у неё (как v123)
+      : MR.ask === q.id ? '<div class="field"><label for="ms-note">Почему отказ и что исправить</label>' +
+          '<textarea id="ms-note" rows="4" maxlength="500">' + esc(MR.note) + '</textarea>' +
+          '<span class="small">Мастер прочтёт это в своей заявке. До 500 знаков.</span></div>' +
+        '<button type="button" class="btn" data-action="ms-no:' + q.id + '"' + (MR.busy || !MR.note.trim() ? ' disabled aria-disabled="true"' : ' aria-disabled="false"') +
+          ' aria-describedby="ms-why">' + (MR.busy ? 'Отправляем…' : 'Отказать и вернуть деньги') + '</button>' +
+        '<span class="small" id="ms-why"' + (MR.note.trim() ? ' hidden' : '') + '>Сначала причина — без неё мастер не узнает, что исправить.</span>' +
+        '<button type="button" class="btn quiet" data-action="ms-keep"' + busy + '>Назад</button>'
       : '<button type="button" class="btn" data-action="ms-yes:' + q.id + '"' + busy + '>' + (MR.busy ? 'Отправляем…' : 'Согласовать') + '</button>' +
         '<span class="small">Ивент сразу встанет в афишу. Выключить его можно в «Ивентах».</span>' +
-        '<button type="button" class="btn quiet" data-action="ms-no:' + q.id + '"' + busy + '>Отказать и вернуть деньги</button>');
+        // кадр E55ж (Cafe13KPG#726): короткий вход «Отказать», а возврат денег назван в точке выбора подписью;
+        // «…и вернуть деньги» стоит на кнопке ОТПРАВКИ — там, где возврат случается
+        '<button type="button" class="btn quiet" data-action="ms-ask:' + q.id + '"' + busy + '>Отказать</button>' +
+        '<span class="small">Деньги вернутся мастеру на счёт.</span>');
   },
 
   // E55e. Единица — СЛОТ (снимок master-slots), выключенный не прячется: иначе включить его негде
@@ -7676,7 +7700,7 @@ function go(screen, p) {
   // шаг 3: каждый вход — свежие данные сервера
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { MR.mineState = ''; }
   if ((screen === 'masters' || screen === 'masterReqs') && current !== screen && mayMasters()) { MR.qErr = ''; loadMasterQueue(); loadMineMaster(); }
-  if (screen === 'masterReq') { MR.qErr = ''; if (!MR.q && mayMasters()) loadMasterQueue(); }
+  if (screen === 'masterReq') { MR.qErr = ''; if (current !== 'masterReq' || param !== p) { MR.ask = 0; MR.note = ''; } if (!MR.q && mayMasters()) loadMasterQueue(); }
   if ((screen === 'masterEvents' || screen === 'masterList') && current !== screen && mayMasters()) { MR.sErr = ''; loadSlots(); }
   if (screen === 'masterEvent') { MR.sErr = ''; if (!MR.slots && mayMasters()) loadSlots(); }
   if (screen === 'masterApply' && current !== 'masterApply' && LIVE) {
@@ -8171,6 +8195,9 @@ function doAction(a) {
     }
     if (a === 'rnw-keep') { if (UNDO.key && /^renew:/.test(UNDO.key)) undoStop(); render(); return; }
     if (a === 'ms-yes' && mayMasters()) { decideMaster(Number(arg), 'approved'); return; }
+    // форму отказа видит и витрина (опись снимет её состояние); отправка вне Telegram не уходит — decideMaster
+    if (a === 'ms-ask' && (mayMasters() || !LIVE) && !MR.busy) { MR.ask = Number(arg); MR.note = ''; MR.qErr = ''; render(); return; }
+    if (a === 'ms-keep' && !MR.busy) { MR.ask = 0; MR.qErr = ''; render(); return; }
     if (a === 'ms-no' && mayMasters()) { decideMaster(Number(arg), 'rejected'); return; }
     if (a === 'ms-hide' && mayMasters()) { slotToggle(Number(arg), false); return; }
     if (a === 'ms-show' && mayMasters()) { slotToggle(Number(arg), true); return; }
