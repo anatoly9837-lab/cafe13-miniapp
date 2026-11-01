@@ -58,6 +58,8 @@ python3 -I tools/keys.py <тот же каталог> > tools/api-keys.json
 серверу не ходит):
 
 ```bash
+# подпись: зелёное: 
+# подпись: КРАСНОЕ
 docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /app/tools/live.cjs
 ```
@@ -115,8 +117,13 @@ docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v <каталог-
 собирает `tools/catalog.py`.
 
 ```bash
+# подпись: прошли проверку признака
+# подпись: ОТКАЗЫ (
+# подпись: ПРОВЕРКА НЕ ВЫПОЛНЕНА
 docker run --rm --memory=2g --memory-swap=2g -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /app/tools/shots.cjs
+# подпись: screens.html:
+# подпись: ПРОВЕРКА НЕ ВЫПОЛНЕНА
 python3 tools/catalog.py <каталог-снимков>
 ```
 
@@ -173,12 +180,23 @@ PDF». Копии команд здесь НЕТ нарочно — вторая
 
 ```bash
 # путь шести живых людей по входам клиента — считает САМ клиент, второй реализации нет
+# подпись: написан vidimost.json
+# подпись: ПРОВЕРКА НЕ ВЫПОЛНЕНА
 docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v $PWD/screens:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /app/tools/vidimost.cjs
 # стадия против реестра ВЫЛОЖЕННОГО клиента — падающая проверка
+# подпись: зелёное
+# подпись: КРАСНОЕ
+# подпись: ПРОВЕРКА НЕ ВЫПОЛНЕНА
 python3 -I tools/check-stages.py                 # 0 сошлось · 1 красное · 2 не выполнено
+# подпись: зелёное
+# подпись: КРАСНОЕ
+# подпись: ПРОВЕРКА НЕ ВЫПОЛНЕНА
 python3 -I tools/check-stages.py --самопроверка
 # ⚠ ПРИ СБОРКЕ ОПИСИ — только так: подлежащее становится ЭТИМ деревом
+# подпись: зелёное
+# подпись: КРАСНОЕ
+# подпись: ПРОВЕРКА НЕ ВЫПОЛНЕНА
 python3 -I tools/check-stages.py --файл app.js
 ```
 
