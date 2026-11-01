@@ -4593,9 +4593,10 @@ if (grantsSet.length !== 1) {
     ['Вы записаны', 'Записаться'].forEach(x => {
       if (f.includes(x)) bad.push(`event-card-free: есть лишнее «${x}»`); });
     if (await s.p.evaluate(() => window.__main !== null)) bad.push('event-card-free: главная кнопка предлагает запись туда, где мест нет');
-    // Афиша берётся один раз за запуск, а не на каждом переходе.
+    // Прежнее «афиша берётся один раз за запуск» снято словом владельца (Cafe13KPG#699): теперь — при каждом
+    // входе на «Клуб»/«Афишу»/«Записи», без дубля идущего запроса. Держит случай afisha-zanovo; здесь — не ноль.
     const got = s.calls.filter(x => x.url.endsWith('/events')).length;
-    if (got !== 1) bad.push(`events: /events запрошен ${got} раз, ждали 1`);
+    if (!got) bad.push('events: /events не запрошен ни разу');
     if (s.errs.length) bad.push('events: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
   }
@@ -4827,6 +4828,8 @@ if (grantsSet.length !== 1) {
     if (await s.p.evaluate(() => window.__main === null)) bad.push('book: на свободном событии нет главной кнопки');
 
     // Внутри Telegram экранная кнопка скрыта (body.has-main .dup-main), работает главная.
+    // Счёт афиши — ПРИБАВКОЙ от нажатия: входы на экраны перечитывают её сами (#699), и абсолютное число мерит путь
+    const ev0 = s.calls.filter(c => c.url.endsWith('/events')).length;
     await s.p.evaluate(() => window.__main());
     await s.p.waitForTimeout(400);
     const t = await s.view();
@@ -4836,8 +4839,8 @@ if (grantsSet.length !== 1) {
     if (t.includes('Не получилось')) bad.push('book: удачная запись показана отказом: «' +
       t.slice(t.indexOf('Не получилось'), t.indexOf('Не получилось') + 90) + '»');
     if (t.includes('Записаться')) bad.push('book: после записи всё ещё предлагают записаться');
-    const reread = s.calls.filter(c => c.url.endsWith('/events')).length;
-    if (reread !== 2) bad.push(`book: запросов к /events ${reread}, ждали 2 (загрузка и перечитывание)`);
+    const reread = s.calls.filter(c => c.url.endsWith('/events')).length - ev0;
+    if (reread < 1) bad.push(`book: после записи афиша не перечитана (запросов к /events после нажатия ${reread})`);
     if (await s.p.evaluate(() => window.__main !== null)) bad.push('book: главная кнопка осталась на уже записанном событии');
     await s.p.screenshot({ path: `${OUT}/live-book-done.png` });
 
@@ -4864,6 +4867,7 @@ if (grantsSet.length !== 1) {
 
     await s.p.click('[data-action="book-cancel"]');
     await s.p.waitForTimeout(150);
+    const ev1 = s.calls.filter(x => x.url.endsWith('/events')).length;
     await s.p.click('[data-action="book-cancel-yes:4"]');
     await s.p.waitForTimeout(400);
     const c = await s.view();
@@ -4875,7 +4879,7 @@ if (grantsSet.length !== 1) {
       c.slice(c.indexOf('Не получилось'), c.indexOf('Не получилось') + 90) + '»');
     const cancels = s.calls.filter(x => /\/bookings\/6\/cancel$/.test(x.url));
     if (cancels.length !== 1) bad.push(`cancel: запросов отмены ${cancels.length}, ждали 1`);
-    if (s.calls.filter(x => x.url.endsWith('/events')).length !== 3) bad.push('cancel: афиша после отмены не перечитана');
+    if (s.calls.filter(x => x.url.endsWith('/events')).length - ev1 < 1) bad.push('cancel: афиша после отмены не перечитана');
     await s.p.screenshot({ path: `${OUT}/live-cancel-done.png` });
     }
     if (s.errs.length) bad.push('book: ошибки страницы ' + s.errs.join('; '));
@@ -4890,12 +4894,13 @@ if (grantsSet.length !== 1) {
       if (q.url().endsWith('/events')) return json(200, [freeRow()]);
       return undefined;
     });
+    const ev0 = s.calls.filter(c => c.url.endsWith('/events')).length;
     await s.p.evaluate(() => window.__main());
     await s.p.waitForTimeout(400);
     const t = await s.view();
     if (!t.includes('Мест нет')) bad.push('book-409: текста отказа сервера на экране нет');
     if (t.includes('Вы записаны')) bad.push('book-409: отказ показан записью');
-    if (s.calls.filter(c => c.url.endsWith('/events')).length !== 2) bad.push('book-409: афиша после отказа не перечитана');
+    if (s.calls.filter(c => c.url.endsWith('/events')).length - ev0 < 1) bad.push('book-409: афиша после отказа не перечитана');
     await s.p.screenshot({ path: `${OUT}/live-book-409.png` });
     await s.ctx.close();
   }
@@ -4976,6 +4981,7 @@ if (grantsSet.length !== 1) {
     let gets = 0;
     const OLD = EV({ id: 4, title: 'Прежний вечер', starts_at: atBkk(0, 19) }), NEW = EV({ id: 8, title: 'Новый вечер', starts_at: atBkk(0, 21) });
     const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      if (q.url().endsWith('/pass')) return json(404, { detail: 'Not Found' });   // уход на «Пропуск»: без ответа fulfill(null) рвёт батарею
       if (q.method() !== 'GET' || !q.url().endsWith('/events')) return undefined;
       gets += 1;
       return gets === 1 ? json(200, [OLD]) : new Promise(r => setTimeout(() => r(json(200, [OLD, NEW])), 900));
