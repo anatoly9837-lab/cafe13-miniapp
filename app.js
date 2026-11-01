@@ -3877,6 +3877,9 @@ function fromEvents(d) {
       // шаг 7 (api#113/#114): уплаченный СО СЧЁТА вход своей записи и что вернёт снятие сейчас — числа сервера,
       // клиент возврат не считает. null — входа со счёта нет; поля нет — сервер до шага 7
       paid: paid, refund: refund,
+      // граница полного возврата — мгновение СЕРВЕРА (`full_refund_until`, Cafe13KPG#750): срок клиент не знает и
+      // не называет; нет поля или битое — фразы о границе нет, числа «Вернётся» остаются
+      refundUntil: typeof e.full_refund_until === 'string' && !isNaN(Date.parse(e.full_refund_until)) ? new Date(e.full_refund_until) : null,
       place: pname, placeId: pid
     });
   }
@@ -3970,6 +3973,16 @@ function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.sea
 /* Вход списывается со счёта ПРИ ЗАПИСИ, и только у платного (api#113, бой 36073d3: `price if kind == "paid" else 0`):
    у донейшна цена — ориентир, она не списывается. Нехватка — до нажатия, остатком из /me; остатка не знаем — не
    держим, решит сервер своим отказом (Cafe13KPG#748, кадры E62/E62b/E62v) */
+/* Подпись к возврату — ГРАНИЦЕЙ из поля сервера, а не сроком: правило («за сколько до начала») меняет сервер
+   (72 ч → 48 ч, Cafe13KPG#750), и число в клиенте лгало бы в окне между выкладками в любом порядке. Дата — по
+   часам клуба. Какая половина фразы — по числам сервера (вернётся всё или меньше), не по часам телефона */
+function refundWhen(e) {
+  if (!e.refundUntil) return '';
+  var p = bkk(e.refundUntil), x = p.ymd.split('-'), at = Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '') + ', ' + p.hm;
+  return '<span class="small" style="text-align:center">' + (e.refund >= e.paid
+    ? 'Снять до ' + esc(at) + ' — вернётся всё; позже — половина.'
+    : 'Всё возвращалось до ' + esc(at) + ', теперь — половина.') + '</span>';
+}
 function bookWord(e) { return entryOf(e) > 0 ? 'Записаться за ' + money(entryOf(e)) + ' ฿' : 'Записаться'; }
 function entryOf(e) { return e.kind === 'paid' ? e.price : 0; }
 function shortOf(e) {
@@ -4781,8 +4794,7 @@ function bookBlock(e) {
           '<div class="rows"><div><span class="small">Вы заплатили</span><b class="num">' + money(e.paid) + ' ฿</b></div>' +
           '<div><span class="small">Вернётся</span><b class="num">' + money(e.refund) + ' ฿</b></div></div>' +
           '<button type="button" class="btn ghost" data-action="book-cancel-yes:' + esc(e.id) + '">Снять запись</button>' +
-          '<span class="small" style="text-align:center">' + (e.refund >= e.paid ? 'До начала больше трёх дней — вернётся всё.'
-            : 'До начала меньше трёх дней — вернётся половина.') + '</span>' +
+          refundWhen(e) +
           '<button type="button" class="btn quiet" data-action="book-cancel-no">Оставить запись</button>' +
         '</div>';
     if (BOOK_ASK)
