@@ -3035,7 +3035,21 @@ var MR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail:
            slots: null, without: null, sFail: '', sGen: 0, price: {}, priceAsk: {},
            busy: false, err: '', qErr: '', sErr: '' };
 // мест по умолчанию 0 = «не ограничено» (слово владельца); ⚠ схема сервера ноль пока не принимает (seats ≥ 1)
-var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
+// `from` — номер заявки, чьими полями форма уже заполнена (#697): подстановка одна на форму
+var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '', from: 0 };
+/* Повторная заявка открывается полями последней ОТПРАВЛЕННОЙ (слово владельца 31.10.2026, Cafe13KPG#697):
+   `MR.mine` отсортирован по created_at, первая — последняя при любом решении. Цена не подставляется — её даёт
+   сервер по часам. Подставляется ОДИН раз и только в нетронутую форму: набранное человеком не перетирается.
+   Часы — как были, даже если денег теперь не хватает: урезать выбор молча нельзя, «Не хватает» видно и отправку гасит */
+function msfPrefill() {
+  var last = MR.mine && MR.mine[0];
+  if (!last || last.status === 'pending' || MSF.from) return;
+  if (current === 'masterApply') msfGrab();
+  if (MSF.day !== 4 || MSF.time !== '18:00' || MSF.extra || MSF.seats !== '0' || MSF.title || MSF.about) return;
+  MSF = { day: last.weekday, time: MS_TIMES.indexOf(last.start) >= 0 ? last.start : MSF.time,
+          extra: Math.max(0, Math.min(last.hours, MS_MAX_H) - 2), seats: String(last.seats),
+          title: last.title, about: last.about, err: '', from: last.id };
+}
 function loadMineMaster() {
   if (!LIVE) return;
   var gen = ++MR.mineGen; MR.mineState = 'loading';
@@ -3043,6 +3057,9 @@ function loadMineMaster() {
     if (gen !== MR.mineGen) return;
     var d = r.status === 200 ? fromMasterList(r.data, false) : null;
     MR.mine = d ? d.list : null; MR.mineState = d ? 'ok' : failText(r);
+    // набранное — в MSF до перерисовки: без этого ответ, пришедший посреди набора, стирал текст полей
+    if (current === 'masterApply') msfGrab();
+    if (d) { msfPrefill(); loadPrice(2 + MSF.extra); loadPrice(3 + MSF.extra); }
     if ({ home: 1, masterApply: 1, masterReqs: 1, masterReq: 1 }[current]) render();
   });
 }
@@ -3234,7 +3251,7 @@ function sendMaster() {
     // деньги могли уйти и при неразобранном ответе — свою заявку и остаток перечитываем ВСЕГДА
     loadMineMaster(); refreshMe();
     if (got) {
-      MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
+      MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '', from: 0 };
       FLASH = { text: 'Заявка отправлена', note: 'Списано ' + money(got.amount) + ' ฿. Решение примет арт-директор; если он откажет, деньги вернутся на счёт.' };
       go('home'); return;
     }
@@ -7665,7 +7682,7 @@ function go(screen, p) {
   if ((screen === 'masterEvents' || screen === 'masterList') && current !== screen && mayMasters()) { MR.sErr = ''; loadSlots(); }
   if (screen === 'masterEvent') { MR.sErr = ''; if (!MR.slots && mayMasters()) loadSlots(); }
   if (screen === 'masterApply' && current !== 'masterApply' && LIVE) {
-    MSF.err = ''; if (!EV_PLACES && EV_PLACES_STATE !== 'loading') loadPlaces();
+    MSF.err = ''; msfPrefill(); if (!EV_PLACES && EV_PLACES_STATE !== 'loading') loadPlaces();
     loadPrice(2); loadPrice(2 + MSF.extra); loadPrice(3 + MSF.extra);
     if (MR.mineState === '') loadMineMaster();
   }
