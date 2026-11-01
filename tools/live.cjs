@@ -5242,6 +5242,34 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // Часы телефона на СУТКИ позади при том же поле сервера (граница 1 декабря 12:30Z уже прошла по часам батареи):
+    // фраза условия на карточке сдвигается — это названный предел, единственное сравнение с часами устройства, —
+    // а спрос снятия у записанного НЕ меняется: «Вернётся» и выбор фразы — деньги сервера, часы их не трогают.
+    {
+      const n = 'granica-chasy-vrut', until = '2026-12-01T12:30:00+00:00';
+      for (const booked of [false, true]) {
+        const row = EV(Object.assign({ id: 4, full_refund_until: until },
+          booked ? { taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6, my_entry_paid: '400.00', my_refund_now: '200.00' }
+                 : { taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null }));
+        const s = await open(true, true, json(200, OWNER), null, null, null,
+          q => q.url().endsWith('/events') ? json(200, [row]) : undefined, null, NOWFIX - 86400e3);
+        await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(120);
+        await openRow(s, '4'); await s.p.waitForTimeout(150);
+        if (!booked) {
+          const g = await s.p.evaluate(() => ([...document.querySelectorAll('#view .group')].find(x => x.textContent.includes('Записаться')) || {}).textContent || '');
+          // предел, а не желаемое: при часах на сутки позади человек видит «до 1 декабря, 19:30 — вернётся всё», хотя граница прошла
+          if (!g.includes('Снять запись до 1 декабря, 19:30 — вернётся всё')) bad.push(`${n}: фраза условия не та, что называет предел — («${g}»)`);
+        } else {
+          if (await s.p.$('[data-action="book-cancel"]')) { await s.p.click('[data-action="book-cancel"]'); await s.p.waitForTimeout(150); }
+          const rows = await s.p.evaluate(() => [...document.querySelectorAll('#view .rows > div')].map(d => d.textContent));
+          const t = await s.view();
+          if (!rows.includes('Вернётся200 ฿')) bad.push(`${n}: при сдвинутых часах «Вернётся» не число сервера (${JSON.stringify(rows)})`);
+          if (!t.includes('Всё возвращалось до 1 декабря, 19:30, теперь — половина.')) bad.push(`${n}: при сдвинутых часах спрос снятия сменил фразу — её выбрали часы, а не деньги`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+    }
   }
   // ── деньги при записи и снятии (шаг 7, Cafe13KPG#748, кадры E62b/E66/E66b) ──
   // Нехватка — ДО нажатия, остатком из /me. Пара: остаток ровно во вход — запись идёт. Без пары прошёл бы «запрет всем».
