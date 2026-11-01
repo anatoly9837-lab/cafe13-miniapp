@@ -5220,6 +5220,44 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── на СВОЁ мероприятие не записываются (слово владельца 31.10.2026, Cafe13KPG#700) ──
+  // Пара на одной афише: своё (organizer_id 1 = OWNER) и чужое. Без чужого прошёл бы и «запрет всем».
+  // Кнопки на своём нет ВОВСЕ (не погашена — снята): тянуть за неё нечем. Сервер с api#111 отвечает 409,
+  // но фикстура нарочно даёт 201 — зелёное здесь значит «держит клиент».
+  for (const [n, id, own] of [['book-svoe-net', '4', true], ['book-chuzhoe-da', '7', false]]) {
+    const posts = [];
+    const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      const u = q.url();
+      if (u.endsWith('/bookings')) { posts.push(1); return json(201, { id: 6, event_id: Number(id), state: 'booked', amount_due: '400.00' }); }
+      if (u.endsWith('/events')) return json(200, [EV({ id: 4, title: 'Мой вечер', organizer_id: 1, starts_at: atBkk(1, 19), taken: 0, seats_left: 12 }),
+        EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20), taken: 0, seats_left: 12 })]);
+      return undefined;
+    }, null, NOWFIX);
+    await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(120);
+    if (!(await showRow(s, id))) { bad.push(`${n}: на афише нет мероприятия ${id}`); await s.ctx.close(); continue; }
+    await openRow(s, id); await s.p.waitForTimeout(120);
+    const t = await s.view();
+    const b = await s.p.evaluate(() => !![...document.querySelectorAll('#view button')].find(x => x.textContent.trim() === 'Записаться'));
+    const main = await s.p.evaluate(() => window.__main !== null);
+    if (own) {
+      if (b) bad.push(`${n}: на своём мероприятии есть «Записаться»`);
+      if (main) bad.push(`${n}: на своём мероприятии главная кнопка Telegram предлагает запись`);
+      if (!t.includes('Это ваше мероприятие.')) bad.push(`${n}: не сказано «Это ваше мероприятие.»`);
+      if (t.includes('Оплата — на месте')) bad.push(`${n}: на своём подсказка оплаты — платить за своё не за что`);
+      await s.p.evaluate(() => bookEvent('4')); await s.p.waitForTimeout(400);
+      if (posts.length) bad.push(`${n}: запись на своё ушла на сервер (${posts.length}) — обработчик своё не держит`);
+    } else {
+      if (!b) bad.push(`${n}: на чужом мероприятии нет «Записаться» — запрет «всем», а не своему`);
+      if (!main) bad.push(`${n}: на чужом мероприятии нет главной кнопки Telegram`);
+      if (t.includes('Это ваше мероприятие.')) bad.push(`${n}: чужое названо своим`);
+      if (main) { await s.p.evaluate(() => window.__main()); await s.p.waitForTimeout(400); }
+      if (posts.length !== 1) bad.push(`${n}: запись на чужое ушла ${posts.length} раз, ждали 1`);
+    }
+    await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
   // Кончившемуся и заполненному событию записи не предлагают вовсе.
   for (const [name, row, has, hasnt] of [
     ['book-konchilos', EV({ id: 4, title: 'Уже закончился', starts_at: new Date(NOWFIX - 9000e3).toISOString(),
