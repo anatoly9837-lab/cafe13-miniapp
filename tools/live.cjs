@@ -4775,7 +4775,8 @@ if (grantsSet.length !== 1) {
       EV({ id: 4 }),
       EV({ id: 10, title: 'Утро без денег', kind: 'free', price: '0.00',
            seats: 8, taken: 1, seats_left: 7 }),
-      EV({ id: 11, title: 'Круг по желанию', kind: 'donation', price: '0.00',
+      // у донейшна цена — ОРИЕНТИР (заводили так до шага 7), сервер её не списывает: «спишется» здесь — ложь
+      EV({ id: 11, title: 'Круг по желанию', kind: 'donation', price: '300.00',
            seats: 9, taken: 2, seats_left: 7 })
     ];
     const s = await open(true, true, json(200, OWNER), null, null, null,
