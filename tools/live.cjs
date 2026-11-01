@@ -4944,6 +4944,22 @@ if (grantsSet.length !== 1) {
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
+  // Своё КОНЧИВШЕЕСЯ: строки «Это ваше мероприятие.» нет — объяснять нечего, записи и так нет. Предел, найденный
+  // мутацией frontend-11 donealways на #216 (тернар `e.done ? ''` не держал ни один случай).
+  {
+    const n = 'book-svoe-konchilos';
+    const s = await openCard(q => q.url().endsWith('/events') ? json(200, [EV({ id: 4, title: 'Мой прошедший вечер', organizer_id: 1,
+      starts_at: new Date(NOWFIX - 9000e3).toISOString(), duration_min: 60, taken: 2, seats_left: 10 })]) : undefined);
+    const t = await s.view();
+    if (!t.includes('завершилось')) bad.push(`${n}: карточка не кончившегося мероприятия — фикстура не та, вердикт не выносится`);
+    else {
+      if (t.includes('Это ваше мероприятие.')) bad.push(`${n}: на своём кончившемся строка «Это ваше мероприятие.» — объяснять нечего`);
+      if (await s.p.$('[data-action^="book:"]')) bad.push(`${n}: на своём кончившемся предложена запись`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
   /* Подпись по виду (кадры E62/E62v): платному — «спишется сразу», бесплатному и донейшну — «ничего не спишется»
      (у донейшна цена — ориентир, сервер её не списывает). Обе половины: без второй случай подтверждал бы наличие
      и молчал бы о лишнем. */
@@ -5399,6 +5415,56 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── условие возврата на карточке, ДО записи (Cafe13KPG#750, довод designer-55): граница датой из поля ──
+  // Часы батареи — 2 декабря 01:00Z. Граница 2 декабря 12:30Z впереди, 1 декабря 12:30Z — прошла.
+  {
+    const SROK2 = /(?<![а-яё])(день|дн[еяий]\S*|сут(ок|ки|кам)\S*|час(а|ов)?|недел\S*)(?![а-яё])|\d\s*ч\.?(?![а-яё])/i;
+    for (const [n, until, want, wantNot] of [
+        // слова кадров E62 / E62г (Cafe13KPG#751)
+        ['zapis-granica-vperedi', '2026-12-02T12:30:00+00:00', 'Снять запись с полным возвратом можно до 2 декабря, 19:30 — позже вернётся половина.', 'действовал до'],
+        ['zapis-granica-proshla', '2026-12-01T12:30:00+00:00', 'Если снимете запись, вернётся половина: полный возврат действовал до 1 декабря, 19:30.', 'полным возвратом можно'],
+        ['zapis-bez-granicy', undefined, null, 'возврат']]) {
+      const s = await openCard(q => q.url().endsWith('/events')
+        ? json(200, [EV(Object.assign({ id: 4, taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null }, until ? { full_refund_until: until } : {}))]) : undefined);
+      const g = await s.p.evaluate(() => ([...document.querySelectorAll('#view .group')].find(x => x.textContent.includes('Записаться')) || {}).textContent || '');
+      if (!g) bad.push(`${n}: нет блока «Записаться» — судить условие не на чем`);
+      if (want && !g.includes(want)) bad.push(`${n}: условие возврата не из поля сервера — нет «${want}» («${g}»)`);
+      if (wantNot && g.includes(wantNot)) bad.push(`${n}: лишнее «${wantNot}»`);
+      const hit = g.match(SROK2);
+      if (hit) bad.push(`${n}: у записи назван срок словом «${hit[0]}» — границу даёт сервер датой (#750)`);
+      await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // Часы телефона на СУТКИ позади при том же поле сервера (граница 1 декабря 12:30Z уже прошла по часам батареи):
+    // фраза условия на карточке сдвигается — это названный предел, единственное сравнение с часами устройства, —
+    // а спрос снятия у записанного НЕ меняется: «Вернётся» и выбор фразы — деньги сервера, часы их не трогают.
+    {
+      const n = 'granica-chasy-vrut', until = '2026-12-01T12:30:00+00:00';
+      for (const booked of [false, true]) {
+        const row = EV(Object.assign({ id: 4, full_refund_until: until },
+          booked ? { taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6, my_entry_paid: '400.00', my_refund_now: '200.00' }
+                 : { taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null }));
+        const s = await open(true, true, json(200, OWNER), null, null, null,
+          q => q.url().endsWith('/events') ? json(200, [row]) : undefined, null, NOWFIX - 86400e3);
+        await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(120);
+        await openRow(s, '4'); await s.p.waitForTimeout(150);
+        if (!booked) {
+          const g = await s.p.evaluate(() => ([...document.querySelectorAll('#view .group')].find(x => x.textContent.includes('Записаться')) || {}).textContent || '');
+          // предел, а не желаемое: при часах на сутки позади человек видит «до 1 декабря, 19:30 — вернётся всё», хотя граница прошла
+          if (!g.includes('Снять запись с полным возвратом можно до 1 декабря, 19:30')) bad.push(`${n}: фраза условия не та, что называет предел — («${g}»)`);
+        } else {
+          if (await s.p.$('[data-action="book-cancel"]')) { await s.p.click('[data-action="book-cancel"]'); await s.p.waitForTimeout(150); }
+          const rows = await s.p.evaluate(() => [...document.querySelectorAll('#view .rows > div')].map(d => d.textContent));
+          const t = await s.view();
+          if (!rows.includes('Вернётся200 ฿')) bad.push(`${n}: при сдвинутых часах «Вернётся» не число сервера (${JSON.stringify(rows)})`);
+          if (!t.includes('Полный возврат действовал до 1 декабря, 19:30.')) bad.push(`${n}: при сдвинутых часах спрос снятия сменил фразу — её выбрали часы, а не деньги`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+    }
+  }
   // ── деньги при записи и снятии (шаг 7, Cafe13KPG#748, кадры E62b/E66/E66b) ──
   // Нехватка — ДО нажатия, остатком из /me. Пара: остаток ровно во вход — запись идёт. Без пары прошёл бы «запрет всем».
   for (const [n, bal, short] of [['book-nehvatka', 250, true], ['book-rovno', 400, false]]) {
@@ -5438,11 +5504,20 @@ if (grantsSet.length !== 1) {
   // Спрос снятия оплаченной со счёта записи: «Вы заплатили» и «Вернётся» — числа СЕРВЕРА (my_entry_paid,
   // my_refund_now), слова по их отношению. Возврат 150 при входе 400 — не половина: клиент, считающий сам
   // (половину или по часам), дал бы 200 или 400. После снятия остаток перечитан (/me ещё раз).
-  for (const [n, refund, word] of [['snyat-vse', '400.00', 'До начала больше трёх дней — вернётся всё.'],
-                                   ['snyat-chast', '150.00', 'До начала меньше трёх дней — вернётся половина.']]) {
+  // Граница — поле сервера `full_refund_until` (Cafe13KPG#750): мгновение 12:30Z = 19:30 по острову НЕ выводится из
+  // начала мероприятия, так что клиент, считающий срок сам, напечатал бы другое. Без поля — фразы о границе нет.
+  // И на спросе снятия НЕТ НАЗВАНИЯ СРОКА в любом написании: правило «за сколько до начала» меняет сервер, число
+  // в клиенте лжёт в окне между выкладками. Признак по предмету, а не по перечню фраз.
+  const SROK = /(?<![а-яё])(день|дн[еяий]\S*|сут(ок|ки|кам)\S*|час(а|ов)?|недел\S*)(?![а-яё])|\d\s*ч\.?(?![а-яё])/i;
+  for (const [n, refund, word, until] of [
+      // E66: до границы подписи нет вовсе; E66b: «Полный возврат действовал до …» (слова кадров, Cafe13KPG#751)
+      ['snyat-vse', '400.00', null, '2026-12-02T12:30:00+00:00'],
+      ['snyat-chast', '150.00', 'Полный возврат действовал до 1 декабря, 19:30.', '2026-12-01T12:30:00+00:00'],
+      ['snyat-bez-granicy', '400.00', null, undefined]]) {
     let booked = true, mes = 0;
     const cancels = [];
-    const row = () => booked ? EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6, my_entry_paid: '400.00', my_refund_now: refund })
+    const row = () => booked ? EV(Object.assign({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6, my_entry_paid: '400.00', my_refund_now: refund },
+                                                until ? { full_refund_until: until } : {}))
                              : freeRow();
     const s = await open(true, true, json(200, OWNER), null, null, null, q => {
       const u = q.url();
@@ -5461,7 +5536,13 @@ if (grantsSet.length !== 1) {
     if (!rows.includes('Вы заплатили400 ฿')) bad.push(`${n}: нет строки «Вы заплатили 400 ฿» (${JSON.stringify(rows)})`);
     const want = 'Вернётся' + refund.replace('.00', '') + ' ฿';
     if (!rows.includes(want)) bad.push(`${n}: возврат не числом сервера — ждали «${want}» (${JSON.stringify(rows)})`);
-    if (!t.includes(word)) bad.push(`${n}: нет «${word}»`);
+    if (word && !t.includes(word)) bad.push(`${n}: граница не из поля сервера — нет «${word}»`);
+    if (!word && /действовал до|возврат/i.test(t)) bad.push(`${n}: подпись о границе там, где её нет по кадру (E66 / нет поля)`);
+    // судится карточка снятия, а не экран: у мероприятия свои часы начала и конца
+    const srok = await s.p.evaluate(() => ([...document.querySelectorAll('#view .card')].find(c => c.textContent.includes('Снять запись?')) || {}).textContent || '');
+    if (!srok) bad.push(`${n}: карточки «Снять запись?» нет — судить срок не на чем`);
+    const hit = srok.match(SROK);
+    if (hit) bad.push(`${n}: на спросе снятия назван срок словом «${hit[0]}» — границу даёт сервер датой (#750)`);
     const mesBefore = mes;
     const yes = await s.p.evaluate(() => { const b = document.querySelector('[data-action="book-cancel-yes:4"]'); if (!b) return null; b.click(); return b.textContent; });
     await s.p.waitForTimeout(500);
