@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v126 · 31.10.2026';
+var VERSION = 'v135 · 01.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -265,7 +265,9 @@ var ROLE_NAME = { head: 'Глава клуба', god_mentor: 'Глава клу�
                   // Cafe13KPG#503). Роль общая, без направления; выдаёт глава клуба (Cafe13KPG#514).
                   // Подпись — слово владельца 29.10.2026: «все ответственности на русском, а эта из кода —
                   // „Пополнение онлайн“». Имя роли в схеме остаётся `topups`; меняется только подпись
-                  topups: 'Пополнение онлайн' };
+                  topups: 'Пополнение онлайн',
+                  // роль мастера (api миграция 020); без ключа печаталось сырое `master` латиницей (Cafe13KPG#682)
+                  master: 'Мастер' };
 
 /* Дата конца членства в строке имени — ЧИСЛАМИ (кадр E47p: «· до 12.11.2026»), а не словами:
    `ruDate` даёт «12 ноября 2026» и в строку рядом с именем не помещается.
@@ -2017,7 +2019,7 @@ function refreshMe() {
     // экраны, где остаток считает что-то кроме шапки, — целиком; остальные — только шапка (остаток в ней)
     // остаток сменился — «хватит ли» на продление спросить у сервера заново (предпросмотр — снимок, не обещание)
     if (current === 'masterRenew') RNW.key = '';
-    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, masterRenew: 1 }[current]) render();
+    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, masterRenew: 1, event: 1 }[current]) render();
     else { var right = document.getElementById('bar-right'); if (right) right.innerHTML = barRight(); }
   });
 }
@@ -3033,7 +3035,18 @@ function fromSlots(d) {
 }
 var MR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail: '', qGen: 0,
            slots: null, without: null, sFail: '', sGen: 0, price: {}, priceAsk: {},
-           busy: false, err: '', qErr: '', sErr: '' };
+           busy: false, err: '', qErr: '', sErr: '', ask: 0, note: '' };
+/* Отказ в мастерстве — с причиной и рекомендациями, обязательно (слово владельца 31.10.2026, Cafe13KPG#696).
+   Поле одно: «причину» от «рекомендаций» машине не отличить, поэтому подпись просит оба, а проверка меряет
+   непустоту. Кнопка гаснет и включается на ВВОДЕ, без перерисовки — иначе набор терял бы фокус. */
+function msNoteSync() {
+  var t = document.getElementById('ms-note'); if (!t) return;
+  MR.note = t.value;
+  var b = document.querySelector('#view [data-action^="ms-no:"]'), w = document.getElementById('ms-why'), empty = !MR.note.trim();
+  if (b) { b.disabled = empty || MR.busy; b.setAttribute('aria-disabled', String(b.disabled)); }
+  if (w) w.hidden = !empty;
+}
+document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'ms-note') msNoteSync(); });
 // мест по умолчанию 0 = «не ограничено» (слово владельца); ⚠ схема сервера ноль пока не принимает (seats ≥ 1)
 var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
 function loadMineMaster() {
@@ -3184,14 +3197,9 @@ function masterOffer() {
   if (MR.mineState === 'loading' && !MR.mine) return '';
   if (MR.mineState !== 'ok' && !MR.mine) return '<div class="card quiet"><div class="row"><span class="small">Заявки в мастера не загрузились: ' +
       esc(MR.mineState) + '</span><button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>';
-  var own = msOwnSlot();
-  if (msIsMaster()) return '<div class="card"><div class="col"><b>Вы мастер</b>' +
-      // «покупают один раз» снято — ложь при оплате по месяцам (слово владельца «Не правильно - на месяц»); слова ждут кадра
-      (own && own.paidUntil ? '<span class="small">Оплачено до ' + esc(msDate(own.paidUntil)) + '</span>' : '') +
-      '<span class="small">Своё время и ивент — в «Ивентах». Слот — ' + (typeof MR.price[2] === 'number' ? money(MR.price[2]) + ' ฿' : 'оплата') +
-        ' в календарный месяц: продлевается оплатой, неоплаченный отдаётся.</span></div>' +
-      // продление — только у своей СОГЛАСОВАННОЙ заявки: у мастера по старому виду членства слота нет
-      (own ? '<button type="button" class="btn ghost" data-go="masterRenew">Продлить</button>' : '') + '</div>';
+  // блок «Вы мастер» снят (E68, Cafe13KPG#682): условие слота живёт на «Продлении» числами, а дверь
+  // туда — «Продлить» под ролями (masterRenewDoor)
+  if (msIsMaster()) return '';
   var last = MR.mine[0];
   if (last && last.status === 'pending') return '<div class="card quiet"><div class="row"><div class="col"><b>Заявка в мастера</b>' +
       '<span class="small">' + esc(topupDay(last.iso, true)) + '</span></div><span class="st wait">' + esc(last.word) + '</span></div>' +
@@ -3243,14 +3251,16 @@ function sendMaster() {
   });
 }
 function decideMaster(id, decision) {
-  if (MR.busy || !LIVE) return;
+  var note = decision === 'rejected' ? MR.note.trim() : '';
+  if (MR.busy || !LIVE || decision === 'rejected' && (MR.ask !== id || !note)) return;
   MR.busy = true; MR.qErr = ''; render();
-  api('POST', '/master/requests/' + id + '/decide', { decision: decision, note: '' }).then(function (r) {
+  api('POST', '/master/requests/' + id + '/decide', { decision: decision, note: note }).then(function (r) {
     MR.busy = false;
     if (r.status === 200 && r.data && r.data.status === decision) {
       FLASH = { text: decision === 'approved' ? 'Согласовано' : 'Отказано',
                 note: decision === 'approved' ? 'Ивент встал в афишу: недель ' + (Array.isArray(r.data.events) ? r.data.events.length : '—') + '.'
                                               : 'Деньги вернулись на счёт заявителя.' };
+      MR.ask = 0; MR.note = '';
       loadMasterQueue(); loadSlots(); go('masterReqs'); return;
     }
     MR.qErr = denyText(r);
@@ -3821,6 +3831,12 @@ function dayLabel(p, now) {
 /* Ответ /events → строки, которые рисует экран: имена полей те же, что у
    демонстрационных событий, чтобы разметка осталась одна. Битое событие —
    отказ целиком: афиша с пропавшей строкой выглядит полной. */
+// деньги строкой («400.00») или null/нет поля → число или null; иное — undefined: строка битая
+function moneyOrNull(x) {
+  if (x === undefined || x === null) return null;
+  var n = typeof x === 'string' && /^\d+(\.\d+)?$/.test(x) ? Number(x) : NaN;
+  return isFinite(n) ? n : undefined;
+}
 function fromEvents(d) {
   if (!Array.isArray(d)) return null;
   var now = new Date(), out = [];
@@ -3842,6 +3858,8 @@ function fromEvents(d) {
     if ((pid === null) !== (pname === null)) return null;
     var price = num(e.price);
     if (!(price >= 0)) return null;
+    var paid = moneyOrNull(e.my_entry_paid), refund = moneyOrNull(e.my_refund_now);
+    if (paid === undefined || refund === undefined) return null;
     var start = new Date(e.starts_at);
     if (isNaN(start.getTime())) return null;
     var ends = start.getTime() + e.duration_min * 60000;
@@ -3866,6 +3884,9 @@ function fromEvents(d) {
       booked: !!e.booked_by_me,
       // номер своей записи — им отменяют; его читает `bookBlock`: нет номера — нет и кнопки
       bookingId: typeof e.my_booking_id === 'number' ? e.my_booking_id : null,
+      // шаг 7 (api#113/#114): уплаченный СО СЧЁТА вход своей записи и что вернёт снятие сейчас — числа сервера,
+      // клиент возврат не считает. null — входа со счёта нет; поля нет — сервер до шага 7
+      paid: paid, refund: refund,
       place: pname, placeId: pid
     });
   }
@@ -3955,7 +3976,18 @@ function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 // зовутся только из живых веток, демо-карточка рисует «Записаться» своей веткой. Оставлено как страховка:
 // у демо-человека членств нет, и демо-путь, начавший звать canBookEvent, без неё закрыл бы запись витрине
 function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
-function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents(); }
+// На своё мероприятие мастер не записывается (слово владельца, Cafe13KPG#700): признак тот же, что у
+// управления, и через этот предикат он доходит и до главной кнопки (`mainFor`), и до самой записи (`bookEvent`)
+function canBookEvent(e) { return !!e && !e.booked && !e.done && !isMyEvent(e) && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents() && !shortOf(e); }
+/* Вход списывается со счёта ПРИ ЗАПИСИ, и только у платного (api#113, бой 36073d3: `price if kind == "paid" else 0`):
+   у донейшна цена — ориентир, она не списывается. Нехватка — до нажатия, остатком из /me; остатка не знаем — не
+   держим, решит сервер своим отказом (Cafe13KPG#748, кадры E62/E62b/E62v) */
+function bookWord(e) { return entryOf(e) > 0 ? 'Записаться за ' + money(entryOf(e)) + ' ฿' : 'Записаться'; }
+function entryOf(e) { return e.kind === 'paid' ? e.price : 0; }
+function shortOf(e) {
+  var bal = DATA.member && DATA.member.balance;
+  return LIVE && typeof bal === 'number' && entryOf(e) > bal ? entryOf(e) - bal : 0;
+}
 // сколько записалось: без ограничения — `taken` сервера (из «мест» не вычесть), иначе — мест минус осталось
 function takenOf(e) { return e.unl ? e.taken : e.of - e.seats; }
 // ВРЕМЕННЫЕ слова «без ограничения» — до кадра дизайнера (Cafe13KPG#639)
@@ -3986,6 +4018,7 @@ function cancelBooking(id) {
    задуманное, решает перечитанное, а не код ответа. */
 function afterBooking(r, id, want) {
   var detail = detailOf(r);
+  refreshMe();     // вход списан или возвращён — шапка и нехватка на других карточках по новому остатку
   api('GET', '/events').then(function (g) {
     var list = g.status === 200 ? fromEvents(g.data) : null;
     if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
@@ -4754,6 +4787,16 @@ function bookBlock(e) {
     // это сказано прямо, а не спрятано за кнопкой, которая откажет.
     if (typeof e.bookingId !== 'number')
       return err + '<div class="card quiet"><span class="small">Отменить запись из приложения пока нельзя.</span></div>';
+    // уплачено со счёта — спрос по кадрам E66/E66b: сколько заплатил и сколько вернётся, оба числа сервера
+    if (BOOK_ASK && e.paid > 0 && typeof e.refund === 'number')
+      return err + '<div class="card strong"><div class="col"><b>Снять запись?</b></div>' +
+          '<div class="rows"><div><span class="small">Вы заплатили</span><b class="num">' + money(e.paid) + ' ฿</b></div>' +
+          '<div><span class="small">Вернётся</span><b class="num">' + money(e.refund) + ' ฿</b></div></div>' +
+          '<button type="button" class="btn ghost" data-action="book-cancel-yes:' + esc(e.id) + '">Снять запись</button>' +
+          '<span class="small" style="text-align:center">' + (e.refund >= e.paid ? 'До начала больше трёх дней — вернётся всё.'
+            : 'До начала меньше трёх дней — вернётся половина.') + '</span>' +
+          '<button type="button" class="btn quiet" data-action="book-cancel-no">Оставить запись</button>' +
+        '</div>';
     if (BOOK_ASK)
       return err + '<div class="card strong"><div class="col">' +
           '<b>Отменить запись?</b>' +
@@ -4763,12 +4806,20 @@ function bookBlock(e) {
         '</div>';
     return err + '<button type="button" class="btn ghost" data-action="book-cancel">Отменить запись</button>';
   }
+  // Своё — вместо кнопки строка с причиной: пустое место под «Управлением» читается как поломка (#700).
+  // Раньше членства: причина здесь не в нём. Уже записанному (запись старше этой правки) отмена выше остаётся
+  if (isMyEvent(e))
+    return err + (e.done ? '' : '<div class="card quiet"><span class="small">Это ваше мероприятие.</span></div>');
   // без живого членства (E37k): кнопка ОСТАЁТСЯ, погашена, причина вплотную под ней; подсказка оплаты
   // снята — она про то, что будет после нажатия, а нажатия не будет (designer-55)
   if (!mayBookEvents() && !e.done)
     return err + '<div style="display:flex;flex-direction:column;gap:9px">' +
       '<button type="button" class="btn" disabled aria-disabled="true">Записаться</button>' +
       '<span class="small" style="text-align:center">Пока записываются только члены клуба.</span></div>';
+  if (shortOf(e) && !e.done && (e.unl || e.seats > 0))
+    return err + '<div style="display:flex;flex-direction:column;gap:9px">' +
+      '<button type="button" class="btn" disabled aria-disabled="true">Записаться за ' + money(entryOf(e)) + ' ฿</button>' +
+      '<span class="small" style="text-align:center">Не хватает ' + money(shortOf(e)) + ' ฿.</span></div>';
   if (!canBookEvent(e)) {
     // Объяснение — там, где человек мог ждать кнопку: мест нет. Кончившемуся
     // событию объяснять нечего, у него всё сказано карточкой.
@@ -4776,44 +4827,14 @@ function bookBlock(e) {
       ? '<div class="card quiet"><span class="small">Мест нет. Если кто-то снимет запись, место вернётся в афишу.</span></div>'
       : '');
   }
-  /* Подпись отвечает на то, чего человек не знает и что решает за него
-     сервер: достанется ли место сразу, когда платить и кто может запись
-     снять. Текст платного принят командой дословно и лежит адресом в
-     Cafe13KPG#271, а не в переписке; менять его здесь нельзя.
-
-     Прежняя редакция этого комментария говорила: «Про отмену здесь не
-     сказано ни слова: отменить из приложения сегодня нечем, а обещание,
-     данное ДО записи, человек прочитает как право, которого у него не
-     будет». Решение осталось верным, и снято с него только одно: речь шла
-     о ПРАВЕ ЧЕЛОВЕКА отменить, которого нет. «Снять запись может работник
-     клуба» — не право, а предупреждение, и оно шире, чем было: на бою
-     `POST /bookings/{id}/cancel` в ветке `_is_staff` условия «только
-     неоплаченную» НЕТ (замер designer-55 по боевому fa2cebc, 25.10.2026),
-     то есть снять могут и оплаченную.
-
-     Про деньги при снятии не сказано НИЧЕГО, и это решение, а не недоделка:
-     ответа про возврат нет ни на сервере, ни у владельца (Cafe13KPG#290 в
-     Backlog, им не открыта), а фраза про возврат была бы обещанием
-     механизма — тем самым, что этот экран и снимает.
-
-     Цены в подписи НЕТ нарочно: она уже названа строкой «Участие» выше
-     (`:2840` в живой ветке, `:3292` в демонстрационной), и второе предложение
-     стоит ровно так, как в кадре описи E37g (`Cafe13KPG` dev `ab7fb83`, замер
-     мой): «При записи со счёта не списывается». Своя, третья редакция этой
-     фразы здесь была и снята возвратом архитектора — клиент и опись обязаны
-     говорить одними словами, иначе чинить буквы придётся дважды.
-
-     Бесплатному и донейшну фраза НЕ даётся: «Оплата — на месте» у
-     бесплатного обещает платёж, которого нет, а у донейшна своя строка
-     точнее — взнос по желанию и на запись не влияет. */
-  var hint = e.kind === 'paid'
-    ? 'Место закрепляется за вами сразу. Оплата — на месте; снять запись может работник клуба. При записи со счёта не списывается.'
-    : e.kind === 'donation'
-    ? 'Взнос — по желанию и на запись не влияет: передать можно мастеру на месте.'
-    : '';
+  /* Подпись — про деньги, потому что их теперь трогает сама запись (шаг 7, Cafe13KPG#748). Прежняя подпись («оплата
+     на месте», «при записи не трогается счёт») стала ложью с выкладкой api#113 (бой 36073d3). Вторая фраза кадра E62
+     («Поблагодарить мастера можно после мероприятия») НЕ дана: кнопки благодарности в клиенте ещё нет (E65 — следующей
+     заявкой), и обещание пути, которого нет, было бы той же поломкой. */
+  var hint = entryOf(e) > 0 ? 'Спишется со счёта сразу.' : 'Со счёта ничего не спишется.';
   return err +
     '<div class="group">' +
-      '<button type="button" class="btn dup-main" data-action="book:' + esc(e.id) + '">Записаться</button>' +
+      '<button type="button" class="btn dup-main" data-action="book:' + esc(e.id) + '">' + bookWord(e) + '</button>' +
       (hint ? '<span class="small" style="text-align:center">' + hint + '</span>' : '') +
     '</div>';
 }
@@ -5095,12 +5116,14 @@ var SCREENS = {
     var m = DATA.member;
     var next = LIVE ? null : DATA.upcoming[0];
     return (FLASH ? flash() : '') +
+      // E68 (Cafe13KPG#682): «Активно» в строке заголовка, «Пропуск» — короткой кнопкой справа в плашке.
+      // Подпись короткая по замеру дизайнера: «Показать пропуск» — 145 px и перенос даты на вторую строку
       '<div class="card strong">' +
         '<div class="row top">' +
-          '<div class="col"><h2>' + esc(m.level) + '</h2><span class="small">' + esc(untilText(m)) + '</span></div>' +
-          '<span class="pill on">Активно</span>' +
+          '<div class="col grow"><div class="row" style="justify-content:flex-start;gap:8px"><h2>' + esc(m.level) + '</h2><span class="pill on">Активно</span></div>' +
+            '<span class="small">' + esc(untilText(m)) + '</span></div>' +
+          '<button type="button" class="btn quiet mini" data-go="pass">Пропуск</button>' +
         '</div>' +
-        '<button type="button" class="btn" data-go="pass">' + svg('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3z"/>') + 'Показать пропуск</button>' +
       '</div>' +
 
       // карточки «Баланс» здесь больше нет: остаток живёт в шапке (v83), а две суммы на
@@ -5332,11 +5355,9 @@ var SCREENS = {
       // 24.10.2026), и неоплаченная запись держит место вечно. В живом
       // режиме этой лжи не было никогда — она жила здесь и в описи, то есть
       // ровно там, где по продукту судят.
-      foot = '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
-             '<span class="small" style="text-align:center">' +
-             // Фраза держится ОДНИМ литералом нарочно: разорванная переносом, она
-             // даёт ноль на построчном признаке, хотя на экране цела.
-             'Место закрепляется за вами сразу. Оплата — на месте; снять запись может работник клуба. При записи со счёта не списывается.</span>';
+      // С шагом 7 вход списывается при записи (Cafe13KPG#748) — витрина говорит то же, что живая карточка.
+      foot = '<button type="button" class="btn dup-main" data-action="book">Записаться за ' + money(e.price) + ' ฿</button>' +
+             '<span class="small" style="text-align:center">Спишется со счёта сразу.</span>';
     } else if (e.kind === 'free') {
       foot = '<button type="button" class="btn dup-main" data-action="book">Записаться</button>' +
              '<span class="small" style="text-align:center">Если передумали — отмените запись, чтобы место досталось другому.</span>';
@@ -6729,9 +6750,20 @@ var SCREENS = {
       (q.status !== 'pending' ? '<div class="card quiet"><div class="row"><span class="small">Решено ' + esc(topupDay(q.done, true)) + '</span>' +
           '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div></div>'
       : own ? '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой арт-директор.</span></div>'
+      // отказ (#696): форма причины, как у пополнений; почему кнопка не нажимается — строкой у неё (как v123)
+      : MR.ask === q.id ? '<div class="field"><label for="ms-note">Почему отказ и что исправить</label>' +
+          '<textarea id="ms-note" rows="4" maxlength="500">' + esc(MR.note) + '</textarea>' +
+          '<span class="small">Мастер прочтёт это в своей заявке. До 500 знаков.</span></div>' +
+        '<button type="button" class="btn" data-action="ms-no:' + q.id + '"' + (MR.busy || !MR.note.trim() ? ' disabled aria-disabled="true"' : ' aria-disabled="false"') +
+          ' aria-describedby="ms-why">' + (MR.busy ? 'Отправляем…' : 'Отказать и вернуть деньги') + '</button>' +
+        '<span class="small" id="ms-why"' + (MR.note.trim() ? ' hidden' : '') + '>Сначала причина — без неё мастер не узнает, что исправить.</span>' +
+        '<button type="button" class="btn quiet" data-action="ms-keep"' + busy + '>Назад</button>'
       : '<button type="button" class="btn" data-action="ms-yes:' + q.id + '"' + busy + '>' + (MR.busy ? 'Отправляем…' : 'Согласовать') + '</button>' +
         '<span class="small">Ивент сразу встанет в афишу. Выключить его можно в «Ивентах».</span>' +
-        '<button type="button" class="btn quiet" data-action="ms-no:' + q.id + '"' + busy + '>Отказать и вернуть деньги</button>');
+        // кадр E55ж (Cafe13KPG#726): короткий вход «Отказать», а возврат денег назван в точке выбора подписью;
+        // «…и вернуть деньги» стоит на кнопке ОТПРАВКИ — там, где возврат случается
+        '<button type="button" class="btn quiet" data-action="ms-ask:' + q.id + '"' + busy + '>Отказать</button>' +
+        '<span class="small">Деньги вернутся мастеру на счёт.</span>');
   },
 
   // E55e. Единица — СЛОТ (снимок master-slots), выключенный не прячется: иначе включить его негде
@@ -7127,14 +7159,21 @@ function notWired(what) {
   '</div></div>';
 }
 
+// E68: «Продлить» — прямо под ролями, а не в конце экрана: прочтя роль, мастер видит, где платить.
+// Только у своей СОГЛАСОВАННОЙ заявки: у мастера по старому виду членства слота нет
+function masterRenewDoor() {
+  return LIVE && msIsMaster() && msOwnSlot() ? '<button type="button" class="btn ghost" data-go="masterRenew">Продлить</button>' : '';
+}
+
 function myRoles() {
-  if (!DATA.roles || !DATA.roles.length) return '';
+  var door = masterRenewDoor();
+  if (!DATA.roles || !DATA.roles.length) return door;
   return '<div class="group"><span class="label">Ваши роли</span><div class="card quiet"><div class="row" style="flex-wrap:wrap;gap:6px;justify-content:flex-start">' +
     // head и god_mentor у владельца — одно и то же звание: одна плашка
     DATA.roles.map(function (r) { return ROLE_NAME[r] || r; })
       .filter(function (n, i, all) { return all.indexOf(n) === i; })
       .map(function (n) { return '<span class="pill">' + esc(n) + '</span>'; }).join('') +
-  '</div></div></div>';
+  '</div></div>' + door + '</div>';
 }
 
 /* У каждой роли свои действия. Пересечений нет: организатор не заводит
@@ -7661,7 +7700,7 @@ function go(screen, p) {
   // шаг 3: каждый вход — свежие данные сервера
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { MR.mineState = ''; }
   if ((screen === 'masters' || screen === 'masterReqs') && current !== screen && mayMasters()) { MR.qErr = ''; loadMasterQueue(); loadMineMaster(); }
-  if (screen === 'masterReq') { MR.qErr = ''; if (!MR.q && mayMasters()) loadMasterQueue(); }
+  if (screen === 'masterReq') { MR.qErr = ''; if (current !== 'masterReq' || param !== p) { MR.ask = 0; MR.note = ''; } if (!MR.q && mayMasters()) loadMasterQueue(); }
   if ((screen === 'masterEvents' || screen === 'masterList') && current !== screen && mayMasters()) { MR.sErr = ''; loadSlots(); }
   if (screen === 'masterEvent') { MR.sErr = ''; if (!MR.slots && mayMasters()) loadSlots(); }
   if (screen === 'masterApply' && current !== 'masterApply' && LIVE) {
@@ -8160,6 +8199,9 @@ function doAction(a) {
     }
     if (a === 'rnw-keep') { if (UNDO.key && /^renew:/.test(UNDO.key)) undoStop(); render(); return; }
     if (a === 'ms-yes' && mayMasters()) { decideMaster(Number(arg), 'approved'); return; }
+    // форму отказа видит и витрина (опись снимет её состояние); отправка вне Telegram не уходит — decideMaster
+    if (a === 'ms-ask' && (mayMasters() || !LIVE) && !MR.busy) { MR.ask = Number(arg); MR.note = ''; MR.qErr = ''; render(); return; }
+    if (a === 'ms-keep' && !MR.busy) { MR.ask = 0; MR.qErr = ''; render(); return; }
     if (a === 'ms-no' && mayMasters()) { decideMaster(Number(arg), 'rejected'); return; }
     if (a === 'ms-hide' && mayMasters()) { slotToggle(Number(arg), false); return; }
     if (a === 'ms-show' && mayMasters()) { slotToggle(Number(arg), true); return; }
@@ -8375,11 +8417,10 @@ function mainFor() {
     if (LIVE) {
       var le = eventById(param);
       if (!canBookEvent(le)) return null;              // кончилось, занято, уже записан — кнопки нет
-      return { text: le.kind === 'paid' ? 'Записаться · ' + money(le.price) + ' ฿ на месте' : 'Записаться',
-               a: 'book:' + le.id };
+      return { text: bookWord(le), a: 'book:' + le.id };
     }
     var e = byId(param) || DATA.events[0];
-    return { text: e && e.kind === 'paid' ? 'Оплатить ' + e.price + ' ฿ и записаться' : 'Записаться', a: 'book' };
+    return { text: e && e.kind === 'paid' ? 'Записаться за ' + money(e.price) + ' ฿' : 'Записаться', a: 'book' };
   }
   return null;
 }
