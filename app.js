@@ -3984,16 +3984,16 @@ function refundAt(e) {
 }
 function refundTerms(e) {
   if (!e.refundUntil) return '';
+  // слова кадров E62/E62г (Cafe13KPG#751): сперва что человек может сделать, дата — вторым
   return Date.now() <= e.refundUntil.getTime()
-    ? ' Снять запись до ' + refundAt(e) + ' — вернётся всё; позже — половина.'
-    : ' При снятии записи вернётся половина.';
+    ? '<br>Снять запись с полным возвратом можно до ' + refundAt(e) + ' — позже вернётся половина.'
+    : '<br>Если снимете запись, вернётся половина: полный возврат действовал до ' + refundAt(e) + '.';
 }
 function refundWhen(e) {
   if (!e.refundUntil) return '';
   var at = refundAt(e);
-  return '<span class="small" style="text-align:center">' + (e.refund >= e.paid
-    ? 'Снять до ' + esc(at) + ' — вернётся всё; позже — половина.'
-    : 'Всё возвращалось до ' + esc(at) + ', теперь — половина.') + '</span>';
+  // кадры E66/E66b (Cafe13KPG#751): до границы подписи нет — полный возврат не удивляет
+  return e.refund >= e.paid ? '' : '<span class="small" style="text-align:center">Полный возврат действовал до ' + esc(at) + '.</span>';
 }
 function bookWord(e) { return entryOf(e) > 0 ? 'Записаться за ' + money(entryOf(e)) + ' ฿' : 'Записаться'; }
 function entryOf(e) { return e.kind === 'paid' ? e.price : 0; }
