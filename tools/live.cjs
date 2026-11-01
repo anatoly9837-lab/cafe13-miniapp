@@ -4967,6 +4967,39 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  // Афиша перечитывается при КАЖДОМ входе, а не раз за запуск (Cafe13KPG#699). Афиша живого — на «Клубе» (#510).
+  // Первый ответ — одно мероприятие, следующие (медленные) — два: новое появляется только после ПОВТОРНОГО входа.
+  // До ответа на экране прежний список, без «Загружаем афишу…»; вход, пока запрос в пути, второго не шлёт;
+  // вход на «Записи» тоже перечитывает. Поздний ответ, перебитый записью, — book-pozdniy-otvet выше.
+  {
+    const n = 'afisha-zanovo';
+    let gets = 0;
+    const OLD = EV({ id: 4, title: 'Прежний вечер', starts_at: atBkk(0, 19) }), NEW = EV({ id: 8, title: 'Новый вечер', starts_at: atBkk(0, 21) });
+    const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      if (q.method() !== 'GET' || !q.url().endsWith('/events')) return undefined;
+      gets += 1;
+      return gets === 1 ? json(200, [OLD]) : new Promise(r => setTimeout(() => r(json(200, [OLD, NEW])), 900));
+    }, null, NOWFIX);
+    await s.p.waitForTimeout(400);
+    if (gets !== 1 || !(await s.view()).includes('Прежний вечер')) bad.push(`${n}: первая загрузка не та (запросов ${gets}) — вердикт не выносится`);
+    else {
+      await s.p.evaluate(() => go('pass')); await s.p.waitForTimeout(150);
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);          // второй вход: запрос в пути
+      const mid = await s.view();
+      if (gets !== 2) bad.push(`${n}: повторный вход на «Клуб» не перечитал афишу (запросов ${gets}, ждали 2)`);
+      if (mid.includes('Загружаем афишу')) bad.push(`${n}: пока афиша перечитывается, вместо прежнего списка «Загружаем афишу…»`);
+      if (!mid.includes('Прежний вечер')) bad.push(`${n}: пока афиша перечитывается, прежнего списка на экране нет`);
+      await s.p.evaluate(() => { go('pass'); go('home'); }); await s.p.waitForTimeout(100);   // вход, пока запрос в пути
+      if (gets !== 2) bad.push(`${n}: вход, пока запрос в пути, послал ещё один (запросов ${gets}, ждали 2)`);
+      await s.p.waitForTimeout(1200);
+      if (!(await s.view()).includes('Новый вечер')) bad.push(`${n}: после ответа повторного входа нового мероприятия на «Клубе» нет`);
+      await s.p.evaluate(() => go('bookings')); await s.p.waitForTimeout(150);
+      if (gets !== 3) bad.push(`${n}: вход на «Записи» не перечитал афишу (запросов ${gets}, ждали 3)`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
   // У кончившегося события отмены нет: сервер её примет и сотрёт сам факт
   // записи, а подтверждение обещало бы вернуть место в афишу — ложно.
   {
