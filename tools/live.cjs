@@ -4806,6 +4806,22 @@ if (grantsSet.length !== 1) {
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
+  // Своё КОНЧИВШЕЕСЯ: строки «Это ваше мероприятие.» нет — объяснять нечего, записи и так нет. Предел, найденный
+  // мутацией frontend-11 donealways на #216 (тернар `e.done ? ''` не держал ни один случай).
+  {
+    const n = 'book-svoe-konchilos';
+    const s = await openCard(q => q.url().endsWith('/events') ? json(200, [EV({ id: 4, title: 'Мой прошедший вечер', organizer_id: 1,
+      starts_at: new Date(NOWFIX - 9000e3).toISOString(), duration_min: 60, taken: 2, seats_left: 10 })]) : undefined);
+    const t = await s.view();
+    if (!t.includes('завершилось')) bad.push(`${n}: карточка не кончившегося мероприятия — фикстура не та, вердикт не выносится`);
+    else {
+      if (t.includes('Это ваше мероприятие.')) bad.push(`${n}: на своём кончившемся строка «Это ваше мероприятие.» — объяснять нечего`);
+      if (await s.p.$('[data-action^="book:"]')) bad.push(`${n}: на своём кончившемся предложена запись`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
   /* Подпись по виду (кадры E62/E62v): платному — «спишется сразу», бесплатному и донейшну — «ничего не спишется»
      (у донейшна цена — ориентир, сервер её не списывает). Обе половины: без второй случай подтверждал бы наличие
      и молчал бы о лишнем. */
