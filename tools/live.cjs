@@ -5565,6 +5565,29 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+
+    // 5. витрина вне Telegram (Cafe13KPG#691): экран правки, а не отказ «не ваше»; длительность демо считается
+    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1.5»: охрана `h > 0` глотает NaN молча;
+    // «Сохранить» в сеть не ходит. Живой режим (чужое — отказ, своё — форма) держат edt-knopka и edt-200
+    {
+      const n = 'edt-vitrina';
+      const s = await open(false, true, json(200, MASTER), null, null, null, null, null, NOWFIX);
+      await s.p.evaluate(() => go('eventEdit', 'sound')); await s.p.waitForTimeout(150);
+      const t = await s.view();
+      if (await s.p.evaluate(() => LIVE)) bad.push(`${n}: вне Telegram LIVE истинно — вердикт не выносится`);
+      else {
+        if (t.includes('Править это мероприятие может его ведущий.')) bad.push(`${n}: вне Telegram вместо экрана правки отказ «не ваше»`);
+        if (!(await s.p.$('#edt-seats')) || !(await s.p.$('[data-action="edt-save"]'))) bad.push(`${n}: вне Telegram нет формы правки`);
+        if (!t.includes('Сегодня, четверг · 19:00 · 1.5')) bad.push(`${n}: в строке мероприятия нет длительности «· 1.5» (из 19:00–20:30)`);
+        if (/NaN/.test(t)) bad.push(`${n}: на экране NaN`);
+        const before = s.calls.length;
+        if (await s.p.$('[data-action="edt-save"]')) { await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300); }
+        const sent = s.calls.slice(before).filter(c => c.method !== 'GET');
+        if (sent.length) bad.push(`${n}: «Сохранить» на витрине ушло в сеть: ${JSON.stringify(sent.map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, '')))}`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
 
   /* ── рецепт позиции бара (#176) ──
