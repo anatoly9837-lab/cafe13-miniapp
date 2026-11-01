@@ -4827,7 +4827,7 @@ if (grantsSet.length !== 1) {
     if (await s.p.evaluate(() => window.__main === null)) bad.push('book: на свободном событии нет главной кнопки');
 
     // Внутри Telegram экранная кнопка скрыта (body.has-main .dup-main), работает главная.
-    await s.p.evaluate(() => window.__main());
+    await s.p.evaluate(() => window.__main && window.__main());   // нет кнопки — краснеет своим текстом, а не обрывом батареи
     await s.p.waitForTimeout(400);
     const t = await s.view();
     if (posts.length !== 1) bad.push(`book: POST /bookings ушёл ${posts.length} раз, ждали 1`);
@@ -4890,7 +4890,7 @@ if (grantsSet.length !== 1) {
       if (q.url().endsWith('/events')) return json(200, [freeRow()]);
       return undefined;
     });
-    await s.p.evaluate(() => window.__main());
+    await s.p.evaluate(() => window.__main && window.__main());
     await s.p.waitForTimeout(400);
     const t = await s.view();
     if (!t.includes('Мест нет')) bad.push('book-409: текста отказа сервера на экране нет');
@@ -4907,7 +4907,7 @@ if (grantsSet.length !== 1) {
       if (q.url().endsWith('/events')) return json(200, [freeRow()]);
       return undefined;
     });
-    await s.p.evaluate(() => window.__main());
+    await s.p.evaluate(() => window.__main && window.__main());
     await s.p.waitForTimeout(400);
     const t = await s.view();
     if (!t.includes('Сервер принял, а в афише этого нет')) bad.push('book-201-pusto: 201 без подтверждения афишей показан успехом');
@@ -4955,7 +4955,7 @@ if (grantsSet.length !== 1) {
     });
     await s.p.evaluate(() => loadEvents());          // медленный запрос в пути
     await s.p.waitForTimeout(100);
-    await s.p.evaluate(() => window.__main());       // запись уходит и перечитывает афишу
+    await s.p.evaluate(() => window.__main && window.__main());       // запись уходит и перечитывает афишу
     await s.p.waitForTimeout(2200);                  // поздний ответ успевает прийти
     const t = await s.view();
     if (!mark.late) bad.push('book-pozdniy-otvet: поздний ответ прежней афиши не пришёл за отведённое ожидание — гард не проверен');
@@ -5228,7 +5228,8 @@ if (grantsSet.length !== 1) {
     const posts = [];
     const s = await open(true, true, json(200, OWNER), null, null, null, q => {
       const u = q.url();
-      if (u.endsWith('/bookings')) { posts.push(1); return json(201, { id: 6, event_id: Number(id), state: 'booked', amount_due: '400.00' }); }
+      // только POST /bookings: «Управление» своего мероприятия спрашивает GET /events/4/bookings — это не запись
+      if (q.method() === 'POST' && /\/bookings$/.test(u)) { posts.push(1); return json(201, { id: 6, event_id: Number(id), state: 'booked', amount_due: '400.00' }); }
       if (u.endsWith('/events')) return json(200, [EV({ id: 4, title: 'Мой вечер', organizer_id: 1, starts_at: atBkk(1, 19), taken: 0, seats_left: 12 }),
         EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20), taken: 0, seats_left: 12 })]);
       return undefined;
