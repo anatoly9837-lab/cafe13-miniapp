@@ -5222,6 +5222,27 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── условие возврата на карточке, ДО записи (Cafe13KPG#750, довод designer-55): граница датой из поля ──
+  // Часы батареи — 2 декабря 01:00Z. Граница 2 декабря 12:30Z впереди, 1 декабря 12:30Z — прошла.
+  {
+    const SROK2 = /(?<![а-яё])(день|дн[еяий]\S*|сут(ок|ки|кам)\S*|час(а|ов)?|недел\S*)(?![а-яё])|\d\s*ч\.?(?![а-яё])/i;
+    for (const [n, until, want, wantNot] of [
+        ['zapis-granica-vperedi', '2026-12-02T12:30:00+00:00', 'Снять запись до 2 декабря, 19:30 — вернётся всё; позже — половина.', 'При снятии записи вернётся половина.'],
+        ['zapis-granica-proshla', '2026-12-01T12:30:00+00:00', 'При снятии записи вернётся половина.', 'Снять запись до'],
+        ['zapis-bez-granicy', undefined, null, 'Снять запись до']]) {
+      const s = await openCard(q => q.url().endsWith('/events')
+        ? json(200, [EV(Object.assign({ id: 4, taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null }, until ? { full_refund_until: until } : {}))]) : undefined);
+      const g = await s.p.evaluate(() => ([...document.querySelectorAll('#view .group')].find(x => x.textContent.includes('Записаться')) || {}).textContent || '');
+      if (!g) bad.push(`${n}: нет блока «Записаться» — судить условие не на чем`);
+      if (want && !g.includes(want)) bad.push(`${n}: условие возврата не из поля сервера — нет «${want}» («${g}»)`);
+      if (wantNot && g.includes(wantNot)) bad.push(`${n}: лишнее «${wantNot}»`);
+      const hit = g.match(SROK2);
+      if (hit) bad.push(`${n}: у записи назван срок словом «${hit[0]}» — границу даёт сервер датой (#750)`);
+      await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
   // ── деньги при записи и снятии (шаг 7, Cafe13KPG#748, кадры E62b/E66/E66b) ──
   // Нехватка — ДО нажатия, остатком из /me. Пара: остаток ровно во вход — запись идёт. Без пары прошёл бы «запрет всем».
   for (const [n, bal, short] of [['book-nehvatka', 250, true], ['book-rovno', 400, false]]) {
@@ -5267,8 +5288,8 @@ if (grantsSet.length !== 1) {
   // в клиенте лжёт в окне между выкладками. Признак по предмету, а не по перечню фраз.
   const SROK = /(?<![а-яё])(день|дн[еяий]\S*|сут(ок|ки|кам)\S*|час(а|ов)?|недел\S*)(?![а-яё])|\d\s*ч\.?(?![а-яё])/i;
   for (const [n, refund, word, until] of [
-      ['snyat-vse', '400.00', 'Снять до 3 ноября, 19:30 — вернётся всё; позже — половина.', '2026-11-03T12:30:00+00:00'],
-      ['snyat-chast', '150.00', 'Всё возвращалось до 3 ноября, 19:30, теперь — половина.', '2026-11-03T12:30:00+00:00'],
+      ['snyat-vse', '400.00', 'Снять до 2 декабря, 19:30 — вернётся всё; позже — половина.', '2026-12-02T12:30:00+00:00'],
+      ['snyat-chast', '150.00', 'Всё возвращалось до 1 декабря, 19:30, теперь — половина.', '2026-12-01T12:30:00+00:00'],
       ['snyat-bez-granicy', '400.00', null, undefined]]) {
     let booked = true, mes = 0;
     const cancels = [];

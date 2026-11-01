@@ -3976,9 +3976,21 @@ function canBookEvent(e) { return !!e && !e.booked && !e.done && (e.unl || e.sea
 /* Подпись к возврату — ГРАНИЦЕЙ из поля сервера, а не сроком: правило («за сколько до начала») меняет сервер
    (72 ч → 48 ч, Cafe13KPG#750), и число в клиенте лгало бы в окне между выкладками в любом порядке. Дата — по
    часам клуба. Какая половина фразы — по числам сервера (вернётся всё или меньше), не по часам телефона */
+// условие сделки — на карточке, ДО записи (Cafe13KPG#750, довод designer-55): та же граница из поля. Прошла ли она —
+// единственное место, где мгновение сервера сравнивается с часами телефона; ошибка часов сдвигает фразу, не деньги
+function refundAt(e) {
+  var p = bkk(e.refundUntil), x = p.ymd.split('-');
+  return Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '') + ', ' + p.hm;
+}
+function refundTerms(e) {
+  if (!e.refundUntil) return '';
+  return Date.now() <= e.refundUntil.getTime()
+    ? ' Снять запись до ' + refundAt(e) + ' — вернётся всё; позже — половина.'
+    : ' При снятии записи вернётся половина.';
+}
 function refundWhen(e) {
   if (!e.refundUntil) return '';
-  var p = bkk(e.refundUntil), x = p.ymd.split('-'), at = Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '') + ', ' + p.hm;
+  var at = refundAt(e);
   return '<span class="small" style="text-align:center">' + (e.refund >= e.paid
     ? 'Снять до ' + esc(at) + ' — вернётся всё; позже — половина.'
     : 'Всё возвращалось до ' + esc(at) + ', теперь — половина.') + '</span>';
@@ -4827,7 +4839,7 @@ function bookBlock(e) {
      на месте», «при записи не трогается счёт») стала ложью с выкладкой api#113 (бой 36073d3). Вторая фраза кадра E62
      («Поблагодарить мастера можно после мероприятия») НЕ дана: кнопки благодарности в клиенте ещё нет (E65 — следующей
      заявкой), и обещание пути, которого нет, было бы той же поломкой. */
-  var hint = entryOf(e) > 0 ? 'Спишется со счёта сразу.' : 'Со счёта ничего не спишется.';
+  var hint = entryOf(e) > 0 ? 'Спишется со счёта сразу.' + refundTerms(e) : 'Со счёта ничего не спишется.';
   return err +
     '<div class="group">' +
       '<button type="button" class="btn dup-main" data-action="book:' + esc(e.id) + '">' + bookWord(e) + '</button>' +
