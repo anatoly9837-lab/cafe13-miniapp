@@ -877,6 +877,11 @@ if (grantsSet.length !== 1) {
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
       }
+      // причина погасшей «Продлить»: видимые адресаты её aria-describedby (Cafe13KPG#685)
+      const RNW_PRICE = /цен[аы]\s+не\s+(по|пере)?считан/i;
+      const rnwWhy = s => s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); if (!b) return null;
+        const els = (b.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean).map(i => document.getElementById(i)).filter(Boolean);
+        return { off: b.disabled, txt: els.filter(e => e.getClientRects().length).map(e => e.textContent.trim()).join(' | ') }; });
       // 1. отправка: два месяца — цена и дата от сервера; до конца окна запроса нет, после — ровно один {months:2}
       {
         const n = 'rnw-send', o = {};
@@ -1014,6 +1019,48 @@ if (grantsSet.length !== 1) {
           if (!go || go.off !== true) bad.push(`${n}: после 409 «Продлить» нажимается (${JSON.stringify(go)}) — место уже занято`);
           // погашена ПО ЗАМЫСЛУ (предпросмотра нет), поэтому занятость читается подписью: «Продлеваем…» = ответ не дошёл до RNW.busy
           if (go && go.txt !== 'Продлить') bad.push(`${n}: после ответа на кнопке «${go.txt}» — отправка так и висит (RNW.busy)`);
+          // Cafe13KPG#685: и здесь предпросмотр пуст — причина у погасшей кнопки «цена не посчитана», а не про деньги
+          const why = await rnwWhy(s);
+          if (!why || !RNW_PRICE.test(why.txt) || /не хватает/i.test(why.txt)) bad.push(`${n}: у погасшей после 409 «Продлить» причина не «цена не посчитана»: ${JSON.stringify(why)}`);
+          // предпросмотр после 409 отвечает 409 (отказ) или 502 (сбой) — «отказал» только в первом
+          else if (/отказал/i.test(why.txt) !== (n === 'rnw-busy-409')) bad.push(`${n}: ${n === 'rnw-busy-409' ? 'отказ предпросмотра (409) не назван отказом' : 'сбой предпросмотра (502) выдан за отказ сервера'}: ${JSON.stringify(why.txt)}`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // Причина у погасшей «Продлить» (Cafe13KPG#685, наряд coordinator-2 31.10): владелец видел погасшую кнопку без
+      // названной причины и «Повторить», которая не называет предмет. Приговоров ДВА, и они не склеиваются: предпросмотр
+      // отказал — «цена не посчитана»; денег мало — «Не хватает N ฿», и про цену ни слова. Причину читаем по
+      // `aria-describedby` кнопки (только видимые адресаты), а не со всего экрана: строка отказа предпросмотра стоит и выше
+      // Отказ сервера (4xx) и сбой (сеть, 5xx) у причины РАЗНЫЕ: «отказал» говорится только про 4xx — подлог
+      // arhitector-47 (ревью #204), поменявший две подписи местами, иначе проходил зелёным
+      for (const [n, reply, refused] of [
+        ['rnw-why-409', () => json(409, { detail: 'неделя 1 слота пересекается: место «Зал» занято «Мастер-класс», 03.12 18:00–20:00' }), true],
+        ['rnw-why-502', () => json(502, '<html>bad gateway</html>'), false]]) {
+        const o = { prevReply: reply };
+        const { s, ok } = await rnwOpen(n, o);
+        if (ok) {
+          const why = await rnwWhy(s);
+          if (!why || why.off !== true) bad.push(`${n}: без расчёта сервера «Продлить» нажимается (${JSON.stringify(why)})`);
+          else if (!RNW_PRICE.test(why.txt)) bad.push(`${n}: у погасшей «Продлить» причина не «цена не посчитана»: ${JSON.stringify(why)}`);
+          if (why && /не хватает/i.test(why.txt)) bad.push(`${n}: отказ предпросмотра выдан за недостачу денег: ${JSON.stringify(why.txt)}`);
+          if (why && refused && !/отказал/i.test(why.txt)) bad.push(`${n}: отказ сервера (4xx) не назван отказом: ${JSON.stringify(why.txt)}`);
+          if (why && !refused && /отказал/i.test(why.txt)) bad.push(`${n}: сбой (502) выдан за отказ сервера: ${JSON.stringify(why.txt)}`);
+          const lab = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-retry"]'); return b ? ((b.getAttribute('aria-label') || '') + ' ' + b.textContent).trim() : null; });
+          if (lab === null) bad.push(`${n}: у непосчитанной цены нет кнопки повтора`);
+          else if (!/цен|счита/i.test(lab) || /слот/i.test(lab)) bad.push(`${n}: подпись повтора «${lab}» не называет счёт цены — читается как повтор слота`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      {
+        const n = 'rnw-why-short', o = {};
+        const { s, ok } = await rnwOpen(n, o, { enough: false, short: '1300.00' });
+        if (ok) {
+          const why = await rnwWhy(s);
+          if (!why || !flat(why.txt).includes('Нехватает1300฿')) bad.push(`${n}: у погасшей «Продлить» причина не «Не хватает 1 300 ฿»: ${JSON.stringify(why)}`);
+          if (why && RNW_PRICE.test(why.txt)) bad.push(`${n}: при посчитанной цене у кнопки сказано «цена не посчитана»: ${JSON.stringify(why.txt)}`);
+          if (RNW_PRICE.test(await s.view())) bad.push(`${n}: цена посчитана, а на экране «цена не посчитана»`);
         }
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
@@ -4659,10 +4706,12 @@ if (grantsSet.length !== 1) {
     return true;
   };
 
-  // Принятый текст Cafe13KPG#271, дословно. Держится ОДНОЙ константой: его
-  // сторожат два случая, и разъехаться им нельзя — прежняя редакция уже
-  // успела уехать в опись и там смержиться (#323), пока ездила письмами.
-  const FRAZA_271 = 'Место закрепляется за вами сразу. Оплата — на месте; снять запись может работник клуба.';
+  // Подпись платного по кадру E62 (Cafe13KPG#748): вход списывается при записи (api#113). Одной константой: её
+  // сторожат несколько случаев. Прежняя (#271, «оплата на месте… со счёта не списывается») с шагом 7 стала ложью —
+  // её отсутствие сторожит FRAZA_LOZH.
+  const FRAZA_748 = 'Спишется со счёта сразу.';
+  const FRAZA_0 = 'Со счёта ничего не спишется.';
+  const FRAZA_LOZH = /на месте|не списывается/;
 
   const openCard = async (handler) => {
     const s = await open(true, true, json(200, OWNER), null, null, null, handler, null, NOWFIX);
@@ -4756,18 +4805,16 @@ if (grantsSet.length !== 1) {
     }
   }
 
-  /* Текст принят командой ДОСЛОВНО, поэтому и сторожится целиком, а не по
-     словам: «почти тот же смысл» здесь не годится — редакция уже менялась за
-     один день, и прежняя успела уехать в опись. И вторая половина случая —
-     КОМУ фраза не даётся: «Оплата — на месте» у бесплатного обещает платёж,
-     которого нет, а у донейшна своя строка точнее. Без этой половины случай
-     подтверждал бы наличие и молчал бы о лишнем. */
+  /* Подпись по виду (кадры E62/E62v): платному — «спишется сразу», бесплатному и донейшну — «ничего не спишется»
+     (у донейшна цена — ориентир, сервер её не списывает). Обе половины: без второй случай подтверждал бы наличие
+     и молчал бы о лишнем. */
   {
     const ROWS = [
       EV({ id: 4 }),
       EV({ id: 10, title: 'Утро без денег', kind: 'free', price: '0.00',
            seats: 8, taken: 1, seats_left: 7 }),
-      EV({ id: 11, title: 'Круг по желанию', kind: 'donation', price: '0.00',
+      // у донейшна цена — ОРИЕНТИР (заводили так до шага 7), сервер её не списывает: «спишется» здесь — ложь
+      EV({ id: 11, title: 'Круг по желанию', kind: 'donation', price: '300.00',
            seats: 9, taken: 2, seats_left: 7 })
     ];
     const s = await open(true, true, json(200, OWNER), null, null, null,
@@ -4778,13 +4825,15 @@ if (grantsSet.length !== 1) {
       await openRow(s, id);
       await s.p.waitForTimeout(120);
       const t = await s.view();
-      const est = t.includes(FRAZA_271);
+      const est = t.includes(FRAZA_748), nol = t.includes(FRAZA_0);
       if (zhdyom && !est)
-        bad.push(`mesto-srazu: у платного нет принятой строки целиком: «${t.slice(0, 220)}»`);
+        bad.push(`mesto-srazu: у платного нет «${FRAZA_748}»: «${t.slice(0, 220)}»`);
       if (!zhdyom && est)
-        bad.push(`mesto-srazu: строка про оплату на месте дана виду «${kind}» — платежа там нет вовсе`);
-      // Про деньги при снятии не сказано НИЧЕГО, и это решение, а не недоделка:
-      // ответа про возврат нет ни на сервере, ни у владельца (Cafe13KPG#290).
+        bad.push(`mesto-srazu: «спишется» дано виду «${kind}» — у него со счёта не списывается ничего`);
+      if (!zhdyom && !nol) bad.push(`mesto-srazu: у вида «${kind}» не сказано «${FRAZA_0}»`);
+      if (zhdyom && nol) bad.push('mesto-srazu: платному сказано «ничего не спишется»');
+      if (FRAZA_LOZH.test(t)) bad.push(`mesto-srazu: у вида «${kind}» прежнее обещание — оплата на месте / счёт не трогается`);
+      // ДО записи о возврате не сказано ничего: числа возврата — в спросе снятия (E66), у записи их нет.
       if (/верн[её]м|возврат|перенесём|компенсац/i.test(t))
         bad.push(`mesto-dengi: экран вида «${kind}» обещает что-то про деньги при снятии — механизма такого нет`);
     }
@@ -4805,17 +4854,16 @@ if (grantsSet.length !== 1) {
       return undefined;
     });
     const card = await s.view();
-    if (!card.includes('Записаться')) bad.push('book: на свободном событии не предлагают записаться');
-    if (!card.includes('Оплата — на месте')) bad.push('book: у платного не сказано, что деньги берут на месте');
-    if (!card.includes('При записи со счёта не списывается')) bad.push('book: не сказано, что со счёта при записи не спишут');
-    // Цена названа строкой «Участие», а не подписью: дубль цены на одном экране
-    // читается как два разных платежа.
+    if (!card.includes('Записаться за 400 ฿')) bad.push('book: на платном нет «Записаться за 400 ฿» (кадр E62)');
+    if (!card.includes(FRAZA_748)) bad.push(`book: у платного не сказано «${FRAZA_748}»`);
+    if (FRAZA_LOZH.test(card)) bad.push('book: у платного прежнее обещание — оплата на месте / счёт не трогается');
     if (!card.includes('Участие')) bad.push('book: цена не названа строкой «Участие»');
+    // Цена дважды по кадру E62: строкой и на кнопке. Третья — уже лишнее (например, подпись с ценой)
     const cen = (card.match(/400 ฿/g) || []).length;
-    // Форма отказа без согласования числа: «2 раз» читается как опечатка и
-    // отвлекает от предмета, а отказ читают один раз — в минуту покраснения.
-    if (cen !== 1) bad.push(`book: цена «400 ฿» встречается на экране ${cen} — ждали 1`);
+    if (cen !== 2) bad.push(`book: цена «400 ฿» встречается на экране ${cen} — ждали 2 (строка и кнопка, E62)`);
     if (await s.p.evaluate(() => window.__main === null)) bad.push('book: на свободном событии нет главной кнопки');
+    const mt = await s.p.evaluate(() => (mainFor() || {}).text);
+    if (mt !== 'Записаться за 400 ฿') bad.push(`book: главная кнопка Telegram говорит «${mt}», ждали «Записаться за 400 ฿»`);
 
     // Внутри Telegram экранная кнопка скрыта (body.has-main .dup-main), работает главная.
     await s.p.evaluate(() => window.__main());
@@ -5030,9 +5078,9 @@ if (grantsSet.length !== 1) {
       // экран (тот же дефект архитектор нашёл у меня на #50).
       bad.push(`demo-oplata: демонстрационное событие «sound» имеет вид «${kind}», а случай судит ПЛАТНОЕ — ветка не та, вердикт не выносится`);
     } else {
-      ['Записаться', 'Участие', 'на месте', FRAZA_271].forEach(x => {
+      ['Записаться за 400 ฿', 'Участие', FRAZA_748].forEach(x => {
         if (!t.includes(x)) bad.push(`demo-oplata: в демонстрации нет «${x}» — она должна говорить то же, что живой экран`); });
-      ['15 минут', 'возвращается в афишу', 'Оплатить 400'].forEach(x => {
+      ['15 минут', 'возвращается в афишу', 'Оплатить 400', 'на месте', 'не списывается'].forEach(x => {
         if (t.includes(x)) bad.push(`demo-oplata: демонстрация обещает «${x}» — механизма с таким поведением в системе нет`); });
     }
     if (s.errs.length) bad.push('demo-oplata: ошибки страницы ' + s.errs.join('; '));
@@ -5177,8 +5225,9 @@ if (grantsSet.length !== 1) {
         await s.ctx.close(); continue;
       }
       await openRow(s, '4'); await s.p.waitForTimeout(120);
+      // у члена клуба на платном кнопка «Записаться за 400 ฿» (E62), у гостя — погашенная «Записаться» (E37k)
       const btn = () => s.p.evaluate(() => {
-        const b = [...document.querySelectorAll('#view button')].find(x => x.textContent.trim() === 'Записаться');
+        const b = [...document.querySelectorAll('#view button')].find(x => x.textContent.trim().startsWith('Записаться'));
         return b ? { off: b.disabled, aria: b.getAttribute('aria-disabled'), act: b.getAttribute('data-action') } : null;
       });
       const b = await btn(), t = await s.view();
@@ -5189,7 +5238,7 @@ if (grantsSet.length !== 1) {
         if (b && b.act) bad.push(`${n}: у погашенной «Записаться» осталось действие «${b.act}»`);
         if (main) bad.push(`${n}: у гостя главная кнопка Telegram есть — запись уйдёт мимо погашенной кнопки на экране`);
         if (!t.includes('Пока записываются только члены клуба.')) bad.push(`${n}: причина не названа (ждали «Пока записываются только члены клуба.»)`);
-        if (t.includes('Оплата — на месте')) bad.push(`${n}: у гостя подсказка оплаты — она про то, что будет после нажатия, а нажатия нет (designer-55)`);
+        if (t.includes(FRAZA_748) || t.includes(FRAZA_0)) bad.push(`${n}: у гостя подсказка о деньгах — она про то, что будет после нажатия, а нажатия нет (designer-55)`);
         // обе дороги в обход экрана: снятый disabled и сам обработчик записи
         await s.p.evaluate(() => {
           const x = [...document.querySelectorAll('#view button')].find(y => y.textContent.trim() === 'Записаться');
@@ -5211,13 +5260,99 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── деньги при записи и снятии (шаг 7, Cafe13KPG#748, кадры E62b/E66/E66b) ──
+  // Нехватка — ДО нажатия, остатком из /me. Пара: остаток ровно во вход — запись идёт. Без пары прошёл бы «запрет всем».
+  for (const [n, bal, short] of [['book-nehvatka', 250, true], ['book-rovno', 400, false]]) {
+    const me = clone(OWNER); me.balance = bal;
+    const posts = [];
+    const s = await open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url();
+      if (u.endsWith('/bookings')) { posts.push(1); return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' }); }
+      if (u.endsWith('/events')) return json(200, [freeRow()]);
+      return undefined;
+    }, null, NOWFIX);
+    await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(120);
+    await openRow(s, '4'); await s.p.waitForTimeout(150);
+    const t = await s.view();
+    const b = await s.p.evaluate(() => { const x = [...document.querySelectorAll('#view button')].find(y => y.textContent.trim() === 'Записаться за 400 ฿');
+      return x ? { off: x.disabled, aria: x.getAttribute('aria-disabled'), act: x.getAttribute('data-action') } : null; });
+    const main = await s.p.evaluate(() => window.__main !== null);
+    if (!b) bad.push(`${n}: нет кнопки «Записаться за 400 ฿»`);
+    if (short) {
+      if (b && (b.off !== true || b.aria !== 'true' || b.act)) bad.push(`${n}: при остатке 250 «Записаться за 400 ฿» не погашена (${JSON.stringify(b)})`);
+      if (!t.includes('Не хватает 150 ฿.')) bad.push(`${n}: нехватка не названа числом (ждали «Не хватает 150 ฿.»)`);
+      if (t.includes(FRAZA_748)) bad.push(`${n}: при нехватке обещано «${FRAZA_748}» — нажатия не будет`);
+      if (main) bad.push(`${n}: при нехватке главная кнопка Telegram предлагает запись`);
+      await s.p.evaluate(() => bookEvent('4')); await s.p.waitForTimeout(400);
+      if (posts.length) bad.push(`${n}: запись при нехватке ушла на сервер (${posts.length})`);
+    } else {
+      if (b && b.off) bad.push(`${n}: при остатке ровно во вход запись погашена`);
+      if (t.includes('Не хватает')) bad.push(`${n}: при остатке ровно во вход сказано «Не хватает»`);
+      if (main) { await s.p.evaluate(() => window.__main()); await s.p.waitForTimeout(400); }
+      else bad.push(`${n}: нет главной кнопки`);
+      if (posts.length !== 1) bad.push(`${n}: запись ушла ${posts.length} раз, ждали 1`);
+    }
+    await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  // Спрос снятия оплаченной со счёта записи: «Вы заплатили» и «Вернётся» — числа СЕРВЕРА (my_entry_paid,
+  // my_refund_now), слова по их отношению. Возврат 150 при входе 400 — не половина: клиент, считающий сам
+  // (половину или по часам), дал бы 200 или 400. После снятия остаток перечитан (/me ещё раз).
+  for (const [n, refund, word] of [['snyat-vse', '400.00', 'До начала больше трёх дней — вернётся всё.'],
+                                   ['snyat-chast', '150.00', 'До начала меньше трёх дней — вернётся половина.']]) {
+    let booked = true, mes = 0;
+    const cancels = [];
+    const row = () => booked ? EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6, my_entry_paid: '400.00', my_refund_now: refund })
+                             : freeRow();
+    const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      const u = q.url();
+      if (/\/me$/.test(u)) { mes++; return json(200, OWNER); }
+      if (/\/bookings\/\d+\/cancel$/.test(u)) { cancels.push(1); booked = false; return json(200, { id: 6, state: 'cancelled' }); }
+      if (u.endsWith('/events')) return json(200, [row()]);
+      return undefined;
+    }, null, NOWFIX);
+    await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(120);
+    await openRow(s, '4'); await s.p.waitForTimeout(150);
+    if (!(await s.p.$('[data-action="book-cancel"]'))) { bad.push(`${n}: нет «Отменить запись»`); await s.ctx.close(); continue; }
+    await s.p.click('[data-action="book-cancel"]'); await s.p.waitForTimeout(150);
+    const t = await s.view();
+    const rows = await s.p.evaluate(() => [...document.querySelectorAll('#view .rows > div')].map(d => d.textContent));
+    if (!t.includes('Снять запись?')) bad.push(`${n}: спрос не «Снять запись?»`);
+    if (!rows.includes('Вы заплатили400 ฿')) bad.push(`${n}: нет строки «Вы заплатили 400 ฿» (${JSON.stringify(rows)})`);
+    const want = 'Вернётся' + refund.replace('.00', '') + ' ฿';
+    if (!rows.includes(want)) bad.push(`${n}: возврат не числом сервера — ждали «${want}» (${JSON.stringify(rows)})`);
+    if (!t.includes(word)) bad.push(`${n}: нет «${word}»`);
+    const mesBefore = mes;
+    const yes = await s.p.evaluate(() => { const b = document.querySelector('[data-action="book-cancel-yes:4"]'); if (!b) return null; b.click(); return b.textContent; });
+    await s.p.waitForTimeout(500);
+    if (yes !== 'Снять запись') bad.push(`${n}: кнопка подтверждения «${yes}», ждали «Снять запись»`);
+    if (cancels.length !== 1) bad.push(`${n}: снятие ушло ${cancels.length} раз, ждали 1`);
+    if (mes <= mesBefore) bad.push(`${n}: после снятия остаток не перечитан — деньги вернулись, а шапка прежняя`);
+    await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  // Запись без уплаченного входа (бесплатное; или старый сервер без полей) — прежний спрос, чисел денег нет.
+  {
+    const n = 'snyat-bez-deneg';
+    const s = await openCard(q => q.url().endsWith('/events') ? json(200, [mineRow()]) : undefined);
+    if (await s.p.$('[data-action="book-cancel"]')) {
+      await s.p.click('[data-action="book-cancel"]'); await s.p.waitForTimeout(150);
+      const t = await s.view();
+      if (/Вы заплатили|Вернётся/.test(t)) bad.push(`${n}: без уплаченного входа показаны деньги снятия`);
+      if (!t.includes('Отменить запись?')) bad.push(`${n}: прежнего спроса «Отменить запись?» нет`);
+    } else bad.push(`${n}: нет «Отменить запись»`);
+    await s.ctx.close();
+  }
+
   // Кончившемуся и заполненному событию записи не предлагают вовсе.
   for (const [name, row, has, hasnt] of [
     ['book-konchilos', EV({ id: 4, title: 'Уже закончился', starts_at: new Date(NOWFIX - 9000e3).toISOString(),
                             duration_min: 60, seats_left: 9, taken: 1 }),
-      ['завершилось'], ['Записаться', FRAZA_271]],
+      ['завершилось'], ['Записаться', FRAZA_748]],
     ['book-mest-net', EV({ id: 4, taken: 12, seats_left: 0 }),
-      ['Мест нет'], ['Записаться', FRAZA_271]]]) {
+      ['Мест нет'], ['Записаться', FRAZA_748]]]) {
     const s = await openCard(q => q.url().endsWith('/events') ? json(200, [row]) : undefined);
     const t = await s.view();
     has.forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
