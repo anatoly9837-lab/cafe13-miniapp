@@ -122,6 +122,11 @@ docker run --rm --memory=2g --memory-swap=2g -v $PWD:/app:ro -v <каталог-
 # подпись: ПРОВЕРКА НЕ ВЫПОЛНЕНА
 docker run --rm --memory=2g --memory-swap=2g -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -v $PWD:/app:ro -v <каталог-снимков>:/work -w /work \
   --entrypoint node agenthost/playwright:1.59.1 /app/tools/shots.cjs
+# ⚠ catalog.py ждёт СТАДИИ.tsv и vidimost.json РЯДОМ со снимками, иначе
+# скажет «нет файла стадий» (замер 01.11.2026 прибором рецептов). Ворота это
+# копируют сами (tools/pered-mergem.sh:196), а здесь шаг был пропущен.
+# подпись: КОД
+cp screens/СТАДИИ.tsv screens/vidimost.json <каталог-снимков>/
 # подпись: screens.html:
 # подпись: ПРОВЕРКА НЕ ВЫПОЛНЕНА
 python3 tools/catalog.py <каталог-снимков>
