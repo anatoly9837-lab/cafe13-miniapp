@@ -5187,8 +5187,9 @@ if (grantsSet.length !== 1) {
         await s.ctx.close(); continue;
       }
       await openRow(s, '4'); await s.p.waitForTimeout(120);
+      // у члена клуба на платном кнопка «Записаться за 400 ฿» (E62), у гостя — погашенная «Записаться» (E37k)
       const btn = () => s.p.evaluate(() => {
-        const b = [...document.querySelectorAll('#view button')].find(x => x.textContent.trim() === 'Записаться');
+        const b = [...document.querySelectorAll('#view button')].find(x => x.textContent.trim().startsWith('Записаться'));
         return b ? { off: b.disabled, aria: b.getAttribute('aria-disabled'), act: b.getAttribute('data-action') } : null;
       });
       const b = await btn(), t = await s.view();
