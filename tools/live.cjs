@@ -1778,6 +1778,33 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  // Пары токенов палитры (Cafe13KPG#692): [текст или граница, подложка, порог, имя]. Пара — по ТОМУ, ГДЕ цвет стоит в
+  // styles.css, а не по имени токена: --on-accent стоит только в `.pill.on` поверх --sage, не поверх --accent.
+  // ⚠ Строка на пару — по ним мутации ищут жертву (самую слабую пару темы), не трогать формат
+  const PALETTE_PAIRS = [
+    ['ink', 'paper', 4.5, 'текст/фон'],
+    ['ink', 'card', 4.5, 'текст/карточка'],
+    ['ink', 'surface', 4.5, 'текст/тихий фон'],
+    ['muted', 'paper', 4.5, 'подпись/фон'],
+    ['muted', 'card', 4.5, 'подпись/карточка'],
+    ['muted', 'surface', 4.5, 'подпись/тихий фон'],
+    ['accent-ink', 'accent', 4.5, 'кнопка'],
+    ['on-accent', 'sage', 4.5, 'лист (.pill.on)'],
+    ['clay-ink', 'card', 4.5, 'глина-текст/карточка'],
+    ['clay-ink', 'deny-bg', 4.5, 'отказ (.deny)'],
+    ['gold-ink', 'paper', 4.5, 'латунь-текст/фон'],
+    ['gold-ink', 'card', 4.5, 'латунь-текст/карточка'],
+    ['muted', 'paper', 3.0, 'рамка управления/фон'],
+    ['muted', 'card', 3.0, 'рамка управления/карточка'],
+    ['muted', 'surface', 3.0, 'рамка управления/тихий фон'],
+  ];
+  // Токены вне пар — каждый с причиной. Причина — утверждение: снять её может только замер
+  const PALETTE_EXEMPT = {
+    line: 'разделитель и группировка (карточка, rows, вкладки, заглушки): по ней элемент управления не опознают, порога нет — styles.css, проза у --line',
+    gold: 'граница и заливка СОСТОЯНИЙ и украшений (.pill.gold, полоса .accent, метр, шаг) — у состояний свои числа; роль не мерена, вопрос к designer-55',
+    clay: 'граница СОСТОЯНИЙ отказа (.pill.warm, .card.warm, .listitem.warm) — текст отказа несёт --clay-ink, он в парах; роль не мерена, вопрос к designer-55',
+  };
+
   // Палитра и шрифты, принятые владельцем 21.10 (Cafe13KPG#110). Признак —
   // ВЫЧИСЛЕННЫЙ стиль подложенных частей экрана, а не текст styles.css, и
   // контраст рабочих пар, посчитанный по WCAG на этих же значениях. Темы
@@ -1826,6 +1853,23 @@ if (grantsSet.length !== 1) {
         const r = ratio(fg, bg);
         if (r < 4.5) bad.push(`palette ${mode}: контраст ${name} ${fg} на ${bg} = ${r.toFixed(2)}, нужно ≥ 4.5`);
       }
+      // Пары ТОКЕНОВ (Cafe13KPG#692, наряд designer-55): значения читаются из :root той же темы. Порог 4.5 — текст,
+      // 3.0 — граница элемента управления (WCAG 2.1 SC 1.4.11; рамки управления на --muted с #712).
+      const tok = await s.p.evaluate(() => { const cs = getComputedStyle(document.documentElement), o = {};
+        for (const sh of document.styleSheets) for (const r of sh.cssRules || []) if (r.selectorText && /^:root(\[data-theme="dark"\])?$/.test(r.selectorText))
+          for (const p of r.style) if (p.startsWith('--') && /^#[0-9a-f]{3,8}$/i.test(r.style.getPropertyValue(p).trim())) o[p.slice(2)] = cs.getPropertyValue(p).trim().toUpperCase();
+        return o; });
+      for (const [fg, bg, min, name] of PALETTE_PAIRS) {
+        if (!tok[fg] || !tok[bg]) { bad.push(`palette ${mode}: пара «${name}» — токена ${tok[fg] ? '--' + bg : '--' + fg} в :root нет`); continue; }
+        const r = ratio(tok[fg], tok[bg]);
+        if (r < min) bad.push(`palette ${mode}: контраст ${name} (--${fg} ${tok[fg]} на --${bg} ${tok[bg]}) = ${r.toFixed(2)}, нужно ≥ ${min}`);
+      }
+      // Покрытие: каждый цветовой токен :root — в паре или в исключениях С ПРИЧИНОЙ. Новая краска без строки —
+      // красное: иначе зелёное значило бы «перечисленные пары сошлись», а не «палитра проверена»
+      const inPairs = new Set(PALETTE_PAIRS.flatMap(([fg, bg]) => [fg, bg]));
+      for (const t of Object.keys(tok)) if (!inPairs.has(t) && !PALETTE_EXEMPT[t]) bad.push(`palette ${mode}: токен --${t} не стоит ни в одной паре и не назван исключением — прибор его не мерит`);
+      for (const t of Object.keys(PALETTE_EXEMPT)) if (!tok[t]) bad.push(`palette ${mode}: исключение --${t} — такого токена в :root нет (опечатка или токен снят)`);
+      for (const t of Object.keys(PALETTE_EXEMPT)) if (inPairs.has(t)) bad.push(`palette ${mode}: --${t} и в паре, и в исключениях — одно из двух лишнее`);
     }
     if (s.errs.length) bad.push('palette: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
