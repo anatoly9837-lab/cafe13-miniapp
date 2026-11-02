@@ -26,7 +26,7 @@
 """
 import hashlib, io, json, os, re, sys
 
-VERSION = 'v130 · 01.11.2026'
+VERSION = 'v142 · 02.11.2026'
 LIVE = 'https://anatoly9837-lab.github.io/cafe13-miniapp/'
 
 GROUPS = {
