@@ -1988,6 +1988,79 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  // Цвет ЛИТЕРАЛОМ в styles.css (Cafe13KPG#764). Пары палитры меряют токены; литерал мимо них не меряет никто, а
+  // литерал-КОПИЯ токена хуже всего: по числу он выглядит покрытым и при правке токена остаётся прежним МОЛЧА.
+  // Подлежащее — не «литерал есть», а «литерал совпадает с тем, что о нём объявлено». Объявлен каждый КРАСЯЩИЙ
+  // литерал: копия — какого токена и какой темы (сверяется равенство), не копия — каким значением и почему.
+  // ⚠ Литерал внутри `mask`/`-webkit-mask` — ФОРМА, не цвет: у маски значим только альфа, цвет даёт фон (образец —
+  // крестик поиска, `stroke='black'`). Различает ИМЯ СВОЙСТВА, а не цвет (разметка designer-55). И у маски
+  // обязаны быть ОБА префикса: без `-webkit-mask` в WKWebView (Telegram на iOS) иконка пропадает, а не краснеет.
+  // Ключ — «селектор :: свойство», значение — литералы объявления по порядку
+  const LITERALS = {
+    '.field select :: background': [{ copy: 'muted', theme: 'light' }],
+    ':root[data-theme="dark"] .field select :: background-image': [{ copy: 'muted', theme: 'dark' }],
+    // пропуск «всегда ночной: цвета — тёмная тема принятой палитры» (проза styles.css у .pass)
+    '.pass :: background': [{ copy: 'paper', theme: 'dark' }],
+    '.pass :: border': [{ copy: 'gold', theme: 'dark' }],
+    '.pass :: color': [{ copy: 'ink', theme: 'dark' }],
+    '.pass .avatar :: background': [{ value: 'RGBA(255,255,255,0.18)', why: 'белый налёт пустого кружка поверх ночного пропуска — прозрачность, токена у неё нет' }],
+    '.pass .avatar :: border': [{ value: 'RGBA(255,255,255,0.5)', why: 'пунктир пустого кружка поверх ночного пропуска' }],
+    '.pass .avatar.photo :: border-color': [{ value: 'RGBA(255,255,255,0.35)', why: 'обвод фото поверх ночного пропуска' }],
+    '.pass .code-box :: background': [{ value: '#FFFFFF', why: 'подложка QR — белая по назначению: код читает камера, не палитра' }],
+    '.tile :: color': [{ value: '#FFFFFF', why: 'буква на цветной плитке напитка (место фото) — не тема' }],
+    '.test-strip :: color': [{ value: '#1A1208', why: 'чернила поверх латуни — роли ещё нет (≠ --ink #15171A: 7.27 против 7.05); решение о составе палитры после Cafe13KPG#758, designer-55' }],
+    '.test-strip .small :: color': [{ value: '#1A1208', why: 'то же, что у .test-strip' }],
+  };
+  {
+    const css = fs.readFileSync(ROOT + '/styles.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '));
+    const rules = [];
+    (function walk(s) {
+      let i = 0;
+      while (i < s.length) {
+        const o = s.indexOf('{', i); if (o < 0) break;
+        const sel = s.slice(i, o).trim().replace(/\s+/g, ' ');
+        let d = 1, j = o + 1; while (d && j < s.length) { if (s[j] === '{') d++; else if (s[j] === '}') d--; j++; }
+        if (sel.startsWith('@')) walk(s.slice(o + 1, j - 1)); else rules.push({ sel, body: s.slice(o + 1, j - 1) });
+        i = j;
+      }
+    })(css);
+    const tok = { light: {}, dark: {} };
+    for (const r of rules) {
+      const th = r.sel === ':root' ? 'light' : r.sel === ':root[data-theme="dark"]' ? 'dark' : null;
+      if (th) for (const m of r.body.matchAll(/--([a-z0-9-]+)\s*:\s*(#[0-9a-f]{3,8})\s*;/gi)) tok[th][m[1]] = m[2].toUpperCase();
+    }
+    tok.dark = Object.assign({}, tok.light, tok.dark);
+    if (Object.keys(tok.light).length < 10) bad.push(`literals: из :root прочитано токенов ${Object.keys(tok.light).length} — разбор styles.css сломан, литералы не сверены`);
+    const LIT = /#[0-9a-f]{3,8}\b|%23[0-9a-f]{3,8}\b|rgba?\([^)]*\)|hsla?\([^)]*\)|\b(?:black|white|red|blue|green|gray|grey|silver|gold|orange|yellow|purple|pink|brown|navy|teal)\b/gi;
+    const norm = x => x.replace(/^%23/, '#').replace(/\s+/g, '').toUpperCase();
+    const seen = new Set();
+    for (const r of rules) {
+      if (/^:root(\[data-theme="dark"\])?$/.test(r.sel)) continue;
+      const props = new Set();
+      for (const decl of r.body.split(/;(?![^(]*\))/)) {
+        const k = decl.indexOf(':'); if (k < 0) continue;
+        const prop = decl.slice(0, k).trim().toLowerCase(); props.add(prop);
+        if (/^(-webkit-)?mask(-image)?$/.test(prop)) continue;                    // форма, не цвет
+        const lits = (decl.slice(k + 1).replace(/var\([^)]*\)/g, '').match(LIT) || []).map(norm);
+        if (!lits.length) continue;
+        const key = `${r.sel} :: ${prop}`, want = LITERALS[key];
+        seen.add(key);
+        if (!want) { bad.push(`literals: «${key}» красит литералом ${lits.join(' ')}, и он не объявлен — объяви, чей он: копия токена (какого, какой темы) или не копия с причиной`); continue; }
+        if (want.length !== lits.length) { bad.push(`literals: «${key}» — литералов ${lits.length} (${lits.join(' ')}), объявлено ${want.length}`); continue; }
+        want.forEach((w, i) => {
+          if (w.copy) {
+            const t = tok[w.theme][w.copy];
+            if (!t) bad.push(`literals: «${key}» объявлен копией --${w.copy} (${w.theme}), а такого токена нет`);
+            else if (t !== lits[i]) bad.push(`literals: «${key}» — копия --${w.copy} (${w.theme}): литерал ${lits[i]}, токен ${t} — токен правили, а копию нет`);
+          } else if (norm(w.value) !== lits[i]) bad.push(`literals: «${key}» — литерал ${lits[i]}, объявлен ${w.value} (${w.why}) — значение сменилось, перемерь причину`);
+        });
+      }
+      for (const [a, b] of [['mask', '-webkit-mask'], ['mask-image', '-webkit-mask-image']])
+        if (props.has(a) !== props.has(b)) bad.push(`literals: «${r.sel}» — у маски только ${props.has(a) ? a : b}, без ${props.has(a) ? b : a}: в WKWebView (Telegram на iOS) иконка пропадёт молча`);
+    }
+    for (const key of Object.keys(LITERALS)) if (!seen.has(key)) bad.push(`literals: в таблице запись «${key}», а такого красящего места в styles.css нет — сними строку`);
+  }
+
   // Вкладка, ещё не стоящая на сервере, — «не подключено», а не демонстрационные записи.
   {
     const s = await open(true, true, json(200, OWNER));
