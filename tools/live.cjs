@@ -2077,7 +2077,8 @@ if (grantsSet.length !== 1) {
     if (!(await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="bookings"]'); if (!b || b.disabled) return false; b.click(); return true; })))
       bad.push('bookings: на «Клубе» нет живого входа «Мои записи» — экран «Записи» недостижим');
     // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
-    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
+    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 })
+      .catch(() => bad.push('bookings: архив прошедших не загрузился за 3 с — экран так и стоит на «Загружаем прошедшие…»'));
     const t = await s.view();
     /* Это и есть дозор по Cafe13KPG#259, и проверяет он ОДНО утверждение:
        «либо экран вне реестра, либо он не кормится из DATA». Своей живой
@@ -4626,7 +4627,8 @@ if (grantsSet.length !== 1) {
       bad.push('bookings-svoi: на «Клубе» нет живого входа «Мои записи»');
     await s.p.waitForTimeout(150);
     // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
-    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
+    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 })
+      .catch(() => bad.push('bookings: архив прошедших не загрузился за 3 с — экран так и стоит на «Загружаем прошедшие…»'));
     const t = await s.view();
     if (!t.includes('Вечер ханга'))
       bad.push('bookings-svoi: своей предстоящей записи на экране нет — человек прочитает, что его не записали (Cafe13KPG#360)');
@@ -5708,13 +5710,15 @@ if (grantsSet.length !== 1) {
   // Часы батареи — 2 декабря 01:00Z. Граница 2 декабря 12:30Z впереди, 1 декабря 12:30Z — прошла.
   {
     const SROK2 = /(?<![а-яё])(день|дн[еяий]\S*|сут(ок|ки|кам)\S*|час(а|ов)?|недел\S*)(?![а-яё])|\d\s*ч\.?(?![а-яё])/i;
-    for (const [n, until, want, wantNot] of [
+    for (const [n, until, want, wantNot, over] of [
         // слова кадров E62 / E62г (Cafe13KPG#751)
         ['zapis-granica-vperedi', '2026-12-02T12:30:00+00:00', 'Снять запись с полным возвратом можно до 2 декабря, 19:30 — позже вернётся половина.', 'действовал до'],
         ['zapis-granica-proshla', '2026-12-01T12:30:00+00:00', 'Если снимете запись, вернётся половина: полный возврат действовал до 1 декабря, 19:30.', 'полным возвратом можно'],
-        ['zapis-bez-granicy', undefined, null, 'возврат']]) {
+        ['zapis-bez-granicy', undefined, null, 'возврат'],
+        // мероприятие уже идёт (начало час назад): со старта деньги не возвращаются — слово владельца 02.11 (#768)
+        ['zapis-uzhe-idet', '2026-11-30T12:30:00+00:00', 'Если снимете запись, деньги не вернутся: мероприятие уже идёт.', 'вернётся половина', { starts_at: new Date(NOWFIX - 3600e3).toISOString(), duration_min: 180 }]]) {
       const s = await openCard(q => q.url().endsWith('/events')
-        ? json(200, [EV(Object.assign({ id: 4, taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null }, until ? { full_refund_until: until } : {}))]) : undefined);
+        ? json(200, [EV(Object.assign({ id: 4, taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null }, until ? { full_refund_until: until } : {}, over || {}))]) : undefined);
       const g = await s.p.evaluate(() => ([...document.querySelectorAll('#view .group')].find(x => x.textContent.includes('Записаться')) || {}).textContent || '');
       if (!g) bad.push(`${n}: нет блока «Записаться» — судить условие не на чем`);
       if (want && !g.includes(want)) bad.push(`${n}: условие возврата не из поля сервера — нет «${want}» («${g}»)`);
@@ -7399,10 +7403,11 @@ if (grantsSet.length !== 1) {
           if (!t.includes(x)) bad.push(`signed-oplata: в списке нет метки «${x}»`); });
         const want = 'Оплатили ' + live.filter(r => r.paid).length + ' из ' + live.length;
         if (!t.includes(want)) bad.push(`signed-oplata: нет сводки «${want}», на экране «${t.slice(t.indexOf('Оплатили'), t.indexOf('Оплатили') + 60)}»`);
-        // Названо ДЕЙСТВУЮЩЕЕ ЛИЦО, а не возможность: экран читает организатор,
-        // который снять чужую запись не может (замер по боевой ревизии).
-        if (!t.includes('снимает работник клуба')) bad.push(`signed-oplata: не названо, КТО снимает неоплаченную запись, на экране «${t.slice(t.indexOf('Оплатили'), t.indexOf('Оплатили') + 120)}»`);
-        if (t.includes('можно снять')) bad.push('signed-oplata: сводка обещает организатору снятие, которого он не может сделать — чужую запись снимает работник клуба');
+        // Названо, КТО снимает: слово владельца 02.11.2026 «Снять запись может только сам участник» (Cafe13KPG#768).
+        // Прежняя фраза называла работника клуба — с выкладкой #761 она ложна; её отсутствие держится здесь же.
+        if (!t.includes('Снять запись может только сам участник.')) bad.push(`signed-oplata: не сказано «Снять запись может только сам участник.», на экране «${t.slice(t.indexOf('Оплатили'), t.indexOf('Оплатили') + 120)}»`);
+        if (t.includes('работник клуба')) bad.push('signed-oplata: сводка называет работника клуба — снять запись может только сам участник (Cafe13KPG#768)');
+        if (t.includes('можно снять')) bad.push('signed-oplata: сводка обещает организатору снятие, которого он не может сделать');
       }
       if (s.errs.length) bad.push('signed-oplata: ошибки страницы ' + s.errs.join('; '));
       await s.p.screenshot({ path: `${OUT}/live-signed-oplata.png` });
