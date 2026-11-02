@@ -68,36 +68,52 @@ try {
   if (!Array.isArray(found)) say('ворота', 'имена и id', 2, 'страж вернул не список — разбор не тот');
   else say('ворота', 'имена и id', found.length ? 1 : 0, found.length ? found.slice(0, 3).join(' | ') : 'чисто');
 } catch (e) { say('ворота', 'имена и id', 2, 'страж не запустился: ' + String(e.message).split('\n')[0]); }
-// 3. номер версии: номер БЕРЁТСЯ из app.js и сверяется с обоими `?v=` в index.html
+// 3. номер версии: номер БЕРЁТСЯ из клиента и сверяется со ВСЕМИ `?v=` в index.html — у стилей и у каждого
+// скрипта клиента. Клиент — несколько <script> по index.html (Cafe13KPG#806): номер живёт в VERSION и в `?v=`
+// каждого подключения, и этот прибор — единственное, что держит их равными
 try {
-  const app = fs.readFileSync(ROOT + '/app.js', 'utf8'), idx = fs.readFileSync(ROOT + '/index.html', 'utf8');
+  const KLM = require('./klient.cjs');
+  const app = KLM.klient(ROOT).text, idx = fs.readFileSync(ROOT + '/index.html', 'utf8');
   const m = app.match(/var VERSION = 'v(\d+) · /);
-  if (!m) say('ворота', 'номер версии', 2, 'в app.js нет `var VERSION = \'vN · …\'` — номер не прочитан');
+  if (!m) say('ворота', 'номер версии', 2, 'в клиенте нет `var VERSION = \'vN · …\'` — номер не прочитан');
   else {
     const n = m[1];
-    const css = (idx.match(/styles\.css\?v=(\d+)"/) || [])[1], js = (idx.match(/app\.js\?v=(\d+)"/) || [])[1];
-    if (!css || !js) say('ворота', 'номер версии', 2, 'в index.html не найдено `styles.css?v=` или `app.js?v=` — признак не тот');
-    else if (css !== n || js !== n) say('ворота', 'номер версии', 1, `app.js v${n}, а в index.html styles.css?v=${css}, app.js?v=${js} — владелец увидит старый файл из кэша`);
+    const css = (idx.match(/styles\.css\?v=(\d+)"/) || [])[1];
+    const clientSrcs = KLM.srcsOf(idx);
+    const vs = clientSrcs.map(f => { const r = new RegExp('src="' + f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=(\\d+)"'); return [f, (idx.match(r) || [])[1]]; });
+    const noV = vs.filter(x => !x[1]).map(x => x[0]), off = vs.filter(x => x[1] && x[1] !== n);
+    if (!css || !clientSrcs.length) say('ворота', 'номер версии', 2, 'в index.html не найдено `styles.css?v=` или ни одного скрипта клиента — признак не тот');
+    else if (noV.length) say('ворота', 'номер версии', 1, `у ${noV.join(', ')} нет \`?v=\` — после выкладки человек останется на старом файле из кэша`);
+    else if (css !== n || off.length) say('ворота', 'номер версии', 1, `клиент v${n}, а в index.html ` +
+      [css !== n ? `styles.css?v=${css}` : null].concat(off.map(x => `${x[0]}?v=${x[1]}`)).filter(Boolean).join(', ') + ' — владелец увидит старый файл из кэша');
     else {
       // ствол — СВЕЖИЙ: `git fetch` сейчас, а не ref из клона. Ворота стоят перед показом, и сравнение с
       // устаревшим стволом — ложное зелёное: номер ствола в клоне меньше настоящего (решение координатора)
       const sh = args => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', timeout: 30000, maxBuffer: 64 * 1024 * 1024 });
       const why = r => String(r.error ? r.error.message : r.stderr || '').trim().split('\n')[0];
       const f = sh(['fetch', '-q', 'origin', 'main']);
-      const tApp = f.status === 0 ? sh(['show', 'origin/main:app.js']) : f;
+      // клиент в ревизии — по ЕЁ index.html: до разбивки это app.js, после — файлы js/ (#806)
+      const refClient = ref => {
+        const ix = sh(['show', ref + ':index.html']);
+        if (ix.status !== 0) return ix;
+        const parts = KLM.srcsOf(ix.stdout).map(x => sh(['show', ref + ':' + x]));
+        const bad_ = parts.find(r => r.status !== 0);
+        return bad_ || { status: 0, stdout: parts.map(r => r.stdout).join('') };
+      };
+      const tApp = f.status === 0 ? refClient('origin/main') : f;
       const tm = tApp.status === 0 ? tApp.stdout.match(/var VERSION = 'v(\d+) · /) : null;
       if (tApp.status !== 0) say('ворота', 'номер версии', 2,
         'ствол origin/main не прочитан (' + why(tApp) + ') — поднят ли номер, сравнить не с чем');
-      else if (!tm) say('ворота', 'номер версии', 2, 'в app.js ствола нет `var VERSION = \'vN · …\'` — номер ствола не прочитан');
+      else if (!tm) say('ворота', 'номер версии', 2, 'в клиенте ствола нет `var VERSION = \'vN · …\'` — номер ствола не прочитан');
       else {
         // изменённые строки клиента — от ТОЧКИ ОТВЕТВЛЕНИЯ (merge-base), а не от головы ствола: ветка, отставшая
         // от ушедшего вперёд ствола, иначе читала бы ЧУЖИЕ правки ствола своими и краснела бы, ничего в клиенте
         // не тронув (поймано на #153 после мерджа v106). Рабочее дерево — вместе с незакоммиченным. Строка
         // номера — не правка, иначе сам подъём читался бы правкой и «поднят без правки» не наступало бы никогда
         const mb = sh(['merge-base', 'origin/main', 'HEAD']), base = mb.status === 0 ? mb.stdout.trim() : '';
-        const bApp = base ? sh(['show', base + ':app.js']) : mb;
+        const bApp = base ? refClient(base) : mb;
         const bm = bApp.status === 0 ? bApp.stdout.match(/var VERSION = 'v(\d+) · /) : null;
-        const d = bm ? sh(['diff', '-U0', '--no-color', base, '--', 'app.js', 'styles.css']) : bApp;
+        const d = bm ? sh(['diff', '-U0', '--no-color', base, '--', 'app.js', 'js', 'styles.css']) : bApp;
         const lines = d.status === 0 ? d.stdout.split('\n').filter(x => /^[+-]/.test(x) && !/^(\+\+\+|---) /.test(x))
           .map(x => x.slice(1)).filter(x => !/var VERSION = 'v\d+ · /.test(x)) : null;
         /* Правка, НЕ видимая человеку, — когда КАЖДАЯ изменённая строка пустая или комментарий по началу
@@ -112,10 +128,10 @@ try {
         else if (seen && Number(n) <= Number(t)) say('ворота', 'номер версии', 1,
           `клиент изменён против ствола (v${t}), а номер v${n} не поднят — владелец увидит старый файл из кэша`);
         else if (!seen && n !== b) say('ворота', 'номер версии', 1,
-          `номер v${n} при v${b} в точке ответвления, а видимой правки в app.js и styles.css нет — номер поднят без правки клиента`);
+          `номер v${n} при v${b} в точке ответвления, а видимой правки в клиенте (app.js, js/) и styles.css нет — номер поднят без правки клиента`);
         else if (!seen && lines.length) say('ворота', 'номер версии', 0,
           `v${n} не тронут: изменены только комментарии и пустые строки (${lines.length}) — правка не видна человеку, номер не требуется`);
-        else say('ворота', 'номер версии', 0, `v${n} во всех трёх местах` + (seen ? `, поднят над стволом v${t}`
+        else say('ворота', 'номер версии', 0, `v${n} во всех местах (VERSION и ${vs.length + 1} \`?v=\`)` + (seen ? `, поднят над стволом v${t}`
           : b === t ? ', как у ствола' : `: клиент не тронут, ствол ушёл на v${t} — при слиянии номер возьмётся стволовой`));
       }
     }

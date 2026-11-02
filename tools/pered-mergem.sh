@@ -62,10 +62,16 @@ step()   { printf '\n── %s ──\n' "$1"; }
 [ -n "$T" ] || die 'не назван каталог дерева мерджа: tools/pered-mergem.sh <каталог>'
 [ -d "$T" ] || die "«$T» не каталог — дерево мерджа распаковывают, а не называют sha"
 T=$(cd "$T" && pwd) || die "в «$T» не зайти"
-for f in app.js index.html tools/catalog.py tools/check-stages.py screens/СТАДИИ.tsv; do
+for f in index.html tools/catalog.py tools/check-stages.py screens/СТАДИИ.tsv tools/klient.cjs tools/klient.py; do
     [ -f "$T/$f" ] || die "в дереве «$T» нет $f — это не дерево клиента"
 done
 command -v docker >/dev/null 2>&1 || die 'на хосте нет docker — приборы не звались'
+command -v node >/dev/null 2>&1 || die 'на хосте нет node — состав клиента не прочитать'
+# Клиент — несколько <script> по index.html (Cafe13KPG#806). Состав читают ДВА близнеца (cjs для приборов страницы,
+# py для описи), и они обязаны отдать один перечень в одном порядке: иначе приборы судят разные клиенты (форма frontend-11)
+KJS=$(node "$T/tools/klient.cjs" "$T" 2>&1) || die "состав клиента (klient.cjs): $KJS"
+KPY=$(cd "$T" && python3 -I tools/klient.py "$T" 2>&1) || die "состав клиента (klient.py): $KPY"
+[ "$KJS" = "$KPY" ] || die "близнецы состава клиента разошлись: klient.cjs ≠ klient.py — приборы судили бы разные клиенты"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "нет образа $IMAGE"
 command -v python3 >/dev/null 2>&1 || die 'на хосте нет python3'
 # ⚠ РАБОЧИЙ КАТАЛОГ — В ~/.cache, А НЕ В /tmp, и это не вкусовщина: на хосте
