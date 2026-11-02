@@ -1797,12 +1797,26 @@ if (grantsSet.length !== 1) {
     ['muted', 'paper', 3.0, 'рамка управления/фон'],
     ['muted', 'card', 3.0, 'рамка управления/карточка'],
     ['muted', 'surface', 3.0, 'рамка управления/тихий фон'],
+    ['clay', 'paper', 4.5, 'глина-текст/фон (.outbtn)'],
+    ['clay', 'card', 3.0, 'глина-рамка/карточка'],
+    ['clay', 'deny-bg', 3.0, 'глина-рамка/отказ'],
+    ['gold', 'surface', 3.0, 'латунь-графика/тихий фон (метр)'],
+    ['gold', 'card', 3.0, 'латунь-графика/карточка'],
+    ['gold', 'paper', 3.0, 'латунь-графика/фон'],
   ];
-  // Токены вне пар — каждый с причиной. Причина — утверждение: снять её может только замер
+  // Названный ДОЛГ: пара ниже порога, известная числом и карточкой. Не краснеет, пока число то же; другое число
+  // (хуже ИЛИ починено) — красное: строку перемеряют и правят, погашенный долг снимают. Ключ — «тема fg/bg порог».
+  // --gold как графика (метр, полоска дня, точка шага, полоса .accent; WCAG 1.4.11) — замер designer-55 по 1067950
+  const PALETTE_DEBT = {
+    'light gold/surface 3': { r: '2.17', card: 'Cafe13KPG#692 (карточка палитры — у координатора)' },
+    'light gold/card 3': { r: '2.55', card: 'Cafe13KPG#692 (карточка палитры — у координатора)' },
+    'light gold/paper 3': { r: '2.27', card: 'Cafe13KPG#692 (карточка палитры — у координатора)' },
+  };
+  // Токены вне пар — каждый с причиной. Причина — утверждение: снять её может только замер.
+  // ⚠ ПРЕДЕЛ покрытия: множество — токены :root. Цвет, вписанный в styles.css ЛИТЕРАЛОМ (`.test-strip`:
+  // `color: #1A1208` на --gold), сюда не попадает вовсе — ни в пары, ни в исключения (находка designer-55)
   const PALETTE_EXEMPT = {
     line: 'разделитель и группировка (карточка, rows, вкладки, заглушки): по ней элемент управления не опознают, порога нет — styles.css, проза у --line',
-    gold: 'граница и заливка СОСТОЯНИЙ и украшений (.pill.gold, полоса .accent, метр, шаг) — у состояний свои числа; роль не мерена, вопрос к designer-55',
-    clay: 'граница СОСТОЯНИЙ отказа (.pill.warm, .card.warm, .listitem.warm) — текст отказа несёт --clay-ink, он в парах; роль не мерена, вопрос к designer-55',
   };
 
   // Палитра и шрифты, принятые владельцем 21.10 (Cafe13KPG#110). Признак —
@@ -1861,14 +1875,17 @@ if (grantsSet.length !== 1) {
         return o; });
       for (const [fg, bg, min, name] of PALETTE_PAIRS) {
         if (!tok[fg] || !tok[bg]) { bad.push(`palette ${mode}: пара «${name}» — токена ${tok[fg] ? '--' + bg : '--' + fg} в :root нет`); continue; }
-        const r = ratio(tok[fg], tok[bg]);
-        if (r < min) bad.push(`palette ${mode}: контраст ${name} (--${fg} ${tok[fg]} на --${bg} ${tok[bg]}) = ${r.toFixed(2)}, нужно ≥ ${min}`);
+        const r = ratio(tok[fg], tok[bg]), d = PALETTE_DEBT[`${mode} ${fg}/${bg} ${min}`];
+        if (d && r >= min) bad.push(`palette ${mode}: долг «${name}» погашен (${r.toFixed(2)} ≥ ${min}) — сними строку PALETTE_DEBT`);
+        else if (d && r.toFixed(2) !== d.r) bad.push(`palette ${mode}: долг «${name}» записан как ${d.r}, теперь ${r.toFixed(2)} — перемерь и поправь строку (${d.card})`);
+        else if (!d && r < min) bad.push(`palette ${mode}: контраст ${name} (--${fg} ${tok[fg]} на --${bg} ${tok[bg]}) = ${r.toFixed(2)}, нужно ≥ ${min}`);
       }
       // Покрытие: каждый цветовой токен :root — в паре или в исключениях С ПРИЧИНОЙ. Новая краска без строки —
       // красное: иначе зелёное значило бы «перечисленные пары сошлись», а не «палитра проверена»
       const inPairs = new Set(PALETTE_PAIRS.flatMap(([fg, bg]) => [fg, bg]));
       for (const t of Object.keys(tok)) if (!inPairs.has(t) && !PALETTE_EXEMPT[t]) bad.push(`palette ${mode}: токен --${t} не стоит ни в одной паре и не назван исключением — прибор его не мерит`);
       for (const t of Object.keys(PALETTE_EXEMPT)) if (!tok[t]) bad.push(`palette ${mode}: исключение --${t} — такого токена в :root нет (опечатка или токен снят)`);
+      for (const k of Object.keys(PALETTE_DEBT)) if (k.startsWith(mode + ' ') && !PALETTE_PAIRS.some(([f, b, m]) => k === `${mode} ${f}/${b} ${m}`)) bad.push(`palette ${mode}: долг «${k}» не соответствует ни одной паре`);
       for (const t of Object.keys(PALETTE_EXEMPT)) if (inPairs.has(t)) bad.push(`palette ${mode}: --${t} и в паре, и в исключениях — одно из двух лишнее`);
     }
     if (s.errs.length) bad.push('palette: ошибки страницы ' + s.errs.join('; '));
