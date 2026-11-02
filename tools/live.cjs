@@ -9978,6 +9978,20 @@ if (grantsSet.length !== 1) {
       }
       await s.ctx.close();
     }
+    // пометка на «Слотах и мастерах»: счёт очереди мастеров спрашивается уже при входе на «Управление» (#769)
+    {
+      const n = 'pometka-mastera';
+      const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/master/requests') return json(200, { requests: [], pending: 2 });
+        if (/\/topup\/requests$/.test(u)) return json(200, { pending: 0, requests: [] });
+        return undefined;
+      });
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(400);
+      const mm = await s.p.evaluate(() => { const c = document.querySelector('#view [data-go="masters"] .count'); return c ? c.textContent : null; });
+      if (mm !== '2') bad.push(`${n}: на плашке «Слоты и мастера» пометка ${JSON.stringify(mm)}, ждали «2» — очередь мастеров не спрошена на «Управлении»`);
+      await s.ctx.close();
+    }
     // пометка по ПРАВУ: у члена клуба без прав очередей нет — пометки нет нигде; на замороженной плашке цифру прячет CSS
     {
       const n = 'pometka-pravo', MEM = clone(OWNER); MEM.roles = [];
