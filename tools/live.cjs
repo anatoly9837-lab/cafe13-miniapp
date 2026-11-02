@@ -5879,7 +5879,7 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
-    // 3. форма и ответы сервера. Ручка берёт ТОЛЬКО seats и about (api 455dcdd); после 200 афиша перечитывается
+    // 3. форма и ответы сервера. Ручка берёт seats, about, а с шага 7 — price и ask_donation (бой 36073d3); после 200 афиша перечитывается
     // (ответ — строка без имён ведущего). Отказ — словами сервера, набранное цело, «Сохранить» снова жива.
     for (const [n, reply, want] of [
       ['edt-200', () => json(200, Object.assign(MINE(), { seats: 20, about: 'Новое описание' })), null],
@@ -5906,8 +5906,9 @@ if (grantsSet.length !== 1) {
       await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(500);
       const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
       if (posts.length !== 1) bad.push(`${n}: POST правки ушёл ${posts.length} раз, ждали 1`);
-      else if (JSON.stringify(JSON.parse(posts[0] || '{}')) !== JSON.stringify({ seats: 20, about: 'Новое описание' }))
-        bad.push(`${n}: тело правки ${posts[0]}, ждали {"seats":20,"about":"Новое описание"} — ручка берёт только их`);
+      // у MINE 3 записи: цена погашена и уходит прежним входом 400; галочки в фикстуре нет (сервер до шага 7) — её и в теле нет
+      else if (JSON.stringify(JSON.parse(posts[0] || '{}')) !== JSON.stringify({ seats: 20, about: 'Новое описание', price: 400 }))
+        bad.push(`${n}: тело правки ${posts[0]}, ждали {"seats":20,"about":"Новое описание","price":400}`);
       if (!after.includes('GET /events')) bad.push(`${n}: после правки афиша не перечитана: ${JSON.stringify(after)}`);
       const t = await s.view(), cur = await s.p.evaluate(() => current);
       if (!want) {
@@ -5924,6 +5925,58 @@ if (grantsSet.length !== 1) {
         if (sv !== false) bad.push(`${n}: после отказа «Сохранить» не вернулась (${JSON.stringify(sv)})`);
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // 3а. цена входа и галочка доната (шаг 7, E67, Cafe13KPG#686). Цена в поле — ВХОД: у донейшна `price` — ориентир,
+    // сервер правку считает от входа (0). При живых записях цена погашена — причина словами сервера. Галочка — только
+    // если сервер её отдаёт. Подписи «появится «Поблагодарить мастера»» нет: кнопки благодарности в клиенте нет (#755).
+    for (const [n, row, wantPrice, wantDis, wantAsk, fill, tap, wantBody] of [
+      ['cena-forma', MINE({ taken: 0, seats_left: 12, ask_donation: false }), '400', false, 'выключено', '0', true,
+        { seats: 12, about: 'Живой звук, место у сцены', price: 0, ask_donation: true }],
+      ['cena-orientir', MINE({ taken: 0, seats_left: 12, kind: 'donation', price: '300.00', ask_donation: true }), '0', false, 'включено', null, false,
+        { seats: 12, about: 'Живой звук, место у сцены', price: 0, ask_donation: true }],
+      ['cena-zapisi', MINE({ ask_donation: true }), '400', true, 'включено', null, true,
+        { seats: 12, about: 'Живой звук, место у сцены', price: 400, ask_donation: false }]]) {
+      const posts = [];
+      const s = await openM(q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/events/4/edit' && q.method() === 'POST') { posts.push(q.postData()); return json(200, Object.assign({}, row)); }
+        if (u === '/events') return json(200, [row]);
+        return undefined;
+      });
+      await s.p.evaluate(() => go('eventEdit', '4')); await s.p.waitForTimeout(200);
+      const f = await s.p.evaluate(() => { const p = document.getElementById('edt-price'), a = document.querySelector('#view [data-action="edt-ask"]');
+        return { price: p ? p.value : null, dis: p ? p.disabled : null, ask: a ? a.textContent : null, text: document.getElementById('view').textContent }; });
+      if (f.price !== wantPrice) bad.push(`${n}: в поле «Цена входа» ${JSON.stringify(f.price)}, ждали ${JSON.stringify(wantPrice)}` +
+        (n === 'cena-orientir' ? ' — ориентир донейшна показан ценой входа' : ''));
+      if (f.dis !== wantDis) bad.push(`${n}: поле цены ${f.dis ? 'погашено' : 'открыто'}, ждали ${wantDis ? 'погашенным' : 'открытым'}`);
+      if (wantDis && !f.text.includes('Цена входа не меняется, пока есть записи: записано 3.')) bad.push(`${n}: причина погашенной цены не названа`);
+      if (!f.ask || !f.ask.includes(wantAsk)) bad.push(`${n}: галочка «Просить донат» ${JSON.stringify(f.ask)}, ждали «${wantAsk}»`);
+      if (f.text.includes('Поблагодарить мастера')) bad.push(`${n}: обещан путь «Поблагодарить мастера», которого в клиенте нет`);
+      if (fill !== null) await s.p.fill('#edt-price', fill);
+      if (tap) { await s.p.click('#view [data-action="edt-ask"]'); await s.p.waitForTimeout(100); }
+      await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(500);
+      if (posts.length !== 1) bad.push(`${n}: POST правки ушёл ${posts.length} раз, ждали 1`);
+      else if (JSON.stringify(JSON.parse(posts[0])) !== JSON.stringify(wantBody)) bad.push(`${n}: тело правки ${posts[0]}, ждали ${JSON.stringify(wantBody)}`);
+      if (n === 'cena-forma') await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 3б. цена — не число: своя проверка до сервера, запроса нет
+    {
+      const n = 'cena-ne-chislo', posts = [];
+      const s = await openM(q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/events/4/edit' && q.method() === 'POST') { posts.push(1); return json(200, MINE()); }
+        if (u === '/events') return json(200, [MINE({ taken: 0, seats_left: 12 })]);
+        return undefined;
+      });
+      await s.p.evaluate(() => go('eventEdit', '4')); await s.p.waitForTimeout(200);
+      await s.p.fill('#edt-price', 'четыреста');
+      await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300);
+      if (posts.length) bad.push(`${n}: цена «четыреста» ушла на сервер`);
+      if (!(await s.view()).includes('Цена входа — число в батах, 0 — вход без оплаты.')) bad.push(`${n}: не сказано, какой должна быть цена`);
       await s.ctx.close();
     }
 
