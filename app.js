@@ -2290,6 +2290,9 @@ function fromRoster(d) {
     // `!p.balance`: у настоящего нуля остаток тоже ложный. null сервер не отдаёт (ноль ставит сам).
     var bal;
     if ('balance' in p) { bal = num(p.balance); if (!isFinite(bal)) return null; }
+    // #797 (api#124, бой f08fe95): `former` — членство было и кончилось; `in_club` — живой допуск. Оба всегда булевы;
+    // поля нет — старый сервер (undefined), не «нет»; не булево — ответ битый целиком
+    if ('former' in p && typeof p.former !== 'boolean' || 'in_club' in p && typeof p.in_club !== 'boolean') return null;
     out.push({
       uid: p.tg_user_id,
       name: [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Без имени',
@@ -2299,6 +2302,8 @@ function fromRoster(d) {
       // слова сервера по тем же местам, что `lv`: снятие уровня берёт уровень СЛОВОМ (v86)
       lvKeys: p.memberships.slice(),
       bal: bal,
+      former: typeof p.former === 'boolean' ? p.former : undefined,
+      inClub: typeof p.in_club === 'boolean' ? p.in_club : undefined,
       // Конец живого членства (слово владельца 29.10.2026: «после имени сделай не большим
       // шрифтом дату окончания членства», плюс «поставь мне значек бесконечности» 28.10).
       // ⚠ Состояний ЧЕТЫРЕ, а не два, и признак — наличие КЛЮЧА, тот же класс, что у остатка:
@@ -2318,6 +2323,24 @@ function fromRoster(d) {
 /* Живые членства — наверх (решение по #413), внутри групп порядок сервера. Сортируется
    ПОРЯДОК ОТРИСОВКИ, а не список: карточка знает номер строки в ответе (k), и все действия
    (p-open:k, data-person) указывают на того же человека, как бы строки ни стояли. */
+/* «Без членства» (слово владельца 02.11.2026: «люди без членства не нужны в основном списке, отдельная кнопка бывшие
+   члены», Cafe13KPG#797; кадры E47ю/E47я, #799). За дверью — без живого членства И без ответственности: человек с
+   ответственностью остаётся в основном списке (решение координатора). Признак — только у сервера с полями (api#124):
+   у старого сервера `former` нет, и все остаются в основном списке, как было, — без полей «бывший» и «не было никогда»
+   неразличимы, и дверь назвала бы их неверно. Слова чипа исключённого и подписи двери — ВРЕМЕННЫЕ, до слова designer-55:
+   пола клиент не знает, и «Исключена» кадра здесь угадывала бы его по имени */
+var NO_MEMB_OUT = 'Нет допуска';
+function peopleOutside(p) { return p.former !== undefined && !p.lv.length && !p.roles.length; }
+function outsideChip(p) { return p.inClub === false ? NO_MEMB_OUT : p.former ? 'Членство закончилось' : 'Членства не было'; }
+// основной список и дверь «Без членства» под ним; в режиме двери — только те, кто за ней (#797)
+function peopleList(bez) {
+  var ks = peopleOrder(PEOPLE.list).filter(function (k) { return peopleOutside(PEOPLE.list[k]) === bez; });
+  var out = PEOPLE.list.filter(peopleOutside).length;
+  var cards = ks.map(function (k) { return personCard(PEOPLE.list[k], k); }).join('');
+  if (bez) return cards || '<div class="card quiet"><span class="small">Без членства никого нет.</span></div>';
+  return cards + (out ? '<button type="button" class="listitem" data-action="p-bez"><span class="grow"><b>Без членства</b>' +
+    '<span class="small">' + out + ' ' + plural(out, ['человек', 'человека', 'человек']) + '</span></span>' + svg(ICON.chev, 'chev') + '</button>' : '');
+}
 function peopleOrder(list) {
   return list.map(function (x, i) { return i; })
     .sort(function (a, b) { return (!list[a].levels - !list[b].levels) || a - b; });
@@ -2558,7 +2581,8 @@ function personCard(p, k) {
   var dostup = p.lv.map(function (l) {
     return '<span class="chip paid fixed">' + esc(l) + '</span>';
   }).join('') +
-    (p.roles.some(function (r) { return HEAD_ROLES.indexOf(r.role) !== -1; }) ? '<span class="chip fixed">Глава клуба</span>' : '');
+    (p.roles.some(function (r) { return HEAD_ROLES.indexOf(r.role) !== -1; }) ? '<span class="chip fixed">Глава клуба</span>' : '') +
+    (peopleOutside(p) ? '<span class="chip fixed">' + esc(outsideChip(p)) + '</span>' : '');
   var rows = (dostup ? '<div class="chips" data-chips="access">' + dostup + '</div>' : '') +
     '<div class="chips" data-chips="duty">' +
     p.roles.filter(function (r) { return HEAD_ROLES.indexOf(r.role) === -1; }).map(function (r) {
@@ -2670,11 +2694,12 @@ function personCard(p, k) {
     return '<div class="fold-wrap" data-person="' + k + '"' + hid + '>' +
       '<button type="button" class="card dense fold" data-action="p-card:' + k + '" aria-expanded="false"' + lock + '>' +
         '<span class="row"><span class="col"><b>' + esc(p.name) + tillTail(p) + '</b>' +
-          '<span class="small">' + (p.lv.length ? esc(p.lv.join(' · ')) : 'без членства') + '</span>' +
+          (peopleOutside(p) ? '<span class="chip fixed">' + esc(outsideChip(p)) + '</span>'
+            : '<span class="small">' + (p.lv.length ? esc(p.lv.join(' · ')) : 'без членства') + '</span>') +
         '</span><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
           (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></span>' +
       '</button>' +
-      '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>' +
+      (p.inClub === false ? '' : '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>') +
     '</div>';
   return '<div class="card dense open" data-person="' + k + '"' + hid + '>' +
     // Кадр E47: уровень — предмет строки, остаток справа. Стили встроены — долг Cafe13KPG#484
@@ -2689,7 +2714,9 @@ function personCard(p, k) {
     // ⚠ Действие НЕ меняется: вход в вопрос тот же `p-out:k`, и двойное подтверждение
     // остаётся его же словом. Кружок — только вход, а не «нажал и исключил».
     '<div class="row"><div class="col"><div class="namerow">' +
-      '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>' +
+      // «−» не рисуется у того, кого в клубе нет (`in_club: false`): исключать некого, сервер ответил бы 409 «Этого человека
+      // в клубе нет» — владелец нажимал (снимок к #797)
+      (p.inClub === false ? '' : '<button type="button" class="outbtn" data-action="p-out:' + k + '" aria-label="Исключить из клуба"' + lock + '>[ - ]</button>') +
       '<b>' + esc(p.name) + tillTail(p) + '</b></div></div><span data-money style="font-variant-numeric:tabular-nums;white-space:nowrap">' +
       (p.bal === undefined ? '—' : money(p.bal % 1 ? p.bal.toFixed(2) : p.bal) + ' ฿') + '</span></div>' +
     rows + done + deny + form +
@@ -7103,7 +7130,7 @@ var SCREENS = {
       (past.length ? '<div class="group"><span class="label">Решённые</span>' + past.map(joinRow).join('') + '</div>' : '');
   },
 
-  people: function () {
+  people: function (mode) {
     if (LIVE && !mayPeople()) return '<div class="card quiet"><span class="small">Выдавать и снимать ответственность может глава клуба.</span></div>';
     if (!PEOPLE.list) return PEOPLE.fail
       ? '<div class="card quiet"><span class="small">' + esc(PEOPLE.fail) + '</span></div>' +
@@ -7115,7 +7142,7 @@ var SCREENS = {
       '<div class="field"><label for="p-find">Найти по имени</label>' +
         '<input id="p-find" type="search" value="' + esc(PEOPLE.find) + '" placeholder="Имя"></div>' +
       (noBal && PEOPLE.list.length ? '<div class="card quiet"><span class="small">Остаток сервер не отдаёт — у этой ручки поля ещё нет. Прочерк здесь значит «не спросили», а не «ноль».</span></div>' : '') +
-      (PEOPLE.list.length ? peopleOrder(PEOPLE.list).map(function (k) { return personCard(PEOPLE.list[k], k); }).join('')
+      (PEOPLE.list.length ? peopleList(mode === 'bez')
                           : '<div class="card quiet"><span class="small">Сервер не вернул ни одного человека.</span></div>');
   },
 
@@ -7606,7 +7633,8 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
+  // из «Без членства» назад — к основному списку, а не на «Управление» (#797)
+  people: function () { return param === 'bez' ? { s: 'people', p: null } : 'manage'; }, joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
@@ -7692,7 +7720,7 @@ function render() {
     title.textContent = 'Café XIII';
     title.className = 'wordmark';
   } else {
-    title.textContent = LIVE && current === 'demo' ? 'Просмотр' : TITLES[current] || 'Café XIII';
+    title.textContent = LIVE && current === 'demo' ? 'Просмотр' : current === 'people' && param === 'bez' ? 'Без членства' : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
   var right = document.getElementById('bar-right');
@@ -8109,6 +8137,8 @@ function doAction(a) {
       // Cafe13KPG#214, 22.10.2026). Снимать можно одну, не обе. Эта ещё и
       // держит p-open/p-close: peopleReset снимает блокировку.
       if (PEOPLE.busy) return;
+      // дверь «Без членства» (#797) — тот же экран в режиме двери: действия карточек за ней работают как в основном списке
+      if (a === 'p-bez') { PEOPLE.card = null; go('people', 'bez'); return; }
       var before = peopleTouched();
       /* УХОД С КАРТОЧКИ (v91, слово владельца «пока не выбрали другую карточку»). Любое действие
          у ДРУГОГО человека: окно уровня ОТПРАВЛЯЕТ снятие досрочно (прежде сброс тихо его отменял —
