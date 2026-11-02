@@ -1995,8 +1995,10 @@ if (grantsSet.length !== 1) {
     const s = await open(true, true, json(200, OWNER));
     // экран записей разморожен шагом 7 (Cafe13KPG#755) — половина случая снова в прогоне
     {
-    // вход в «Записи» — строкой «Мои записи» на «Клубе» (Cafe13KPG#755); вкладки «Записи» нет
-    await s.p.click('#view [data-go="bookings"]');
+    // вход в «Записи» — строкой «Мои записи» на «Клубе» (Cafe13KPG#755); вкладки «Записи» нет. Нажатие изнутри страницы:
+    // погашенный (замороженный) вход краснеет строкой, а не обрывает батарею 30-секундным ожиданием
+    if (!(await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="bookings"]'); if (!b || b.disabled) return false; b.click(); return true; })))
+      bad.push('bookings: на «Клубе» нет живого входа «Мои записи» — экран «Записи» недостижим');
     // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
     await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
     const t = await s.view();
@@ -4542,7 +4544,9 @@ if (grantsSet.length !== 1) {
            booked_by_me: true, my_booking_id: 11 })
     ];
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, MOI)), null, NOWFIX);
-    await s.p.click('#view [data-go="bookings"]');   // строка «Мои записи» на «Клубе» (Cafe13KPG#755)
+    // строка «Мои записи» на «Клубе» (Cafe13KPG#755); погашенная — красная строка, а не обрыв батареи
+    if (!(await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="bookings"]'); if (!b || b.disabled) return false; b.click(); return true; })))
+      bad.push('bookings-svoi: на «Клубе» нет живого входа «Мои записи»');
     await s.p.waitForTimeout(150);
     // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
     await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
