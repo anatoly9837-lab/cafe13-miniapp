@@ -699,6 +699,80 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // ── повторная заявка заполнена последней ОТПРАВЛЕННОЙ (слово владельца 31.10.2026, Cafe13KPG#697) ──
+    // Последняя по created_at стоит в ответе ПОСЛЕДНЕЙ: клиент, взявший первую строку без сортировки, получил бы старую.
+    const OLD = mreq(801, 'rejected', { title: 'Старая проба', about: 'старое', seats: 5, weekday: 2, start_local: '10:00',
+      created_at: '2026-10-20T10:00:00+07:00', decided_at: '2026-10-21T10:00:00+07:00' });
+    const NEW = mreq(802, 'rejected', { title: 'Гончарный вечер', about: 'Глина и круг', seats: 12, weekday: 6, start_local: '19:30',
+      hours: 4, hours_extra: 2, amount: String(PRICE(4)), created_at: '2026-10-29T10:00:00+07:00', decided_at: '2026-10-30T10:00:00+07:00' });
+    const formNow = s => s.p.evaluate(() => {
+      const v = id => { const x = document.getElementById(id); return x ? x.value : null; };
+      const day = document.querySelector('#view [data-action^="msf-day:"][aria-pressed="true"]');
+      return { title: v('msf-title'), about: v('msf-about'), seats: v('msf-seats'), time: v('msf-time'),
+               day: day ? day.getAttribute('data-action') : null, extra: MSF.extra,
+               send: (document.querySelector('[data-action="ms-send"]') || {}).disabled, text: document.getElementById('view').textContent };
+    });
+    {
+      const n = 'ms-povtor-zapolnena';
+      const o = { mine: () => [OLD, NEW], posted: [] };
+      const s = await open(true, true, json(200, mem(20000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(300);
+        const f = await formNow(s);
+        const want = { title: 'Гончарный вечер', about: 'Глина и круг', seats: '12', time: '19:30', day: 'msf-day:6', extra: 2 };
+        Object.keys(want).forEach(k => { if (f[k] !== want[k]) bad.push(`${n}: ${k} = ${JSON.stringify(f[k])}, ждали ${JSON.stringify(want[k])} из последней отправленной`); });
+        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+        await s.p.waitForTimeout(300);
+        const b = o.posted[0] || {};
+        if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
+        else if (b.title !== 'Гончарный вечер' || b.seats !== 12 || b.hours !== 4 || b.weekday !== 6 || b.start_local !== '19:30' || 'price' in b || 'amount' in b)
+          bad.push(`${n}: тело заявки не из подставленного: ${JSON.stringify(b)}`);
+      }
+      await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // набранное человеком старше подстановки: ответ /mine, пришедший посреди набора, текста не трогает —
+    // ни пустой (перерисовка без забора полей), ни с заявками (подстановка поверх)
+    {
+      const n = 'ms-povtor-nabrano';
+      let list = [];
+      const o = { mine: () => list, posted: [] };
+      const s = await open(true, true, json(200, mem(20000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(300);
+        if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Моё название'); else bad.push(`${n}: нет поля названия`);
+        await s.p.evaluate(() => loadMineMaster()); await s.p.waitForTimeout(300);
+        let f = await formNow(s);
+        if (f.title !== 'Моё название') bad.push(`${n}: пустой ответ /mine стёр набранное (${JSON.stringify(f.title)})`);
+        list = [OLD, NEW];
+        await s.p.evaluate(() => loadMineMaster()); await s.p.waitForTimeout(300);
+        f = await formNow(s);
+        if (f.title !== 'Моё название') bad.push(`${n}: подстановка перетёрла набранное (${JSON.stringify(f.title)})`);
+        if (f.day !== 'msf-day:4' || f.seats !== '0') bad.push(`${n}: в тронутую форму подставлены поля (${f.day}, мест ${f.seats})`);
+      }
+      if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия`);
+      await s.ctx.close();
+    }
+    // прошлые часы теперь дороже остатка: часы НЕ урезаны молча, недостача названа, отправка погашена
+    {
+      const n = 'ms-povtor-dorozhe';
+      const o = { mine: () => [NEW], posted: [] };
+      const s = await open(true, true, json(200, mem(PRICE(3), [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+        await s.p.waitForTimeout(400);
+        const f = await formNow(s);
+        if (f.extra !== 2) bad.push(`${n}: часы прошлой заявки урезаны (${f.extra} сверх двух, ждали 2)`);
+        // нехватка 1 300 ฿ (цена 4 ч минус остаток в цену 3 ч) — числом, а не любым «Не хватает»
+        if (!/Не хватает 1\s?300 ฿/.test(f.text)) bad.push(`${n}: недостача 1 300 ฿ не названа`);
+        if (f.send !== true) bad.push(`${n}: «Отправить заявку» нажимается при нехватке`);
+      }
+      if (o.posted.length) bad.push(`${n}: заявка ушла`);
+      await s.ctx.close();
+    }
     // подача, на которую сервер ответил НЕразобранно: деньги могли уйти, человек остаётся на форме — своя заявка
     // перечитывается всё равно. На пути успеха это дублирует сброс при входе на «Клуб» (go('home')), поэтому
     // проверяется ЗДЕСЬ, где go('home') нет (подлог «снято перечитывание» на успехе был зелёным)
@@ -5961,7 +6035,7 @@ if (grantsSet.length !== 1) {
       await s.ctx.close();
     }
 
-    // 3. форма и ответы сервера. Ручка берёт ТОЛЬКО seats и about (api 455dcdd); после 200 афиша перечитывается
+    // 3. форма и ответы сервера. Ручка берёт seats, about, а с шага 7 — price и ask_donation (бой 36073d3); после 200 афиша перечитывается
     // (ответ — строка без имён ведущего). Отказ — словами сервера, набранное цело, «Сохранить» снова жива.
     for (const [n, reply, want] of [
       ['edt-200', () => json(200, Object.assign(MINE(), { seats: 20, about: 'Новое описание' })), null],
@@ -5988,8 +6062,9 @@ if (grantsSet.length !== 1) {
       await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(500);
       const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
       if (posts.length !== 1) bad.push(`${n}: POST правки ушёл ${posts.length} раз, ждали 1`);
-      else if (JSON.stringify(JSON.parse(posts[0] || '{}')) !== JSON.stringify({ seats: 20, about: 'Новое описание' }))
-        bad.push(`${n}: тело правки ${posts[0]}, ждали {"seats":20,"about":"Новое описание"} — ручка берёт только их`);
+      // у MINE 3 записи: цена погашена и уходит прежним входом 400; галочки в фикстуре нет (сервер до шага 7) — её и в теле нет
+      else if (JSON.stringify(JSON.parse(posts[0] || '{}')) !== JSON.stringify({ seats: 20, about: 'Новое описание', price: 400 }))
+        bad.push(`${n}: тело правки ${posts[0]}, ждали {"seats":20,"about":"Новое описание","price":400}`);
       if (!after.includes('GET /events')) bad.push(`${n}: после правки афиша не перечитана: ${JSON.stringify(after)}`);
       const t = await s.view(), cur = await s.p.evaluate(() => current);
       if (!want) {
@@ -6006,6 +6081,58 @@ if (grantsSet.length !== 1) {
         if (sv !== false) bad.push(`${n}: после отказа «Сохранить» не вернулась (${JSON.stringify(sv)})`);
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // 3а. цена входа и галочка доната (шаг 7, E67, Cafe13KPG#686). Цена в поле — ВХОД: у донейшна `price` — ориентир,
+    // сервер правку считает от входа (0). При живых записях цена погашена — причина словами сервера. Галочка — только
+    // если сервер её отдаёт. Подписи «появится «Поблагодарить мастера»» нет: кнопки благодарности в клиенте нет (#755).
+    for (const [n, row, wantPrice, wantDis, wantAsk, fill, tap, wantBody] of [
+      ['cena-forma', MINE({ taken: 0, seats_left: 12, ask_donation: false }), '400', false, 'выключено', '0', true,
+        { seats: 12, about: 'Живой звук, место у сцены', price: 0, ask_donation: true }],
+      ['cena-orientir', MINE({ taken: 0, seats_left: 12, kind: 'donation', price: '300.00', ask_donation: true }), '0', false, 'включено', null, false,
+        { seats: 12, about: 'Живой звук, место у сцены', price: 0, ask_donation: true }],
+      ['cena-zapisi', MINE({ ask_donation: true }), '400', true, 'включено', null, true,
+        { seats: 12, about: 'Живой звук, место у сцены', price: 400, ask_donation: false }]]) {
+      const posts = [];
+      const s = await openM(q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/events/4/edit' && q.method() === 'POST') { posts.push(q.postData()); return json(200, Object.assign({}, row)); }
+        if (u === '/events') return json(200, [row]);
+        return undefined;
+      });
+      await s.p.evaluate(() => go('eventEdit', '4')); await s.p.waitForTimeout(200);
+      const f = await s.p.evaluate(() => { const p = document.getElementById('edt-price'), a = document.querySelector('#view [data-action="edt-ask"]');
+        return { price: p ? p.value : null, dis: p ? p.disabled : null, ask: a ? a.textContent : null, text: document.getElementById('view').textContent }; });
+      if (f.price !== wantPrice) bad.push(`${n}: в поле «Цена входа» ${JSON.stringify(f.price)}, ждали ${JSON.stringify(wantPrice)}` +
+        (n === 'cena-orientir' ? ' — ориентир донейшна показан ценой входа' : ''));
+      if (f.dis !== wantDis) bad.push(`${n}: поле цены ${f.dis ? 'погашено' : 'открыто'}, ждали ${wantDis ? 'погашенным' : 'открытым'}`);
+      if (wantDis && !f.text.includes('Цена входа не меняется, пока есть записи: записано 3.')) bad.push(`${n}: причина погашенной цены не названа`);
+      if (!f.ask || !f.ask.includes(wantAsk)) bad.push(`${n}: галочка «Просить донат» ${JSON.stringify(f.ask)}, ждали «${wantAsk}»`);
+      if (f.text.includes('Поблагодарить мастера')) bad.push(`${n}: обещан путь «Поблагодарить мастера», которого в клиенте нет`);
+      if (fill !== null) await s.p.fill('#edt-price', fill);
+      if (tap) { await s.p.click('#view [data-action="edt-ask"]'); await s.p.waitForTimeout(100); }
+      await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(500);
+      if (posts.length !== 1) bad.push(`${n}: POST правки ушёл ${posts.length} раз, ждали 1`);
+      else if (JSON.stringify(JSON.parse(posts[0])) !== JSON.stringify(wantBody)) bad.push(`${n}: тело правки ${posts[0]}, ждали ${JSON.stringify(wantBody)}`);
+      if (n === 'cena-forma') await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 3б. цена — не число: своя проверка до сервера, запроса нет
+    {
+      const n = 'cena-ne-chislo', posts = [];
+      const s = await openM(q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/events/4/edit' && q.method() === 'POST') { posts.push(1); return json(200, MINE()); }
+        if (u === '/events') return json(200, [MINE({ taken: 0, seats_left: 12 })]);
+        return undefined;
+      });
+      await s.p.evaluate(() => go('eventEdit', '4')); await s.p.waitForTimeout(200);
+      await s.p.fill('#edt-price', 'четыреста');
+      await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300);
+      if (posts.length) bad.push(`${n}: цена «четыреста» ушла на сервер`);
+      if (!(await s.view()).includes('Цена входа — число в батах, 0 — вход без оплаты.')) bad.push(`${n}: не сказано, какой должна быть цена`);
       await s.ctx.close();
     }
 

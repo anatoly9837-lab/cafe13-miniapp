@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v139 · 02.11.2026';
+var VERSION = 'v142 · 02.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -3050,7 +3050,21 @@ function msNoteSync() {
 }
 document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'ms-note') msNoteSync(); });
 // мест по умолчанию 0 = «не ограничено» (слово владельца); ⚠ схема сервера ноль пока не принимает (seats ≥ 1)
-var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
+// `from` — номер заявки, чьими полями форма уже заполнена (#697): подстановка одна на форму
+var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '', from: 0 };
+/* Повторная заявка открывается полями последней ОТПРАВЛЕННОЙ (слово владельца 31.10.2026, Cafe13KPG#697):
+   `MR.mine` отсортирован по created_at, первая — последняя при любом решении. Цена не подставляется — её даёт
+   сервер по часам. Подставляется ОДИН раз и только в нетронутую форму: набранное человеком не перетирается.
+   Часы — как были, даже если денег теперь не хватает: урезать выбор молча нельзя, «Не хватает» видно и отправку гасит */
+function msfPrefill() {
+  var last = MR.mine && MR.mine[0];
+  if (!last || last.status === 'pending' || MSF.from) return;
+  if (current === 'masterApply') msfGrab();
+  if (MSF.day !== 4 || MSF.time !== '18:00' || MSF.extra || MSF.seats !== '0' || MSF.title || MSF.about) return;
+  MSF = { day: last.weekday, time: MS_TIMES.indexOf(last.start) >= 0 ? last.start : MSF.time,
+          extra: Math.max(0, Math.min(last.hours, MS_MAX_H) - 2), seats: String(last.seats),
+          title: last.title, about: last.about, err: '', from: last.id };
+}
 function loadMineMaster() {
   if (!LIVE) return;
   var gen = ++MR.mineGen; MR.mineState = 'loading';
@@ -3058,6 +3072,9 @@ function loadMineMaster() {
     if (gen !== MR.mineGen) return;
     var d = r.status === 200 ? fromMasterList(r.data, false) : null;
     MR.mine = d ? d.list : null; MR.mineState = d ? 'ok' : failText(r);
+    // набранное — в MSF до перерисовки: без этого ответ, пришедший посреди набора, стирал текст полей
+    if (current === 'masterApply') msfGrab();
+    if (d) { msfPrefill(); loadPrice(2 + MSF.extra); loadPrice(3 + MSF.extra); }
     if ({ home: 1, masterApply: 1, masterReqs: 1, masterReq: 1 }[current]) render();
   });
 }
@@ -3244,7 +3261,7 @@ function sendMaster() {
     // деньги могли уйти и при неразобранном ответе — свою заявку и остаток перечитываем ВСЕГДА
     loadMineMaster(); refreshMe();
     if (got) {
-      MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '' };
+      MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '', from: 0 };
       FLASH = { text: 'Заявка отправлена', note: 'Списано ' + money(got.amount) + ' ฿. Решение примет арт-директор; если он откажет, деньги вернутся на счёт.' };
       go('home'); return;
     }
@@ -3889,6 +3906,8 @@ function fromEvents(d) {
       // шаг 7 (api#113/#114): уплаченный СО СЧЁТА вход своей записи и что вернёт снятие сейчас — числа сервера,
       // клиент возврат не считает. null — входа со счёта нет; поля нет — сервер до шага 7
       paid: paid, refund: refund,
+      // галочка «Просить донат» (шаг 7, E67); нет поля — сервер до шага 7, правки галочки не предлагаем
+      ask: typeof e.ask_donation === 'boolean' ? e.ask_donation : null,
       // граница полного возврата — мгновение СЕРВЕРА (`full_refund_until`, Cafe13KPG#750): срок клиент не знает и
       // не называет; нет поля или битое — фразы о границе нет, числа «Вернётся» остаются
       refundUntil: typeof e.full_refund_until === 'string' && !isNaN(Date.parse(e.full_refund_until)) ? new Date(e.full_refund_until) : null,
@@ -4071,16 +4090,21 @@ function afterBooking(r, id, want) {
 var EV_BUSY = false;       // отмена мероприятия в пути: второе нажатие молчит
 var EV_ERR = '';           // чем кончилась неудачная отмена — текст на карточке
 var EV_ASK = false;        // спрашиваем: отмена мероприятия снимает записи людей
-/* Правка недели (шаг 4, E55k/E55l, `POST /events/{id}/edit` — на бою с 455dcdd). Ручка берёт ТОЛЬКО `seats`
-   (0–500, 0 — без ограничения) и `about` (до 2000); ответ — строка без имён ведущего, поэтому после 200
+/* Правка недели (шаг 4, E55k/E55l, `POST /events/{id}/edit` — на бою с 455dcdd). Ручка берёт `seats`
+   (0–500, 0 — без ограничения), `about` (до 2000), а с шага 7 (бой 36073d3) — `price` и `ask_donation`; ответ — строка без имён ведущего, поэтому после 200
    афиша перечитывается. Условие показа — то же, что у сервера: своё и не кончившееся (он отказывает «уже
    прошло» по КОНЦУ, идущее править можно). Права решает сервер; его отказ печатается словами. */
-var EDT = { id: null, seats: '', about: '', busy: false, err: '' };
+/* Шаг 7 (E67, Cafe13KPG#686/Г): правятся и деньги — цена входа и галочка доната. Цена в поле — ВХОД (`entryOf`), а не
+   `price`: у донейшна `price` — ориентир, и сервер правку считает от входа (у донейшна 0). Цена не меняется, пока
+   есть записи (409 сервера) — поле тогда погашено, причина его словами. Заведение мероприятия заморожено (#510):
+   экран только правит */
+var EDT = { id: null, seats: '', about: '', price: '', ask: null, busy: false, err: '' };
 function canEditEvent(e) { return isMyEvent(e) && !e.done && mayOwnEvents(); }
 function hmMin(t) { var m = /^(\d{1,2}):(\d{2})$/.exec(t || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; }
 function editGrab() {
   if (!document.getElementById('edt-seats')) return;
   EDT.seats = document.getElementById('edt-seats').value; EDT.about = document.getElementById('edt-about').value;
+  var pr = document.getElementById('edt-price'); if (pr && !pr.disabled) EDT.price = pr.value;
 }
 // набранное — в EDT на каждый ввод: перерисовка (поздний ответ афиши) иначе вернула бы прежнее
 document.addEventListener('input', function (ev) { if (ev.target && /^edt-/.test(ev.target.id)) editGrab(); });
@@ -4089,13 +4113,16 @@ function editSave() {
   // вне Telegram экран виден (#691), а «Сохранить» в сеть не ходит: витрину открыли посмотреть
   if (!LIVE || EDT.busy || !canEditEvent(e)) return;
   editGrab();
-  var seats = Number(EDT.seats);
+  var seats = Number(EDT.seats), price = String(EDT.price).trim();
   EDT.err = !(String(EDT.seats).trim() !== '' && Math.floor(seats) === seats && seats >= 0 && seats <= 500) ? 'Число мест — целое, от 0 до 500; 0 — без ограничения.'
-    : EDT.about.length > 2000 ? 'Описание длиннее 2000 знаков: сократите.' : '';
+    : EDT.about.length > 2000 ? 'Описание длиннее 2000 знаков: сократите.'
+    : !/^\d+(\.\d{1,2})?$/.test(price) ? 'Цена входа — число в батах, 0 — вход без оплаты.' : '';
   if (EDT.err) { render(); return; }
   EDT.busy = true; render();
   var id = EDT.id;
-  api('POST', '/events/' + e.eid + '/edit', { seats: seats, about: EDT.about }).then(function (r) {
+  var body = { seats: seats, about: EDT.about, price: Number(price) };
+  if (typeof EDT.ask === 'boolean') body.ask_donation = EDT.ask;
+  api('POST', '/events/' + e.eid + '/edit', body).then(function (r) {
     api('GET', '/events').then(function (g) {
       var list = g.status === 200 ? fromEvents(g.data) : null;
       if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
@@ -5837,6 +5864,16 @@ var SCREENS = {
         '<span class="small">0 — без ограничения</span></div>' +
       '<div class="field"><label for="edt-about">Коротко для афиши</label><textarea id="edt-about" maxlength="2000">' + esc(EDT.about) + '</textarea>' +
         '<span class="small">До 2000 знаков</span></div>' +
+      // E67: цена входа; при живых записях — погашена, причина словами сервера (409 правки)
+      '<div class="field"><label for="edt-price">Цена входа, ฿</label><input id="edt-price" inputmode="decimal" value="' + esc(EDT.price) + '"' +
+        (takenOf(e) > 0 ? ' disabled aria-disabled="true" aria-describedby="edt-price-why"' : '') + '>' +
+        (takenOf(e) > 0 ? '<span class="small" id="edt-price-why">Цена входа не меняется, пока есть записи: записано ' + takenOf(e) + '.</span>'
+          : '<span class="small">0 — вход без оплаты</span>') + '</div>' +
+      /* E67: галочка доната. Подпись кадра «После мероприятия у записавшихся появится «Поблагодарить мастера»» НЕ дана:
+         кнопки благодарности в клиенте нет (вход — Cafe13KPG#755), обещание пути, которого нет, — та же поломка */
+      (typeof EDT.ask === 'boolean' ? '<button type="button" class="listitem" data-action="edt-ask" aria-pressed="' + EDT.ask + '">' +
+        '<span class="col"><b>Просить донат</b></span>' +
+        '<span class="pill' + (EDT.ask ? ' on' : '') + '">' + (EDT.ask ? 'включено' : 'выключено') + '</span></button>' : '') +
       (EDT.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(EDT.err) + '</span></div>'
         : '<div class="note">' + svg(ICON.info) + '<span>Правка только на эту неделю. Следующие недели придут такими, как в заявке.</span></div>') +
       '<button type="button" class="btn" data-action="edt-save"' + (EDT.busy ? ' disabled' : '') + '>' +
@@ -7685,7 +7722,8 @@ var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-relo
 function go(screen, p) {
   if (!SCREENS[screen]) return;
   if (screen === 'eventEdit' && (current !== 'eventEdit' || EDT.id !== p)) {
-    var ee = eventById(p); EDT = { id: p, seats: ee ? String(ee.unl ? 0 : ee.of) : '', about: ee ? ee.about : '', busy: false, err: '' };
+    var ee = eventById(p); EDT = { id: p, seats: ee ? String(ee.unl ? 0 : ee.of) : '', about: ee ? ee.about : '',
+                                   price: ee ? String(entryOf(ee)) : '', ask: ee ? ee.ask : null, busy: false, err: '' };
   }
   if (!LIVE && MS_DEMO[screen]) msDemoFill();
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
@@ -8239,6 +8277,7 @@ function doAction(a) {
     if (a === 'book' && LIVE) { bookEvent(arg); return; }
     if (a === 'event-edit' && LIVE) { go('eventEdit', arg); return; }
     if (a === 'edt-save' && LIVE) { editSave(); return; }
+    if (a === 'edt-ask' && typeof EDT.ask === 'boolean' && !EDT.busy) { editGrab(); EDT.ask = !EDT.ask; EDT.err = ''; haptic(); render(); return; }
     if (a === 'event-cancel' && LIVE) { EV_ASK = true; EV_ERR = ''; haptic(); render(); return; }
     if (a === 'event-cancel-yes' && LIVE) { cancelEvent(arg); return; }
     if (a === 'event-cancel-no') { EV_ASK = false; haptic(); render(); return; }
