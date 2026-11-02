@@ -7744,7 +7744,7 @@ function go(screen, p) {
   if ((screen === 'masterEvents' || screen === 'masterList') && current !== screen && mayMasters()) { MR.sErr = ''; loadSlots(); }
   if (screen === 'masterEvent') { MR.sErr = ''; if (!MR.slots && mayMasters()) loadSlots(); }
   if (screen === 'masterApply' && current !== 'masterApply' && LIVE) {
-    MSF.err = ''; msfPrefill(); if (!EV_PLACES && EV_PLACES_STATE !== 'loading') loadPlaces();
+    MSF.err = ''; if (!EV_PLACES && EV_PLACES_STATE !== 'loading') loadPlaces();
     loadPrice(2); loadPrice(2 + MSF.extra); loadPrice(3 + MSF.extra);
     if (MR.mineState === '') loadMineMaster();
   }
