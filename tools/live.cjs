@@ -821,18 +821,22 @@ if (grantsSet.length !== 1) {
           if (f.why !== true) bad.push(`${n}: без причины не сказано, почему кнопка погашена (ms-why)`);
           await s.p.evaluate(() => decideMaster(601, 'rejected')); await s.p.waitForTimeout(300);
           if (decided.length) bad.push(`${n}: отказ без причины ушёл прямым вызовом decideMaster — охрана только в разметке`);
-          await s.p.fill('#ms-note', '  Нет фото работ. Пришлите три  ');
-          await s.p.waitForTimeout(100);
-          f = await formNow(s);
-          if (!f.no || f.no.off !== false || f.no.aria !== 'false') bad.push(`${n}: с причиной кнопка не ожила (${JSON.stringify(f.no)})`);
-          if (f.why !== false) bad.push(`${n}: с причиной строка «Сначала причина…» осталась`);
-          await tapIf(s, n, '#view [data-action="ms-no:601"]', '«Отказать и вернуть деньги»');
-          await s.p.waitForTimeout(300);
-          if (decided.length !== 1) bad.push(`${n}: отказ ушёл ${decided.length} раз, ждали 1`);
-          else if (decided[0].id !== 601 || JSON.stringify(decided[0].b) !== JSON.stringify({ decision: 'rejected', note: 'Нет фото работ. Пришлите три' }))
-            bad.push(`${n}: тело отказа не то: ${JSON.stringify(decided[0])}`);
-          t = await s.view();
-          if (!t.includes('Отказано')) bad.push(`${n}: после отказа нет «Отказано»`);
+          // охрана З2 сломана — отказ уже ушёл и форма закрыта: краснеть словами, а не обрывом на fill (пакет #696, frontend-11)
+          if (!(await s.p.$('#ms-note'))) bad.push(`${n}: поля причины уже нет — отказ ушёл раньше`);
+          else {
+            await s.p.fill('#ms-note', '  Нет фото работ. Пришлите три  ');
+            await s.p.waitForTimeout(100);
+            f = await formNow(s);
+            if (!f.no || f.no.off !== false || f.no.aria !== 'false') bad.push(`${n}: с причиной кнопка не ожила (${JSON.stringify(f.no)})`);
+            if (f.why !== false) bad.push(`${n}: с причиной строка «Сначала причина…» осталась`);
+            await tapIf(s, n, '#view [data-action="ms-no:601"]', '«Отказать и вернуть деньги»');
+            await s.p.waitForTimeout(300);
+            if (decided.length !== 1) bad.push(`${n}: отказ ушёл ${decided.length} раз, ждали 1`);
+            else if (decided[0].id !== 601 || JSON.stringify(decided[0].b) !== JSON.stringify({ decision: 'rejected', note: 'Нет фото работ. Пришлите три' }))
+              bad.push(`${n}: тело отказа не то: ${JSON.stringify(decided[0])}`);
+            t = await s.view();
+            if (!t.includes('Отказано')) bad.push(`${n}: после отказа нет «Отказано»`);
+          }
         }
         await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
