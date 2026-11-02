@@ -1856,6 +1856,59 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
 
+  // Пары токенов палитры (Cafe13KPG#692): [текст или граница, подложка, порог, имя, тема?]. Пятое поле
+  // 'light'/'dark' — пара, которая есть только в одной теме: без него она мерилась бы и там, где её нет. Пара — по ТОМУ, ГДЕ цвет стоит в
+  // styles.css, а не по имени токена: --on-accent стоит только в `.pill.on` поверх --sage, не поверх --accent.
+  // ⚠ Строка на пару — по ним мутации ищут жертву (самую слабую пару темы), не трогать формат
+  const PALETTE_PAIRS = [
+    ['ink', 'paper', 4.5, 'текст/фон'],
+    ['ink', 'card', 4.5, 'текст/карточка'],
+    ['ink', 'surface', 4.5, 'текст/тихий фон'],
+    ['muted', 'paper', 4.5, 'подпись/фон'],
+    ['muted', 'card', 4.5, 'подпись/карточка'],
+    ['muted', 'surface', 4.5, 'подпись/тихий фон'],
+    ['accent-ink', 'accent', 4.5, 'кнопка'],
+    ['on-accent', 'sage', 4.5, 'лист (.pill.on)'],
+    ['clay-ink', 'card', 4.5, 'глина-текст/карточка'],
+    ['clay-ink', 'deny-bg', 4.5, 'отказ (.deny)'],
+    // ⚠ три пары --gold-ink держат ДВЕ роли: текст .pill.gold и ВНЕШНЮЮ сторону рамки светлого .chip.paid (#713, #712).
+    // Снимая их как текстовые — проверь, не осталась ли рамка без пары (тогда завести её с 3.0)
+    ['gold-ink', 'paper', 4.5, 'латунь-текст/фон'],
+    ['gold-ink', 'card', 4.5, 'латунь-текст/карточка'],
+    ['gold-ink', 'surface', 4.5, 'латунь-текст/тихий фон (.pill.gold, .chip.paid)'],
+    ['muted', 'paper', 3.0, 'рамка управления/фон'],
+    ['muted', 'card', 3.0, 'рамка управления/карточка'],
+    ['muted', 'surface', 3.0, 'рамка управления/тихий фон'],
+    ['clay', 'paper', 4.5, 'глина-текст/фон (.outbtn)'],
+    ['clay', 'card', 3.0, 'глина-рамка/карточка'],
+    ['clay', 'deny-bg', 3.0, 'глина-рамка/отказ'],
+    ['gold-mark', 'surface', 3.0, 'латунь-графика/тихий фон (метр)'],
+    ['gold-mark', 'card', 3.0, 'латунь-графика/карточка'],
+    ['gold-mark', 'paper', 3.0, 'латунь-графика/фон'],
+    ['ink', 'gold', 4.5, 'текст на латунной заливке (светлый .chip.paid)', 'light'],
+  ];
+  // Названный ДОЛГ: пара ниже порога, известная числом и карточкой. Не краснеет, пока число то же; другое число
+  // (хуже ИЛИ починено) — красное: строку перемеряют и правят, погашенный долг снимают. Ключ — «тема fg/bg порог».
+  // Пуст с #754: тонкая графика (метр, полоска дня, точка шага, полоса .accent) ушла с --gold на --gold-mark (#226)
+  const PALETTE_DEBT = {
+  };
+  // Токены вне пар — каждый с причиной. Причина — утверждение: снять её может только замер.
+  // ⚠ ПРЕДЕЛ покрытия ПАРАМИ: токен, стоящий в какой-то паре, считается покрытым, а НЕДОСТАЮЩУЮ пару двух уже
+  // покрытых токенов признак не видит (так пропущена была --gold-ink на --surface, находка designer-55).
+  // Нарочно НЕ заведена: --gold-ink как рамка залитого .chip.paid на своей заливке --gold (2.21 светлая). Рамку
+  // судят с ДВУХ сторон по лучшей (#712): у залитого состояния внутренняя сторона сливается законно, а внешняя
+  // (--gold-ink на --paper/--card/--surface) уже держится парами текста с порогом 4.5, что строже 3.0.
+  // ⚠ ПРЕДЕЛ покрытия: множество — токены :root. Цвет, вписанный в styles.css ЛИТЕРАЛОМ (`.test-strip`:
+  // `color: #1A1208` на --gold), сюда не попадает вовсе — ни в пары, ни в исключения (находка designer-55).
+  // Хуже — литерал-КОПИЯ токена: шеврон `.field select` рисуется `stroke='%235A5F63'` и в тёмной `%23B8B6AE` — это значения
+  // --muted, и по числу он выглядит покрытым. Графика (1.4.11, 3.0) на --paper: 5.75 / 9.09 сегодня; правка --muted
+  // оставит шеврон на прежнем цвете МОЛЧА (находка designer-55)
+  // --gold с #754 (#226): заливки под чернилами (светлый .chip.paid — пара выше, только светлая; .test-strip — под ЛИТЕРАЛОМ
+  // #1A1208, см. предел ниже) и рамки-оформление (.pill.gold — слово несёт --gold-ink; .chip.paid — граница СОСТОЯНИЯ, #712)
+  const PALETTE_EXEMPT = {
+    line: 'разделитель и группировка (карточка, rows, вкладки, заглушки): по ней элемент управления не опознают, порога нет — styles.css, проза у --line',
+  };
+
   // Палитра и шрифты, принятые владельцем 21.10 (Cafe13KPG#110). Признак —
   // ВЫЧИСЛЕННЫЙ стиль подложенных частей экрана, а не текст styles.css, и
   // контраст рабочих пар, посчитанный по WCAG на этих же значениях. Темы
@@ -1904,6 +1957,32 @@ if (grantsSet.length !== 1) {
         const r = ratio(fg, bg);
         if (r < 4.5) bad.push(`palette ${mode}: контраст ${name} ${fg} на ${bg} = ${r.toFixed(2)}, нужно ≥ 4.5`);
       }
+      // Пары ТОКЕНОВ (Cafe13KPG#692, наряд designer-55): значения читаются из :root той же темы. Порог 4.5 — текст,
+      // 3.0 — граница элемента управления (WCAG 2.1 SC 1.4.11; рамки управления на --muted с #712).
+      // ИМЕНА токенов — из текста styles.css (блоки `:root` и `:root[data-theme="dark"]`, значение #hex): правила листа
+      // со страницы file:// и с чужого источника (шрифты Google) браузер не отдаёт. ЗНАЧЕНИЯ — вычисленные, этой темы
+      const css = fs.readFileSync(ROOT + '/styles.css', 'utf8'), names = new Set();
+      for (const m of css.matchAll(/^:root(?:\[data-theme="dark"\])?\s*\{([^}]*)\}/gm))
+        for (const d of m[1].matchAll(/--([a-z0-9-]+)\s*:\s*#[0-9a-f]{3,8}\s*;/gi)) names.add(d[1]);
+      const tok = await s.p.evaluate(ns => { const cs = getComputedStyle(document.documentElement), o = {};
+        for (const n of ns) o[n] = cs.getPropertyValue('--' + n).trim().toUpperCase();
+        return o; }, [...names]);
+      if (Object.keys(tok).length < 10) bad.push(`palette ${mode}: из :root прочитано токенов цвета ${Object.keys(tok).length} — прибор смотрит не туда, пары не мерены`);
+      for (const [fg, bg, min, name, only] of PALETTE_PAIRS) {
+        if (only && only !== mode) continue;
+        if (!tok[fg] || !tok[bg]) { bad.push(`palette ${mode}: пара «${name}» — токена ${tok[fg] ? '--' + bg : '--' + fg} в :root нет`); continue; }
+        const r = ratio(tok[fg], tok[bg]), d = PALETTE_DEBT[`${mode} ${fg}/${bg} ${min}`];
+        if (d && r >= min) bad.push(`palette ${mode}: долг «${name}» погашен (${r.toFixed(2)} ≥ ${min}) — сними строку PALETTE_DEBT`);
+        else if (d && r.toFixed(2) !== d.r) bad.push(`palette ${mode}: долг «${name}» записан как ${d.r}, теперь ${r.toFixed(2)} — перемерь и поправь строку (${d.card})`);
+        else if (!d && r < min) bad.push(`palette ${mode}: контраст ${name} (--${fg} ${tok[fg]} на --${bg} ${tok[bg]}) = ${r.toFixed(2)}, нужно ≥ ${min}`);
+      }
+      // Покрытие: каждый цветовой токен :root — в паре или в исключениях С ПРИЧИНОЙ. Новая краска без строки —
+      // красное: иначе зелёное значило бы «перечисленные пары сошлись», а не «палитра проверена»
+      const inPairs = new Set(PALETTE_PAIRS.flatMap(([fg, bg]) => [fg, bg]));
+      for (const t of Object.keys(tok)) if (!inPairs.has(t) && !PALETTE_EXEMPT[t]) bad.push(`palette ${mode}: токен --${t} не стоит ни в одной паре и не назван исключением — прибор его не мерит`);
+      for (const t of Object.keys(PALETTE_EXEMPT)) if (!tok[t]) bad.push(`palette ${mode}: исключение --${t} — такого токена в :root нет (опечатка или токен снят)`);
+      for (const k of Object.keys(PALETTE_DEBT)) if (k.startsWith(mode + ' ') && !PALETTE_PAIRS.some(([f, b, m]) => k === `${mode} ${f}/${b} ${m}`)) bad.push(`palette ${mode}: долг «${k}» не соответствует ни одной паре`);
+      for (const t of Object.keys(PALETTE_EXEMPT)) if (inPairs.has(t)) bad.push(`palette ${mode}: --${t} и в паре, и в исключениях — одно из двух лишнее`);
     }
     if (s.errs.length) bad.push('palette: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
