@@ -10652,6 +10652,8 @@ if (grantsSet.length !== 1) {
   // «пропущено» — отдельно от зелёного, счётом и перечнем (Cafe13KPG#790)
   if (SKIPPED.size) console.log(`ПРОПУЩЕНО — экраны заморожены (FROZEN app.js, Cafe13KPG#790): вызовов ${skippedCalls}, разделов ${SKIPPED.size}: ` + [...SKIPPED].join('; '));
   if (SKIPPED_OTHER.size) console.log('СНЯТО (не заморозка): ' + [...SKIPPED_OTHER].join('; '));
+  // число прогнанных — и на красном: «разморозили — случаев стало больше» должно быть видно при любом исходе (#790)
+  console.log('прогнано экранов ' + ran + ', пропущено по заморозке вызовов ' + skippedCalls);
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
   console.log('зелёное: ' + ran + ' прогонов экрана (из них ' + CASES.length + ' табличных); пропущено по заморозке вызовов ' + skippedCalls);
 })();
