@@ -560,6 +560,13 @@ body.has-main .dup-main { display: none; }
 .n-wait { color: var(--sage); font-weight: 700; }
 /* ⚠ во входе `.listitem .grow b` ставит 600 и перебивал — «жирным» владельца там было полужирным (замер отрисовкой) */
 .listitem .grow .n-wait { font-weight: 700; }
+/* Пометка «внутри есть решения» на плашке-меню (слово владельца 02.11.2026,
+   Cafe13KPG#769). Вид — тот же, что у .n-wait. Класс .count, а не .mark: .mark занят водяным знаком. */
+.listitem .count { flex: 0 0 auto; font-size: 15px; font-weight: 700;
+                   color: var(--sage); font-variant-numeric: tabular-nums;
+                   line-height: 1; }
+/* Условие «на замороженном пути пометки нет» держится ПОСТРОЕНИЕМ: */
+.listitem[disabled] .count { display: none; }
 /* Шаг 3, форма «Я мастер» (кадры E54b/E54i): чипы-кнопки, выбранный, занятый зачёркнут, счётчик часов.
    Под `.mf`, чтобы не задеть чипы «Людей»: там `.chip.busy` значит «ждём ответа», а не «занято» */
 .mf { display: flex; flex-direction: column; gap: 14px; }
