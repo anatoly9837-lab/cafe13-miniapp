@@ -9574,7 +9574,8 @@ if (grantsSet.length !== 1) {
       await s.p.screenshot({ path: `${OUT}/live-topup-queue.png` });
       await s.ctx.close();
     }
-    // заявка (E56b) → «Зачислить» спрашивает (E56g) → «Назад» не шлёт → «Да, зачислить» шлёт один раз
+    // заявка (E56b) → «Зачислить 1 000 ฿» шлёт с ПЕРВОГО нажатия, один раз: подтверждения E56g нет (Cafe13KPG#695,
+    // «Промах правит касса»), и сумма на кнопке — единственная защита от промаха
     {
       const n = 'tq-approve', s = await tqCase(OWNER);
       await toTq(s); await tqAct(s, 'tq-open:31'); await s.p.waitForTimeout(400);
@@ -9584,15 +9585,10 @@ if (grantsSet.length !== 1) {
       const img = await s.p.evaluate(() => { const i = document.querySelector('#view img[alt="Чек"]'); return i ? i.getAttribute('src') : null; });
       if (!img || !img.startsWith('blob:')) bad.push(`${n}: чек не показан картинкой из ответа сервера (${img})`);
       if (tqGets(s, /\/receipt$/).some(c => c.init !== INIT)) bad.push(`${n}: чек спрошен без подписи`);
-      await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(150);
-      if (tqPosts(s).length) bad.push(`${n}: зачисление ушло с первого нажатия — подтверждения нет (E56g)`);
-      for (const w of ['Зачислить 1 000 ฿?', 'Отсюда отменить нельзя.', 'Да, зачислить']) if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (E56g)`);
-      // прежняя фраза («Отменить зачисление нельзя») стала бы ложью после разморозки кассы — её нет вовсе,
-      // и рядом с новой тоже: «добавлена» не отличается от «заменила» без этого счёта (Cafe13KPG#602 п.2)
-      if ((await s.view()).includes('Отменить зачисление нельзя')) bad.push(`${n}: в подтверждении осталась прежняя фраза «Отменить зачисление нельзя»`);
-      await tqAct(s, 'tq-keep'); await s.p.waitForTimeout(150);
-      if (tqPosts(s).length || await s.p.$('#view [data-action="tq-yes:31"]')) bad.push(`${n}: «Назад» отправил или не закрыл подтверждение`);
-      await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
+      const okText = await s.p.$eval('#view [data-action="tq-ok:31"]', b => b.textContent.trim()).catch(() => null);
+      if (okText !== 'Зачислить 1 000 ฿') bad.push(`${n}: на кнопке зачисления «${okText}», ждали сумму «Зачислить 1 000 ฿» (#695)`);
+      if (!(await tqAct(s, 'tq-ok:31'))) bad.push(`${n}: нечего нажать — нет кнопки «Зачислить»`);
+      await s.p.waitForTimeout(500);
       const pp = tqPosts(s);
       if (pp.length !== 1 || !pp[0].url.endsWith('/topup/requests/31/decide') || pp[0].body !== JSON.stringify({ decision: 'approved', note: '' }))
         bad.push(`${n}: зачисление ушло так: ${JSON.stringify(pp.map(c => [c.url.replace(/^.*requests/, ''), c.body]))}`);
@@ -9631,16 +9627,18 @@ if (grantsSet.length !== 1) {
       if (!(await s.p.$('#tq-note'))) bad.push(`${n}: нет поля причины — набрать нечего`);
       else await s.p.fill('#tq-note', 'на чеке другая сумма');
       await tqAct(s, 'tq-keep'); await s.p.waitForTimeout(150);
-      await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
+      await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(500);
       const pp = tqPosts(s);
-      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ decision: 'approved', note: '' }))
-        bad.push(`${n}: брошенная причина отказа ушла с зачислением: ${JSON.stringify(pp.map(c => c.body))}`);
+      // два разных отказа — два текста (заметка frontend-11): не ушло ничего / ушло, но с причиной
+      if (pp.length !== 1) bad.push(`${n}: зачисление ушло ${pp.length} раз, ждали 1: ${JSON.stringify(pp.map(c => c.body))}`);
+      else if (pp[0].body !== JSON.stringify({ decision: 'approved', note: '' }))
+        bad.push(`${n}: брошенная причина отказа ушла с зачислением: ${pp[0].body}`);
       await s.ctx.close();
     }
     {
       const n = 'tq-approve-alien', s = await tqCase(OWNER, { decide: json(200, TDEC('rejected')) });
       await toReq(s, 31);
-      await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
+      await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(500);
       const t = await s.view();
       if (t.includes('Зачислено')) bad.push(`${n}: ответ 200 со статусом «rejected» на зачисление показан успехом`);
       const deny = await s.p.$eval('#view .deny', e => e.textContent).catch(() => '');
@@ -9655,7 +9653,7 @@ if (grantsSet.length !== 1) {
       if (!t.includes('Свою заявку решает другой ответственный за пополнения.')) bad.push(`${n}: нет слов E56e`);
       if (!t.includes('вы')) bad.push(`${n}: «Просит» не «вы»`);
       if (await s.p.$('#view [data-action^="tq-ok"], #view [data-action^="tq-ask"]')) bad.push(`${n}: у своей заявки кнопки решения — сервер ответит 409`);
-      await s.p.evaluate(() => { doAction('tq-ok:33'); doAction('tq-yes:33'); doAction('tq-ask:33'); doAction('tq-no:33'); });
+      await s.p.evaluate(() => { doAction('tq-ok:33'); doAction('tq-ask:33'); doAction('tq-no:33'); });
       await s.p.waitForTimeout(400);
       if (tqPosts(s).length) bad.push(`${n}: решение своей заявки ушло подложенным действием`);
       await s.ctx.close();
@@ -9675,7 +9673,7 @@ if (grantsSet.length !== 1) {
     {
       const n = 'tq-409', s = await tqCase(OWNER, { decide: json(409, { detail: 'заявка уже зачислено' }) });
       await toReq(s, 31);
-      await tqAct(s, 'tq-ok:31'); await tqAct(s, 'tq-yes:31'); await s.p.waitForTimeout(500);
+      await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(500);
       const deny = await s.p.$eval('#view .deny', e => e.textContent).catch(() => '');
       if (!deny.includes('Заявка уже зачислено')) bad.push(`${n}: нет отказа словами сервера: «${deny}»`);
       if ((await s.view()).includes('Зачислено 1 000')) bad.push(`${n}: отказ показан успехом`);
