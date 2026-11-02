@@ -183,10 +183,10 @@ if (grantsSet.length !== 1) {
   // вернулись под проверку тем же ходом, без правки батареи. Таблица — суждение по коду случаев; держат её стражи ниже
   const SECTION_SCREENS = {
     'экран гостя «Услуги»': ['guest'],
-    'бар': ['bar', 'drink', 'barCart', 'barOrder'],
-    'очередь на баре': ['barQueue', 'bar', 'drink', 'barCart', 'barOrder'],   // гостевая половина случаев покупает
-    'смена': ['barQueue', 'bar'],                                              // shift-stale-empty идёт гостем в бар
-    'пополнение из бара (бармен без права кассы)': ['bar'],
+    'бар': ['guest', 'bar', 'drink', 'barCart', 'barOrder'],   // покупатель входит вкладкой гостя (#tabs guest)
+    'очередь на баре': ['barQueue', 'guest', 'bar', 'drink', 'barCart', 'barOrder'],   // гостевая половина случаев покупает
+    'смена': ['barQueue', 'guest', 'bar'],                                     // shift-stale-empty идёт гостем в бар
+    'пополнение из бара (бармен без права кассы)': ['guest', 'bar'],
     'касса': ['staff', 'tillPerson', 'tillMembership', 'tillTopup', 'tillDay'],
     'доход и расход бара': ['barMoney'],
     'запись в тестовом режиме через «Доход и расход» бара': ['barMoney'],
