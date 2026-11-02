@@ -1877,11 +1877,14 @@ if (grantsSet.length !== 1) {
       }
       // Пары ТОКЕНОВ (Cafe13KPG#692, наряд designer-55): значения читаются из :root той же темы. Порог 4.5 — текст,
       // 3.0 — граница элемента управления (WCAG 2.1 SC 1.4.11; рамки управления на --muted с #712).
-      const tok = await s.p.evaluate(() => { const cs = getComputedStyle(document.documentElement), o = {};
-        for (const sh of document.styleSheets) { let rules; try { rules = sh.cssRules; } catch (e) { continue; }   // чужой источник (шрифты Google) правил не отдаёт
-          for (const r of rules || []) if (r.selectorText && /^:root(\[data-theme="dark"\])?$/.test(r.selectorText))
-          for (const p of r.style) if (p.startsWith('--') && /^#[0-9a-f]{3,8}$/i.test(r.style.getPropertyValue(p).trim())) o[p.slice(2)] = cs.getPropertyValue(p).trim().toUpperCase(); }
-        return o; });
+      // ИМЕНА токенов — из текста styles.css (блоки `:root` и `:root[data-theme="dark"]`, значение #hex): правила листа
+      // со страницы file:// и с чужого источника (шрифты Google) браузер не отдаёт. ЗНАЧЕНИЯ — вычисленные, этой темы
+      const css = fs.readFileSync(ROOT + '/styles.css', 'utf8'), names = new Set();
+      for (const m of css.matchAll(/^:root(?:\[data-theme="dark"\])?\s*\{([^}]*)\}/gm))
+        for (const d of m[1].matchAll(/--([a-z0-9-]+)\s*:\s*#[0-9a-f]{3,8}\s*;/gi)) names.add(d[1]);
+      const tok = await s.p.evaluate(ns => { const cs = getComputedStyle(document.documentElement), o = {};
+        for (const n of ns) o[n] = cs.getPropertyValue('--' + n).trim().toUpperCase();
+        return o; }, [...names]);
       if (Object.keys(tok).length < 10) bad.push(`palette ${mode}: из :root прочитано токенов цвета ${Object.keys(tok).length} — прибор смотрит не туда, пары не мерены`);
       for (const [fg, bg, min, name] of PALETTE_PAIRS) {
         if (!tok[fg] || !tok[bg]) { bad.push(`palette ${mode}: пара «${name}» — токена ${tok[fg] ? '--' + bg : '--' + fg} в :root нет`); continue; }
