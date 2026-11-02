@@ -9955,7 +9955,39 @@ if (grantsSet.length !== 1) {
       const n = 'tq-manage', s = await tqCase(OWNER);
       await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(400);
       const t = await s.view();
-      for (const w of ['Кто в клубе', 'Деньги', 'Заявки на пополнение', 'Ждут решения: 3']) if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      for (const w of ['Кто в клубе', 'Деньги', 'Заявки на пополнение', 'Кто просит пополнить счёт']) if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      // пометка ждущих на плашке (#769): число ОТ СЕРВЕРА (pending 3) — цифрой между подписью и шевроном
+      const mark = await s.p.evaluate(() => { const c = document.querySelector('#view [data-go="topupQueue"] .count'); return c ? c.textContent : null; });
+      if (mark !== '3') bad.push(`${n}: на плашке «Заявки на пополнение» пометка ${JSON.stringify(mark)}, ждали «3» (pending сервера, #769)`);
+      await s.ctx.close();
+    }
+    // пометка: честный ноль — «Ждущих нет» и без цифры; ручка не ответила — описательная подпись и без цифры (#769).
+    // Пометки нет в обоих случаях, РАЗЛИЧАЕТ ПОДПИСЬ: неотвеченная ручка, выданная за ноль, стоит человеку пропущенного решения
+    for (const [n, list, sub, notSub] of [
+      ['pometka-nol', () => json(200, { pending: 0, requests: [] }), 'Ждущих нет', 'Кто просит пополнить счёт'],
+      ['pometka-otkaz', () => json(502, '<html>bad gateway</html>'), 'Кто просит пополнить счёт', 'Ждущих нет']]) {
+      const s = await tqCase(OWNER, { list: list() });
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(400);
+      const row = await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="topupQueue"]');
+        return b ? { mark: !!b.querySelector('.count'), text: b.textContent } : null; });
+      if (!row) bad.push(`${n}: нет плашки «Заявки на пополнение»`);
+      else {
+        if (row.mark) bad.push(`${n}: на плашке пометка — ${n === 'pometka-nol' ? 'при нуле' : 'при неответившей ручке'} её быть не должно`);
+        if (!row.text.includes(sub)) bad.push(`${n}: подпись не «${sub}» («${row.text}»)`);
+        if (row.text.includes(notSub)) bad.push(`${n}: подпись «${notSub}» — ноль и «не спросили» неразличимы`);
+      }
+      await s.ctx.close();
+    }
+    // пометка по ПРАВУ: у члена клуба без прав очередей нет — пометки нет нигде; на замороженной плашке цифру прячет CSS
+    {
+      const n = 'pometka-pravo', MEM = clone(OWNER); MEM.roles = [];
+      const s = await tqCase(MEM);
+      for (const g of ['home', 'manage']) { await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(300);
+        if (await s.p.$('#view .count')) bad.push(`${n}: у члена клуба без прав на «${g}» есть пометка ждущих`); }
+      const hid = await s.p.evaluate(() => { const b = document.createElement('button'); b.className = 'listitem'; b.disabled = true;
+        b.innerHTML = '<span class="grow">x</span><span class="count">5</span>'; document.getElementById('view').appendChild(b);
+        const d = getComputedStyle(b.querySelector('.count')).display; b.remove(); return d; });
+      if (hid !== 'none') bad.push(`${n}: на погашенной (замороженной) плашке пометка видна (display ${hid}) — она обещает ответить там, где нельзя`);
       await s.ctx.close();
     }
     // у ответственного за пополнения БЕЗ главенства вкладка есть, а в ней — только «Деньги»
@@ -10332,13 +10364,15 @@ if (grantsSet.length !== 1) {
       // различитель: список ещё в пути — иначе случай не проверяет подпись «до счёта»
       if (gets(s, /\/join\/requests$/).length !== 1) bad.push(`${n}: вкладка не спросила очередь — счёту неоткуда взяться`);
       if (!t.includes('Кто просится в клуб')) bad.push(`${n}: пока счёт не пришёл, нет «Кто просится в клуб» (кадр E46)`);
-      if (/Ждут ответа: 0/.test(t)) bad.push(`${n}: до ответа сервера показан ноль — читается как «никто не просится»`);
+      if (/Ждут ответа: 0|Ждущих нет/.test(t) || await s.p.$('#view [data-go="joinQueue"] .count')) bad.push(`${n}: до ответа сервера показан ноль или пометка — читается как «никто не просится»`);
       for (const w of ['Кто в клубе', 'Заявки на доступ', 'Члены клуба', 'Кто в клубе и с какими уровнями'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}» (кадр E46)`);
       release();
       await s.p.waitForTimeout(400);
       t = await s.view();
-      if (!t.includes('Ждут ответа: 2')) bad.push(`${n}: счёт ждущих с сервера не показан (ждали «Ждут ответа: 2»)`);
+      // пометка (#769): число ждущих — цифрой на плашке, подпись описательная
+      const jm = await s.p.evaluate(() => { const c = document.querySelector('#view [data-go="joinQueue"] .count'); return c ? c.textContent : null; });
+      if (jm !== '2') bad.push(`${n}: счёт ждущих с сервера не показан пометкой (ждали «2», есть ${JSON.stringify(jm)})`);
       // на вкладке чеки не качаются: только счёт
       if (gets(s, /\/receipt$/).length) bad.push(`${n}: вкладка скачала чеки`);
       await s.ctx.close();

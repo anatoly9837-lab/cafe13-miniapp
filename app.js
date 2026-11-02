@@ -3081,6 +3081,14 @@ function loadMineMaster() {
     if ({ home: 1, masterApply: 1, masterReqs: 1, masterReq: 1 }[current]) render();
   });
 }
+/* Пометка ждущих решений на плашке-меню (слово владельца 02.11.2026: «пометка… что внутри есть решения, требующие
+   ответа, и их число, если больше нуля», Cafe13KPG#769; форма — designer-55). Свод подписей: >0 — описательная подпись
+   и цифра; 0 — «Ждущих нет»; ручка не ответила или ответ ещё в пути — описательная подпись БЕЗ цифры. Подпись здесь
+   не лишняя: она одна различает честный ноль и неотвеченную ручку — снимете её, и «не спросили» станет «никого нет».
+   Право — построением: плашка рисуется только тому, кто вправе решать ЭТУ очередь; на замороженной плашке цифру прячет
+   `.listitem[disabled] .count` */
+function waitMark(n) { return typeof n === 'number' && n > 0 ? '<span class="count">' + n + '</span>' : ''; }
+function waitSub(n, plain) { return n === 0 ? 'Ждущих нет' : plain; }
 function loadMasterQueue() {
   if (!LIVE) return;
   var gen = ++MR.qGen; MR.qFail = '';
@@ -3088,7 +3096,7 @@ function loadMasterQueue() {
     if (gen !== MR.qGen) return;
     var d = r.status === 200 ? fromMasterList(r.data, true) : null;
     if (d) { MR.q = d.list; MR.pending = d.pending; } else { MR.q = null; MR.qFail = r.status === 403 ? denyText(r) : failText(r); }
-    if ({ masters: 1, masterReqs: 1, masterReq: 1 }[current]) render();
+    if ({ masters: 1, masterReqs: 1, masterReq: 1, manage: 1 }[current]) render();
   });
 }
 function loadSlots() {
@@ -6733,8 +6741,8 @@ var SCREENS = {
     var wait = JOINQ.list ? JOINQ.list.filter(function (q) { return q.status === 'pending'; }).length : null;
     var money_ = mayTopups() ? '<div class="group"><span class="label">Деньги</span>' +
       '<button type="button" class="listitem" data-go="topupQueue"><span class="grow"><b>Заявки на пополнение</b>' +
-        '<span class="small">' + (TOPQ.pending !== null ? 'Ждут решения: ' + TOPQ.pending : 'Кто просит пополнить счёт') + '</span></span>' +
-        svg(ICON.chev, 'chev') + '</button></div>' : '';
+        '<span class="small">' + waitSub(TOPQ.pending, 'Кто просит пополнить счёт') + '</span></span>' +
+        waitMark(TOPQ.pending) + svg(ICON.chev, 'chev') + '</button></div>' : '';
     // шаг 3: дверь «Слоты и мастера» — группой, как «Деньги» (слово владельца: «во вкладке управление — управление этими ивентами»)
     // «Ивенты», а не «Мероприятия» — слово владельца 29.10.2026 по прототипу: «Не мероприятия а ивенты»
     // шаг 4: «Свои ивенты» — в той же группе, у всякого, кто ведёт свои (мастер, организатор, работник)
@@ -6742,13 +6750,13 @@ var SCREENS = {
         '<span class="small">Записавшиеся, места и описание</span></span>' + svg(ICON.chev, 'chev') + '</button>' : '';
     var art = mayMasters() || own ? '<div class="group"><span class="label">Ивенты</span>' +
       (mayMasters() ? '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
-        '<span class="small">Заявки в мастера, ивенты, слоты</span></span>' +
-        svg(ICON.chev, 'chev') + '</button>' : '') + own + '</div>' : '';
+        '<span class="small">' + waitSub(MR.pending, 'Заявки в мастера, ивенты, слоты') + '</span></span>' +
+        waitMark(MR.pending) + svg(ICON.chev, 'chev') + '</button>' : '') + own + '</div>' : '';
     if (!mayPeople()) return money_ + art;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
-        '<span class="small">' + (wait !== null ? 'Ждут ответа: ' + wait : 'Кто просится в клуб') + '</span></span>' +
-        svg(ICON.chev, 'chev') + '</button>' +
+        '<span class="small">' + waitSub(wait, 'Кто просится в клуб') + '</span></span>' +
+        waitMark(wait) + svg(ICON.chev, 'chev') + '</button>' +
       '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
         '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
     '</div>' + money_ + art;
@@ -6829,14 +6837,14 @@ var SCREENS = {
   masters: function () {
     if (LIVE && !mayMasters()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Слотами и мастерами управляет арт-директор.</span></div></div>';
-    var entry = function (go, what, sub) {
+    var entry = function (go, what, sub, mark) {
       return '<button type="button" class="listitem" ' + go + '><span class="grow"><b>' + what + '</b>' +
-        '<span class="small">' + sub + '</span></span>' + svg(ICON.chev, 'chev') + '</button>';
+        '<span class="small">' + sub + '</span></span>' + (mark || '') + svg(ICON.chev, 'chev') + '</button>';
     };
-    // число ждущих > 0 — жирным зелёным (слово владельца: «все что больше 0 делать так»); до ответа — не ноль
+    // число ждущих > 0 — пометкой на плашке (#769, тот же вид, что «всё что больше 0» владельца); до ответа — не ноль
     var n = MR.pending;
     return (FLASH ? flash() : '') + '<div class="group"><span class="label">Слоты и мастера</span>' +
-      entry('data-go="masterReqs"', 'Заявки в мастера', n === null ? 'Кто просится в мастера' : n > 0 ? 'Ждут решения: <b class="n-wait">' + n + '</b>' : 'Ждущих нет') +
+      entry('data-go="masterReqs"', 'Заявки в мастера', waitSub(n, 'Кто просится в мастера'), waitMark(n)) +
       entry('data-go="masterEvents"', 'Ивенты', 'выключить или включить в афише') +
       entry('data-go="masterList"', 'Мастера', 'их слоты в расписании') +
       /* Входов РОВНО ТРИ: «выдать» слот или ответственность нет — всё через заявку (слова владельца 29.10.2026:
@@ -7839,6 +7847,8 @@ function go(screen, p) {
   if (screen === 'people' && current !== 'people') { PEOPLE.back = null; peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
+  // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
+  if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
   if (screen === 'masterRenew' && current !== 'masterRenew' && LIVE) { RNW.err = ''; RNW.key = ''; if (MR.mineState === '' || !MR.mine) loadMineMaster(); }
   // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
   // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
