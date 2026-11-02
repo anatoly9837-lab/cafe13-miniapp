@@ -50,7 +50,7 @@ god_mentor из `/me`: у остальных его нет в разметке �
 # подпись: ЧУЖОЙ
 DUMP_DIR=<каталог вне репозитория> bash tools/check-api.sh   # в клоне cafe13-api
 # подпись: ЧУЖОЙ
-python3 -I tools/keys.py <тот же каталог> > tools/api-keys.json
+python3 -I tools/keys.py <тот же каталог> > tools/api-keys.json   # каталог из клона cafe13-api
 ```
 
 `keys.py` отказывает, если какой-то снимок — отказ, а не ответ (статус не
