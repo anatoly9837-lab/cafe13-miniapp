@@ -821,18 +821,22 @@ if (grantsSet.length !== 1) {
           if (f.why !== true) bad.push(`${n}: без причины не сказано, почему кнопка погашена (ms-why)`);
           await s.p.evaluate(() => decideMaster(601, 'rejected')); await s.p.waitForTimeout(300);
           if (decided.length) bad.push(`${n}: отказ без причины ушёл прямым вызовом decideMaster — охрана только в разметке`);
-          await s.p.fill('#ms-note', '  Нет фото работ. Пришлите три  ');
-          await s.p.waitForTimeout(100);
-          f = await formNow(s);
-          if (!f.no || f.no.off !== false || f.no.aria !== 'false') bad.push(`${n}: с причиной кнопка не ожила (${JSON.stringify(f.no)})`);
-          if (f.why !== false) bad.push(`${n}: с причиной строка «Сначала причина…» осталась`);
-          await tapIf(s, n, '#view [data-action="ms-no:601"]', '«Отказать и вернуть деньги»');
-          await s.p.waitForTimeout(300);
-          if (decided.length !== 1) bad.push(`${n}: отказ ушёл ${decided.length} раз, ждали 1`);
-          else if (decided[0].id !== 601 || JSON.stringify(decided[0].b) !== JSON.stringify({ decision: 'rejected', note: 'Нет фото работ. Пришлите три' }))
-            bad.push(`${n}: тело отказа не то: ${JSON.stringify(decided[0])}`);
-          t = await s.view();
-          if (!t.includes('Отказано')) bad.push(`${n}: после отказа нет «Отказано»`);
+          // охрана З2 сломана — отказ уже ушёл и форма закрыта: краснеть словами, а не обрывом на fill (пакет #696, frontend-11)
+          if (!(await s.p.$('#ms-note'))) bad.push(`${n}: поля причины уже нет — отказ ушёл раньше`);
+          else {
+            await s.p.fill('#ms-note', '  Нет фото работ. Пришлите три  ');
+            await s.p.waitForTimeout(100);
+            f = await formNow(s);
+            if (!f.no || f.no.off !== false || f.no.aria !== 'false') bad.push(`${n}: с причиной кнопка не ожила (${JSON.stringify(f.no)})`);
+            if (f.why !== false) bad.push(`${n}: с причиной строка «Сначала причина…» осталась`);
+            await tapIf(s, n, '#view [data-action="ms-no:601"]', '«Отказать и вернуть деньги»');
+            await s.p.waitForTimeout(300);
+            if (decided.length !== 1) bad.push(`${n}: отказ ушёл ${decided.length} раз, ждали 1`);
+            else if (decided[0].id !== 601 || JSON.stringify(decided[0].b) !== JSON.stringify({ decision: 'rejected', note: 'Нет фото работ. Пришлите три' }))
+              bad.push(`${n}: тело отказа не то: ${JSON.stringify(decided[0])}`);
+            t = await s.view();
+            if (!t.includes('Отказано')) bad.push(`${n}: после отказа нет «Отказано»`);
+          }
         }
         await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
@@ -4805,9 +4809,10 @@ if (grantsSet.length !== 1) {
     ['Вы записаны', 'Записаться'].forEach(x => {
       if (f.includes(x)) bad.push(`event-card-free: есть лишнее «${x}»`); });
     if (await s.p.evaluate(() => window.__main !== null)) bad.push('event-card-free: главная кнопка предлагает запись туда, где мест нет');
-    // Афиша берётся один раз за запуск, а не на каждом переходе.
+    // Прежнее «афиша берётся один раз за запуск» снято словом владельца (Cafe13KPG#699): теперь — при каждом
+    // входе на «Клуб»/«Афишу»/«Записи», без дубля идущего запроса. Держит случай afisha-zanovo; здесь — не ноль.
     const got = s.calls.filter(x => x.url.endsWith('/events')).length;
-    if (got !== 1) bad.push(`events: /events запрошен ${got} раз, ждали 1`);
+    if (!got) bad.push('events: /events не запрошен ни разу');
     if (s.errs.length) bad.push('events: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
   }
@@ -5095,6 +5100,8 @@ if (grantsSet.length !== 1) {
     if (mt !== 'Записаться за 400 ฿') bad.push(`book: главная кнопка Telegram говорит «${mt}», ждали «Записаться за 400 ฿»`);
 
     // Внутри Telegram экранная кнопка скрыта (body.has-main .dup-main), работает главная.
+    // Счёт афиши — ПРИБАВКОЙ от нажатия: входы на экраны перечитывают её сами (#699), и абсолютное число мерит путь
+    const ev0 = s.calls.filter(c => c.url.endsWith('/events')).length;
     await s.p.evaluate(() => window.__main && window.__main());   // нет кнопки — краснеет своим текстом, а не обрывом батареи
     await s.p.waitForTimeout(400);
     const t = await s.view();
@@ -5104,8 +5111,8 @@ if (grantsSet.length !== 1) {
     if (t.includes('Не получилось')) bad.push('book: удачная запись показана отказом: «' +
       t.slice(t.indexOf('Не получилось'), t.indexOf('Не получилось') + 90) + '»');
     if (t.includes('Записаться')) bad.push('book: после записи всё ещё предлагают записаться');
-    const reread = s.calls.filter(c => c.url.endsWith('/events')).length;
-    if (reread !== 2) bad.push(`book: запросов к /events ${reread}, ждали 2 (загрузка и перечитывание)`);
+    const reread = s.calls.filter(c => c.url.endsWith('/events')).length - ev0;
+    if (reread < 1) bad.push(`book: после записи афиша не перечитана (запросов к /events после нажатия ${reread})`);
     if (await s.p.evaluate(() => window.__main !== null)) bad.push('book: главная кнопка осталась на уже записанном событии');
     await s.p.screenshot({ path: `${OUT}/live-book-done.png` });
 
@@ -5132,6 +5139,7 @@ if (grantsSet.length !== 1) {
 
     await s.p.click('[data-action="book-cancel"]');
     await s.p.waitForTimeout(150);
+    const ev1 = s.calls.filter(x => x.url.endsWith('/events')).length;
     await s.p.click('[data-action="book-cancel-yes:4"]');
     await s.p.waitForTimeout(400);
     const c = await s.view();
@@ -5143,7 +5151,7 @@ if (grantsSet.length !== 1) {
       c.slice(c.indexOf('Не получилось'), c.indexOf('Не получилось') + 90) + '»');
     const cancels = s.calls.filter(x => /\/bookings\/6\/cancel$/.test(x.url));
     if (cancels.length !== 1) bad.push(`cancel: запросов отмены ${cancels.length}, ждали 1`);
-    if (s.calls.filter(x => x.url.endsWith('/events')).length !== 3) bad.push('cancel: афиша после отмены не перечитана');
+    if (s.calls.filter(x => x.url.endsWith('/events')).length - ev1 < 1) bad.push('cancel: афиша после отмены не перечитана');
     await s.p.screenshot({ path: `${OUT}/live-cancel-done.png` });
     }
     if (s.errs.length) bad.push('book: ошибки страницы ' + s.errs.join('; '));
@@ -5158,12 +5166,13 @@ if (grantsSet.length !== 1) {
       if (q.url().endsWith('/events')) return json(200, [freeRow()]);
       return undefined;
     });
+    const ev0 = s.calls.filter(c => c.url.endsWith('/events')).length;
     await s.p.evaluate(() => window.__main && window.__main());
     await s.p.waitForTimeout(400);
     const t = await s.view();
     if (!t.includes('Мест нет')) bad.push('book-409: текста отказа сервера на экране нет');
     if (t.includes('Вы записаны')) bad.push('book-409: отказ показан записью');
-    if (s.calls.filter(c => c.url.endsWith('/events')).length !== 2) bad.push('book-409: афиша после отказа не перечитана');
+    if (s.calls.filter(c => c.url.endsWith('/events')).length - ev0 < 1) bad.push('book-409: афиша после отказа не перечитана');
     await s.p.screenshot({ path: `${OUT}/live-book-409.png` });
     await s.ctx.close();
   }
@@ -5232,6 +5241,40 @@ if (grantsSet.length !== 1) {
     if (!t.includes('Вы записаны')) bad.push('book-pozdniy-otvet: запись пропала с карточки');
     if (t.includes('Записаться')) bad.push('book-pozdniy-otvet: поздний ответ прежней афиши вернул карточку в «Записаться»');
     if (s.errs.length) bad.push('book-pozdniy-otvet: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+  }
+
+  // Афиша перечитывается при КАЖДОМ входе, а не раз за запуск (Cafe13KPG#699). Афиша живого — на «Клубе» (#510).
+  // Первый ответ — одно мероприятие, следующие (медленные) — два: новое появляется только после ПОВТОРНОГО входа.
+  // До ответа на экране прежний список, без «Загружаем афишу…»; вход, пока запрос в пути, второго не шлёт;
+  // вход на «Записи» тоже перечитывает. Поздний ответ, перебитый записью, — book-pozdniy-otvet выше.
+  {
+    const n = 'afisha-zanovo';
+    let gets = 0;
+    const OLD = EV({ id: 4, title: 'Прежний вечер', starts_at: atBkk(0, 19) }), NEW = EV({ id: 8, title: 'Новый вечер', starts_at: atBkk(0, 21) });
+    const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+      if (q.url().endsWith('/pass')) return json(404, { detail: 'Not Found' });   // уход на «Пропуск»: без ответа fulfill(null) рвёт батарею
+      if (q.method() !== 'GET' || !q.url().endsWith('/events')) return undefined;
+      gets += 1;
+      return gets === 1 ? json(200, [OLD]) : new Promise(r => setTimeout(() => r(json(200, [OLD, NEW])), 900));
+    }, null, NOWFIX);
+    await s.p.waitForTimeout(400);
+    if (gets !== 1 || !(await s.view()).includes('Прежний вечер')) bad.push(`${n}: первая загрузка не та (запросов ${gets}) — вердикт не выносится`);
+    else {
+      await s.p.evaluate(() => go('pass')); await s.p.waitForTimeout(150);
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);          // второй вход: запрос в пути
+      const mid = await s.view();
+      if (gets !== 2) bad.push(`${n}: повторный вход на «Клуб» не перечитал афишу (запросов ${gets}, ждали 2)`);
+      if (mid.includes('Загружаем афишу')) bad.push(`${n}: пока афиша перечитывается, вместо прежнего списка «Загружаем афишу…»`);
+      if (!mid.includes('Прежний вечер')) bad.push(`${n}: пока афиша перечитывается, прежнего списка на экране нет`);
+      await s.p.evaluate(() => { go('pass'); go('home'); }); await s.p.waitForTimeout(100);   // вход, пока запрос в пути
+      if (gets !== 2) bad.push(`${n}: вход, пока запрос в пути, послал ещё один (запросов ${gets}, ждали 2)`);
+      await s.p.waitForTimeout(1200);
+      if (!(await s.view()).includes('Новый вечер')) bad.push(`${n}: после ответа повторного входа нового мероприятия на «Клубе» нет`);
+      await s.p.evaluate(() => go('bookings')); await s.p.waitForTimeout(150);
+      if (gets !== 3) bad.push(`${n}: вход на «Записи» не перечитал афишу (запросов ${gets}, ждали 3)`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
 
@@ -5982,6 +6025,29 @@ if (grantsSet.length !== 1) {
       await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(200);
       const back = await s.p.evaluate(() => current);
       if (back !== 'event' || !(await s.view()).includes('Мой вечер')) bad.push(`${n}: «назад» с правки увела на «${back}», а не на карточку «Мой вечер»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // 5. витрина вне Telegram (Cafe13KPG#691): экран правки, а не отказ «не ваше»; длительность демо считается
+    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1.5»: охрана `h > 0` глотает NaN молча;
+    // «Сохранить» в сеть не ходит. Живой режим (чужое — отказ, своё — форма) держат edt-knopka и edt-200
+    {
+      const n = 'edt-vitrina';
+      const s = await open(false, true, json(200, MASTER), null, null, null, null, null, NOWFIX);
+      await s.p.evaluate(() => go('eventEdit', 'sound')); await s.p.waitForTimeout(150);
+      const t = await s.view();
+      if (await s.p.evaluate(() => LIVE)) bad.push(`${n}: вне Telegram LIVE истинно — вердикт не выносится`);
+      else {
+        if (t.includes('Править это мероприятие может его ведущий.')) bad.push(`${n}: вне Telegram вместо экрана правки отказ «не ваше»`);
+        if (!(await s.p.$('#edt-seats')) || !(await s.p.$('[data-action="edt-save"]'))) bad.push(`${n}: вне Telegram нет формы правки`);
+        if (!t.includes('Сегодня, четверг · 19:00 · 1.5')) bad.push(`${n}: в строке мероприятия нет длительности «· 1.5» (из 19:00–20:30)`);
+        if (/NaN/.test(t)) bad.push(`${n}: на экране NaN`);
+        const before = s.calls.length;
+        if (await s.p.$('[data-action="edt-save"]')) { await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300); }
+        const sent = s.calls.slice(before).filter(c => c.method !== 'GET');
+        if (sent.length) bad.push(`${n}: «Сохранить» на витрине ушло в сеть: ${JSON.stringify(sent.map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, '')))}`);
+      }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
