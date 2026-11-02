@@ -68,8 +68,18 @@ def клиент(root):
 
 if __name__ == '__main__':
     # `python3 -I tools/klient.py <корень>` — перечень файлов JSON-ом (для сверки с близнецом на JS)
+    # `--where`: для каждого файла — where() от смещения его ПЕРВОГО байта; у обоих близнецов обязано быть «файл:1»
     try:
-        print(json.dumps([f for f, _ in клиент(sys.argv[1] if len(sys.argv) > 1 else '.').files], ensure_ascii=False, separators=(',', ':')))
+        арг = [a for a in sys.argv[1:] if a != '--where']
+        к = клиент(арг[0] if арг else '.')
+        if '--where' in sys.argv:
+            off, out = 0, []
+            for _, t in к.files:
+                out.append(к.where(off))
+                off += len(t)
+        else:
+            out = [f for f, _ in к.files]
+        print(json.dumps(out, ensure_ascii=False, separators=(',', ':')))
     except НеВыполнено as e:
         print('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + str(e), file=sys.stderr)
         sys.exit(2)

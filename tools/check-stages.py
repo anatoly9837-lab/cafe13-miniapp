@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Стадия экрана против ВЫЛОЖЕННОГО клиента — падающая проверка (Cafe13KPG#407).
 
-    python3 -I tools/check-stages.py                    # скачать выложенный app.js
-    python3 -I tools/check-stages.py --файл app.js      # сверить с данным файлом
+    python3 -I tools/check-stages.py                    # скачать выложенный клиент (index.html и файлы по нему)
+    python3 -I tools/check-stages.py --дерево <каталог> # сверить с деревом: клиент по его index.html (Cafe13KPG#806)
+    python3 -I tools/check-stages.py --файл <файл>      # сверить с одним файлом (самопроверка, подлоги)
     python3 -I tools/check-stages.py --самопроверка
 
 Коды: 0 — сошлось; 1 — КРАСНОЕ (стадия разошлась с кодом); 2 — НЕ ВЫПОЛНЕНО
@@ -64,7 +65,18 @@ import subprocess
 import sys
 import tempfile
 
-ВЫЛОЖЕНО = 'https://anatoly9837-lab.github.io/cafe13-miniapp/app.js'
+# Выложенный клиент — несколько <script> по index.html (Cafe13KPG#806): адрес предмета — страница, а не app.js
+ВЫЛОЖЕНО = 'https://anatoly9837-lab.github.io/cafe13-miniapp/index.html'
+ВЫЛОЖЕНО_ОСНОВА = ВЫЛОЖЕНО.rsplit('/', 1)[0] + '/'
+
+
+def _клиент_мод():
+    # помощник состава (tools/klient.py) — по пути: под `python3 -I` каталог скрипта в sys.path не кладётся
+    import importlib.util, os
+    спец = importlib.util.spec_from_file_location('klient', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'klient.py'))
+    м = importlib.util.module_from_spec(спец)
+    спец.loader.exec_module(м)
+    return м
 СТАДИИ = 'screens/СТАДИИ.tsv'
 ЖДУТ_РЕЕСТРА = ('рабочий', 'в тесте')
 # Экран вне пути раздела: `soon`, загрузка, нет подписи, нет доступа,
@@ -393,16 +405,33 @@ def стадии(путь):
     return строки
 
 
-def скачать():
-    врем = pathlib.Path(tempfile.gettempdir()) / 'app-vylozhen.js'
+def _качать(адрес, куда):
     из = subprocess.run(['curl', '-sS', '-f', '-H', 'Cache-Control: no-cache',
-                         ВЫЛОЖЕНО + '?cb=' + str(__import__('os').getpid()),
-                         '-o', str(врем)], capture_output=True, text=True)
-    if из.returncode != 0 or not врем.is_file() or врем.stat().st_size < 1000:
-        не_выполнено('выложенный app.js не скачался: ' +
-                     (из.stderr.strip() or f'код {из.returncode}') +
-                     ' — это НЕ «расхождений нет»')
-    return врем.read_text(encoding='utf-8'), ВЫЛОЖЕНО
+                         адрес + '?cb=' + str(__import__('os').getpid()),
+                         '-o', str(куда)], capture_output=True, text=True)
+    return из if из.returncode == 0 and куда.is_file() else (из.stderr.strip() or f'код {из.returncode}')
+
+
+def скачать():
+    """Выложенный клиент: index.html с Pages и по нему файлы клиента в порядке подключения (форма frontend-events-9d).
+    Внешние адреса не качаются и в состав не идут; vendor/ — не клиент (как у tools/klient.py). Скачалось меньше, чем
+    назвал index.html, — НЕ ВЫПОЛНЕНО: частично скачанный клиент — «нечем судить», а не приговор по неполному."""
+    кат = pathlib.Path(tempfile.mkdtemp(prefix='vylozhen-'))
+    из = _качать(ВЫЛОЖЕНО, кат / 'index.html')
+    if isinstance(из, str):
+        не_выполнено('выложенный index.html не скачался: ' + из + ' — это НЕ «расхождений нет»')
+    имена = _клиент_мод().srcs_of((кат / 'index.html').read_text(encoding='utf-8'))
+    if not имена:
+        не_выполнено('в выложенном index.html ни одного скрипта клиента — признак не тот')
+    части = []
+    for имя in имена:
+        куда = кат / имя.replace('/', '__')
+        из = _качать(ВЫЛОЖЕНО_ОСНОВА + имя, куда)
+        if isinstance(из, str) or куда.stat().st_size < 100:
+            не_выполнено(f'выложенный клиент скачан не целиком: «{имя}» — {из if isinstance(из, str) else "пустой"}; '
+                         f'скачалось {len(части)} из {len(имена)} — судить неполный клиент нельзя')
+        части.append(куда.read_text(encoding='utf-8'))
+    return ''.join(части), ВЫЛОЖЕНО
 
 
 def проверить(исходник, откуда, путь=СТАДИИ):
@@ -766,6 +795,17 @@ if __name__ == '__main__':
         sys.exit(0)
     if '--самопроверка' in доводы:
         sys.exit(самопроверка())
+    if '--дерево' in доводы:
+        # клиент дерева — по его index.html (tools/klient.py); нет index.html или ноль скриптов — НЕ ВЫПОЛНЕНО (#806)
+        кат = pathlib.Path(доводы[доводы.index('--дерево') + 1]).resolve()
+        if not (кат / 'index.html').is_file():
+            не_выполнено(f'в {кат} нет index.html — клиент дерева не прочитать')
+        км = _клиент_мод()
+        try:
+            к = км.клиент(str(кат))
+        except км.НеВыполнено as е:
+            не_выполнено(str(е))
+        sys.exit(проверить(к.text, f'{кат}, {len(к.files)} файлов клиента')[0])
     if '--файл' in доводы:
         путь = pathlib.Path(доводы[доводы.index('--файл') + 1])
         if not путь.is_file():

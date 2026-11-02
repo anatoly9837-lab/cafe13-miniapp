@@ -67,6 +67,13 @@ module.exports = { klient, apiOnFile, NeVypolneno, srcsOf };
 
 if (require.main === module) {
   // `node tools/klient.cjs <корень>` — перечень файлов JSON-ом (для сверки с близнецом на Python)
-  try { console.log(JSON.stringify(klient(process.argv[2] || '.').files.map(f => f.file))); }
+  // `--where`: для каждого файла — where() от смещения его ПЕРВОГО байта; у обоих близнецов обязано быть «файл:1»
+  try {
+    const k = klient(process.argv[2] && process.argv[2] !== '--where' ? process.argv[2] : '.');
+    if (process.argv.includes('--where')) {
+      let off = 0;
+      console.log(JSON.stringify(k.files.map(f => { const w = k.where(off); off += f.text.length; return w; })));
+    } else console.log(JSON.stringify(k.files.map(f => f.file)));
+  }
   catch (e) { console.error((e instanceof NeVypolneno ? 'ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' : '') + e.message); process.exit(2); }
 }

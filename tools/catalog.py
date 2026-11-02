@@ -25,6 +25,19 @@
   python3 tools/catalog.py <каталог снимков>
 """
 import hashlib, io, json, os, re, sys
+import importlib.util
+
+
+def _клиент():
+    """Текст клиента — склейкой файлов в порядке index.html (Cafe13KPG#806, tools/klient.py). Подключается по пути:
+    под `python3 -I` каталог скрипта в sys.path не кладётся. НеВыполнено помощника — «не выполнено», а не догадка по app.js."""
+    спец = importlib.util.spec_from_file_location('klient', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'klient.py'))
+    м = importlib.util.module_from_spec(спец)
+    спец.loader.exec_module(м)
+    try:
+        return м.клиент(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    except м.НеВыполнено as е:
+        sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + str(е))
 
 VERSION = 'v142 · 02.11.2026'
 LIVE = 'https://anatoly9837-lab.github.io/cafe13-miniapp/'
@@ -373,7 +386,7 @@ _ЗАКРЫТЫЕ = None
 
 
 def закрытые():
-    """(замороженные, включённые) из app.js — заморозка Cafe13KPG#510.
+    """(замороженные, включённые) из клиента (склейка по index.html) — заморозка Cafe13KPG#510.
 
     Клиент гасит в живом режиме вход на любой экран, который `closed()`: в `FROZEN`
     или вне `WIRED`. Странице это знать обязательно: иначе замороженный экран
@@ -381,12 +394,11 @@ def закрытые():
     нему двери, — сломанным. `FROZEN` нет — заморозки нет (пустое множество)."""
     global _ЗАКРЫТЫЕ
     if _ЗАКРЫТЫЕ is None:
-        путь = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'app.js')
-        исходник = io.open(путь, encoding='utf-8').read()
+        исходник = _клиент().text
         ф = re.search(r'var FROZEN = \{(.*?)\};', исходник, re.S)
         замороз = {и for и, _ in re.findall(r'(\w+) *: *([^,}\s]+)', ф.group(1))} if ф else set()
         if ф and not замороз:
-            sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: `var FROZEN` в app.js есть, а имён разобрано 0 — '
+            sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: `var FROZEN` в клиенте есть, а имён разобрано 0 — '
                      'признак не тот')
         w = re.search(r'var WIRED = \{(.*?)\};', исходник, re.S)
         включ = {и for и, _ in re.findall(r'(\w+) *: *([^,}\s]+)', w.group(1))} if w else set()
@@ -415,8 +427,7 @@ def двери_на_невключённые():
     через `go(homeOf())` (замер 28.10.2026, остров). Поэтому число входов
     печатается как «не меньше», а не как «ровно», и контроль спрашивает не
     один экран, а то, что признак вообще различает входы."""
-    путь = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'app.js')
-    исходник = io.open(путь, encoding='utf-8').read()
+    исходник = _клиент().text
     тело = re.search(r'var WIRED = \{(.*?)\};', исходник, re.S)
     if not тело:
         sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: в app.js нет объявления `var WIRED = {…}` — '

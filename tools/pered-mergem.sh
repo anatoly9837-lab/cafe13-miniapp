@@ -72,6 +72,12 @@ command -v node >/dev/null 2>&1 || die 'на хосте нет node — сост
 KJS=$(node "$T/tools/klient.cjs" "$T" 2>&1) || die "состав клиента (klient.cjs): $KJS"
 KPY=$(cd "$T" && python3 -I tools/klient.py "$T" 2>&1) || die "состав клиента (klient.py): $KPY"
 [ "$KJS" = "$KPY" ] || die "близнецы состава клиента разошлись: klient.cjs ≠ klient.py — приборы судили бы разные клиенты"
+# и в where(): на нём держатся сообщения приборов описи — первый байт каждого файла обязан дать «файл:1» у обоих (frontend-events-9d)
+WJS=$(node "$T/tools/klient.cjs" "$T" --where 2>&1) || die "where() клиента (klient.cjs): $WJS"
+WPY=$(cd "$T" && python3 -I tools/klient.py "$T" --where 2>&1) || die "where() клиента (klient.py): $WPY"
+[ "$WJS" = "$WPY" ] || die "близнецы разошлись в where(): одна находка показала бы разные файлы"
+WANT=$(printf '%s' "$KJS" | python3 -I -c 'import json,sys; print(json.dumps([f+":1" for f in json.load(sys.stdin)],ensure_ascii=False,separators=(",",":")))')
+[ "$WJS" = "$WANT" ] || die "where() первого байта не «файл:1» — смещения в сообщениях приборов врут"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "нет образа $IMAGE"
 command -v python3 >/dev/null 2>&1 || die 'на хосте нет python3'
 # ⚠ РАБОЧИЙ КАТАЛОГ — В ~/.cache, А НЕ В /tmp, и это не вкусовщина: на хосте
@@ -219,8 +225,8 @@ step '5. прибор стадий — самопроверка (пригово�
 [ "$rc" -eq 0 ] || { echo "КРАСНОЕ: самопроверка прибора стадий rc=$rc"; grep -i 'провален' "$W/sp.log" | head -5; rc_total=1; }
 [ "$rc" -eq 0 ] && echo 'самопроверка прибора стадий: rc=0'
 
-step '6. прибор стадий — ПО ЭТОМУ ДЕРЕВУ (--файл app.js, приговор)'
-( cd "$T" && python3 -I tools/check-stages.py --файл app.js ); rc=$?
+step '6. прибор стадий — ПО ЭТОМУ ДЕРЕВУ (--дерево ., клиент по index.html, приговор)'
+( cd "$T" && python3 -I tools/check-stages.py --дерево . ); rc=$?
 [ "$rc" -eq 0 ] || { echo "КРАСНОЕ: прибор стадий rc=$rc"; rc_total=1; }
 
 # ── 7. номера живых людей (приговор) ────────────────────────────────────────
