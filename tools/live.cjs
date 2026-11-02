@@ -1916,7 +1916,8 @@ if (grantsSet.length !== 1) {
     const s = await open(true, true, json(200, OWNER));
     // экран записей разморожен шагом 7 (Cafe13KPG#755) — половина случая снова в прогоне
     {
-    await s.p.click('#tabs [data-go="bookings"]');
+    // вход в «Записи» — строкой «Мои записи» на «Клубе» (Cafe13KPG#755); вкладки «Записи» нет
+    await s.p.click('#view [data-go="bookings"]');
     const t = await s.view();
     /* Это и есть дозор по Cafe13KPG#259, и проверяет он ОДНО утверждение:
        «либо экран вне реестра, либо он не кормится из DATA». Своей живой
@@ -4460,7 +4461,7 @@ if (grantsSet.length !== 1) {
            booked_by_me: true, my_booking_id: 11 })
     ];
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, MOI)), null, NOWFIX);
-    await s.p.click('#tabs [data-go="bookings"]');
+    await s.p.click('#view [data-go="bookings"]');   // строка «Мои записи» на «Клубе» (Cafe13KPG#755)
     await s.p.waitForTimeout(150);
     const t = await s.view();
     if (!t.includes('Вечер ханга'))
@@ -4594,7 +4595,9 @@ if (grantsSet.length !== 1) {
     // признак главной — имя экрана, а не слово «Баланс»: карточка остатка с главной ушла (v87), и слово ослепло бы
     if (await s.p.evaluate(() => current) === 'home')
       bad.push('bookings-gost: гость начинает с «Клуба» — предусловие случая снято, и он больше не доказывает, что афиша грузится при входе на «Записи» (Cafe13KPG#360)');
-    await s.p.click('#tabs [data-go="bookings"]');
+    // у гостя входа в «Записи» нет: «Клуба» у него нет, а в приложении только члены клуба (решение 02.11.2026) — экран
+    // судится переходом напрямую: если гость на нём окажется, выход к афише обязан быть
+    await s.p.evaluate(() => go('bookings'));
     await s.p.waitForTimeout(200);
     const t = await s.view();
     if (t.includes('Загружаем афишу'))
@@ -4645,7 +4648,9 @@ if (grantsSet.length !== 1) {
     const вкладки = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
     if (вкладки.indexOf('home') !== -1)
       bad.push(`bookings-gost-zapert: у гостя появилась вкладка «Клуб» (${JSON.stringify(вкладки)}) — предусловие случая снято, и он больше не доказывает, что кнопка здесь единственный выход к афише (Cafe13KPG#371)`);
-    await s.p.click('#tabs [data-go="bookings"]');
+    // у гостя входа в «Записи» нет: «Клуба» у него нет, а в приложении только члены клуба (решение 02.11.2026) — экран
+    // судится переходом напрямую: если гость на нём окажется, выход к афише обязан быть
+    await s.p.evaluate(() => go('bookings'));
     await s.p.waitForTimeout(250);
     const t = await s.view();
     if (!t.includes('Вечер ханга'))
@@ -5616,7 +5621,13 @@ if (grantsSet.length !== 1) {
     {
       const n = 'zapisi-proshedshie', st = {};
       const s = await openH(st);
-      await s.p.evaluate(() => go('bookings')); await s.p.waitForTimeout(300);
+      // вход — строкой «Мои записи» на «Клубе», и он есть БЕЗ записей впереди (афиша пуста): прежде в живом входа не было вовсе
+      const door = await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="bookings"]'); return b ? b.textContent.trim() : null; });
+      if (door !== 'Мои записи') bad.push(`${n}: на «Клубе» у члена клуба без записей впереди нет входа «Мои записи» (${JSON.stringify(door)})`);
+      if (door) await s.p.evaluate(() => document.querySelector('#view [data-go="bookings"]').click());
+      else await s.p.evaluate(() => go('bookings'));
+      await s.p.waitForTimeout(300);
+      if (await s.p.evaluate(() => current) !== 'bookings') bad.push(`${n}: «Мои записи» открыли не «Записи»`);
       const rows = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-event]')].map(x => x.getAttribute('data-event')));
       if (JSON.stringify(rows) !== JSON.stringify(['30', '32'])) bad.push(`${n}: в прошедших строки ${JSON.stringify(rows)}, ждали ["30","32"] — свои записи, новые сверху, без мастерского своего`);
       if ((await s.view()).includes('временно недоступно')) bad.push(`${n}: «Записи» заморожены — дверь закрыта`);
