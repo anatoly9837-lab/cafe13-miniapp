@@ -2000,7 +2000,8 @@ if (grantsSet.length !== 1) {
     if (!(await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="bookings"]'); if (!b || b.disabled) return false; b.click(); return true; })))
       bad.push('bookings: на «Клубе» нет живого входа «Мои записи» — экран «Записи» недостижим');
     // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
-    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
+    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 })
+      .catch(() => bad.push('bookings: архив прошедших не загрузился за 3 с — экран так и стоит на «Загружаем прошедшие…»'));
     const t = await s.view();
     /* Это и есть дозор по Cafe13KPG#259, и проверяет он ОДНО утверждение:
        «либо экран вне реестра, либо он не кормится из DATA». Своей живой
@@ -4549,7 +4550,8 @@ if (grantsSet.length !== 1) {
       bad.push('bookings-svoi: на «Клубе» нет живого входа «Мои записи»');
     await s.p.waitForTimeout(150);
     // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
-    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
+    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 })
+      .catch(() => bad.push('bookings: архив прошедших не загрузился за 3 с — экран так и стоит на «Загружаем прошедшие…»'));
     const t = await s.view();
     if (!t.includes('Вечер ханга'))
       bad.push('bookings-svoi: своей предстоящей записи на экране нет — человек прочитает, что его не записали (Cafe13KPG#360)');
