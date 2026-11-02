@@ -150,9 +150,16 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
 // СВОЙСТВОМ: литерал `var FROZEN = {…}` из app.js, тот же, что читает `frozen()`. Пустой разбор — не «ничего не
 // заморожено», а «прибор смотрит не туда»: батарея не гоняется вовсе
 const FROZEN_SET = new Set(((src.match(/^var FROZEN = \{([^}]*)\}/m) || [])[1] || '').match(/\w+(?=\s*:\s*1\b)/g) || []);
+// ⚠ «Заблокирован для всех» — это `closed()` приложения: ЗАМОРОЖЕН или НЕ ПОДКЛЮЧЁН (нет в WIRED и PROTO). Разморозка
+// в app.js — ПЕРЕНОС из FROZEN в WIRED (проза шага 4): экран, только вынутый из FROZEN, остаётся «ещё не подключено»,
+// и его случаи покраснели бы на закрытом экране (замер подлогом 02.11.2026). Поэтому мерим тем же, чем закрывает клиент
+const keysOf = name => { const m = src.match(new RegExp('^var ' + name + ' = \\{([\\s\\S]*?)\\};', 'm'));
+  return m ? (m[1].replace(/\/\/.*$/gm, '').match(/\w+(?=\s*:\s*1\b)/g) || []) : null; };
+const OPEN_SET = new Set([...(keysOf('WIRED') || []), ...(keysOf('PROTO') || [])]);
+const blocked = x => FROZEN_SET.has(x) || !OPEN_SET.has(x);
 const SCREEN_NAMES = new Set((src.slice(src.indexOf('var SCREENS = {')).match(/^  (\w+): function/gm) || []).map(x => x.trim().split(':')[0]));
-if (!FROZEN_SET.size || SCREEN_NAMES.size < 20) {
-  console.error(`ПРОВЕРКА НЕ ВЫПОЛНЕНА: из app.js разобрано замороженных экранов ${FROZEN_SET.size}, экранов реестра ${SCREEN_NAMES.size} — признак заморозки сломан, что гонять, неизвестно`);
+if (!FROZEN_SET.size || OPEN_SET.size < 10 || SCREEN_NAMES.size < 20) {
+  console.error(`ПРОВЕРКА НЕ ВЫПОЛНЕНА: из app.js разобрано замороженных экранов ${FROZEN_SET.size}, открытых (WIRED+PROTO) ${OPEN_SET.size}, экранов реестра ${SCREEN_NAMES.size} — признак заморозки сломан, что гонять, неизвестно`);
   process.exit(1);
 }
 const grantsSet = src.match(/DATA\.grants\s*=(?!=)/g) || [];
@@ -177,8 +184,8 @@ if (grantsSet.length !== 1) {
   const SECTION_SCREENS = {
     'экран гостя «Услуги»': ['guest'],
     'бар': ['bar', 'drink', 'barCart', 'barOrder'],
-    'очередь на баре': ['barQueue'],
-    'смена': ['barQueue'],
+    'очередь на баре': ['barQueue', 'bar', 'drink', 'barCart', 'barOrder'],   // гостевая половина случаев покупает
+    'смена': ['barQueue', 'bar'],                                              // shift-stale-empty идёт гостем в бар
     'пополнение из бара (бармен без права кассы)': ['bar'],
     'касса': ['staff', 'tillPerson', 'tillMembership', 'tillTopup', 'tillDay'],
     'доход и расход бара': ['barMoney'],
@@ -197,7 +204,7 @@ if (grantsSet.length !== 1) {
     CALLED.add(sec);
     const scr = SECTION_SCREENS[sec];
     if (!scr) { bad.push(`заморозка: раздел «${sec}» не стоит в SECTION_SCREENS — непонятно, по каким экранам он ходит`); return false; }
-    const cold = scr.filter(x => FROZEN_SET.has(x));
+    const cold = scr.filter(blocked).map(x => FROZEN_SET.has(x) ? x : x + ': не подключён');
     if (cold.length && process.env.THAW !== '1') { skippedCalls++; SKIPPED.add(`${sec} (${cold.join(', ')})`); return false; }
     return true;
   };
@@ -10630,7 +10637,7 @@ if (grantsSet.length !== 1) {
       const s = await open(true, true, json(200, nobody), null, null, null, book());
       for (const [scr, q, mark, deny] of WORK) {
         // замороженный экран рисует «временно недоступно» раньше любого отказа по праву (Cafe13KPG#510)
-        if (FROZEN_SET.has(scr) && process.env.THAW !== '1') { skippedCalls++; SKIPPED.add(`отказ по праву (${scr})`); continue; }
+        if (blocked(scr) && process.env.THAW !== '1') { skippedCalls++; SKIPPED.add(`отказ по праву (${scr})`); continue; }
         await s.p.evaluate(([x, y]) => go(x, y), [scr, q]); await s.p.waitForTimeout(250);
         const t = await s.view();
         if (!t.includes(deny)) bad.push(`live-norights ${scr}: в живом режиме без прав нет отказа «${deny}» (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
