@@ -35,6 +35,7 @@
 const { chromium } = require('/usr/lib/node_modules/playwright');
 const fs = require('fs');
 const crypto = require('crypto');
+const { FIXED_NOW } = require('./chasy-opisi.cjs');   /* ОДИН источник часов описи */
 
 /* ⚠ РОЛИ, А НЕ ИМЕНА, И ЭТО НЕ ОСТОРОЖНОСТЬ, А ГРАНИЦА РЕПОЗИТОРИЯ.
  * Репозиторий клиента ПУБЛИЧНЫЙ. Настоящие имена живых людей клуба, как и
@@ -71,7 +72,18 @@ function не_выполнено(текст) {
 
 (async () => {
   const b = await chromium.launch({ args: ['--no-sandbox'] });
-  const p = await (await b.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU' })).newPage();
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU' });
+  /* ⚠ Часы приколоты теми же, что у съёмки (Cafe13KPG#727). Без этого обход
+     течёт КАЛЕНДАРЁМ, и течёт числом, а не картинкой: `длины.events` — длина
+     текста экрана афиши, а афиша печатает недельную сетку и день («Чт,
+     30 октября» → «Вс, 1 ноября», ровно −2 знака). Замер 01.11.2026: на
+     дереве 9c8683a — клиент байт в байт тот, с которого снята опись v121 —
+     без часов выходит 245/209, с часами 247/211, и 247/211 воспроизводимо.
+     ⚠ Записанное число устойчивости НЕ доказывает: в описи v121 стояло то же
+     247/211, снятое БЕЗ часов, — только потому, что «Вт, 27 октября» и
+     «Чт, 30 октября» равной длины. Совпало, а не держалось. */
+  await ctx.clock.setFixedTime(new Date(FIXED_NOW));
+  const p = await ctx.newPage();
   await p.goto('file:///app/index.html', { waitUntil: 'networkidle' });
 
   const есть = await p.evaluate((пр) => {
