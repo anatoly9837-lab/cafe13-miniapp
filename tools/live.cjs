@@ -1918,6 +1918,8 @@ if (grantsSet.length !== 1) {
     {
     // вход в «Записи» — строкой «Мои записи» на «Клубе» (Cafe13KPG#755); вкладки «Записи» нет
     await s.p.click('#view [data-go="bookings"]');
+    // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
+    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
     const t = await s.view();
     /* Это и есть дозор по Cafe13KPG#259, и проверяет он ОДНО утверждение:
        «либо экран вне реестра, либо он не кормится из DATA». Своей живой
@@ -4463,6 +4465,8 @@ if (grantsSet.length !== 1) {
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, MOI)), null, NOWFIX);
     await s.p.click('#view [data-go="bookings"]');   // строка «Мои записи» на «Клубе» (Cafe13KPG#755)
     await s.p.waitForTimeout(150);
+    // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
+    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
     const t = await s.view();
     if (!t.includes('Вечер ханга'))
       bad.push('bookings-svoi: своей предстоящей записи на экране нет — человек прочитает, что его не записали (Cafe13KPG#360)');
