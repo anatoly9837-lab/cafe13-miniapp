@@ -7781,6 +7781,81 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(250);
       return true;
     };
+    // ── «Без членства» (слово владельца 02.11.2026, Cafe13KPG#797; кадры E47ю/E47я; поля former/in_club — api#124) ──
+    // Фикстура своя: в общей ROSTER полей нет — это и есть «старый сервер», его случай последним.
+    // 701 — член с ролью; 704 — без членства, но с ответственностью (остаётся в основном); 705 — членство закончилось;
+    // 706 — членства не было; 707 — допуск снят (in_club false): «−» нет, чип один «Допуск снят».
+    {
+      const P = (id, name, o) => Object.assign({ tg_user_id: id, first_name: name, last_name: null, lang: 'ru', roles: [], memberships: [],
+        former: false, in_club: true }, o);
+      const R797 = { count: 5, people: [
+        P(701, 'Алевтина', { roles: [{ id: 31, role: 'curator', direction_id: 7, direction: 'Бар', granted_at: '2026-10-20T10:00:00+00:00' }], memberships: ['member'] }),
+        P(704, 'Мария', { roles: [{ id: 32, role: 'staff', direction_id: 7, direction: 'Бар', granted_at: '2026-10-20T10:00:00+00:00' }] }),
+        P(705, 'Сергей', { former: true }),
+        P(706, 'Ирина'),
+        P(707, 'Анна', { former: true, in_club: false })] };
+      const view = s => s.p.evaluate(() => ({ cur: current, par: param, title: document.getElementById('title').textContent,
+        rows: [...document.querySelectorAll('#view [data-person]')].map(x => ({ k: x.getAttribute('data-person'), t: x.textContent,
+          minus: !!x.querySelector('[data-action^="p-out:"]') })),
+        door: (b => b ? b.textContent : null)(document.querySelector('#view [data-action="p-bez"]')) }));
+      {
+        const n = 'bez-chlenstva', s = await peopleCase(OWNER, { people: json(200, R797) });
+        if (!(await toPeople(s))) bad.push(`${n}: до «Членов клуба» не дошли`);
+        else {
+          await s.p.waitForTimeout(300);
+          let v = await view(s);
+          const main = v.rows.map(r => r.k);
+          if (JSON.stringify(main.slice().sort()) !== JSON.stringify(['0', '1'])) bad.push(`${n}: в основном списке ${JSON.stringify(main)}, ждали Алевтину и Марию (0, 1) — без членства, но с ответственностью остаётся`);
+          if (v.door !== 'Без членства3 человека') bad.push(`${n}: дверь ${JSON.stringify(v.door)}, ждали «Без членства · 3 человека»`);
+          await s.p.evaluate(() => document.querySelector('#view [data-action="p-bez"]').click()); await s.p.waitForTimeout(250);
+          v = await view(s);
+          if (v.cur !== 'people' || v.par !== 'bez') bad.push(`${n}: дверь открыла «${v.cur}/${v.par}», ждали режим people/bez`);
+          if (v.title !== 'Без членства') bad.push(`${n}: заголовок «${v.title}», ждали «Без членства»`);
+          const by = {}; v.rows.forEach(r => { by[r.k] = r; });
+          if (JSON.stringify(Object.keys(by).sort()) !== JSON.stringify(['2', '3', '4'])) bad.push(`${n}: за дверью ${JSON.stringify(Object.keys(by))}, ждали Сергея, Ирину, Анну (2, 3, 4)`);
+          const chip = k => (by[k] || {}).t || '';
+          if (!chip('2').includes('Членство закончилось')) bad.push(`${n}: у бывшего члена нет «Членство закончилось»`);
+          if (!chip('3').includes('Членства не было')) bad.push(`${n}: у того, у кого членства не было, нет «Членства не было»`);
+          if (!chip('4').includes('Допуск снят')) bad.push(`${n}: у исключённой нет «Допуск снят»`);
+          // один чип одной веткой: исключённой «Членство закончилось» не показывается, хотя former у неё true
+          if (chip('4').includes('Членство закончилось') || chip('4').includes('Членства не было')) bad.push(`${n}: у исключённой два чипа — «Допуск снят» обязан быть единственным`);
+          if (by['4'] && by['4'].minus) bad.push(`${n}: у исключённой (in_club false) есть «−» — сервер ответит 409 «Этого человека в клубе нет»`);
+          if (by['2'] && !by['2'].minus) bad.push(`${n}: у бывшего члена с допуском нет «−» — запрет «всем без членства», а не исключённым`);
+          // раскрытая карточка исключённой тоже без «−»
+          await s.p.evaluate(() => { const b = document.querySelector('#view [data-person="4"] [data-action^="p-card:"]'); if (b) b.click(); }); await s.p.waitForTimeout(200);
+          if (await s.p.$('#view [data-person="4"] [data-action^="p-out:"]')) bad.push(`${n}: в раскрытой карточке исключённой есть «−»`);
+          await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(250);
+          v = await view(s);
+          if (v.cur !== 'people' || v.par === 'bez') bad.push(`${n}: «назад» из «Без членства» ведёт не к основному списку (${v.cur}/${v.par})`);
+        }
+        await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // старый сервер (полей нет): двери нет, все в основном списке — «бывший» и «не было никогда» без полей неразличимы
+      {
+        const n = 'bez-chlenstva-stary', s = await peopleCase(OWNER, {});
+        if (await toPeople(s)) {
+          await s.p.waitForTimeout(300);
+          const v = await view(s);
+          if (v.door !== null) bad.push(`${n}: у старого сервера есть дверь «Без членства» — назвала бы людей без признака`);
+          if (v.rows.length !== 3) bad.push(`${n}: в основном списке ${v.rows.length}, ждали всех троих`);
+        } else bad.push(`${n}: до «Членов клуба» не дошли`);
+        await s.ctx.close();
+      }
+      // битое поле — ответ битый целиком: не булево former не читается как «нет»
+      {
+        const n = 'bez-chlenstva-bitoe', BAD = clone(R797); BAD.people[2].former = 'yes';
+        const s = await peopleCase(OWNER, { people: json(200, BAD) });
+        if (await toPeople(s)) {
+          await s.p.waitForTimeout(300);
+          const v = await view(s);
+          if (v.rows.length) bad.push(`${n}: ответ с former: "yes" нарисован списком — битое поле прочитано как значение`);
+        } else bad.push(`${n}: до «Членов клуба» не дошли`);
+        await s.ctx.close();
+      }
+    }
+
     // карточки знают номер строки, а не tg_user_id: 0 Алевтина, 1 Сомчай, 2 Глеб
     const card = (s, k) => `[data-person="${k}"]`;
     const note = (s, k) => s.p.$eval(`${card(s, k)} .note`, e => e.textContent).catch(() => '');
