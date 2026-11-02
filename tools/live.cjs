@@ -821,18 +821,22 @@ if (grantsSet.length !== 1) {
           if (f.why !== true) bad.push(`${n}: без причины не сказано, почему кнопка погашена (ms-why)`);
           await s.p.evaluate(() => decideMaster(601, 'rejected')); await s.p.waitForTimeout(300);
           if (decided.length) bad.push(`${n}: отказ без причины ушёл прямым вызовом decideMaster — охрана только в разметке`);
-          await s.p.fill('#ms-note', '  Нет фото работ. Пришлите три  ');
-          await s.p.waitForTimeout(100);
-          f = await formNow(s);
-          if (!f.no || f.no.off !== false || f.no.aria !== 'false') bad.push(`${n}: с причиной кнопка не ожила (${JSON.stringify(f.no)})`);
-          if (f.why !== false) bad.push(`${n}: с причиной строка «Сначала причина…» осталась`);
-          await tapIf(s, n, '#view [data-action="ms-no:601"]', '«Отказать и вернуть деньги»');
-          await s.p.waitForTimeout(300);
-          if (decided.length !== 1) bad.push(`${n}: отказ ушёл ${decided.length} раз, ждали 1`);
-          else if (decided[0].id !== 601 || JSON.stringify(decided[0].b) !== JSON.stringify({ decision: 'rejected', note: 'Нет фото работ. Пришлите три' }))
-            bad.push(`${n}: тело отказа не то: ${JSON.stringify(decided[0])}`);
-          t = await s.view();
-          if (!t.includes('Отказано')) bad.push(`${n}: после отказа нет «Отказано»`);
+          // охрана З2 сломана — отказ уже ушёл и форма закрыта: краснеть словами, а не обрывом на fill (пакет #696, frontend-11)
+          if (!(await s.p.$('#ms-note'))) bad.push(`${n}: поля причины уже нет — отказ ушёл раньше`);
+          else {
+            await s.p.fill('#ms-note', '  Нет фото работ. Пришлите три  ');
+            await s.p.waitForTimeout(100);
+            f = await formNow(s);
+            if (!f.no || f.no.off !== false || f.no.aria !== 'false') bad.push(`${n}: с причиной кнопка не ожила (${JSON.stringify(f.no)})`);
+            if (f.why !== false) bad.push(`${n}: с причиной строка «Сначала причина…» осталась`);
+            await tapIf(s, n, '#view [data-action="ms-no:601"]', '«Отказать и вернуть деньги»');
+            await s.p.waitForTimeout(300);
+            if (decided.length !== 1) bad.push(`${n}: отказ ушёл ${decided.length} раз, ждали 1`);
+            else if (decided[0].id !== 601 || JSON.stringify(decided[0].b) !== JSON.stringify({ decision: 'rejected', note: 'Нет фото работ. Пришлите три' }))
+              bad.push(`${n}: тело отказа не то: ${JSON.stringify(decided[0])}`);
+            t = await s.view();
+            if (!t.includes('Отказано')) bad.push(`${n}: после отказа нет «Отказано»`);
+          }
         }
         await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
@@ -5947,6 +5951,29 @@ if (grantsSet.length !== 1) {
       await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(200);
       const back = await s.p.evaluate(() => current);
       if (back !== 'event' || !(await s.view()).includes('Мой вечер')) bad.push(`${n}: «назад» с правки увела на «${back}», а не на карточку «Мой вечер»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // 5. витрина вне Telegram (Cafe13KPG#691): экран правки, а не отказ «не ваше»; длительность демо считается
+    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1.5»: охрана `h > 0` глотает NaN молча;
+    // «Сохранить» в сеть не ходит. Живой режим (чужое — отказ, своё — форма) держат edt-knopka и edt-200
+    {
+      const n = 'edt-vitrina';
+      const s = await open(false, true, json(200, MASTER), null, null, null, null, null, NOWFIX);
+      await s.p.evaluate(() => go('eventEdit', 'sound')); await s.p.waitForTimeout(150);
+      const t = await s.view();
+      if (await s.p.evaluate(() => LIVE)) bad.push(`${n}: вне Telegram LIVE истинно — вердикт не выносится`);
+      else {
+        if (t.includes('Править это мероприятие может его ведущий.')) bad.push(`${n}: вне Telegram вместо экрана правки отказ «не ваше»`);
+        if (!(await s.p.$('#edt-seats')) || !(await s.p.$('[data-action="edt-save"]'))) bad.push(`${n}: вне Telegram нет формы правки`);
+        if (!t.includes('Сегодня, четверг · 19:00 · 1.5')) bad.push(`${n}: в строке мероприятия нет длительности «· 1.5» (из 19:00–20:30)`);
+        if (/NaN/.test(t)) bad.push(`${n}: на экране NaN`);
+        const before = s.calls.length;
+        if (await s.p.$('[data-action="edt-save"]')) { await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300); }
+        const sent = s.calls.slice(before).filter(c => c.method !== 'GET');
+        if (sent.length) bad.push(`${n}: «Сохранить» на витрине ушло в сеть: ${JSON.stringify(sent.map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, '')))}`);
+      }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
