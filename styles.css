@@ -1,8 +1,17 @@
 /* Палитра принята владельцем 21.10.2026 (Cafe13KPG#110, лист «Палитра и
    типографика» базы экранов): известь, тушь, латунь, лист, глина. Контраст
    посчитан по WCAG 2.1, все рабочие пары проходят AA; tools/live.cjs
-   пересчитывает их на отрисованной странице. Светлая латунь (--gold) —
-   только обводка и заливка, текст латунью — --gold-ink. */
+   пересчитывает их на отрисованной странице.
+
+   ⚠ У ЛАТУНИ ТРИ РОЛИ И ТРИ ТОКЕНА, и порог у них разный:
+     --gold       заливка и обводка надписей (порог 4.5 держит тушь поверх);
+     --gold-mark  ТОНКАЯ ГРАФИКА, несущая смысл: порог 3.0 (SC 1.4.11);
+     --gold-ink   текст латунью, порог 4.5.
+   Разводить пришлось потому, что --gold на светлой теме даёт 2.17–2.55
+   против подложек (surface / paper / card) — ниже 3.0, и тонкая графика на
+   нём почти не видна. Замер designer-55 02.11.2026, Cafe13KPG#754; второй
+   путь (отдельный токен вместо потемнения --gold) выбрал владелец, чтобы не
+   трогать заливки и подписи, где сегодня 7.27 и 5.62. */
 
 :root {
   color-scheme: light;
@@ -52,6 +61,14 @@
   --line: #E2E1D9;
   --muted: #5A5F63;
   --gold: #C89B4A;
+  /* ⚠ Значение выбрано ЧИСЛОМ, а не на глаз: самое светлое, у которого
+     слабейшая пара даёт ≥ 3.5, то есть не живёт на пороге 3.0. Таблица
+     замера (светлота латуни при том же тоне 38.6° и насыщенности 53%):
+     54% #C89B4A — 2.55 / 2.27 / 2.17 (нынешняя, НИЖЕ порога);
+     44% #AC8134 — 3.53 / 3.15 / 3.01 (проходит, но 3.01 на границе);
+     40% #9C7630 — 4.16 / 3.71 / 3.54 ← взято;
+     порядок пар: на --card, --paper, --surface. */
+  --gold-mark: #9C7630;
   --gold-ink: #8A5F1E;
   --sage: #2F6B57;
   --clay: #8E3324;
@@ -85,6 +102,9 @@
   --line: #2A2E32;
   --muted: #B8B6AE;
   --gold: #EBC37A;
+  /* В тёмной теме латунь на графике и так 9.95–11.10, поэтому значение
+     РАВНО --gold: разводить нечего, а другой оттенок менял бы вид без нужды. */
+  --gold-mark: #EBC37A;
   --gold-ink: #EBC37A;
   --sage: #7FC0A4;
   /* тёмной глины в принятом листе нет — значение прежнее, контраст к
@@ -193,7 +213,9 @@ p  { margin: 0; color: var(--muted); }
   background: var(--card);
 }
 .card.strong { border: 2px solid var(--ink); border-radius: 14px; padding: 17px; }
-.accent { box-shadow: inset 3px 0 0 0 var(--gold); }
+/* ⚠ Полоса — единственный признак отмеченной карточки, значит графика
+   со смыслом: латунь графики, не заливки (Cafe13KPG#754). */
+.accent { box-shadow: inset 3px 0 0 0 var(--gold-mark); }
 .card.quiet  { background: var(--surface); border-color: transparent; }
 
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -216,6 +238,12 @@ b.num, .big { white-space: nowrap; }
 }
 .pill.on   { background: var(--sage); border-color: var(--sage); color: var(--on-accent); }
 .pill.warm { color: var(--clay-ink); border-color: var(--clay); }
+/* ⚠ Рамка плашки ОСТАЁТСЯ на --gold (2.27–2.55 в светлой), и это выбор,
+   а не недосмотр: вид плашки несёт её СЛОВО и цвет текста (--gold-ink,
+   5.62), а капсула — оформление, не сигнал; у соседних видов плашки
+   отличается тоже текст или заливка, а не только обводка. По 1.4.11
+   оформление порога не требует. Переведёшь её на --gold-mark —
+   изменишь вид элемента, который сегодня проходит. */
 .pill.gold { color: var(--gold-ink); border-color: var(--gold); }
 /* «не закончено», а не запрет: исход приёма неизвестен (кадр E34zh) */
 .card.warm { background: var(--deny-bg); border-color: var(--clay); }
@@ -502,11 +530,16 @@ body.has-main .dup-main { display: none; }
   border: 2px solid var(--line); background: var(--paper); margin-top: 2px;
 }
 .steps > div.done i { border-color: var(--sage); background: var(--sage); }
-.steps > div.now  i { border-color: var(--gold); background: var(--gold); }
+/* ⚠ Точка «мы здесь» — пара к .done, где стоит лист (--sage, тёмный).
+   На светлой латуни она была вдвое слабее соседки по весу: 2.55 против
+   5.68. Латунь графики возвращает им сравнимый вес. */
+.steps > div.now  i { border-color: var(--gold-mark); background: var(--gold-mark); }
 .steps > div.now  b { color: var(--gold-ink); }
 
 .meter { display: block; height: 5px; border-radius: 3px; background: var(--surface); margin-top: 5px; overflow: hidden; }
-.meter > span { display: block; height: 100%; background: var(--gold); }
+/* ⚠ Заливка метра на дорожке --surface: показывает долю, то есть
+   графика со смыслом. Было 2.17 — самая слабая пара латуни. */
+.meter > span { display: block; height: 100%; background: var(--gold-mark); }
 
 /* Тестовый режим: полоса над каждым экраном, пока он включён. */
 .test-strip {
@@ -839,6 +872,9 @@ body.has-main .dup-main { display: none; }
 .wk .d { display: block; font-size: 11px; color: var(--muted); }
 .wk .n { display: block; font-size: 15px; font-weight: 600; margin-top: 1px; }
 /* вторая полоска того же цвета: глина — семейство отказа, красная полоска обещала бы беду (designer-55) */
-.wk .ev { display: block; height: 5px; border-radius: 3px; margin: 4px 3px 0; background: var(--gold); }
+/* ⚠ Сигнал здесь — САМО НАЛИЧИЕ полоски (пустой день рисует .wk .no
+   без цвета), поэтому 5 px латуни на карточке при 2.55 почти не
+   читались. Латунь графики. */
+.wk .ev { display: block; height: 5px; border-radius: 3px; margin: 4px 3px 0; background: var(--gold-mark); }
 .wk .no { display: block; height: 5px; margin: 4px 3px 0; }
 .daynote { font-size: 12px; color: var(--muted); margin-top: 2px; }
