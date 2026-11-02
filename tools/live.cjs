@@ -5695,10 +5695,14 @@ if (grantsSet.length !== 1) {
     };
     const P = (id, over) => EV(Object.assign({ id, starts_at: ago(id - 28), duration_min: 60, taken: 3, seats_left: 9, booked_by_me: true,
       my_booking_id: id + 100, my_may_thank: false, my_donated: '0', ask_donation: true, kind: 'donation', price: '0.00' }, over));
-    // 30 — можно поблагодарить; 31 — моё мастерское без записи; 32 — уже поблагодарил. Новее — меньше дней назад: 30 (2) новее 32 (4)
+    // 30 — можно поблагодарить; 31 — моё мастерское без записи; 32 — уже поблагодарил; 33 — донат не просили.
+    // Новее — меньше дней назад: 30 (2) новее 32 (4) новее 33 (5)
     const HROWS = state => [P(30, { title: 'Вечер у воды', my_may_thank: !state.donated30, my_donated: state.donated30 || '0' }),
       P(31, { title: 'Мой прошедший', organizer_id: 1, booked_by_me: null, my_booking_id: null }),
-      P(32, { title: 'Круг у огня', my_donated: '300.00' })];
+      P(32, { title: 'Круг у огня', my_donated: '300.00' }),
+      // 33 — своя запись, донат НЕ просили: сервер даёт my_may_thank false (events.py:184 — ask_donation и записан и не
+      // благодарил). Кнопки нет; без этой строки «кнопка у любой своей прошедшей» проходила зелёной (возврат arhitector-47)
+      P(33, { title: 'Тихий вечер', ask_donation: false, my_may_thank: false })];
     const openH = (state, extra) => open(true, true, json(200, OWNER), null, null, null, q => {
       const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
       if (u === '/me') { state.me = (state.me || 0) + 1; return json(200, OWNER); }
@@ -5720,7 +5724,7 @@ if (grantsSet.length !== 1) {
       await s.p.waitForTimeout(300);
       if (await s.p.evaluate(() => current) !== 'bookings') bad.push(`${n}: «Мои записи» открыли не «Записи»`);
       const rows = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-event]')].map(x => x.getAttribute('data-event')));
-      if (JSON.stringify(rows) !== JSON.stringify(['30', '32'])) bad.push(`${n}: в прошедших строки ${JSON.stringify(rows)}, ждали ["30","32"] — свои записи, новые сверху, без мастерского своего`);
+      if (JSON.stringify(rows) !== JSON.stringify(['30', '32', '33'])) bad.push(`${n}: в прошедших строки ${JSON.stringify(rows)}, ждали ["30","32","33"] — свои записи, новые сверху, без мастерского своего`);
       if ((await s.view()).includes('временно недоступно')) bad.push(`${n}: «Записи» заморожены — дверь закрыта`);
       if (rows.includes('30')) {
         await s.p.evaluate(() => document.querySelector('#view [data-event="30"]').click()); await s.p.waitForTimeout(200);
@@ -5734,6 +5738,9 @@ if (grantsSet.length !== 1) {
       if (!t32.includes('Вы поблагодарили: Образец') || !t32.includes('300 ฿')) bad.push(`${n}: на уже поблагодарённом нет «Вы поблагодарили: Образец · 300 ฿»`);
       await s.p.evaluate(() => go('event', '31')); await s.p.waitForTimeout(200);
       if (await s.p.$('#view [data-action^="thank:"]')) bad.push(`${n}: на своём мастерском без записи есть кнопка благодарности`);
+      await s.p.evaluate(() => go('event', '33')); await s.p.waitForTimeout(200);
+      if (await s.p.$('#view [data-action^="thank:"]')) bad.push(`${n}: на своей прошедшей без доната есть «Поблагодарить мастера» — признак сервера my_may_thank не взят`);
+      if ((await s.view()).includes('Вы поблагодарили:')) bad.push(`${n}: на своей прошедшей без доната сказано «Вы поблагодарили»`);
       await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
