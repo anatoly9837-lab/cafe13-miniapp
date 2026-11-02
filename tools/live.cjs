@@ -146,6 +146,15 @@ if (decl.length !== 1 || !SW.test(decl[0])) {
 // (предложено designer-55, 22.10.2026). Видит только прямое присваивание:
 // DATA['grants'] =, Object.assign(DATA, …) и деструктуризацию — нет.
 // (?!=) не даёт посчитать сравнения == и ===: проверено их дописыванием — счёт 1.
+// Заморозка (Cafe13KPG#790, слово владельца 02.11.2026: по замороженным экранам не работать вообще) — признак
+// СВОЙСТВОМ: литерал `var FROZEN = {…}` из app.js, тот же, что читает `frozen()`. Пустой разбор — не «ничего не
+// заморожено», а «прибор смотрит не туда»: батарея не гоняется вовсе
+const FROZEN_SET = new Set(((src.match(/^var FROZEN = \{([^}]*)\}/m) || [])[1] || '').match(/\w+(?=\s*:\s*1\b)/g) || []);
+const SCREEN_NAMES = new Set((src.slice(src.indexOf('var SCREENS = {')).match(/^  (\w+): function/gm) || []).map(x => x.trim().split(':')[0]));
+if (!FROZEN_SET.size || SCREEN_NAMES.size < 20) {
+  console.error(`ПРОВЕРКА НЕ ВЫПОЛНЕНА: из app.js разобрано замороженных экранов ${FROZEN_SET.size}, экранов реестра ${SCREEN_NAMES.size} — признак заморозки сломан, что гонять, неизвестно`);
+  process.exit(1);
+}
 const grantsSet = src.match(/DATA\.grants\s*=(?!=)/g) || [];
 if (grantsSet.length !== 1) {
   console.error('КРАСНОЕ: app.js: DATA.grants присваивается не в одном месте (' + grantsSet.length + ') — верните mayCards() в mainFor у barCards');
@@ -161,7 +170,43 @@ if (grantsSet.length !== 1) {
   // `if (thawed(…))` у его раздела). THAW=1 снимает только ПРОПУСК случаев, а приложение не размораживает:
   // в живом режиме снятые случаи покраснеют на «временно недоступно». Снятые разделы печатаются в конце.
   const SKIPPED = new Set();
-  const thawed = sec => { if (process.env.THAW === '1') return true; SKIPPED.add(sec); return false; };
+  // Раздел → экраны, на которые его случаи ходят (включая путь к ним: «очередь» → «отчёт за день» идёт вкладкой
+  // barQueue). Раздел гоняется, если НИ ОДИН его экран не заморожен; разморозили экран в app.js — его разделы
+  // вернулись под проверку тем же ходом, без правки батареи. Таблица — суждение по коду случаев; держат её стражи ниже
+  const SECTION_SCREENS = {
+    'экран гостя «Услуги»': ['guest'],
+    'бар': ['bar', 'drink', 'barCart', 'barOrder'],
+    'очередь на баре': ['barQueue'],
+    'смена': ['barQueue'],
+    'пополнение из бара (бармен без права кассы)': ['bar'],
+    'касса': ['staff', 'tillPerson', 'tillMembership', 'tillTopup', 'tillDay'],
+    'доход и расход бара': ['barMoney'],
+    'запись в тестовом режиме через «Доход и расход» бара': ['barMoney'],
+    'отчёт за день': ['barQueue', 'barDay'],
+    'вход в очередь по роли, а не по уровню членства': ['barQueue'],
+    'рецепт позиции бара': ['barRecipe'],
+    'завести мероприятие': ['eventNew'],
+    'карточки меню': ['barCards', 'barCard'],
+  };
+  // Замороженный экран БЕЗ случаев — называется здесь вслух (с причиной), иначе он ничей молча
+  const FROZEN_NO_CASES = {};
+  const CALLED = new Set();
+  let skippedCalls = 0;
+  const thawed = sec => {
+    CALLED.add(sec);
+    const scr = SECTION_SCREENS[sec];
+    if (!scr) { bad.push(`заморозка: раздел «${sec}» не стоит в SECTION_SCREENS — непонятно, по каким экранам он ходит`); return false; }
+    const cold = scr.filter(x => FROZEN_SET.has(x));
+    if (cold.length && process.env.THAW !== '1') { skippedCalls++; SKIPPED.add(`${sec} (${cold.join(', ')})`); return false; }
+    return true;
+  };
+  // Стражи таблицы. ⚠ Третий — главный: каждый замороженный экран обязан быть чьим-то (раздела или «случаев нет»),
+  // иначе новый замороженный экран выпадает из учёта молча, и «пропущено» перестаёт значить «всё замороженное»
+  for (const [sec, scr] of Object.entries(SECTION_SCREENS)) for (const x of scr)
+    if (!SCREEN_NAMES.has(x)) bad.push(`заморозка: у раздела «${sec}» экран «${x}», которого нет в SCREENS app.js`);
+  for (const x of FROZEN_SET)
+    if (!Object.values(SECTION_SCREENS).some(v => v.includes(x)) && !FROZEN_NO_CASES[x])
+      bad.push(`заморозка: экран «${x}» заморожен, а ни в одном разделе и ни в «случаев нет» его нет — ничей`);
   // Исключение посреди батареи не глотает уже найденное: без этого обрыв печатал
   // только стек, и красные строки всех пройденных случаев терялись (Cafe13KPG#415).
   process.on('unhandledRejection', e => {
@@ -10584,7 +10629,7 @@ if (grantsSet.length !== 1) {
       const s = await open(true, true, json(200, nobody), null, null, null, book());
       for (const [scr, q, mark, deny] of WORK) {
         // замороженный экран рисует «временно недоступно» раньше любого отказа по праву (Cafe13KPG#510)
-        if (await s.p.evaluate(x => !!FROZEN[x], scr) && !thawed('отказ по праву на замороженных рабочих экранах')) continue;
+        if (FROZEN_SET.has(scr) && process.env.THAW !== '1') { skippedCalls++; SKIPPED.add(`отказ по праву (${scr})`); continue; }
         await s.p.evaluate(([x, y]) => go(x, y), [scr, q]); await s.p.waitForTimeout(250);
         const t = await s.view();
         if (!t.includes(deny)) bad.push(`live-norights ${scr}: в живом режиме без прав нет отказа «${deny}» (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
@@ -10602,7 +10647,9 @@ if (grantsSet.length !== 1) {
 
   await b.close();
   if (notes.length) console.log('НЕ СВЕРЕНО:\n  ' + notes.join('\n  '));
-  if (SKIPPED.size) console.log('СНЯТО — экраны заморожены словом владельца 29.10.2026 (Cafe13KPG#510): ' + [...SKIPPED].join('; '));
+  for (const sec of Object.keys(SECTION_SCREENS)) if (!CALLED.has(sec)) bad.push(`заморозка: в SECTION_SCREENS раздел «${sec}», а случаев с ним в батарее нет — сними строку`);
+  // «пропущено» — отдельно от зелёного, счётом и перечнем (Cafe13KPG#790)
+  if (SKIPPED.size) console.log(`ПРОПУЩЕНО — экраны заморожены (FROZEN app.js, Cafe13KPG#790): вызовов ${skippedCalls}, разделов ${SKIPPED.size}: ` + [...SKIPPED].join('; '));
   if (bad.length) { console.log('КРАСНОЕ:\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + ran + ' прогонов экрана (из них ' + CASES.length + ' табличных)');
+  console.log('зелёное: ' + ran + ' прогонов экрана (из них ' + CASES.length + ' табличных); пропущено по заморозке вызовов ' + skippedCalls);
 })();
