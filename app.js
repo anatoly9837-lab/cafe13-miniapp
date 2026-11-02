@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v142 · 02.11.2026';
+var VERSION = 'v143 · 02.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -692,13 +692,16 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               events: 1, event: 1,
               // шаг 4, пункт третий — «Свои ивенты» мастеру и правка недели (кадры E55k/E55l, ручка `POST /events/{id}/edit`)
               organizer: 1, eventEdit: 1,
+              // шаг 7, часть А (Cafe13KPG#755, решение координатора 02.11.2026 по слову владельца в #510 «как дойдём до этих
+              // вкладок — посмотрим и настроим»): «Записи» — дверь к благодарности за прошедшее; экран «Поблагодарить мастера» (E65)
+              bookings: 1, thanks: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
    всех»; «не удаляем — делаем временно недоступным». Экраны ниже были в `WIRED` и стоят на данных
    сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
    тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
-var FROZEN = { guest: 1, eventNew: 1, bookings: 1,
+var FROZEN = { guest: 1, eventNew: 1,
                bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1, barQueue: 1, barMoney: 1, barDay: 1,
                barCards: 1, barCard: 1, staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
@@ -3877,8 +3880,8 @@ function fromEvents(d) {
     if ((pid === null) !== (pname === null)) return null;
     var price = num(e.price);
     if (!(price >= 0)) return null;
-    var paid = moneyOrNull(e.my_entry_paid), refund = moneyOrNull(e.my_refund_now);
-    if (paid === undefined || refund === undefined) return null;
+    var paid = moneyOrNull(e.my_entry_paid), refund = moneyOrNull(e.my_refund_now), donated = moneyOrNull(e.my_donated);
+    if (paid === undefined || refund === undefined || donated === undefined) return null;
     var start = new Date(e.starts_at);
     if (isNaN(start.getTime())) return null;
     var ends = start.getTime() + e.duration_min * 60000;
@@ -3908,6 +3911,9 @@ function fromEvents(d) {
       paid: paid, refund: refund,
       // галочка «Просить донат» (шаг 7, E67); нет поля — сервер до шага 7, правки галочки не предлагаем
       ask: typeof e.ask_donation === 'boolean' ? e.ask_donation : null,
+      // благодарность (шаг 7, часть А): признак «можно» — СЕРВЕРА (`my_may_thank`, только в архиве), сумма уже отправленной —
+      // `my_donated`; даты благодарности сервер не отдаёт, и клиент её не печатает (#755)
+      mayThank: e.my_may_thank === true, donated: donated || 0,
       // граница полного возврата — мгновение СЕРВЕРА (`full_refund_until`, Cafe13KPG#750): срок клиент не знает и
       // не называет; нет поля или битое — фразы о границе нет, числа «Вернётся» остаются
       refundUntil: typeof e.full_refund_until === 'string' && !isNaN(Date.parse(e.full_refund_until)) ? new Date(e.full_refund_until) : null,
@@ -4027,6 +4033,12 @@ function refundWhen(e) {
   var at = refundAt(e);
   // кадры E66/E66b (Cafe13KPG#751): до границы подписи нет — полный возврат не удивляет
   return e.refund >= e.paid ? '' : '<span class="small" style="text-align:center">Полный возврат действовал до ' + esc(at) + '.</span>';
+}
+// на прошедшем со своей записью: уже поблагодарил — сумма; можно (признак сервера) — кнопка; иначе ничего
+function thanksBlock(e) {
+  if (e.donated > 0) return '<div class="card quiet"><div class="col"><b>Вы поблагодарили: ' + esc(e.master) + '</b>' +
+    '<span class="small num">' + money(e.donated) + ' ฿</span></div></div>';
+  return e.mayThank ? '<button type="button" class="btn" data-action="thank:' + esc(e.id) + '">Поблагодарить мастера</button>' : '';
 }
 function bookWord(e) { return entryOf(e) > 0 ? 'Записаться за ' + money(entryOf(e)) + ' ฿' : 'Записаться'; }
 function entryOf(e) { return e.kind === 'paid' ? e.price : 0; }
@@ -4771,7 +4783,53 @@ function eventList() { return LIVE ? EVENTS : DATA.events; }
 function eventById(id) {
   var list = eventList() || [];
   for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) return list[i];
+  return LIVE ? histById(id) : null;
+}
+/* Архив (`GET /events/history`, шаг 7, часть А): члену клуба сервер отдаёт прошедшее, где он был записан, мастеру — ещё и
+   своё. «Записи» берут из него ТОЛЬКО записанное мной: мастерское своё без записи здесь не моё. Не пришло — сказано и
+   «Повторить»: пустой раздел и неотвеченный сервер выглядят по-разному. Порядок — новые сверху */
+var HIST = null, HIST_STATE = '', HIST_GEN = 0;
+var TH = { id: null, amount: '', busy: false, err: '', sent: 0 };
+document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'th-amount') TH.amount = ev.target.value; });
+function sendThanks() {
+  var e = eventById(TH.id);
+  if (!LIVE || TH.busy || !e || !e.mayThank || e.donated > 0) return;
+  var a = String(TH.amount).trim();
+  TH.err = /^\d+(\.\d{1,2})?$/.test(a) && Number(a) > 0 ? '' : 'Сумма — число в батах, больше нуля.';
+  if (TH.err) { render(); return; }
+  TH.busy = true; render();
+  api('POST', '/events/' + e.eid + '/donate', { amount: Number(a) }).then(function (r) {
+    TH.busy = false;
+    refreshMe(); loadHistory();     // деньги ушли или нет — остаток и признак «можно» спрашиваются заново
+    if (r.status === 201 && r.data && r.data.event_id === e.eid) { TH.sent = num(r.data.amount) || Number(a); haptic('ok'); }
+    else { TH.err = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r); haptic('warn'); }
+    if (current === 'thanks') render();
+  });
+}
+// прошедшие записи: свои по `booked_by_me`; строка ведёт в карточку, где живёт «Поблагодарить мастера»
+function pastBookings() {
+  if (!HIST) return HIST_STATE === 'loading' || HIST_STATE === ''
+    ? '<div class="card quiet"><span class="small">Загружаем прошедшие…</span></div>'
+    : '<div class="card quiet"><div class="row"><span class="small">Прошедшие не загрузились: ' + esc(HIST_STATE) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="retry-hist">Повторить</button></div></div>';
+  var past = HIST.filter(function (e) { return e.booked; });
+  return past.length ? past.map(function (e) { return eventRow(e, { date: true }); }).join('')
+    : '<div class="card quiet"><span class="small">Прошедших записей нет.</span></div>';
+}
+function histById(id) {
+  for (var i = 0; HIST && i < HIST.length; i++) if (String(HIST[i].id) === String(id)) return HIST[i];
   return null;
+}
+function loadHistory() {
+  if (!LIVE) return;
+  HIST_STATE = 'loading';
+  var gen = ++HIST_GEN;
+  api('GET', '/events/history').then(function (r) {
+    if (gen !== HIST_GEN) return;
+    var list = r.status === 200 ? fromEvents(r.data) : null;
+    if (list) { HIST = list.reverse(); HIST_STATE = 'ok'; } else HIST_STATE = failText(r);
+    if ({ bookings: 1, event: 1, thanks: 1 }[current]) render();
+  });
 }
 function segOf(e) { return e.seg || partOf(e.time); }
 
@@ -4838,7 +4896,7 @@ function bookBlock(e) {
     // сотрёт сам факт записи, а подтверждение обещало бы вернуть место в
     // афишу — обещание заведомо ложное. Идущее событие отменить можно:
     // место ещё можно отдать тому, кто придёт.
-    if (e.done) return err;
+    if (e.done) return err + thanksBlock(e);
     // Номера своей записи сервер может не отдать — тогда отменять нечем, и
     // это сказано прямо, а не спрятано за кнопкой, которая откажет.
     if (typeof e.bookingId !== 'number')
@@ -5189,6 +5247,12 @@ var SCREENS = {
           '<span class="grow"><b>' + esc(next.title) + '</b><span class="small">' + esc(next.when) + '</span></span>' +
           svg(ICON.chev, 'chev') +
         '</button></div>' : '') +
+      /* Вход в «Мои записи» — строкой, ВСЕГДА, есть ли записи или нет: пустоту объясняет экран, а не отсутствие входа
+         (решение координатора 02.11.2026, Cafe13KPG#755). Прежде в живом входа не было вовсе (`next` выше — только
+         демо), и разморозка «Записей» дала бы экран, на который не попасть. Не вкладка и не ссылка на афише: «Ивенты»
+         владелец назвал календарём-афишей (#670), пятая вкладка спорила бы с тем же словом */
+      (LIVE ? '<button type="button" class="listitem" data-go="bookings">' +
+          '<span class="grow"><b>Мои записи</b></span>' + svg(ICON.chev, 'chev') + '</button>' : '') +
 
       // шаг 3: «Я мастер» — под карточкой членства (кадр E54); у гостя пусто
       masterOffer() +
@@ -5464,10 +5528,10 @@ var SCREENS = {
        не записаны» тому, кто только что записался. Слово «афишу» в том тексте
        верно — экран строится из её ответа.
 
-       ПРОШЕДШИЕ — фраза, а не пустое место: `/events/history` отбирает
-       `e.organizer_id`, то есть мастеру отдаёт ЕГО мероприятия, а члену клуба
-       пустой список; «моей прошедшей записи» сервер не знает вовсе. Пустота
-       читалась бы как «я никуда не ходил», и это неправда. Архив — #265.
+       ПРОШЕДШИЕ — из `/events/history` (`pastBookings`): с шага 7 архив отдаёт и
+       прошедшее, где я был записан (api#114), — это дверь к благодарности
+       (Cafe13KPG#755). Прежде здесь стояла фраза «прошедших записей сервер не
+       отдаёт», и тогда она была верна.
 
        Метки «оплачено» нет нарочно: `my_booking_paid` и `my_amount_due` на
        бою отсутствуют, и клиент их не читает. Пилюля называет условие
@@ -5537,9 +5601,7 @@ var SCREENS = {
            действие держит свою форму между экранами, а `ghost` — это контур во
            всю ширину (`styles.css`), то есть другая форма, а не другой вес. */
         '<button type="button" class="btn' + (mine.length ? ' quiet' : '') + '" data-go="events">Вся афиша</button>' +
-        '<div class="group"><span class="label">Прошедшие записи</span>' +
-        '<div class="card quiet"><span class="small">Прошедших записей приложение не показывает' +
-        ' — их не отдаёт сервер. Пустое место здесь не значит, что вы никуда не ходили.</span></div></div>';
+        '<div class="group"><span class="label">Прошедшие записи</span>' + pastBookings() + '</div>';
     }
     return '<div class="group"><span class="label">Предстоящие</span>' +
       DATA.upcoming.map(function (b) {
@@ -5843,6 +5905,25 @@ var SCREENS = {
       // Единственное место, где человек ещё может перечитать поля: правок у
       // мероприятия не существует, исправляют снятием.
       '<span class="small" style="text-align:center">Исправить потом нельзя: только снять, а снятие гости видят как отмену. Перечитайте поля.</span>';
+  },
+
+  /* E65/E65b (шаг 7, часть А): сумму называет человек, нижнего предела нет (кроме нуля). Деньги — `POST /events/{id}/donate`
+     со счёта; отказы словами сервера. После — /me и архив перечитаны. Отправлено, а архив ещё не пришёл — сумма из ответа */
+  thanks: function (id) {
+    var e = eventById(id);
+    if (!e) return HIST ? '<div class="card quiet"><span class="small">Этого мероприятия в архиве нет.</span></div>'
+      : '<div class="card quiet"><span class="small">Загружаем мероприятие…</span></div>';
+    var head = '<div class="col"><h1>Поблагодарить мастера</h1><span class="small">' + esc(e.title + ' · ' + e.day.split(',')[0] + ' · ' + e.master) + '</span></div>';
+    var sent = e.donated > 0 ? e.donated : TH.sent;
+    if (sent > 0) return head + '<div class="card quiet"><div class="col"><b>Вы поблагодарили: ' + esc(e.master) + '</b>' +
+        '<span class="small num">' + money(sent) + ' ฿</span></div></div>' +
+      '<button type="button" class="btn quiet" data-action="thank-back">К мероприятию</button>';
+    if (!e.mayThank) return head + '<div class="card quiet"><span class="small">Поблагодарить за это мероприятие нельзя.</span></div>';
+    return head +
+      '<div class="field"><label for="th-amount">Сколько, ฿</label><input id="th-amount" inputmode="decimal" placeholder="Сколько считаете нужным" value="' + esc(TH.amount) + '"></div>' +
+      (TH.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TH.err) + '</span></div>' : '') +
+      '<button type="button" class="btn" data-action="thank-send"' + (TH.busy ? ' disabled' : '') + '>' + (TH.busy ? 'Отправляем…' : 'Отправить') + '</button>' +
+      '<span class="small" style="text-align:center">Спишется со счёта сразу. На запись и на место это не влияет.</span>';
   },
 
   // E55k/E55l: правка ОДНОЙ недели — число мест и описание; остальное справкой словами сервера
@@ -7443,12 +7524,12 @@ var TABS = {
 };
 // порядок вкладок у человека с несколькими членствами: оба своих экрана — между «Услугами» и «Записями»
 /* Вкладка «Ивенты» ведёт на афишу, а не на «мои записи»: слово владельца 30.10.2026 «на вкладке ивенты
-   должен быть календарь на неделю» (Cafe13KPG#670). «Мои записи» (`bookings`) заморожены; куда они
-   встанут при разморозке — решение координатора, не следствие этой строки. */
+   должен быть календарь на неделю» (Cafe13KPG#670). «Мои записи» (`bookings`) разморожены шагом 7 и встали
+   СТРОКОЙ на «Клубе», а не вкладкой — решение координатора 02.11.2026 (Cafe13KPG#755); вкладки не трогаем. */
 var TAB_ORDER = ['home', 'guest', 'organizer', 'partner', 'events'];
 var TITLES = {
   pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
-  event: 'Мероприятие', bookings: 'Мои ивенты', staff: 'Касса', demo: 'Демо-режим',
+  event: 'Мероприятие', bookings: 'Мои ивенты', thanks: 'Благодарность', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно', joinAbout: 'О клубе',
   bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
@@ -7505,7 +7586,9 @@ function homeOf() {
   return 'home';
 }
 var BACK = {
-  event: 'events',
+  // прошедшее открывается из «Записей» — туда и назад; будущее — на афишу
+  event: function () { return LIVE && !(EVENTS || []).some(function (x) { return String(x.id) === String(param); }) && histById(param) ? 'bookings' : 'events'; },
+  thanks: function () { return { s: 'event', p: TH.id }; },
   // В живом режиме форма открывается с афиши, в демонстрации — из кабинета.
   // Без этого «назад» уводило на демонстрационный кабинет, где лежат
   // придуманные мероприятия: рядом с живой афишей они выглядели бы живыми.
@@ -7803,6 +7886,7 @@ function go(screen, p) {
      до перезапуска. Прежний список стоит на экране до ответа — экраны рисуют `EVENTS`, а не
      состояние; запрос, уже идущий, второй раз не шлётся. Опроса по таймеру нет нарочно. */
   if ((screen === 'home' || screen === 'events' || screen === 'bookings') && LIVE && EVENTS_STATE !== 'loading') loadEvents();
+  if (screen === 'bookings' && LIVE && HIST_STATE !== 'loading') loadHistory();
   // Места спрашиваются ЗАНОВО, если прошлый ответ списка не принёс: иначе
   // отказ, случившийся однажды, лежит на форме навсегда — человек читает
   // «места не пришли» уже после того, как сервер выздоровел. Пустой
@@ -8123,6 +8207,10 @@ function doAction(a) {
       SEG = arg; haptic(); render(); return;
     }
     if (a === 'retry-events') { loadEvents(); render(); return; }
+    if (a === 'retry-hist') { loadHistory(); render(); return; }
+    if (a === 'thank' && LIVE) { TH = { id: arg, amount: '', busy: false, err: '', sent: 0 }; go('thanks', arg); return; }
+    if (a === 'thank-send') { sendThanks(); return; }
+    if (a === 'thank-back') { go('event', TH.id); return; }
     if (a === 'recipe' && LIVE) { go('barRecipe', arg); return; }
 
     if (a === 'create-event' && LIVE) { createEvent(); return; }

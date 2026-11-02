@@ -202,6 +202,8 @@ if (grantsSet.length !== 1) {
       if (x instanceof Promise) return r.fulfill(await x);
       const reply = x !== undefined ? x
                   : q.url().endsWith('/me/consent') ? consentReply : q.url().endsWith('/pass') ? passReply
+                  // архив по умолчанию пуст (шаг 7, «Записи» читают /events/history — Cafe13KPG#755)
+                  : q.url().endsWith('/events/history') ? json(200, [])
                   : q.url().endsWith('/events') ? json(200, []) : me;
       if (reply === 'abort') return r.abort();
       return r.fulfill(typeof reply === 'function' ? reply() : reply);
@@ -1802,13 +1804,13 @@ if (grantsSet.length !== 1) {
     let t = await s.view();
     if (!t.includes('Бар — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
     if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
-    // шаг 4 (Cafe13KPG#670) размораживает ТОЛЬКО афишу: «Мои ивенты» и «Новое мероприятие» по-прежнему заморожены
-    // шаг 4, п.3: «Свои ивенты» мастеру и правка недели — organizer и eventEdit разморожены; «Новое мероприятие» — нет
-    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', true]]) {
+    // шаг 4 (Cafe13KPG#670) размораживает афишу; шаг 4, п.3 — «Свои ивенты» мастеру и правку недели; «Новое мероприятие» — нет.
+    // Шаг 7, часть А (Cafe13KPG#755, решение координатора по слову владельца в #510): «Записи» разморожены — дверь к благодарности
+    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', false]]) {
       await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
       const said = (await s.view()).includes('временно недоступно');
-      if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — шаг 4 размораживает только афишу (Cafe13KPG#670)`);
-      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — шаг 4 его разморозил (Cafe13KPG#670)`);
+      if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — его не размораживали ни шаг 4 (#670), ни шаг 7 (#755)`);
+      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — его разморозили (шаг 4 #670 / шаг 7 #755)`);
     }
     await s.p.evaluate(() => go('partner')); await s.p.waitForTimeout(200);
     t = await s.view();
@@ -1991,9 +1993,14 @@ if (grantsSet.length !== 1) {
   // Вкладка, ещё не стоящая на сервере, — «не подключено», а не демонстрационные записи.
   {
     const s = await open(true, true, json(200, OWNER));
-    // экран записей заморожен (Cafe13KPG#510) — его половина случая снята, половина «солнышка» ниже идёт
-    if (thawed('экран «Мои ивенты» (половина случая с солнышком)')) {
-    await s.p.click('#tabs [data-go="bookings"]');
+    // экран записей разморожен шагом 7 (Cafe13KPG#755) — половина случая снова в прогоне
+    {
+    // вход в «Записи» — строкой «Мои записи» на «Клубе» (Cafe13KPG#755); вкладки «Записи» нет. Нажатие изнутри страницы:
+    // погашенный (замороженный) вход краснеет строкой, а не обрывает батарею 30-секундным ожиданием
+    if (!(await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="bookings"]'); if (!b || b.disabled) return false; b.click(); return true; })))
+      bad.push('bookings: на «Клубе» нет живого входа «Мои записи» — экран «Записи» недостижим');
+    // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
+    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
     const t = await s.view();
     /* Это и есть дозор по Cafe13KPG#259, и проверяет он ОДНО утверждение:
        «либо экран вне реестра, либо он не кормится из DATA». Своей живой
@@ -2013,8 +2020,9 @@ if (grantsSet.length !== 1) {
        Что изменено в ожидании: экран ВКЛЮЧЁН в реестр и имеет живую ветку,
        поэтому утверждения теперь про включённый экран. Фикстура `open` отдаёт
        на `/events` пустой список, значит здесь судится ПУСТОЕ состояние. */
+    // архив по умолчанию пуст: раздел прошедших говорит «нет», а не прежнее «сервер не отдаёт» (с шага 7 отдаёт, #755)
     ['Вы никуда не записаны', 'Записывают на экране мероприятия', 'Вся афиша',
-     'Прошедших записей приложение не показывает'].forEach(x => {
+     'Прошедших записей нет.'].forEach(x => {
       if (!t.includes(x)) bad.push(`bookings: на живом экране записей нет «${x}» (кадр E40b, Cafe13KPG#360)`); });
     if (!(await s.p.$('#view [data-go="events"]')))
       bad.push('bookings: на пустом экране нет кнопки в афишу — адрес тут давать нельзя, вкладки у ролей разные (Cafe13KPG#360)');
@@ -4510,7 +4518,7 @@ if (grantsSet.length !== 1) {
      Фикстура своя, а не общая `AFISHA`: нужна строка, на которую человек
      записан И которая уже кончилась — в общей такой нет, а дописать её туда
      значило бы сдвинуть числа соседним случаям. */
-  if (thawed('экран «Мои ивенты»: свои записи и путь гостя к афише')) {
+  {   // разморожено шагом 7 (Cafe13KPG#755)
     const MOI = [
       EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
            price: '0.00', seats: 6, taken: 6, seats_left: 0, booked_by_me: false }),
@@ -4536,8 +4544,12 @@ if (grantsSet.length !== 1) {
            booked_by_me: true, my_booking_id: 11 })
     ];
     const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, MOI)), null, NOWFIX);
-    await s.p.click('#tabs [data-go="bookings"]');
+    // строка «Мои записи» на «Клубе» (Cafe13KPG#755); погашенная — красная строка, а не обрыв батареи
+    if (!(await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="bookings"]'); if (!b || b.disabled) return false; b.click(); return true; })))
+      bad.push('bookings-svoi: на «Клубе» нет живого входа «Мои записи»');
     await s.p.waitForTimeout(150);
+    // архив прошедших грузится отдельно и позже экрана: ждать его ответа, иначе случай читает «Загружаем прошедшие…» (гонка)
+    await s.p.waitForFunction(() => !document.getElementById('view').textContent.includes('Загружаем прошедшие'), null, { timeout: 3000 }).catch(() => {});
     const t = await s.view();
     if (!t.includes('Вечер ханга'))
       bad.push('bookings-svoi: своей предстоящей записи на экране нет — человек прочитает, что его не записали (Cafe13KPG#360)');
@@ -4609,8 +4621,8 @@ if (grantsSet.length !== 1) {
       bad.push(`bookings-svoi: в подстрочнике строки статус («${статусы[0].slice(0, 44)}») — на этом экране он верен всегда и не несёт ничего (кадр E40, Cafe13KPG#384)`);
     if (где.заголовки.indexOf('Прошедшие записи') === -1)
       bad.push(`bookings-svoi: второго заголовка «Прошедшие записи» нет (есть: ${JSON.stringify(где.заголовки)}) — без слова «записи» он читается четвёртым днём среди дат (Cafe13KPG#384)`);
-    if (!t.includes('Прошедших записей приложение не показывает'))
-      bad.push('bookings-svoi: группа «Прошедшие» без честной фразы — пустота читается как «я никуда не ходил» (кадр E40, Cafe13KPG#360)');
+    if (!t.includes('Прошедших записей нет.'))
+      bad.push('bookings-svoi: при пустом архиве группа «Прошедшие записи» не говорит «Прошедших записей нет.» (Cafe13KPG#755)');
     ['Звуковая практика', 'Чайная церемония', 'Утренняя практика', 'Разговорный круг'].forEach(x => {
       if (t.includes(x)) bad.push(`bookings-svoi: демонстрационная строка «${x}» на ЖИВОМ экране — человек прочитает выдумку как свою историю (Cafe13KPG#360)`); });
     // Строка обязана ВЕСТИ: без этого «путей к отмене ноль» выполняется и на
@@ -4655,7 +4667,7 @@ if (grantsSet.length !== 1) {
      экран, и случай перестанет доказывать что-либо МОЛЧА, оставшись зелёным.
      Поэтому «гость начинает не с „Клуба“» стоит здесь отдельным отказом.
      Условие назвал координатор, Cafe13KPG#360. */
-  if (thawed('экран «Мои ивенты»: свои записи и путь гостя к афише')) {
+  {   // разморожено шагом 7 (Cafe13KPG#755)
     const GOST = clone(OWNER);
     // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
@@ -4670,7 +4682,9 @@ if (grantsSet.length !== 1) {
     // признак главной — имя экрана, а не слово «Баланс»: карточка остатка с главной ушла (v87), и слово ослепло бы
     if (await s.p.evaluate(() => current) === 'home')
       bad.push('bookings-gost: гость начинает с «Клуба» — предусловие случая снято, и он больше не доказывает, что афиша грузится при входе на «Записи» (Cafe13KPG#360)');
-    await s.p.click('#tabs [data-go="bookings"]');
+    // у гостя входа в «Записи» нет: «Клуба» у него нет, а в приложении только члены клуба (решение 02.11.2026) — экран
+    // судится переходом напрямую: если гость на нём окажется, выход к афише обязан быть
+    await s.p.evaluate(() => go('bookings'));
     await s.p.waitForTimeout(200);
     const t = await s.view();
     if (t.includes('Загружаем афишу'))
@@ -4705,7 +4719,7 @@ if (grantsSet.length !== 1) {
      Фикстура своя: `MOI` объявлена в чужом блоке, а общая `AFISHA` несёт
      вперемешку своё и чужое — здесь нужны ровно записи гостя, и их ДВЕ,
      чтобы кнопка судилась под списком, а не под одной строкой. */
-  if (thawed('экран «Мои ивенты»: свои записи и путь гостя к афише')) {
+  {   // разморожено шагом 7 (Cafe13KPG#755)
     const GOST = clone(OWNER);
     // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
@@ -4721,7 +4735,9 @@ if (grantsSet.length !== 1) {
     const вкладки = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
     if (вкладки.indexOf('home') !== -1)
       bad.push(`bookings-gost-zapert: у гостя появилась вкладка «Клуб» (${JSON.stringify(вкладки)}) — предусловие случая снято, и он больше не доказывает, что кнопка здесь единственный выход к афише (Cafe13KPG#371)`);
-    await s.p.click('#tabs [data-go="bookings"]');
+    // у гостя входа в «Записи» нет: «Клуба» у него нет, а в приложении только члены клуба (решение 02.11.2026) — экран
+    // судится переходом напрямую: если гость на нём окажется, выход к афише обязан быть
+    await s.p.evaluate(() => go('bookings'));
     await s.p.waitForTimeout(250);
     const t = await s.view();
     if (!t.includes('Вечер ханга'))
@@ -5661,6 +5677,135 @@ if (grantsSet.length !== 1) {
       }
     }
   }
+  // ── дверь к благодарности: «Записи» → прошедшие → карточка → «Поблагодарить мастера» (шаг 7, часть А, Cafe13KPG#755, E65/E65b) ──
+  // Архив (/events/history) отдаёт члену прошедшее с его записью, мастеру — ещё и своё. В «Записях» — только записанное мной.
+  // Признак «можно» — сервера (my_may_thank); уже отправленное — my_donated (даты сервер не отдаёт, клиент её не печатает).
+  {
+    const ago = d => new Date(NOWFIX - d * 86400e3).toISOString();
+    // нажатие изнутри страницы: нет элемента — красная строка своим текстом, а не обрыв батареи на 30-секундном ожидании
+    const tapIf = async (s, n, sel, what) => {
+      const ok = await s.p.evaluate(x => { const b = document.querySelector(x); if (!b || b.disabled) return false; b.click(); return true; }, sel);
+      if (!ok) bad.push(`${n}: нечего нажать — ${what} (${sel})`);
+      await s.p.waitForTimeout(200);
+      return ok;
+    };
+    const P = (id, over) => EV(Object.assign({ id, starts_at: ago(id - 28), duration_min: 60, taken: 3, seats_left: 9, booked_by_me: true,
+      my_booking_id: id + 100, my_may_thank: false, my_donated: '0', ask_donation: true, kind: 'donation', price: '0.00' }, over));
+    // 30 — можно поблагодарить; 31 — моё мастерское без записи; 32 — уже поблагодарил; 33 — донат не просили.
+    // Новее — меньше дней назад: 30 (2) новее 32 (4) новее 33 (5)
+    const HROWS = state => [P(30, { title: 'Вечер у воды', my_may_thank: !state.donated30, my_donated: state.donated30 || '0' }),
+      P(31, { title: 'Мой прошедший', organizer_id: 1, booked_by_me: null, my_booking_id: null }),
+      P(32, { title: 'Круг у огня', my_donated: '300.00' }),
+      // 33 — своя запись, донат НЕ просили: сервер даёт my_may_thank false (events.py:184 — ask_donation и записан и не
+      // благодарил). Кнопки нет; без этой строки «кнопка у любой своей прошедшей» проходила зелёной (возврат arhitector-47)
+      P(33, { title: 'Тихий вечер', ask_donation: false, my_may_thank: false })];
+    const openH = (state, extra) => open(true, true, json(200, OWNER), null, null, null, q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
+      if (u === '/me') { state.me = (state.me || 0) + 1; return json(200, OWNER); }
+      if (u === '/events/history') { state.hist = (state.hist || 0) + 1; return state.histFail ? json(502, '<html>bad gateway</html>') : json(200, HROWS(state)); }
+      if (u === '/events') return json(200, []);
+      if (/^\/events\/\d+\/donate$/.test(u) && m === 'POST') { state.posts = (state.posts || []).concat([JSON.parse(q.postData() || '{}')]); return extra ? extra(u, state) : undefined; }
+      return undefined;
+    }, null, NOWFIX);
+
+    // 1. раздел прошедших: свои записи, без мастерского своего, новые сверху; карточки — кнопка или «уже»
+    {
+      const n = 'zapisi-proshedshie', st = {};
+      const s = await openH(st);
+      // вход — строкой «Мои записи» на «Клубе», и он есть БЕЗ записей впереди (афиша пуста): прежде в живом входа не было вовсе
+      const door = await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="bookings"]'); return b ? b.textContent.trim() : null; });
+      if (door !== 'Мои записи') bad.push(`${n}: на «Клубе» у члена клуба без записей впереди нет входа «Мои записи» (${JSON.stringify(door)})`);
+      if (door) await s.p.evaluate(() => document.querySelector('#view [data-go="bookings"]').click());
+      else await s.p.evaluate(() => go('bookings'));
+      await s.p.waitForTimeout(300);
+      if (await s.p.evaluate(() => current) !== 'bookings') bad.push(`${n}: «Мои записи» открыли не «Записи»`);
+      const rows = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-event]')].map(x => x.getAttribute('data-event')));
+      if (JSON.stringify(rows) !== JSON.stringify(['30', '32', '33'])) bad.push(`${n}: в прошедших строки ${JSON.stringify(rows)}, ждали ["30","32","33"] — свои записи, новые сверху, без мастерского своего`);
+      if ((await s.view()).includes('временно недоступно')) bad.push(`${n}: «Записи» заморожены — дверь закрыта`);
+      if (rows.includes('30')) {
+        await s.p.evaluate(() => document.querySelector('#view [data-event="30"]').click()); await s.p.waitForTimeout(200);
+        if (!(await s.p.$('#view [data-action="thank:30"]'))) bad.push(`${n}: на прошедшем с my_may_thank нет «Поблагодарить мастера»`);
+        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(200);
+        if (await s.p.evaluate(() => current) !== 'bookings') bad.push(`${n}: «назад» с прошедшего ведёт не в «Записи»`);
+      }
+      await s.p.evaluate(() => go('event', '32')); await s.p.waitForTimeout(200);
+      const t32 = await s.view();
+      if (await s.p.$('#view [data-action^="thank:"]')) bad.push(`${n}: на уже поблагодарённом есть кнопка благодарности`);
+      if (!t32.includes('Вы поблагодарили: Образец') || !t32.includes('300 ฿')) bad.push(`${n}: на уже поблагодарённом нет «Вы поблагодарили: Образец · 300 ฿»`);
+      await s.p.evaluate(() => go('event', '31')); await s.p.waitForTimeout(200);
+      if (await s.p.$('#view [data-action^="thank:"]')) bad.push(`${n}: на своём мастерском без записи есть кнопка благодарности`);
+      await s.p.evaluate(() => go('event', '33')); await s.p.waitForTimeout(200);
+      if (await s.p.$('#view [data-action^="thank:"]')) bad.push(`${n}: на своей прошедшей без доната есть «Поблагодарить мастера» — признак сервера my_may_thank не взят`);
+      if ((await s.view()).includes('Вы поблагодарили:')) bad.push(`${n}: на своей прошедшей без доната сказано «Вы поблагодарили»`);
+      await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 2. отправка: один POST с суммой, после — /me и архив перечитаны, состояние «уже», второго POST прямым вызовом нет
+    {
+      const n = 'blagodarnost-otpravka', st = {};
+      const s = await openH(st, (u, state) => { state.donated30 = '250.00';
+        return json(201, { event_id: 30, amount: '250.00', ledger_id: 901, at: new Date(NOWFIX).toISOString() }); });
+      await s.p.evaluate(() => go('bookings')); await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('event', '30')); await s.p.waitForTimeout(200);
+      if (await tapIf(s, n, '#view [data-action="thank:30"]', '«Поблагодарить мастера»')) {
+        const t = await s.view();
+        ['Поблагодарить мастера', 'Вечер у воды', 'Образец', 'Сколько, ฿', 'Спишется со счёта сразу. На запись и на место это не влияет.'].forEach(x => {
+          if (!t.includes(x)) bad.push(`${n}: на экране благодарности нет «${x}» (E65)`); });
+        if (!(await s.p.$('#th-amount'))) bad.push(`${n}: нет поля суммы`);
+        else {
+          const me0 = st.me || 0, h0 = st.hist || 0;
+          await s.p.fill('#th-amount', '250');
+          await tapIf(s, n, '#view [data-action="thank-send"]', '«Отправить»');
+          await s.p.waitForTimeout(500);
+          const posts = st.posts || [];
+          if (posts.length !== 1 || JSON.stringify(posts[0]) !== JSON.stringify({ amount: 250 })) bad.push(`${n}: благодарность ушла ${JSON.stringify(posts)}, ждали один POST {"amount":250}`);
+          if ((st.me || 0) <= me0) bad.push(`${n}: после благодарности остаток не перечитан`);
+          if ((st.hist || 0) <= h0) bad.push(`${n}: после благодарности архив не перечитан — признак «можно» остался прежним`);
+          const t2 = await s.view();
+          if (!t2.includes('Вы поблагодарили: Образец') || !t2.includes('250 ฿')) bad.push(`${n}: после отправки нет «Вы поблагодарили: Образец · 250 ฿» (E65b)`);
+          await s.p.evaluate(() => sendThanks()); await s.p.waitForTimeout(300);
+          if ((st.posts || []).length !== 1) bad.push(`${n}: второй вызов отправил благодарность ещё раз`);
+        }
+      }
+      await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 3. отказ сервера — его словами, состояния «уже» нет; 4. неверная сумма — запроса нет
+    for (const [n, amount, reply, want, wantPosts] of [
+      ['blagodarnost-409', '100', () => json(409, { detail: 'вы уже поблагодарили мастера за это мероприятие' }), 'уже поблагодарили мастера за это мероприятие', 1],
+      ['blagodarnost-nol', '0', null, 'Сумма — число в батах, больше нуля.', 0]]) {
+      const st = {};
+      const s = await openH(st, reply ? () => reply() : undefined);
+      await s.p.evaluate(() => go('bookings')); await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('event', '30')); await s.p.waitForTimeout(200);
+      if (await tapIf(s, n, '#view [data-action="thank:30"]', '«Поблагодарить мастера»') && await s.p.$('#th-amount')) {
+        await s.p.fill('#th-amount', amount);
+        await tapIf(s, n, '#view [data-action="thank-send"]', '«Отправить»');
+        await s.p.waitForTimeout(400);
+        const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
+        if (!alert.toLowerCase().includes(want.toLowerCase())) bad.push(`${n}: отказ не назван — ждали «${want}», есть ${JSON.stringify(alert)}`);
+        if ((st.posts || []).length !== wantPosts) bad.push(`${n}: POST благодарности ${(st.posts || []).length}, ждали ${wantPosts}`);
+        if ((await s.view()).includes('Вы поблагодарили:')) bad.push(`${n}: после отказа сказано «Вы поблагодарили»`);
+      }
+      await s.ctx.close();
+    }
+    // 5. архив не пришёл — сказано и «Повторить», а не «прошедших нет»
+    {
+      const n = 'zapisi-arhiv-otkaz', st = { histFail: true };
+      const s = await openH(st);
+      await s.p.evaluate(() => go('bookings')); await s.p.waitForTimeout(300);
+      const t = await s.view();
+      if (!t.includes('Прошедшие не загрузились')) bad.push(`${n}: отказ архива не назван`);
+      if (t.includes('Прошедших записей нет.')) bad.push(`${n}: при отказе архива сказано «Прошедших записей нет.» — неотвеченный сервер выдан за пустоту`);
+      if (!(await s.p.$('#view [data-action="retry-hist"]'))) bad.push(`${n}: нет «Повторить»`);
+      else { st.histFail = false; await s.p.click('#view [data-action="retry-hist"]'); await s.p.waitForTimeout(300);
+        if (!(await s.p.$('#view [data-event="30"]'))) bad.push(`${n}: после «Повторить» прошедших нет`); }
+      await s.ctx.close();
+    }
+  }
+
   // ── деньги при записи и снятии (шаг 7, Cafe13KPG#748, кадры E62b/E66/E66b) ──
   // Нехватка — ДО нажатия, остатком из /me. Пара: остаток ровно во вход — запись идёт. Без пары прошёл бы «запрет всем».
   for (const [n, bal, short] of [['book-nehvatka', 250, true], ['book-rovno', 400, false]]) {
