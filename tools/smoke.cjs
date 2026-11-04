@@ -44,7 +44,8 @@ function red(lines) { console.log('КРАСНОЕ:\n' + lines.join('\n')); proce
   let src;
   try {
     if (!fs.existsSync(ROOT + '/index.html')) notDone('нет ' + ROOT + '/index.html');
-    src = fs.readFileSync(ROOT + '/app.js', 'utf8');
+    // клиент — несколько <script> по index.html (Cafe13KPG#806); состав и наличие файлов проверяет помощник
+    src = require('./klient.cjs').klient(ROOT).text;
   } catch (e) { notDone('файлы клиента не прочитаны: ' + e.message); }
   let b;
   try { b = await chromium.launch({ args: ['--no-sandbox'] }); }
@@ -65,7 +66,7 @@ function red(lines) { console.log('КРАСНОЕ:\n' + lines.join('\n')); proce
         HapticFeedback: { notificationOccurred: function () {}, selectionChanged: function () {} },
         BackButton: { onClick: function () {}, offClick: function () {}, show: function () {}, hide: function () {} },
         MainButton: { setText: function () {}, show: function () {}, hide: function () {}, onClick: function () {}, offClick: function () {} } } };` }));
-    await p.route('**/app.js*', r => r.fulfill({ contentType: 'text/javascript', body: src }));
+    // клиент грузится с диска как есть: прежний перехват «app.js» отдавал файл без изменений, при нарезке он не нужен (#806)
     await p.route('https://api.cafe13.club/**', r => {
       const u = r.request().url();
       const body = /\/me$/.test(u) ? ME : /\/pass$/.test(u) ? { pass_code: 'XIII-0001', level: 'member', lifelong: true, first_name: '[член клуба]' } : [];

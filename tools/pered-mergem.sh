@@ -62,10 +62,22 @@ step()   { printf '\n── %s ──\n' "$1"; }
 [ -n "$T" ] || die 'не назван каталог дерева мерджа: tools/pered-mergem.sh <каталог>'
 [ -d "$T" ] || die "«$T» не каталог — дерево мерджа распаковывают, а не называют sha"
 T=$(cd "$T" && pwd) || die "в «$T» не зайти"
-for f in app.js index.html tools/catalog.py tools/check-stages.py screens/СТАДИИ.tsv; do
+for f in index.html tools/catalog.py tools/check-stages.py screens/СТАДИИ.tsv tools/klient.cjs tools/klient.py; do
     [ -f "$T/$f" ] || die "в дереве «$T» нет $f — это не дерево клиента"
 done
 command -v docker >/dev/null 2>&1 || die 'на хосте нет docker — приборы не звались'
+command -v node >/dev/null 2>&1 || die 'на хосте нет node — состав клиента не прочитать'
+# Клиент — несколько <script> по index.html (Cafe13KPG#806). Состав читают ДВА близнеца (cjs для приборов страницы,
+# py для описи), и они обязаны отдать один перечень в одном порядке: иначе приборы судят разные клиенты (форма frontend-11)
+KJS=$(node "$T/tools/klient.cjs" "$T" 2>&1) || die "состав клиента (klient.cjs): $KJS"
+KPY=$(cd "$T" && python3 -I tools/klient.py "$T" 2>&1) || die "состав клиента (klient.py): $KPY"
+[ "$KJS" = "$KPY" ] || die "близнецы состава клиента разошлись: klient.cjs ≠ klient.py — приборы судили бы разные клиенты"
+# и в where(): на нём держатся сообщения приборов описи — первый байт каждого файла обязан дать «файл:1» у обоих (frontend-events-9d)
+WJS=$(node "$T/tools/klient.cjs" "$T" --where 2>&1) || die "where() клиента (klient.cjs): $WJS"
+WPY=$(cd "$T" && python3 -I tools/klient.py "$T" --where 2>&1) || die "where() клиента (klient.py): $WPY"
+[ "$WJS" = "$WPY" ] || die "близнецы разошлись в where(): одна находка показала бы разные файлы"
+WANT=$(printf '%s' "$KJS" | python3 -I -c 'import json,sys; print(json.dumps([f+":1" for f in json.load(sys.stdin)],ensure_ascii=False,separators=(",",":")))')
+[ "$WJS" = "$WANT" ] || die "where() первого байта не «файл:1» — смещения в сообщениях приборов врут"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "нет образа $IMAGE"
 command -v python3 >/dev/null 2>&1 || die 'на хосте нет python3'
 # ⚠ РАБОЧИЙ КАТАЛОГ — В ~/.cache, А НЕ В /tmp, и это не вкусовщина: на хосте
@@ -156,22 +168,60 @@ if [ "$rcv" -ne 0 ] || [ ! -s "$W/vid/vidimost.json" ]; then
     reports_dead=$((reports_dead + 1))
     tail -3 "$W/vid.log"
 else
-    # «снято» — время прогона, оно обязано отличаться и о клиенте не говорит
+    # ⚠ СВЕРКИ ЗДЕСЬ ДВЕ, И ИХ НАРОЧНО НЕ СКЛЕИВАЮТ. В файле видимости лежат
+    # два разных предмета: кто что видит (люди, вкладки, права, двери) и
+    # слепки страницы, с которой снято (Cafe13KPG#806). Сличать их одним
+    # `diff` нельзя: карта слепков — 28 строк шестнадцатеричного, и при любой
+    # правке клиента она одна забивает `head -20`, пряча расхождение по
+    # ВИДИМОСТИ, то есть ровно то, зачем шаг заведён. Поэтому слепки
+    # докладываются ЧИСЛОМ и ИМЕНАМИ файлов, а из `diff` вынимаются.
+    # ⚠ Шаг остаётся ОТЧЁТНЫМ. Красное по закоммиченной видимости было бы
+    # возвратом блокировки, снятой словом владельца 29.10.2026; звальщик для
+    # неё — ночной проход, кладущий карточку (решение координатора 04.11).
+    slepki_report() { python3 -I -c '
+import io, json, sys
+новый = json.load(io.open(sys.argv[1], encoding="utf-8")).get("слепки_страницы")
+старый = json.load(io.open(sys.argv[2], encoding="utf-8")).get("слепки_страницы")
+if not isinstance(старый, dict) or not старый:
+    print("  слепки страницы: в описи дерева карты нет — она снята прибором "
+          "прежней редакции (до Cafe13KPG#806), сверить нечем")
+elif not isinstance(новый, dict) or not новый:
+    print("  слепки страницы: СВЕЖИЙ обход карты не дал — сверять нечем")
+else:
+    пришли = [ф for ф in новый if ф not in старый]
+    ушли = [ф for ф in старый if ф not in новый]
+    разошлись = [ф for ф in новый if ф in старый and новый[ф] != старый[ф]]
+    if not (пришли or ушли or разошлись):
+        print("  слепки страницы: сошлись все %d" % len(новый))
+    else:
+        if пришли or ушли:
+            print("  слепки страницы: СОСТАВ разошёлся — пришли: %s; ушли: %s"
+                  % (", ".join(пришли) or "—", ", ".join(ушли) or "—"))
+        if разошлись:
+            print("  слепки страницы: разошлись %d из %d — %s"
+                  % (len(разошлись), len(новый), ", ".join(разошлись[:8])
+                     + (" и ещё %d" % (len(разошлись) - 8) if len(разошлись) > 8 else "")))
+' "$1" "$2"; }
+    # «снято» — время прогона, оно обязано отличаться и о клиенте не говорит;
+    # слепки и их свод вынимаются, потому что доложены отдельно (выше).
     strip_time() { python3 -I -c '
 import io, json, sys
 d = json.load(io.open(sys.argv[1], encoding="utf-8"))
-d.pop("снято", None)
+for ключ in ("снято", "слепки_страницы", "свод_слепков"):
+    d.pop(ключ, None)
 print(json.dumps(d, ensure_ascii=False, sort_keys=True, indent=1))' "$1"; }
+    slepki_report "$W/vid/vidimost.json" "$T/screens/vidimost.json" ||
+        { echo '  ⚠ сверка слепков НЕ ВЫПОЛНЕНА'; reports_dead=$((reports_dead + 1)); }
     if strip_time "$W/vid/vidimost.json" > "$W/vid-new.json" &&
        strip_time "$T/screens/vidimost.json" > "$W/vid-old.json"; then
         if diff -q "$W/vid-new.json" "$W/vid-old.json" >/dev/null; then
-            echo 'видимость дерева совпала с описью дерева (кроме времени съёмки)'
+            echo '  видимость (люди, вкладки, двери) совпала с описью дерева'
         else
-            echo 'видимость РАЗОШЛАСЬ с описью дерева — опись под этот клиент не пересобрана:'
+            echo '  видимость РАЗОШЛАСЬ с описью дерева — опись под этот клиент не пересобрана:'
             diff "$W/vid-old.json" "$W/vid-new.json" | head -20
         fi
     else
-        echo '⚠ видимость не разобралась — сверка НЕ ВЫПОЛНЕНА'
+        echo '  ⚠ видимость не разобралась — сверка НЕ ВЫПОЛНЕНА'
         reports_dead=$((reports_dead + 1))
     fi
 fi
@@ -189,13 +239,19 @@ fi
 step '4. каталог — tools/catalog.py на СВЕЖИХ снимках (приговор) + сверка страницы (отчёт)'
 if [ "$rcs" -ne 0 ] || [ "$rcv" -ne 0 ]; then
     echo '⚠ каталог НЕ ВЫПОЛНЕН: нет свежих снимков или видимости — зелёного здесь быть не может'
-    rc_total=2
+    [ "$rc_total" -eq 0 ] && rc_total=2
 else
     cp -r "$T" "$W/tree" 2>/dev/null
     rm -f "$W/tree/screens.html"
     cp "$T/screens/СТАДИИ.tsv" "$W/shots/" && cp "$W/vid/vidimost.json" "$W/shots/" || die 'не собрался каталог снимков'
     ( cd "$W/tree" && python3 -I tools/catalog.py "$W/shots" ); rcc=$?
-    if [ "$rcc" -ne 0 ]; then
+    # ⚠ 2 и 1 — РАЗНЫЕ приговоры, и до 04.11.2026 шаг звал красным оба. Все 17
+    # отказов catalog.py уходили кодом 1 (`sys.exit('текст')`), и «мерить было
+    # нечем» печаталось как «страница под это дерево не собирается».
+    if [ "$rcc" -eq 2 ]; then
+        echo "каталог НЕ ВЫПОЛНЕН: catalog.py rc=2 — отказ прибора, мерить было нечем (строка отказа выше)"
+        [ "$rc_total" -eq 0 ] && rc_total=2
+    elif [ "$rcc" -ne 0 ]; then
         echo "КРАСНОЕ: catalog.py rc=$rcc — страница под это дерево не собирается"
         rc_total=1
     elif [ -f "$W/tree/screens.html" ] && [ -f "$T/screens.html" ]; then
@@ -213,8 +269,8 @@ step '5. прибор стадий — самопроверка (пригово�
 [ "$rc" -eq 0 ] || { echo "КРАСНОЕ: самопроверка прибора стадий rc=$rc"; grep -i 'провален' "$W/sp.log" | head -5; rc_total=1; }
 [ "$rc" -eq 0 ] && echo 'самопроверка прибора стадий: rc=0'
 
-step '6. прибор стадий — ПО ЭТОМУ ДЕРЕВУ (--файл app.js, приговор)'
-( cd "$T" && python3 -I tools/check-stages.py --файл app.js ); rc=$?
+step '6. прибор стадий — ПО ЭТОМУ ДЕРЕВУ (--дерево ., клиент по index.html, приговор)'
+( cd "$T" && python3 -I tools/check-stages.py --дерево . ); rc=$?
 [ "$rc" -eq 0 ] || { echo "КРАСНОЕ: прибор стадий rc=$rc"; rc_total=1; }
 
 # ── 7. номера живых людей (приговор) ────────────────────────────────────────

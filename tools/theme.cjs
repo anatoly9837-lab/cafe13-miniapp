@@ -99,13 +99,23 @@ function tgStub(theme, safe, ver, scheme) {
 
 /* Выключатель ищется ровно один раз — как в live.cjs: опечатка в шаблоне
    иначе молча оставила бы живой режим и увела стенд на сервер. */
-const src = fs.readFileSync(ROOT + '/app.js', 'utf8');
+// Клиент — несколько <script> по index.html (Cafe13KPG#806): API_ON ровно в одном файле, подмена — по файлам
+const { klient, apiOnFile, NeVypolneno } = require('./klient.cjs');
+let KL, API_FILE;
+try { KL = klient(ROOT); API_FILE = apiOnFile(KL); }
+catch (e) {
+  if (!(e instanceof NeVypolneno)) throw e;
+  console.error('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + e.message);
+  process.exit(2);
+}
+const src = KL.text;
 const decl = src.match(/^\s*(var|let|const)\s+API_ON\s*=.*$/gm) || [];
 if (decl.length !== 1) {
-  console.error('КРАСНОЕ: app.js: объявление API_ON найдено ' + decl.length + ' раз, ждали 1');
+  console.error('КРАСНОЕ: клиент: объявление API_ON найдено ' + decl.length + ' раз, ждали 1');
   process.exit(1);
 }
-const demo = src.replace(/var API_ON = (true|false);/, 'var API_ON = false;');
+const demo = {};
+KL.files.forEach(f => { demo[f.file] = f.file === API_FILE ? f.text.replace(/var API_ON = (true|false);/, 'var API_ON = false;') : f.text; });
 const cssSrc = fs.readFileSync(ROOT + '/styles.css', 'utf8');
 
 /* Мутации. Каждая обязана ПРИМЕНИТЬСЯ (иначе «не покраснело» — ложь прибора)
@@ -178,17 +188,20 @@ const MUT = {
             reddens: ['крестик: синих пикселей', 'крестик: краска подписью'] }
 };
 
-function patch(which, mut) {
-  const base = which === 'css' ? cssSrc : demo;
+// file — для js: какой файл клиента отдаётся. Образец мутации ищется по ВСЕМ файлам клиента: ровно одно вхождение,
+// и подменяется только в том файле, где оно есть (#806)
+function patch(which, mut, file) {
+  const base = which === 'css' ? cssSrc : demo[file];
   if (!mut) return base;
   const m = MUT[mut];
   if ((m.file || 'js') !== which) return base;
-  const n = base.split(m.find).length - 1;
+  const n = which === 'css' ? base.split(m.find).length - 1
+    : KL.files.reduce((a, f) => a + demo[f.file].split(m.find).length - 1, 0);
   if (n !== 1) {
     console.error('КРАСНОЕ: мутация «' + mut + '» не применилась: образец найден ' + n + ' раз, ждали 1');
     process.exit(1);
   }
-  return base.replace(m.find, m.put);
+  return base.includes(m.find) ? base.replace(m.find, m.put) : base;
 }
 
 /* Пиксель читается с ОТРИСОВАННОГО кадра, а не из getComputedStyle: два экрана
@@ -255,14 +268,42 @@ async function region(ctx, png, muted) {
     p.on('pageerror', e => errs.push(e.message));
     await p.route('https://telegram.org/**', r =>
       r.fulfill({ contentType: 'text/javascript', body: tgStub(theme, safe, ver, scheme) }));
-    await p.route('**/app.js*', r =>
-      r.fulfill({ contentType: 'text/javascript', body: patch('js', mut) }));
+    // каждый файл клиента — своей подменой (#806); прежний перехват «app.js» при нарезке молча не срабатывал
+    // ⚠ fallback(), а НЕ continue(): у Playwright побеждает ПОСЛЕДНИЙ
+    // зарегистрированный маршрут, а под шаблон клиентских скриптов подходит и
+    // https://telegram.org/js/telegram-web-app.js — его путь тоже /js/…js.
+    // С continue() заглушка Telegram (маршрут выше) обходилась, грузился
+    // настоящий telegram-web-app.js, window.__tgOn не ставился, и прогон падал
+    // «Cannot read properties of undefined (reading 'themeChanged')».
+    // fallback() передаёт запрос ПРЕДЫДУЩИМ маршрутам, continue() — в сеть.
+    // Возврат arhitector-47 по #236, 05.11.2026.
+    // ⚠ И блок — СТРОЧНЫМИ комментариями нарочно: шаблон глоба со звездой и
+    // слешем закрывает блочный комментарий изнутри. Первая редакция этой же
+    // правки упала «js is not defined», и `node --check` её пропустил —
+    // поймал ПРОГОН.
+    await p.route('**/js/*.js*', r => {
+      const f = 'js/' + new URL(r.request().url()).pathname.split('/').pop();
+      if (!(f in demo)) return r.fallback();
+      return r.fulfill({ contentType: 'text/javascript', body: patch('js', mut, f) });
+    });
     await p.route('**/styles.css*', r =>
       r.fulfill({ contentType: 'text/css', body: patch('css', mut) }));
     /* Сервера здесь нет вовсе: любой запрос наружу — сам по себе отказ. */
     await p.route('https://api.cafe13.club/**', r => { calls.push(r.request().url()); return r.abort(); });
     await p.goto('file://' + ROOT + '/index.html', { waitUntil: 'networkidle' });
     await p.waitForTimeout(150);
+    // подмена обязана примениться: стенд без сервера (форма frontend-11, #806)
+    if (await p.evaluate(() => typeof API_ON === 'undefined' ? null : API_ON) !== false) bad.push(`open(${mut || 'без мутации'}): подмена API_ON не применилась — стенд шёл с включённым сервером`);
+    // И заглушка Telegram — тоже ПОДМЕНА, и спрашивается она ОТДЕЛЬНО и НАСМЕРТЬ.
+    // Прежде её обход опознавался падением `p.evaluate` на `__tgOn.themeChanged`
+    // двадцатью строками ниже — то есть причина в приговор не попадала вовсе.
+    // ⚠ Здесь именно throw, а не `bad.push`: без заглушки мерить НЕЧЕГО, это
+    // «не выполнено», а не «красное». Первая редакция складывала это в `bad`,
+    // и контроль показал, что толку нет: прогон всё равно умирал прежним
+    // TypeError ниже, а накопленный довод не печатался. Поймано отрицательным
+    // контролем (вернул continue() — и увидел ту же трассировку).
+    if (await p.evaluate(() => typeof window.__tgOn) !== 'object')
+      throw new Error(`open(${mut || 'без мутации'}): заглушка Telegram не применилась — грузился настоящий telegram-web-app.js. Маршрут клиентских скриптов перехватил https://telegram.org/js/…: у Playwright побеждает ПОСЛЕДНИЙ маршрут, и нужен fallback(), а не continue()`);
 
     /* Вторая тема в ТОЙ ЖЕ странице: человек меняет тему на ходу, и новая
        страница этого случая не воспроизводит — там любой токен выставляется

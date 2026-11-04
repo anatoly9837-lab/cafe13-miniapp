@@ -133,11 +133,20 @@ const HAS_CABINET = new Set(['owner-lifelong', 'finite', 'outside-telegram', 'ap
 // выключатель ищется в любом положении: тест сам ставит нужное. Не один —
 // падаем сразу и своим текстом, а не таймаутом на подменённой странице.
 // Что в выкладке он включён — tools/api-on.cjs.
-const src = fs.readFileSync(ROOT + '/app.js', 'utf8');
+// Клиент — несколько <script> (Cafe13KPG#806): текст и состав — по index.html (tools/klient.cjs), своего списка нет
+const { klient, apiOnFile, NeVypolneno } = require('./klient.cjs');
+let KL, API_FILE;
+try { KL = klient(ROOT); API_FILE = apiOnFile(KL); }
+catch (e) {
+  if (!(e instanceof NeVypolneno)) throw e;
+  console.error('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + e.message + ' — батарея не гонится');
+  process.exit(2);
+}
+const src = KL.text;
 const SW = /var API_ON = (true|false);/;
 const decl = src.match(/^\s*(var|let|const)\s+API_ON\s*=.*$/gm) || [];
 if (decl.length !== 1 || !SW.test(decl[0])) {
-  console.error('КРАСНОЕ: app.js: выключатель API_ON не найден ровно один раз (' + decl.length + ')');
+  console.error('КРАСНОЕ: клиент: выключатель API_ON не найден ровно один раз (' + decl.length + ')');
   process.exit(1);
 }
 // Главная кнопка «Новая карточка» не спрашивает mayCards(): права меняет лишь
@@ -192,8 +201,12 @@ if (grantsSet.length !== 1) {
     const calls = [], errs = [];
     p.on('pageerror', e => errs.push(e.message));
     await p.route('https://telegram.org/**', r => r.fulfill({ contentType: 'text/javascript', body: tgStub(inside) }));
-    await p.route('**/app.js*', r => r.fulfill({ contentType: 'text/javascript',
-      body: src.replace(SW, 'var API_ON = ' + (on ? 'true' : 'false') + ';') }));
+    /* Перехват — на ФАЙЛЕ с объявлением API_ON (по склейке index.html), а не на «app.js»: при нарезке клиента прежний
+       route молча не срабатывал, и случаи с on=false шли с включённым сервером ЗЕЛЁНЫМИ (замер #806). Проверка
+       поведением — ниже, после загрузки */
+    const apiText = KL.files.find(f => f.file === API_FILE).text;
+    await p.route('**/' + API_FILE.split('/').pop() + '*', r => r.fulfill({ contentType: 'text/javascript',
+      body: apiText.replace(SW, 'var API_ON = ' + (on ? 'true' : 'false') + ';') }));
     await p.route('https://api.cafe13.club/**', async r => {
       const q = r.request();
       calls.push({ method: q.method(), url: q.url(), init: q.headers()['x-telegram-init-data'], body: q.postData(),
@@ -210,6 +223,9 @@ if (grantsSet.length !== 1) {
     });
     await p.goto('file://' + ROOT + '/index.html', { waitUntil: 'networkidle' });
     await p.waitForTimeout(150);
+    // подмена обязана примениться: страница живёт в том режиме, который просил случай (форма frontend-11, #806)
+    const apiNow = await p.evaluate(() => typeof API_ON === 'undefined' ? null : API_ON);
+    if (apiNow !== !!on) bad.push(`open(): подмена API_ON не применилась — случай шёл не в том режиме (страница: ${apiNow}, просили: ${!!on})`);
     const view = () => p.evaluate(() => document.getElementById('view').textContent);
     const tabsShown = () => p.evaluate(() => !document.getElementById('tabs').hidden);
     return { ctx, p, calls, errs, view, tabsShown };
@@ -2513,7 +2529,7 @@ if (grantsSet.length !== 1) {
     if (!d.a) bad.push('demo-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — списков услуг в DATA нет');
     else if (d.n) bad.push(`demo-services: в демо услуги, которых у клуба нет: ${d.t}`);
     await s.ctx.close();
-    const src = fs.readFileSync(`${ROOT}/app.js`, 'utf8');
+    const src = KL.text;
     const m = src.match(/байк|массаж|Доставка воды|Помощь на дороге/i);
     if (m) bad.push(`demo-services: в клиенте выдуманная услуга «${m[0]}»`);
   }
@@ -9745,10 +9761,10 @@ if (grantsSet.length !== 1) {
     for (const [t, want] of [['tg.requestContact(function (ok) {', true], ["tg['requestContact'](f)", true],
                              ['// requestContact отдаёт контакт боту', false]])
       if (CALL.test(t) !== want) bad.push(`самопроверка контакта: «${t}» ${want ? 'не пойман' : 'пойман зря'}`);
-    const src = fs.readFileSync(`${ROOT}/app.js`, 'utf8');
-    if (!/function render\(/.test(src)) bad.push('контакт: ПРОВЕРКА НЕ ВЫПОЛНЕНА — app.js прочитан не тот или пустой');
-    const hit = src.split('\n').findIndex(l => CALL.test(l));
-    if (hit !== -1) bad.push(`app.js:${hit + 1}: вызов requestContact — контакт человека ушёл бы боту, хранить его негде (#312)`);
+    const src = KL.text;
+    if (!/function render\(/.test(src)) bad.push('контакт: ПРОВЕРКА НЕ ВЫПОЛНЕНА — клиент прочитан не тот или пустой');
+    const cm = src.match(CALL);
+    if (cm) bad.push(`${KL.where(cm.index)}: вызов requestContact — контакт человека ушёл бы боту, хранить его негде (#312)`);
   }
 
   // Одно имя верхнего уровня — одно объявление. Повторное `function` в обычном
@@ -9756,11 +9772,13 @@ if (grantsSet.length !== 1) {
   // человека кассы однажды назвался `fromPass`, как разбор пропуска, и
   // пропуск сломался у всех, а покраснели чужие случаи, а не касса.
   {
-    const src = fs.readFileSync(`${ROOT}/app.js`, 'utf8'), seen = {};
-    for (const m of src.matchAll(/^(?:function|var|let|const) ([A-Za-z_$][\w$]*)/gm)) seen[m[1]] = (seen[m[1]] || 0) + 1;
+    // по СКЛЕЙКЕ всех файлов клиента: у обычных <script> область общая, и дубль в соседнем файле перекрывает так же (#806)
+    const src = KL.text, seen = {}, at = {};
+    for (const m of src.matchAll(/^(?:function|var|let|const) ([A-Za-z_$][\w$]*)/gm)) {
+      seen[m[1]] = (seen[m[1]] || 0) + 1; (at[m[1]] = at[m[1]] || []).push(KL.where(m.index)); }
     const twice = Object.keys(seen).filter(k => seen[k] > 1);
-    if (!Object.keys(seen).length) bad.push('app.js: имена верхнего уровня не найдены — проверка дублей слепа');
-    if (twice.length) bad.push('app.js: имя объявлено на верхнем уровне больше одного раза, второе молча перекрывает первое: ' + twice.join(', '));
+    if (!Object.keys(seen).length) bad.push('клиент: имена верхнего уровня не найдены — проверка дублей слепа');
+    if (twice.length) bad.push('клиент: имя объявлено на верхнем уровне больше одного раза, второе молча перекрывает первое: ' + twice.map(k => k + ' (' + at[k].join(', ') + ')').join('; '));
   }
   // ── членство: виды с ценой от сервера и заявки (Cafe13KPG#415) ──
   // Экраны ещё не в WIRED (сервер впереди клиента): случай включает их внутри
