@@ -56,7 +56,7 @@ def _клиент():
     except м.НеВыполнено as е:
         sys.exit('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + str(е))
 
-VERSION = 'v142 · 02.11.2026'
+VERSION = 'v145 · 02.11.2026'
 LIVE = 'https://anatoly9837-lab.github.io/cafe13-miniapp/'
 
 GROUPS = {
