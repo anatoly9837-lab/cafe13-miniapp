@@ -239,13 +239,19 @@ fi
 step '4. каталог — tools/catalog.py на СВЕЖИХ снимках (приговор) + сверка страницы (отчёт)'
 if [ "$rcs" -ne 0 ] || [ "$rcv" -ne 0 ]; then
     echo '⚠ каталог НЕ ВЫПОЛНЕН: нет свежих снимков или видимости — зелёного здесь быть не может'
-    rc_total=2
+    [ "$rc_total" -eq 0 ] && rc_total=2
 else
     cp -r "$T" "$W/tree" 2>/dev/null
     rm -f "$W/tree/screens.html"
     cp "$T/screens/СТАДИИ.tsv" "$W/shots/" && cp "$W/vid/vidimost.json" "$W/shots/" || die 'не собрался каталог снимков'
     ( cd "$W/tree" && python3 -I tools/catalog.py "$W/shots" ); rcc=$?
-    if [ "$rcc" -ne 0 ]; then
+    # ⚠ 2 и 1 — РАЗНЫЕ приговоры, и до 04.11.2026 шаг звал красным оба. Все 17
+    # отказов catalog.py уходили кодом 1 (`sys.exit('текст')`), и «мерить было
+    # нечем» печаталось как «страница под это дерево не собирается».
+    if [ "$rcc" -eq 2 ]; then
+        echo "каталог НЕ ВЫПОЛНЕН: catalog.py rc=2 — отказ прибора, мерить было нечем (строка отказа выше)"
+        [ "$rc_total" -eq 0 ] && rc_total=2
+    elif [ "$rcc" -ne 0 ]; then
         echo "КРАСНОЕ: catalog.py rc=$rcc — страница под это дерево не собирается"
         rc_total=1
     elif [ -f "$W/tree/screens.html" ] && [ -f "$T/screens.html" ]; then
