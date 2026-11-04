@@ -269,9 +269,21 @@ async function region(ctx, png, muted) {
     await p.route('https://telegram.org/**', r =>
       r.fulfill({ contentType: 'text/javascript', body: tgStub(theme, safe, ver, scheme) }));
     // каждый файл клиента — своей подменой (#806); прежний перехват «app.js» при нарезке молча не срабатывал
+    // ⚠ fallback(), а НЕ continue(): у Playwright побеждает ПОСЛЕДНИЙ
+    // зарегистрированный маршрут, а под шаблон клиентских скриптов подходит и
+    // https://telegram.org/js/telegram-web-app.js — его путь тоже /js/…js.
+    // С continue() заглушка Telegram (маршрут выше) обходилась, грузился
+    // настоящий telegram-web-app.js, window.__tgOn не ставился, и прогон падал
+    // «Cannot read properties of undefined (reading 'themeChanged')».
+    // fallback() передаёт запрос ПРЕДЫДУЩИМ маршрутам, continue() — в сеть.
+    // Возврат arhitector-47 по #236, 05.11.2026.
+    // ⚠ И блок — СТРОЧНЫМИ комментариями нарочно: шаблон глоба со звездой и
+    // слешем закрывает блочный комментарий изнутри. Первая редакция этой же
+    // правки упала «js is not defined», и `node --check` её пропустил —
+    // поймал ПРОГОН.
     await p.route('**/js/*.js*', r => {
       const f = 'js/' + new URL(r.request().url()).pathname.split('/').pop();
-      if (!(f in demo)) return r.continue();
+      if (!(f in demo)) return r.fallback();
       return r.fulfill({ contentType: 'text/javascript', body: patch('js', mut, f) });
     });
     await p.route('**/styles.css*', r =>
@@ -282,6 +294,16 @@ async function region(ctx, png, muted) {
     await p.waitForTimeout(150);
     // подмена обязана примениться: стенд без сервера (форма frontend-11, #806)
     if (await p.evaluate(() => typeof API_ON === 'undefined' ? null : API_ON) !== false) bad.push(`open(${mut || 'без мутации'}): подмена API_ON не применилась — стенд шёл с включённым сервером`);
+    // И заглушка Telegram — тоже ПОДМЕНА, и спрашивается она ОТДЕЛЬНО и НАСМЕРТЬ.
+    // Прежде её обход опознавался падением `p.evaluate` на `__tgOn.themeChanged`
+    // двадцатью строками ниже — то есть причина в приговор не попадала вовсе.
+    // ⚠ Здесь именно throw, а не `bad.push`: без заглушки мерить НЕЧЕГО, это
+    // «не выполнено», а не «красное». Первая редакция складывала это в `bad`,
+    // и контроль показал, что толку нет: прогон всё равно умирал прежним
+    // TypeError ниже, а накопленный довод не печатался. Поймано отрицательным
+    // контролем (вернул continue() — и увидел ту же трассировку).
+    if (await p.evaluate(() => typeof window.__tgOn) !== 'object')
+      throw new Error(`open(${mut || 'без мутации'}): заглушка Telegram не применилась — грузился настоящий telegram-web-app.js. Маршрут клиентских скриптов перехватил https://telegram.org/js/…: у Playwright побеждает ПОСЛЕДНИЙ маршрут, и нужен fallback(), а не continue()`);
 
     /* Вторая тема в ТОЙ ЖЕ странице: человек меняет тему на ходу, и новая
        страница этого случая не воспроизводит — там любой токен выставляется
