@@ -21,8 +21,30 @@ const crypto = require('crypto');
 
 class NeVypolneno extends Error {}
 
+const TEG_SO_SRC = /<script\b[^>]*?\bsrc\s*=/gi;
+const KOMMENTARIY = /<!--[\s\S]*?-->/g;
+const INLINE = /(<script\b(?![^>]*\bsrc\s*=)[^>]*>)[\s\S]*?(<\/script>)/gi;
+
+// Разметка без комментариев и без ТЕЛ инлайновых скриптов: и там и там может
+// лежать текст «<script src=…>», которого страница не грузит.
+function razmetkaBezProzy(html) {
+  return html.replace(KOMMENTARIY, '').replace(INLINE, '$1$2');
+}
+
 function srcsOf(html) {
-  return [...html.matchAll(/<script\s+src="([^"]+)"/g)].map(m => m[1])
+  // ⚠ ПАДАЮЩАЯ ПРОВЕРКА ФОРМЫ — близнец tools/klient.py, тот же приговор.
+  // Строгий признак требует src СРАЗУ после `<script` и в двойных кавычках, а
+  // страница грузит и `<script defer src="…">`. Дыру нашёл arhitector-47
+  // 05.11.2026 на #236: его мутация давала 22 файла без нового и зелёное у
+  // прибора стадий. Число тегов со src в ЛЮБОЙ позиции обязано равняться
+  // числу разобранных.
+  html = razmetkaBezProzy(html);
+  const tegov = (html.match(TEG_SO_SRC) || []).length;
+  const strogih = [...html.matchAll(/<script\s+src="([^"]+)"/g)];
+  if (tegov !== strogih.length) {
+    throw new NeVypolneno(`в index.html тегов <script> с атрибутом src — ${tegov}, а признак состава разобрал ${strogih.length}: признак требует src СРАЗУ после \`<script\` и в ДВОЙНЫХ кавычках, а страница грузит любой. Состав читать нечем`);
+  }
+  return strogih.map(m => m[1])
     .filter(s => !/^[a-z][a-z0-9+.-]*:/i.test(s) && !s.startsWith('//'))
     .map(s => s.replace(/[?#].*$/, ''))
     .filter(s => !s.startsWith('vendor/'));
@@ -124,7 +146,62 @@ const chitatelDereva = root => put => {
 
 module.exports = { klient, apiOnFile, NeVypolneno, srcsOf, slepkiStranicy, svod, chitatelDereva, VNE_DEREVA };
 
+// Близнец ПОДЛОГИ/самопроверки из tools/klient.py — те же случаи, те же слова.
+const PODLOGI = [
+  ['defer перед src (мутация arhitector-47 по #236)',
+   ['</head>', '<script defer src="extra.js?v=146"></script></head>'], 'а признак состава разобрал'],
+  ['src в ОДИНАРНЫХ кавычках',
+   ['</head>', "<script src='js/01-osnova.js'></script></head>"], 'а признак состава разобрал'],
+  ['пробелы вокруг знака равно',
+   ['</head>', '<script src = "extra.js"></script></head>'], 'а признак состава разобрал'],
+  ['заглавными буквами',
+   ['</head>', '<SCRIPT SRC="extra.js"></SCRIPT></head>'], 'а признак состава разобрал'],
+];
+
+function samoproverka() {
+  // Признак состава — настоящей srcsOf(), разметкой ЭТОГО дерева. Проверяется
+  // ФОРМА признака: случаи подкладывают тег, который страница грузит, а
+  // строгий признак не видит (находка arhitector-47, #236, 05.11.2026).
+  const koren = path.dirname(path.dirname(path.resolve(__filename)));
+  const html = fs.readFileSync(path.join(koren, 'index.html'), 'utf8');
+  const bedy = [];
+
+  const bylo = srcsOf(html).length;
+  console.log(`  контроль «здоровая разметка»: скриптов клиента ${bylo}, отказа нет`);
+  if (bylo < 2) bedy.push(`здоровая разметка дала ${bylo} скриптов — мерить нечем`);
+
+  for (const [imya, [chto, chem], zhdyom] of PODLOGI) {
+    const podmena = html.replace(chto, chem);
+    if (podmena === html) { bedy.push(`${imya}: подмена НЕ применилась`); continue; }
+    let pechat, ladno;
+    try {
+      pechat = `отказа НЕТ, разобрано ${srcsOf(podmena).length}`; ladno = false;
+    } catch (e) {
+      pechat = String(e.message).slice(0, 58); ladno = String(e.message).includes(zhdyom);
+    }
+    console.log(`  ${ladno ? 'сошлось' : 'РАЗОШЛОСЬ'}: ${imya} → ${pechat}`);
+    if (!ladno) bedy.push(imya);
+  }
+
+  // ⚠ Обратная дыра: ПРОЗА не состав. Прежняя редакция читала
+  // закомментированный тег как файл клиента (замер 05.11.2026: 22 файла,
+  // среди них закомментированный) — страница его не грузит.
+  const teg = html.match(/<script src="(js\/[^"]+)"><\/script>/);
+  if (!teg) bedy.push('в разметке не нашлось тега для контроля прозы');
+  else {
+    const skryt = html.replace(teg[0], '<!-- ' + teg[0] + ' -->');
+    const n = srcsOf(skryt).length, ladno = n === bylo - 1;
+    console.log(`  ${ladno ? 'сошлось' : 'РАЗОШЛОСЬ'}: закомментированный тег не считается составом → скриптов ${n} (было ${bylo})`);
+    if (!ladno) bedy.push('закомментированный тег прочитан как состав');
+  }
+
+  console.log('самопроверка признака состава: ' + (bedy.length ? 'РАЗОШЛАСЬ — ' + bedy.join('; ') : 'сошлась'));
+  return bedy.length ? 1 : 0;
+}
+
 if (require.main === module) {
+  // `--самопроверка` — ПЕРВЫМ: обычный прогон печатает перечень и может отказать на дереве
+  if (process.argv.includes('--самопроверка')) process.exit(samoproverka());
   // `node tools/klient.cjs <корень>` — перечень файлов JSON-ом (для сверки с близнецом на Python)
   // `--where`: для каждого файла — where() от смещения его ПЕРВОГО байта; у обоих близнецов обязано быть «файл:1»
   try {
