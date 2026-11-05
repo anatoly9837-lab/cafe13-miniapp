@@ -284,6 +284,172 @@
   },
   "status": 201
  },
+ "event-distribute": {
+  "request": "POST /events/N/distribute",
+  "shape": {
+   "art_amount": null,
+   "at": null,
+   "base": null,
+   "club_amount": null,
+   "club_net": null,
+   "event_id": null,
+   "id": null,
+   "ledger_id": null,
+   "master_amount": null,
+   "shares": {
+    "art_pct": null,
+    "club_net_pct": null,
+    "club_pct": null,
+    "master_pct": null,
+    "space_pct": null
+   },
+   "space_amount": null
+  },
+  "status": 201
+ },
+ "event-distribute-again-409": {
+  "request": "POST /events/N/distribute",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "event-distribute-denied-organizer": {
+  "request": "POST /events/N/distribute",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "event-money-after": {
+  "request": "GET /events/N/money",
+  "shape": {
+   "ask_donation": null,
+   "collected": null,
+   "distributed": null,
+   "donations": null,
+   "donations_count": null,
+   "ended": null,
+   "entries": null,
+   "event_id": null,
+   "kind": null,
+   "may_distribute": null,
+   "paid_bookings": null,
+   "payouts": [
+    {
+     "art_amount": null,
+     "at": null,
+     "base": null,
+     "club_amount": null,
+     "club_net": null,
+     "id": null,
+     "master_amount": null,
+     "space_amount": null
+    }
+   ],
+   "price": null,
+   "shares": {
+    "art_pct": null,
+    "club_net_pct": null,
+    "club_pct": null,
+    "master_pct": null,
+    "space_pct": null
+   },
+   "split": {
+    "art_amount": null,
+    "club": null,
+    "club_net": null,
+    "master": null,
+    "space_amount": null
+   },
+   "starts_at": null,
+   "state": null,
+   "title": null,
+   "undistributed": null
+  },
+  "status": 200
+ },
+ "event-money-art-director": {
+  "request": "GET /events/N/money",
+  "shape": {
+   "ask_donation": null,
+   "collected": null,
+   "distributed": null,
+   "donations": null,
+   "donations_count": null,
+   "ended": null,
+   "entries": null,
+   "event_id": null,
+   "kind": null,
+   "may_distribute": null,
+   "paid_bookings": null,
+   "payouts": [],
+   "price": null,
+   "shares": {
+    "art_pct": null,
+    "club_net_pct": null,
+    "club_pct": null,
+    "master_pct": null,
+    "space_pct": null
+   },
+   "split": {
+    "art_amount": null,
+    "club": null,
+    "club_net": null,
+    "master": null,
+    "space_amount": null
+   },
+   "starts_at": null,
+   "state": null,
+   "title": null,
+   "undistributed": null
+  },
+  "status": 200
+ },
+ "event-money-denied-guest": {
+  "request": "GET /events/N/money",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "event-money-organizer": {
+  "request": "GET /events/N/money",
+  "shape": {
+   "ask_donation": null,
+   "collected": null,
+   "distributed": null,
+   "donations": null,
+   "donations_count": null,
+   "ended": null,
+   "entries": null,
+   "event_id": null,
+   "kind": null,
+   "may_distribute": null,
+   "paid_bookings": null,
+   "payouts": [],
+   "price": null,
+   "shares": {
+    "art_pct": null,
+    "club_net_pct": null,
+    "club_pct": null,
+    "master_pct": null,
+    "space_pct": null
+   },
+   "split": {
+    "art_amount": null,
+    "club": null,
+    "club_net": null,
+    "master": null,
+    "space_amount": null
+   },
+   "starts_at": null,
+   "state": null,
+   "title": null,
+   "undistributed": null
+  },
+  "status": 200
+ },
  "event-place-busy-409": {
   "request": "POST /events",
   "shape": {
@@ -479,6 +645,49 @@
    "state": null
   },
   "status": 200
+ },
+ "events-undistributed-art-director": {
+  "request": "GET /events/undistributed",
+  "shape": [
+   {
+    "collected": null,
+    "distributed": null,
+    "donations": null,
+    "donations_count": null,
+    "entries": null,
+    "event_id": null,
+    "may_distribute": null,
+    "organizer_first_name": null,
+    "organizer_id": null,
+    "organizer_last_name": null,
+    "paid_bookings": null,
+    "shares": {
+     "art_pct": null,
+     "club_net_pct": null,
+     "club_pct": null,
+     "master_pct": null,
+     "space_pct": null
+    },
+    "split": {
+     "art_amount": null,
+     "club": null,
+     "club_net": null,
+     "master": null,
+     "space_amount": null
+    },
+    "starts_at": null,
+    "title": null,
+    "undistributed": null
+   }
+  ],
+  "status": 200
+ },
+ "events-undistributed-denied-organizer": {
+  "request": "GET /events/undistributed",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
  },
  "join-decide-rejected": {
   "request": "POST /join/requests/N/decide",
