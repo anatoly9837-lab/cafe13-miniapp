@@ -204,6 +204,12 @@ function msDemoFill() {
   MR.slots = [{ id: 901, title: 'Звуковая практика', weekday: 4, start: '18:30', hours: 2, place: 'Зал', who: '[мастер]', on: true, weeksOn: 4, weeksOff: 0, live: true },
               { id: 903, title: 'Йога на закате', weekday: 6, start: '17:00', hours: 2, place: 'Зал', who: '[второй мастер]', on: false, weeksOn: 0, weeksOff: 4, live: true }];
   MR.without = ['[мастер без слота]'];
+  // шаг 11: плашки «Распределить деньги» — числа кадра E69 (ждёт и ушедшее), в той же форме, что даёт fromPayouts
+  PAY.list = [{ id: 911, title: 'Керамика по вечерам', starts: '2026-11-06T18:30:00+07:00', guests: 12, may: true, at: null,
+                collected: 4800, left: 4800, split: [4080, 432, 144, 144], out: [0, 0, 0, 0], pct: [85, 9, 3, 3] },
+              { id: 912, title: 'Тайский для начинающих', starts: '2026-11-02T19:00:00+07:00', guests: 8, may: false, at: '2026-11-07T12:00:00+07:00',
+                collected: 3200, left: 0, split: [0, 0, 0, 0], out: [2720, 288, 96, 96], pct: [85, 9, 3, 3] }];
+  PAY.pending = 1;
   MR.price = { 2: 2600, 3: 3900, 4: 5200, 5: 6500 };
   if (!EV_PLACES) { EV_PLACES = [{ id: 1, name: 'Зал', capacity: null }]; EV_PLACES_STATE = 'ok'; MR.demoPlaces = true; }
   MSB.data = { dates: [{ day: '05.11', busy: [], conflict: null }, { day: '12.11', busy: [{ title: 'Чайная церемония', from: '16:00', to: '17:30' }], conflict: null },
@@ -220,6 +226,7 @@ function msDemoPreview(own, months) {
 function msDemoClear() {
   if (!MR.demo) return;
   MR.demo = false; MR.mine = null; MR.mineState = ''; MR.q = null; MR.pending = null; MR.slots = null; MR.without = null;
+  PAY.list = null; PAY.pending = null; PAY.err = '';
   MR.price = {}; MR.priceAsk = {}; RNW.prev = null; RNW.key = ''; MSB.data = null; MSB.key = '';
   if (MR.demoPlaces) { MR.demoPlaces = false; EV_PLACES = null; EV_PLACES_STATE = ''; }
 }
@@ -469,3 +476,70 @@ document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'tq-note') TOPQ.note = ev.target.value;
 });
 
+/* ── шаг 11: «Распределить деньги» у арт-директора (кадры E46д, E69, E69b, E69v; Cafe13KPG#857) ──
+   Список прошедших с деньгами — `GET /events/undistributed?with_distributed=true` (cafe13-api#136): и ждущие
+   распределения, и уже ушедшие. ЧИСЕЛ КЛИЕНТ НЕ СЧИТАЕТ: доли (`split`), проценты (`shares`) и ушедшее
+   (`paid_out`) печатаются присланными — таблица долей живёт в `share_rules` сервера и меняется там, а число
+   в клиенте лгало бы между выкладками. «Гостей» — `paid_bookings`: заплатившие за вход, не все записи.
+   Кнопки «отказать» нет (слово владельца). Право — то же, что у «Слотов и мастеров» (`mayMasters`): сервер
+   пускает `art_director` и `admin` (`_may_distribute`), нового права клиент не заводит. */
+var PAY = { list: null, pending: null, fail: '', gen: 0, busy: false, err: '' };
+// порядок долей — кадра E69: мастеру, клубу, управляющей пространством, арт-директору
+var PAY_KEYS = [['master', 'master_pct', 'мастеру'], ['club_net', 'club_net_pct', 'клубу'],
+                ['space_amount', 'space_pct', 'управляющей пространством'], ['art_amount', 'art_pct', 'арт-директору']];
+/* Одна битая строка — отказ целиком: список с пропавшим мероприятием выглядит полным (как у очередей). */
+function fromPayouts(d) {
+  if (!Array.isArray(d)) return null;
+  var out = [];
+  for (var i = 0; i < d.length; i++) {
+    var x = d[i], sp = x && x.split, sh = x && x.shares, po = x && x.paid_out;
+    if (!x || typeof x.event_id !== 'number' || typeof x.title !== 'string' || typeof x.starts_at !== 'string' ||
+        typeof x.paid_bookings !== 'number' || typeof x.may_distribute !== 'boolean' ||
+        !(x.distributed_at === null || typeof x.distributed_at === 'string') || !sp || !sh || !po) return null;
+    var row = { id: x.event_id, title: x.title, starts: x.starts_at, guests: x.paid_bookings, may: x.may_distribute,
+                at: x.distributed_at, collected: moneyOf(x.collected), left: moneyOf(x.undistributed), split: [], out: [], pct: [] };
+    for (var k = 0; k < PAY_KEYS.length; k++) {
+      row.split.push(moneyOf(sp[PAY_KEYS[k][0]])); row.out.push(moneyOf(po[PAY_KEYS[k][0]])); row.pct.push(moneyOf(sh[PAY_KEYS[k][1]]));
+    }
+    var nums = [row.collected, row.left].concat(row.split, row.out, row.pct);
+    if (nums.some(function (n) { return !isFinite(n); })) return null;
+    out.push(row);
+  }
+  return { list: out, pending: out.filter(function (r) { return r.may; }).length };
+}
+function loadPayouts() {
+  if (!LIVE) return;
+  var gen = ++PAY.gen; PAY.fail = '';
+  api('GET', '/events/undistributed?with_distributed=true').then(function (r) {
+    if (gen !== PAY.gen) return;
+    var d = r.status === 200 ? fromPayouts(r.data) : null;
+    if (d) { PAY.list = d.list; PAY.pending = d.pending; } else { PAY.list = null; PAY.pending = null; PAY.fail = r.status === 403 ? denyText(r) : failText(r); }
+    if ({ manage: 1, payouts: 1, payout: 1 }[current]) render();
+  });
+}
+function payById(id) { return PAY.list ? PAY.list.filter(function (r) { return r.id === Number(id); })[0] || null : null; }
+// «6 ноября · 18:30» / «7 ноября» — по часам клуба
+function payDay(iso, withTime) {
+  var d = new Date(iso); if (!iso || isNaN(d.getTime())) return '';
+  var p = bkk(d), x = p.ymd.split('-');
+  return Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '') + (withTime ? ' · ' + p.hm : '');
+}
+function payMoney(n) { return money(n) + ' ฿'; }
+/* Отправка — одна на нажатие; повтор на уже распределённом сервер отвергает 409 своими словами
+   («распределять нечего…»), и клиент печатает их, а не свои. Ответ любой — список перечитывается. */
+function sendPayout(id) {
+  var row = payById(id);
+  if (PAY.busy || !LIVE || !mayMasters() || !row) return;
+  PAY.busy = true; PAY.err = ''; render();
+  api('POST', '/events/' + row.id + '/distribute', {}).then(function (r) {
+    PAY.busy = false;
+    var m = r.status === 201 && r.data ? moneyOf(r.data.master_amount) : NaN;
+    loadPayouts();
+    if (r.status === 201 && isFinite(m)) {
+      FLASH = { text: 'Распределено', note: '«' + row.title + '»: мастеру ушло ' + payMoney(m) + '.' };
+      go('payouts'); return;
+    }
+    PAY.err = denyText(r);
+    if (current === 'payout') render();
+  });
+}
