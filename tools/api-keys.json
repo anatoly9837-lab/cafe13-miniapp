@@ -84,6 +84,25 @@
   "request": "POST /bookings/N/cancel",
   "shape": {
    "id": null,
+   "kept": null,
+   "refund": null,
+   "state": null
+  },
+  "status": 200
+ },
+ "booking-cancel-denied-staff": {
+  "request": "POST /bookings/N/cancel",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "booking-cancel-refund": {
+  "request": "POST /bookings/N/cancel",
+  "shape": {
+   "id": null,
+   "kept": null,
+   "refund": null,
    "state": null
   },
   "status": 200
@@ -94,9 +113,35 @@
    "amount_due": null,
    "event_id": null,
    "id": null,
+   "ledger_id": null,
    "state": null
   },
   "status": 201
+ },
+ "booking-create-paid": {
+  "request": "POST /bookings",
+  "shape": {
+   "amount_due": null,
+   "event_id": null,
+   "id": null,
+   "ledger_id": null,
+   "state": null
+  },
+  "status": 201
+ },
+ "booking-denied-worker-nonmember": {
+  "request": "POST /bookings",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "bookings-409-own": {
+  "request": "POST /bookings",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
  },
  "directions-curator": {
   "request": "GET /directions",
@@ -208,6 +253,7 @@
   "shape": {
    "bookings_cancelled": null,
    "id": null,
+   "refunded": null,
    "state": null
   },
   "status": 200
@@ -215,6 +261,7 @@
  "event-create": {
   "request": "POST /events",
   "shape": {
+   "ask_donation": null,
    "id": null,
    "kind": null,
    "place_id": null,
@@ -251,6 +298,7 @@
  "event-create-by-level": {
   "request": "POST /events",
   "shape": {
+   "ask_donation": null,
    "id": null,
    "kind": null,
    "place_id": null,
@@ -272,6 +320,7 @@
  "event-create-in-place": {
   "request": "POST /events",
   "shape": {
+   "ask_donation": null,
    "id": null,
    "kind": null,
    "place_id": null,
@@ -320,6 +369,75 @@
    "detail": null
   },
   "status": 403
+ },
+ "event-donate": {
+  "request": "POST /events/N/donate",
+  "shape": {
+   "amount": null,
+   "at": null,
+   "event_id": null,
+   "ledger_id": null
+  },
+  "status": 201
+ },
+ "event-donate-again-409": {
+  "request": "POST /events/N/donate",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "event-edit-200": {
+  "request": "POST /events/N/edit",
+  "shape": {
+   "about": null,
+   "ask_donation": null,
+   "duration_min": null,
+   "id": null,
+   "kind": null,
+   "place_id": null,
+   "price": null,
+   "seats": null,
+   "starts_at": null,
+   "state": null,
+   "title": null
+  },
+  "status": 200
+ },
+ "event-edit-403-not-organizer": {
+  "request": "POST /events/N/edit",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "event-edit-403-unpaid-master": {
+  "request": "POST /events/N/edit",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "event-edit-409-price": {
+  "request": "POST /events/N/edit",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "event-edit-409-seats": {
+  "request": "POST /events/N/edit",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "event-edit-422-fixed": {
+  "request": "POST /events/N/edit",
+  "shape": {
+   "detail": null
+  },
+  "status": 422
  },
  "event-money-after": {
   "request": "GET /events/N/money",
@@ -462,14 +580,20 @@
   "shape": [
    {
     "about": null,
+    "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
     "filmed": null,
+    "full_refund_until": null,
     "id": null,
     "kind": null,
     "my_amount_due": null,
     "my_booking_id": null,
     "my_booking_paid": null,
+    "my_donated": null,
+    "my_entry_paid": null,
+    "my_may_thank": null,
+    "my_refund_now": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -490,14 +614,20 @@
   "shape": [
    {
     "about": null,
+    "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
     "filmed": null,
+    "full_refund_until": null,
     "id": null,
     "kind": null,
     "my_amount_due": null,
     "my_booking_id": null,
     "my_booking_paid": null,
+    "my_donated": null,
+    "my_entry_paid": null,
+    "my_may_thank": null,
+    "my_refund_now": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -518,14 +648,20 @@
   "shape": [
    {
     "about": null,
+    "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
     "filmed": null,
+    "full_refund_until": null,
     "id": null,
     "kind": null,
     "my_amount_due": null,
     "my_booking_id": null,
     "my_booking_paid": null,
+    "my_donated": null,
+    "my_entry_paid": null,
+    "my_may_thank": null,
+    "my_refund_now": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -546,14 +682,20 @@
   "shape": [
    {
     "about": null,
+    "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
     "filmed": null,
+    "full_refund_until": null,
     "id": null,
     "kind": null,
     "my_amount_due": null,
     "my_booking_id": null,
     "my_booking_paid": null,
+    "my_donated": null,
+    "my_entry_paid": null,
+    "my_may_thank": null,
+    "my_refund_now": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -579,7 +721,70 @@
  },
  "events-history-member": {
   "request": "GET /events/history",
-  "shape": [],
+  "shape": [
+   {
+    "about": null,
+    "ask_donation": null,
+    "booked_by_me": null,
+    "duration_min": null,
+    "filmed": null,
+    "full_refund_until": null,
+    "id": null,
+    "kind": null,
+    "my_amount_due": null,
+    "my_booking_id": null,
+    "my_booking_paid": null,
+    "my_donated": null,
+    "my_entry_paid": null,
+    "my_may_thank": null,
+    "my_refund_now": null,
+    "organizer_first_name": null,
+    "organizer_id": null,
+    "organizer_last_name": null,
+    "place_id": null,
+    "place_name": null,
+    "price": null,
+    "seats": null,
+    "seats_left": null,
+    "starts_at": null,
+    "taken": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "events-history-member-may-thank": {
+  "request": "GET /events/history",
+  "shape": [
+   {
+    "about": null,
+    "ask_donation": null,
+    "booked_by_me": null,
+    "duration_min": null,
+    "filmed": null,
+    "full_refund_until": null,
+    "id": null,
+    "kind": null,
+    "my_amount_due": null,
+    "my_booking_id": null,
+    "my_booking_paid": null,
+    "my_donated": null,
+    "my_entry_paid": null,
+    "my_may_thank": null,
+    "my_refund_now": null,
+    "organizer_first_name": null,
+    "organizer_id": null,
+    "organizer_last_name": null,
+    "place_id": null,
+    "place_name": null,
+    "price": null,
+    "seats": null,
+    "seats_left": null,
+    "starts_at": null,
+    "taken": null,
+    "title": null
+   }
+  ],
   "status": 200
  },
  "events-history-organizer": {
@@ -587,14 +792,20 @@
   "shape": [
    {
     "about": null,
+    "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
     "filmed": null,
+    "full_refund_until": null,
     "id": null,
     "kind": null,
     "my_amount_due": null,
     "my_booking_id": null,
     "my_booking_paid": null,
+    "my_donated": null,
+    "my_entry_paid": null,
+    "my_may_thank": null,
+    "my_refund_now": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -615,14 +826,20 @@
   "shape": [
    {
     "about": null,
+    "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
     "filmed": null,
+    "full_refund_until": null,
     "id": null,
     "kind": null,
     "my_amount_due": null,
     "my_booking_id": null,
     "my_booking_paid": null,
+    "my_donated": null,
+    "my_entry_paid": null,
+    "my_may_thank": null,
+    "my_refund_now": null,
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
@@ -791,6 +1008,13 @@
   },
   "status": 200
  },
+ "master-decide-400-no-note": {
+  "request": "POST /master/requests/N/decide",
+  "shape": {
+   "detail": null
+  },
+  "status": 400
+ },
  "master-decide-409-decided": {
   "request": "POST /master/requests/N/decide",
   "shape": {
@@ -871,6 +1095,13 @@
    "weekday_ru": null
   },
   "status": 201
+ },
+ "master-renew-409-busy": {
+  "request": "POST /master/requests/N/periods",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
  },
  "master-renew-409-no-money": {
   "request": "POST /master/requests/N/periods",
@@ -970,6 +1201,13 @@
   "status": 404
  },
  "master-request-409-no-money": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "master-request-409-nothing": {
   "request": "POST /master/request",
   "shape": {
    "detail": null
@@ -1511,6 +1749,39 @@
   },
   "status": 200
  },
+ "people-head": {
+  "request": "GET /people",
+  "shape": {
+   "count": null,
+   "people": [
+    {
+     "balance": null,
+     "ends_at": null,
+     "first_name": null,
+     "former": null,
+     "in_club": null,
+     "lang": null,
+     "last_name": null,
+     "lifelong": null,
+     "memberships": [],
+     "roles": [
+      {
+       "direction": null,
+       "direction_id": null,
+       "granted_at": null,
+       "granted_by": null,
+       "granted_by_first_name": null,
+       "granted_by_last_name": null,
+       "id": null,
+       "role": null
+      }
+     ],
+     "tg_user_id": null
+    }
+   ]
+  },
+  "status": 200
+ },
  "places": {
   "request": "GET /places",
   "shape": [
@@ -1789,16 +2060,7 @@
   "request": "GET /till/by-member/N",
   "shape": {
    "balance": null,
-   "bookings": [
-    {
-     "amount_due": null,
-     "event_id": null,
-     "kind": null,
-     "paid": null,
-     "starts_at": null,
-     "title": null
-    }
-   ],
+   "bookings": [],
    "first_name": null,
    "last_name": null,
    "member_id": null,
@@ -1890,6 +2152,13 @@
    "note": null
   },
   "status": 201
+ },
+ "till-event-paid-by-account-409": {
+  "request": "POST /till",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
  },
  "till-topup": {
   "request": "POST /till",
