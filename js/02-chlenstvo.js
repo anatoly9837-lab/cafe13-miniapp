@@ -27,8 +27,7 @@ function fromTiers(d) {
     if (!isFinite(price) || price < 0) return null;
     if (typeof t.period_months !== 'number' || t.period_months < 1 || Math.floor(t.period_months) !== t.period_months) return null;
     // описание вида — слова владельца с сервера (api f06d01c); в клиенте их нет, как и цен
-    out.push({ code: t.code, name: t.name, about: typeof t.about === 'string' ? t.about.trim() : '', price: price, months: t.period_months,
-               trial: typeof t.trial_days === 'number' && t.trial_days > 0 ? t.trial_days : 0 });
+    out.push({ code: t.code, name: t.name, about: typeof t.about === 'string' ? t.about.trim() : '', price: price, months: t.period_months });
   }
   return out;
 }
