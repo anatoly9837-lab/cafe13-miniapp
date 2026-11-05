@@ -71,7 +71,7 @@ def _клиент():
     except м.НеВыполнено as е:
         не_выполнено(str(е))
 
-VERSION = 'v147 · 05.11.2026'
+VERSION = 'v148 · 05.11.2026'
 LIVE = 'https://anatoly9837-lab.github.io/cafe13-miniapp/'
 
 GROUPS = {

@@ -1,14 +1,14 @@
 {
- "снято": "2026-11-05T11:01:39.316Z",
+ "снято": "2026-11-05T11:59:51.673Z",
  "слепки_страницы": {
-  "index.html": "5be36e8c99c6a330b43a3c871a9ef1cb545d7c4e171055bab9e5233514ccf3df",
+  "index.html": "57448dc7a6ccd06e9efd2ee9b8d4ed7ffc261216e852ea543add5afac4a8b5cc",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "65d733d365c8136bf9100c5ba2d103593a18aa1a1970754d9e1fe289af440c2c",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/01-osnova.js": "9c931f20a2d29daa80818f5d2949c0e7d5bf24be7f07706095fc061a152520a7",
-  "js/02-chlenstvo.js": "193902cbe59bcdea0ad952505f4d12577f6006a7f9e31703c73f42bcbd02b6fb",
+  "js/01-osnova.js": "f82582083e187f5b7015c99decbecbf5bf8dd748cb864a0e62acaca5970d96ca",
+  "js/02-chlenstvo.js": "a471fee5391ae6cba627ebaf0e949fff6473313a7576ec74e98c0adfc1565b50",
   "js/03-propusk.js": "1b1eca66d0571cb8c1c962f7477b67991198fde538a67d89bc0326d3f30b8cff",
   "js/04-bar.js": "26da187a2d9784f3f462dc9f8e36ec6acccdf252f38e03a6447e79bb3017fa63",
   "js/05-kassa.js": "2f019c96d3f52c28d0215560f7ddde8ef0d78c0b165256680a2db28e4111ed27",
@@ -30,7 +30,7 @@
   "js/21-navigaciya.js": "bae23b6289a21aba15e65e4468d6072ae791b63261132b1bc28e2fcb9eb9786d",
   "js/22-zapusk.js": "708c88e0099aeeffc47974e3fdb28a8d9ec7bd29d03a30c3031f9e5e6d00110a"
  },
- "свод_слепков": "dbe735ad0001a3dff7bdd438272340772944565eea263647c3955fce36e4e41d",
+ "свод_слепков": "1bdbb127e677ab9dd89a20dfe209efc412b9439379eda9f8256e41a13c458d6a",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
