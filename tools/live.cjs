@@ -1791,6 +1791,10 @@ if (grantsSet.length !== 1) {
       const got = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
       if (JSON.stringify(got) !== JSON.stringify(want))
         bad.push(`${name}: вкладки ${JSON.stringify(got)}, ждали ${JSON.stringify(want)}`);
+      // пустое ожидание проходит и на НЕотрисованном экране — поэтому «вкладок нет» судится вместе с тем, ГДЕ человек
+      // (просьба о вступлении, 0.1 «Путь мастера»); долг приговора по #240, слово координатора 05.11.2026
+      if (!want.length && await s.p.evaluate(() => current) !== 'noAccess')
+        bad.push(`${name}: вкладок нет, но экран «${await s.p.evaluate(() => current)}», а не просьба о вступлении`);
       // все вкладки в 390 px (до v72 — семь, с v72 у главы клуба восемь): ни одна не вылезла за край и не съела соседнюю
       const over = await s.p.evaluate(() => {
         const t = document.getElementById('tabs'), w = document.documentElement.clientWidth;
@@ -4595,7 +4599,17 @@ if (grantsSet.length !== 1) {
     taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null,
     // Место есть в КАЖДОЙ строке живого ответа (снимок 23.10.2026), и оба
     // поля бывают null сразу: по умолчанию фикстура — мероприятие без места.
-    place_id: null, place_name: null
+    place_id: null, place_name: null,
+    // Шаг 7 на бою (api c11b633, 05.11.2026): восемь полей строки мероприятия. По умолчанию — null, и это
+    // выбор, а не форма сервера: клиент (`fromEvents`, js/09-afisha.js) читает null у КАЖДОГО из них так же,
+    // как «поля нет» (`moneyOrNull`, `typeof … === 'boolean'`, `=== true`, `typeof … === 'string'`; два
+    // последних клиент не читает вовсе). Значит, базовые случаи рисуются ровно как до шага 7 — условие
+    // координатора, проверено прогоном до и после. ⚠ Предел: у трёх полей сервер null НЕ отдаёт никогда —
+    // `ask_donation` (булево), `full_refund_until` (мгновение), `my_may_thank` (False в афише). Случай, которому
+    // важно их значение, задаёт его сам (`over`), как и прежде
+    ask_donation: null, full_refund_until: null, my_may_thank: null,
+    my_entry_paid: null, my_refund_now: null, my_donated: null,
+    my_booking_paid: null, my_amount_due: null
   }, over);
   const AFISHA = [
     EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
@@ -9778,21 +9792,10 @@ if (grantsSet.length !== 1) {
   /* Чей непустой список доказывает форму элемента там, где в своём снимке
      он пуст. Ключ — путь, значение — имя снимка ТОЙ ЖЕ ручки. */
   const ELEM_FROM = { 'me-member.roles': 'me-curator' };
-  const UNVERIFIED = {
-    // ⚠ Две строки ниже открылись 24.10.2026, когда api-keys.json пересобрали
-    // после двух дней простоя (генератор падал на снимках отказов). Правка
-    // их не создала — она их ПОКАЗАЛА. Тогда же открылись ещё три, с другой
-    // причиной: поля на бою были, а в заглушках нет (`me-member.memberships`,
-    // `items[].product_id` у заказов гостя и работника). Их сняла правка
-    // заглушек (Cafe13KPG#297), а не выкладка — путать эти два случая нельзя.
-    //
-    // Впереди боя: поля завёл api 2c5735f, он НЕ предок боевого sha. Добавить
-    // в фикстуру афиши — после выкладки api, не раньше: иначе батарея станет
-    // требовать от клиента разбора полей, которых у человека нет. Зона
-    // frontend-events-9d, третий шаг Cafe13KPG#271.
-    'events-afisha[].my_booking_paid': 'поле есть в снимке, но НЕ на бою (api 2c5735f не предок боевого sha); фикстура — после выкладки, frontend-events-9d',
-    'events-afisha[].my_amount_due': 'то же: есть в снимке, нет на бою; фикстура после выкладки, frontend-events-9d'
-  };
+  /* Пусто с 05.11.2026: две строки (`events-afisha[].my_booking_paid`, `…my_amount_due`, «есть в снимке, нет на
+     бою») сняты выкладкой api c11b633 — поля легли в `EV`, а их причина стала ложью. Формат строки — путь: причина;
+     исключение, не попавшее в USED, сторож ниже красит «больше не нужно». */
+  const UNVERIFIED = {};
   const USED = new Set();
   const STUBS = {
     'me-member': OWNER, 'pass-member': PASS, 'directions-guest': JSON.parse(DIR(true).body),
