@@ -127,7 +127,10 @@ function tgChrome() {
     document.getElementById('back').hidden = true;
     if (backHandler) { tg.BackButton.offClick(backHandler); backHandler = null; }
     // до входа «назад» есть, только если она ведёт на экран входа: свойство, а не список экранов (#458, v74)
-    if ((!noEntry() || BARE[backTo()]) && (BACK[current] || !tabList().some(function (t) { return t[0] === current; }))) {
+    // экран входа без своей записи в BACK — без «назад» и в живом (0.1, слово владельца «видит только её»): прежде
+    // у человека без членства на просьбе стояла системная «назад», ведущая через homeOf() на ту же просьбу
+    if ((!noEntry() || BARE[backTo()]) && !(bare() && !BACK[current]) &&
+        (BACK[current] || !tabList().some(function (t) { return t[0] === current; }))) {
       backHandler = goBack;
       tg.BackButton.onClick(backHandler);
       tg.BackButton.show();

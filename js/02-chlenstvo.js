@@ -180,7 +180,20 @@ function fromJoin(d) {
    не загрузилась; file — приложенный чек {mime, b64, size}; again — после
    отказа человек попросил снова и видит форму. */
 var JOIN = { info: null, fail: '', gen: 0, pay: 'promptpay', img: {}, said: '',
-             file: null, fileErr: '', busy: false, err: '', again: false };
+             file: null, fileErr: '', busy: false, err: '', again: false, seen: {} };
+
+/* ВРЕМЕННАЯ ЗАГЛУШКА петли (Cafe13KPG#853, 0.1 «Путь мастера»). На этом экране человек, которого сервер в клуб не
+   пускает (/me 403) или пускает без живого членства. GET /join отдаёт его ПОСЛЕДНЮЮ просьбу без проверки допуска:
+   исключённому и тому, у кого членство кончилось, — давно согласованную. Экран рисовал «Вас приняли… Осталось войти»,
+   «Войти» перечитывало /me и возвращало сюда же — выхода нет, а слова ложные. Согласию верим, только если ЭТУ
+   просьбу видели ждущей в этом же запуске: тогда ответ пришёл, пока человек ждал, и вход его впустит. Иначе
+   согласие — прошлое, и человек видит форму новой просьбы. Снять, когда сервер перестанет отдавать такую просьбу. */
+function joinTrust(got) {
+  var q = got && got.request;
+  if (q && q.status === 'pending') JOIN.seen[q.id] = 1;
+  if (q && q.status === 'approved' && !JOIN.seen[q.id]) got.request = null;
+  return got;
+}
 
 // при КАЖДОМ входе на экран: ссылка «О клубе» живёт час, и с прошлого входа она могла умереть
 function loadJoin() {
@@ -188,7 +201,7 @@ function loadJoin() {
   JOIN.fail = '';
   api('GET', '/join').then(function (r) {
     if (gen !== JOIN.gen) return;
-    var got = r.status === 200 ? fromJoin(r.data) : null;
+    var got = r.status === 200 ? joinTrust(fromJoin(r.data)) : null;
     if (got) JOIN.info = got;
     else { JOIN.info = null; JOIN.fail = r.status === 200 ? failText(r) : denyText(r); }
     if (got) loadRequisites(JOIN.pay);
@@ -289,7 +302,7 @@ function loadAbout() {
   ABOUT.url = ''; ABOUT.fail = ''; ABOUT.loaded = false;
   api('GET', '/join').then(function (r) {
     if (gen !== ABOUT.gen) return;
-    var got = r.status === 200 ? fromJoin(r.data) : null;
+    var got = r.status === 200 ? joinTrust(fromJoin(r.data)) : null;
     if (got) { JOIN.info = got; ABOUT.url = API + '/join/about?t=' + encodeURIComponent(got.token); }
     else ABOUT.fail = r.status === 200 ? failText(r) : denyText(r);
     if (current === 'joinAbout') render();
