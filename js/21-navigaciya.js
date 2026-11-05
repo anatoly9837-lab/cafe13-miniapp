@@ -293,7 +293,10 @@ function tabList() {
 /* Куда ведёт «назад» с каждого экрана. Без карты всё падало на первую
    вкладку, и из мероприятия человек улетал на главную вместо списка. */
 function homeOf() {
-  if (DATA.role === 'guest') return 'guest';
+  // 0.1 «Путь мастера», слово владельца 05.11.2026: «человек без живого членства попадает на просьбу о вступлении и
+  // видит только её». Экран входа (BARE): вкладок и выхода нет по построению — и у держателя роли без членства тоже,
+  // это названная цена решения (Cafe13KPG#324). В демонстрации — прежние «Услуги»: гостя там показывают
+  if (DATA.role === 'guest') return LIVE ? 'noAccess' : 'guest';
   if (DATA.role === 'staff') return 'staff';
   if (DATA.role === 'bar') return 'barQueue';
   if (DATA.role === 'curator') return 'curator';
@@ -324,7 +327,10 @@ var BACK = {
   topup: function () {
     // форма и история члена клуба — состояния того же экрана: «назад» сперва к путям (E52)
     if (TUP.online || TUP.hist) { TUP.online = false; TUP.hist = false; return 'topup'; }
-    return TOPUP.from === 'home' ? 'home' : 'bar';
+    // 0.1 «Путь мастера»: «назад» — на «Клуб». На бар — только с самого бара и только пока он не заморожен:
+    // в живом прежнее «всё, что не главная, — бар» уводило с ЛЮБОГО экрана рамки (кошелёк в шапке есть везде)
+    // на замороженный «Бар» и звало его ручки (/directions, /bar/menu) — замер frontend-upravlenie 05.11.2026
+    return TOPUP.from === 'bar' && !frozen('bar') ? 'bar' : 'home';
   },
   barMoney: function () { return BOOK.from; },
   barDay: function () { return LIVE ? DAY.from : homeOf(); },
@@ -373,7 +379,9 @@ function render() {
   var here = current + '|' + String(param), y = window.scrollY || 0;
   var same = RENDERED === here;
   RENDERED = here;
-  view.innerHTML = (bare() ? '' : testStrip()) + (PROTO[current] || !LIVE && MS_DEMO[current] ? protoStrip() : '') +
+  // полоса просмотра — и на экране входа, когда бог смотрит ЧУЖИМИ глазами: человек без членства теперь стартует на
+  // просьбе (0.1), и без полосы владелец не видел бы, чьими глазами смотрит, и не вышел бы из просмотра
+  view.innerHTML = (bare() && !(TEST.on && TEST.as) ? '' : testStrip()) + (PROTO[current] || !LIVE && MS_DEMO[current] ? protoStrip() : '') +
     SCREENS[frozen(current) ? 'frozen' : LIVE && !WIRED[current] && !PROTO[current] ? 'soon' : current](param);
   // вход на замороженный экран гаснет ПО СВОЙСТВУ, а не перечнем кнопок: любой [data-go] туда
   // (Cafe13KPG#510); облик — общий .btn[disabled]
@@ -534,7 +542,8 @@ function go(screen, p) {
   if (screen === 'demo' && LIVE && !TEST.on && TEST.health !== 'configured' && TEST.health !== 'loading') loadHealth();
   if (FLASH_SHOWN) { FLASH = null; FLASH_SHOWN = false; }
   if (screen === 'topup' && current !== 'topup') {
-    TOPUP.from = current === 'home' ? 'home' : 'bar';
+    // «откуда» — бар, только если вошли С БАРА (кнопки «Не хватает» у напитка и в корзине); прочее — главная
+    TOPUP.from = { bar: 1, drink: 1, barCart: 1 }[current] ? 'bar' : 'home';
     TOPUP.ask = false; TOPUP.err = '';
   }
   if (screen === 'barDay' && current !== 'barDay')
