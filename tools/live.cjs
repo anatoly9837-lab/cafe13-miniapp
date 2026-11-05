@@ -1313,7 +1313,7 @@ if (grantsSet.length !== 1) {
   // Клиент — Cafe13KPG#877 (`mayOps`, экран `businesses`), сервер — #876 (cafe13-api `backend/ops-directions`, `_is_ops`).
   // Строка заглушки — по снимку `directions-ops-director` (семь ключей: id, title, is_active, is_open, partner_id,
   // partner_first_name, partner_last_name); сверка — `STUBS` ниже, заглушка заново не придумывается.
-  // ⚠ Слова экрана «партнёра нет», «открыт / закрыт», «Попробовать снова» — из таблицы архитектора (#855 §3), а не из
+  // ⚠ Слова экрана «Партнёра нет», «открыт / закрыт», «Попробовать снова» — из таблицы архитектора (#855 §3), а не из
   // кадров: E75b/E75g ещё не смержены. Разойдутся с кадрами — правится ожидание здесь, по кадру, а не клиент по ожиданию.
   // Подлог карточки: `grant('ops_director')` снят из `mayOps` → красное здесь (ops-tab, ops-businesses, ops-businesses-fail).
   // на уровне функции, а не в блоке: та же строка уходит в `STUBS` (сверка с `directions-ops-director`)
@@ -1393,7 +1393,7 @@ if (grantsSet.length !== 1) {
       const s = await opsOpen(opsWho(roles), { dirs: () => json(200, rows) });
       if (await toBiz(s, n)) {
         const t = await s.view();
-        for (const w of ['Бар', '[партнёр] [фамилия]', 'Массаж', 'партнёра нет', 'открыт', 'закрыт'])
+        for (const w of ['Бар', '[партнёр] [фамилия]', 'Массаж', 'Партнёра нет', 'открыт', 'закрыт'])
           if (!t.includes(w)) bad.push(`${n}: на «Бизнесах клуба» нет «${w}»`);
         if (t.includes('%')) bad.push(`${n}: на «Бизнесах клуба» есть «%» — долей до шага 21 нет (#855 §2)`);
         for (const w of ['30', '70']) if (new RegExp('(^|\\D)' + w + '(\\D|$)').test(t)) bad.push(`${n}: на экране число доли «${w}» без знака %`);
