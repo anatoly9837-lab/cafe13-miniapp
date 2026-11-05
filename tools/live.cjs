@@ -9855,9 +9855,9 @@ if (grantsSet.length !== 1) {
       decided_at: st === 'pending' ? null : '2026-10-27T12:00:00+00:00', decision_note: said || '', tier_code: 'member', tier_name: 'Член клуба' }; return m; };
     const TIERS_ = { currency: 'THB', tiers: [
       // описания тоже выдуманы: слова кадра в клиенте значили бы, что текст вшит
-      { code: 'member', name: 'Член клуба', about: 'Вход по пропуску.', price_thb: '1234.00', period_months: 1, trial_days: 0 },
-      { code: 'organizer', name: 'Мастер', about: 'Свои вечера.', price_thb: '2345.50', period_months: 3, trial_days: 0 },
-      { code: 'partner', name: 'Бизнес-партнёр', about: 'Своё дело.', price_thb: '4321.00', period_months: 1, trial_days: 0 }] };
+      { code: 'member', name: 'Член клуба', about: 'Вход по пропуску.', price_thb: '1234.00', period_months: 1 },
+      { code: 'organizer', name: 'Мастер', about: 'Свои вечера.', price_thb: '2345.50', period_months: 3 },
+      { code: 'partner', name: 'Бизнес-партнёр', about: 'Своё дело.', price_thb: '4321.00', period_months: 1 }] };
     const REQS_ = { pending: 1, requests: [
       { id: 11, status: 'pending', note: 'хочу на вечера', decision_note: '', created_at: '2026-10-27T10:00:00+00:00', decided_at: null,
         member_id: 501, first_name: 'Вера', last_name: 'Заявкина', username: null, tier_code: 'member', tier_name: 'Член клуба', has_pass: false },
