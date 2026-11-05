@@ -772,6 +772,47 @@ function mayTopups() { return LIVE && (grant('topups') || grant('admin')); }
 /* шаг 3 — право ровно как у сервера: решают `art_director` и админ (`_may_decide`, cafe13-api
    app/routers/master.py:91, на бою `bbf09f8`). Главы здесь нет: сервер ответил бы ему 403. */
 function mayMasters() { return LIVE && (grant('art_director') || grant('admin')); }
+/* шаг 12 — операционный директор (Cafe13KPG#877): право ровно как у сервера (`_is_ops`, cafe13-api#876):
+   `ops_director` и админ. Главы здесь нет: выдаёт роль глава, но бизнесы видит не он. */
+function mayOps() { return LIVE && (grant('ops_director') || grant('admin')); }
+
+/* «Бизнесы клуба» (кадры E75b/E75v/E75g) — `GET /directions`. Партнёра сервер отдаёт только тем, кому
+   `_is_ops`: тремя ключами `partner_id`, `partner_first_name`, `partner_last_name`. ДОЛЕЙ НА ЭКРАНЕ НЕТ:
+   `share_*` операционному директору не приходят, а у админа приходят доли СТАРОЙ модели, которые заменит
+   шаг 21 — разборщик их не читает вовсе. Закрытые бизнесы (`is_active: false`) в список не идут: кадр E75v
+   «бизнесов нет» — и до первого, и после закрытия всех.
+   ⚠ Ключа партнёра нет — отказ целиком, а не «партнёра нет»: так выглядит ответ сервера без #876, и
+   правдоподобное «ни у кого нет партнёра» было бы ложью (§4). Партнёра нет — это `partner_id: null`. */
+var BIZ = { list: null, fail: '', gen: 0 };
+function fromBusinesses(d) {
+  if (!Array.isArray(d)) return null;
+  var out = [];
+  for (var i = 0; i < d.length; i++) {
+    var x = d[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.is_active !== 'boolean' ||
+        typeof x.is_open !== 'boolean' || !('partner_id' in x)) return null;
+    var who = null;
+    if (x.partner_id === null) {
+      if (x.partner_first_name != null || x.partner_last_name != null) return null;
+    } else {
+      if (typeof x.partner_id !== 'number' || typeof x.partner_first_name !== 'string' ||
+          typeof x.partner_last_name !== 'string') return null;
+      who = (x.partner_first_name + ' ' + x.partner_last_name).trim();
+    }
+    if (x.is_active) out.push({ id: x.id, title: x.title, open: x.is_open, partner: x.partner_id !== null, who: who });
+  }
+  return out;
+}
+function loadBusinesses() {
+  if (!LIVE || !mayOps()) return;
+  var gen = ++BIZ.gen; BIZ.fail = '';
+  api('GET', '/directions').then(function (r) {
+    if (gen !== BIZ.gen) return;
+    var list = r.status === 200 ? fromBusinesses(r.data) : null;
+    BIZ.list = list; BIZ.fail = list ? '' : r.status === 403 ? denyText(r) : failText(r);
+    if (current === 'businesses') render();
+  });
+}
 // плашка прототипа — механизм на будущее: сейчас PROTO пуст, шаг 3 подключён (v109)
 function protoStrip() {
   return '<div class="proto-strip" role="note"><b>Прототип</b><span class="small">Данные примерные, нажатия ничего не отправляют.</span></div>';
