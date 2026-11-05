@@ -353,6 +353,31 @@ if (grantsSet.length !== 1) {
     await s2.ctx.close();
   }
 
+  // ── 0.1 «Путь мастера»: «назад» с пополнения не уводит в замороженный бар (замер frontend-upravlenie 05.11.2026) ──
+  // Кошелёк в шапке есть на каждом экране рамки; прежде «назад» с пополнения вело на 'bar' отовсюду, кроме «Клуба»:
+  // человек видел «Бар — временно недоступно», а go() до отрисовки звал ручки бара. Пара — вход с «Клуба» (был верен
+  // и до правки) и с трёх экранов рамки. Признак — экран ПОСЛЕ «назад» и ОТСУТСТВИЕ запросов бара, а не текст
+  for (const from of ['home', 'events', 'pass', 'bookings']) {
+    const n = 'koshelek-nazad-' + from;
+    const who = clone(OWNER); who.roles = [];
+    const s = await open(true, true, json(200, who), null, json(200, { pass_code: 'XIII-0042', first_name: 'Тест', last_name: '', photo_url: null, level: 'member', valid_until: null, lifelong: true }), null,
+      q => q.url().endsWith('/topup/requests/mine') ? json(200, { requests: [], history: [] }) : undefined);
+    await s.p.evaluate(f => go(f), from); await s.p.waitForTimeout(150);
+    if (await s.p.evaluate(() => current) !== from) { bad.push(`${n}: не открылся исходный экран «${from}»`); await s.ctx.close(); continue; }
+    if (!(await s.p.$('#wallet'))) { bad.push(`${n}: на «${from}» нет кошелька в шапке`); await s.ctx.close(); continue; }
+    await s.p.click('#wallet'); await s.p.waitForTimeout(150);
+    if (await s.p.evaluate(() => current) !== 'topup') { bad.push(`${n}: кошелёк не открыл пополнение`); await s.ctx.close(); continue; }
+    const before = s.calls.length;
+    await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(150);
+    const at = await s.p.evaluate(() => current);
+    if (at !== 'home') bad.push(`${n}: «назад» с пополнения увела на «${at}», ждали «home»`);
+    if ((await s.view()).includes('временно недоступно')) bad.push(`${n}: после «назад» — замороженный экран`);
+    const barCalls = s.calls.slice(before).filter(c => /\/directions|\/bar\//.test(c.url)).map(c => c.url.replace(/^https:\/\/[^/]+/, ''));
+    if (barCalls.length) bad.push(`${n}: «назад» с пополнения позвала ручки бара: ${barCalls.join(', ')}`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
   // ── «Онлайн» на ручках topup и своя история (v87, Cafe13KPG#500, бой d1fa661) ──
   {
     const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -1594,16 +1619,54 @@ if (grantsSet.length !== 1) {
       if (!(await s.p.$('#join-file'))) bad.push(`${n}: «Попросить снова» не открыло форму`);
       await s.ctx.close();
     }
-    // приняли (E44e): «Войти в клуб» перечитывает /me тем же путём, что «Попробовать снова»
+    // приняли (E44e): «Войти в клуб» перечитывает /me тем же путём, что «Попробовать снова».
+    // С заглушкой #853 согласию верят, только если ЭТУ просьбу видели ждущей в этом запуске: случай идёт путём
+    // человека, который ждал — просьба ждёт, ответ приходит, повторный вход на экран его видит
     {
       const n = 'join-prinyali';
-      let me = json(403, { detail: 'доступа нет' });
-      const s = await joinCase(json(200, withReq('approved')), null, () => me);
-      if (!(await s.view()).includes('Вас приняли в клуб')) bad.push(`${n}: нет «Вас приняли в клуб»`);
+      let me = json(403, { detail: 'доступа нет' }), st = 'pending';
+      const s = await joinCase(() => json(200, withReq(st)), null, () => me);
+      if (!(await s.view()).includes('Просьба отправлена')) bad.push(`${n}: на старте нет ждущей просьбы`);
+      st = 'approved';
+      // повторный вход на экран — переходом (у ждущей просьбы кнопок нет); вход зовёт loadJoin заново
+      await s.p.evaluate(() => { go('joinAbout'); go('noAccess'); }); await s.p.waitForTimeout(200);
+      if (!(await s.view()).includes('Вас приняли в клуб')) bad.push(`${n}: ответ пришёл, пока ждали, — а «Вас приняли в клуб» нет`);
       me = json(200, OWNER);
       await tap(s, '[data-action="retry"]');
       await s.p.waitForTimeout(200);
       if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
+      await s.ctx.close();
+    }
+    // ПЕТЛЯ (Cafe13KPG#853): /join отдаёт ДАВНО согласованную просьбу тому, кого в клубе нет. Прежде экран рисовал
+    // «Вас приняли… Осталось войти», а «Войти» возвращало сюда же. Под ОБОИМИ входами на экран: 403 (исключённый)
+    // и 200 без живого членства (слово владельца 05.11.2026 — такой человек видит только просьбу). Признак — форма
+    // новой просьбы есть, ложных слов нет; «Войти» не нажимается, потому что кнопки нет
+    for (const [n, me] of [['join-petlya-403', json(403, { detail: 'доступа нет' })],
+                           ['join-petlya-bez-chlenstva', (() => { const g = clone(OWNER); g.membership_active = false;
+                             g.membership = null; g.memberships = []; g.roles = []; return json(200, g); })()]]) {
+      const s = await joinCase(json(200, withReq('approved')), null, () => me);
+      const t = await s.view();
+      if (await s.p.evaluate(() => current) !== 'noAccess') bad.push(`${n}: не на экране просьбы (${await s.p.evaluate(() => current)})`);
+      if (t.includes('Вас приняли в клуб') || t.includes('Членство уже создано')) bad.push(`${n}: давнее согласие показано как сегодняшнее — петля`);
+      if (!(await s.p.$('#join-file'))) bad.push(`${n}: нет формы новой просьбы`);
+      await s.ctx.close();
+    }
+    // 0.1 «Путь мастера», слово владельца 05.11.2026: «человек без живого членства попадает на просьбу о вступлении
+    // и видит только её». Пара — без прав и держатель права (ответственный за пополнения): у второго «Управления»
+    // тоже нет, это названная цена решения. Признак «только её» — нет вкладок, нет «назад» ни нарисованной, ни
+    // системной; и не замороженные «Услуги» (прежний стартовый экран)
+    for (const [n, roles] of [['bez-chlenstva-prosba', []], ['bez-chlenstva-prosba-pravo', [{ role: 'topups', direction_id: null }]]]) {
+      const g = clone(OWNER); g.membership_active = false; g.membership = null; g.memberships = []; g.roles = roles;
+      const s = await joinCase(json(200, JOIN0), null, () => json(200, g));
+      const at = await s.p.evaluate(() => current);
+      if (at !== 'noAccess') bad.push(`${n}: стартовый экран «${at}», ждали «noAccess»`);
+      const t = await s.view();
+      if (t.includes('временно недоступно')) bad.push(`${n}: стартовый экран — замороженный`);
+      if (!(await s.p.$('#join-file'))) bad.push(`${n}: на экране нет формы просьбы`);
+      if (await s.tabsShown()) bad.push(`${n}: видны вкладки — экран просьбы не «только он»`);
+      if (await s.p.evaluate(() => !document.getElementById('back').hidden || window.__backShown === true))
+        bad.push(`${n}: есть «назад» — с экрана просьбы есть выход`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
     // «О клубе» — внутри приложения (v74): рамка по СВЕЖЕМУ токену, «назад» — на экран просьбы
@@ -1718,7 +1781,9 @@ if (grantsSet.length !== 1) {
       // комментарий координатора 30.10.2026 в Cafe13KPG#670); партнёру — нет (tabs-dva-partner-vyigral)
       ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'events', 'manage']],
       ['tabs-tolko-member', who('member', ['member']), ['home', 'guest', 'events']],
-      ['tabs-gost', who(null, []), ['guest', 'events']],
+      // без живого членства — экран просьбы и ничего больше (слово владельца 05.11.2026, 0.1 «Путь мастера»): вкладок нет;
+      // прежде здесь ждали ['guest', 'events']
+      ['tabs-gost', who(null, []), []],
       // было `tabs-vse-sem` («все семь»): до v72 вкладок было семь. Имя без числа нарочно —
       // число в имени проверки стареет на следующей вкладке (решение координатора 28.10.2026)
       ['tabs-vse', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
