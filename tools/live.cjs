@@ -1489,6 +1489,154 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
   }
 
+  // ── шаг 12: операционный директор — вкладка «Управление» и «Бизнесы клуба» (Cafe13KPG#878, кадры E46е и E75* — Cafe13KPG#881, #882) ──
+  // Клиент — Cafe13KPG#877 (`mayOps`, экран `businesses`), сервер — #876 (cafe13-api `backend/ops-directions`, `_is_ops`).
+  // Строка заглушки — по снимку `directions-ops-director` (семь ключей: id, title, is_active, is_open, partner_id,
+  // partner_first_name, partner_last_name); сверка — `STUBS` ниже, заглушка заново не придумывается.
+  // Слова экрана — по кадрам E46е (корень), E75 (список), E75б (пусто), E75в (отказ): Cafe13KPG#881, номера по #882;
+  // сверка 06.11.2026 — «Бизнесы», «Бизнесы клуба», «Партнёр: …», «Партнёра нет», «открыт / закрыт», «Попробовать снова».
+  // Слова — зона автора клиента: расхождение кадра с клиентом несут ему и координатору, ожидание здесь под клиент не гнут.
+  // Подлог карточки: `grant('ops_director')` снят из `mayOps` → красное здесь (ops-tab, ops-businesses, ops-businesses-fail).
+  // на уровне функции, а не в блоке: та же строка уходит в `STUBS` (сверка с `directions-ops-director`)
+  const OPS_BIZ = [
+    { id: 7, title: 'Бар', is_active: true, is_open: true, partner_id: 4242, partner_first_name: '[партнёр]', partner_last_name: '[фамилия]' },
+    { id: 9, title: 'Массаж', is_active: true, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null },
+    // закрытый бизнес (`closed_at`, is_active=false) в список не берётся вовсе — кадр E75 (Cafe13KPG#881/#882):
+    // «открыт/закрыт» на плашке — про СМЕНУ (is_open), а не про закрытие бизнеса
+    { id: 11, title: 'Прачечная', is_active: false, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null }];
+  {
+    const BIZ = OPS_BIZ;
+    const opsWho = roles => {
+      const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null }));
+      return p;   // членство у OWNER — только member: мастером (`msIsMaster`) он не числится, «Ивентов» у него нет
+    };
+    // o.dirs — функция: ответ /directions на КАЖДЫЙ запрос (повтор после отказа спрашивается заново)
+    const opsOpen = async (me, o) => {
+      const s = await open(true, true, json(200, me), null, null, null, q => {
+        if (q.url().replace(/^https?:\/\/[^/]+/, '') === '/directions') return o.dirs();
+        return undefined;
+      });
+      await s.p.waitForTimeout(250);
+      return s;
+    };
+    const dirGets = s => s.calls.filter(c => c.method === 'GET' && /\/directions$/.test(c.url)).length;
+    const opsGroups = s => s.p.evaluate(() => [...document.querySelectorAll('#view .group')].map(g => ({
+      label: (g.querySelector('.label') || {}).textContent, items: [...g.querySelectorAll('.listitem b')].map(b => b.textContent) })));
+    const toBiz = async (s, n) => {
+      if (!(await s.p.$('#tabs [data-go="manage"]'))) { bad.push(`${n}: нет вкладки «Управление»`); return false; }
+      await s.p.click('#tabs [data-go="manage"]'); await s.p.waitForTimeout(250);
+      if (!(await s.p.$('#view [data-go="businesses"]'))) { bad.push(`${n}: на «Управлении» нет входа «Бизнесы клуба» ([data-go="businesses"])`); return false; }
+      await s.p.click('#view [data-go="businesses"]'); await s.p.waitForTimeout(400);
+      const cur = await s.p.evaluate(() => current);
+      if (cur !== 'businesses') { bad.push(`${n}: после входа экран «${cur}», ждали «businesses»`); return false; }
+      return true;
+    };
+    const retryBtn = s => s.p.evaluate(() => [...document.querySelectorAll('#view button')].some(b => b.textContent.trim() === 'Попробовать снова'));
+
+    // ops-tab: вкладка и группа есть у операционного директора и НЕТ у члена клуба без ролей
+    {
+      const n = 'ops-tab';
+      const s = await opsOpen(opsWho(['ops_director']), { dirs: () => json(200, BIZ) });
+      const tabs = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
+      if (tabs[tabs.length - 1] !== 'manage') bad.push(`${n}: у операционного директора «Управление» не последней вкладкой: ${JSON.stringify(tabs)}`);
+      else {
+        await s.p.click('#tabs [data-go="manage"]'); await s.p.waitForTimeout(250);
+        const g = await opsGroups(s);
+        // кадр E46е (#882): ровно одна группа «Бизнесы» со строкой «Бизнесы клуба»; прав главы, пополнений и мастеров у него нет
+        if (JSON.stringify(g) !== JSON.stringify([{ label: 'Бизнесы', items: ['Бизнесы клуба'] }]))
+          bad.push(`${n}: на «Управлении» у операционного директора ${JSON.stringify(g)}, ждали одну группу «Бизнесы» → «Бизнесы клуба» (кадр E46е)`);
+        if ((await s.view()).includes('Сюда нельзя')) bad.push(`${n}: «Управление» отказало операционному директору`);
+        await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+      // член клуба без ролей: ни вкладки, ни группы, а прямой go() — отказ без запроса /directions
+      // (вход ПРЯЧЕТ экран, а не запрещает его — поэтому экран спрашивается и напрямую, как в pay-master)
+      const m = await opsOpen(opsWho([]), { dirs: () => json(200, BIZ) });
+      if (await m.p.$('#tabs [data-go="manage"]')) bad.push(`${n}: у члена клуба без ролей есть вкладка «Управление»`);
+      await m.p.evaluate(() => go('manage')); await m.p.waitForTimeout(250);
+      const mg = await opsGroups(m);
+      if (mg.some(x => x.label === 'Бизнесы') || await m.p.$('#view [data-go="businesses"]'))
+        bad.push(`${n}: у члена клуба без ролей на «Управлении» есть «Бизнесы» (${JSON.stringify(mg)})`);
+      const before = dirGets(m);
+      await m.p.evaluate(() => go('businesses')); await m.p.waitForTimeout(300);
+      const cur = await m.p.evaluate(() => current);
+      if (cur === 'businesses' && !(await m.view()).includes('Сюда нельзя')) bad.push(`${n}: «businesses» открыт члену клуба без ролей`);
+      if (dirGets(m) !== before) bad.push(`${n}: без права экран спросил /directions (${dirGets(m) - before} раз)`);
+      if ((await m.view()).includes('[партнёр]')) bad.push(`${n}: члену клуба без ролей показан партнёр бизнеса`);
+      if (m.errs.length) bad.push(`${n}: ошибки страницы ${m.errs.join('; ')}`);
+      await m.ctx.close();
+    }
+
+    // ops-businesses: плашка бара с партнёром, без партнёра — словами, открыт/закрыт по смене, и НИ ОДНОГО «%».
+    // Второй заход — админ (`mayOps` пускает и его): ему сервер ДОЛИ ОТДАЁТ (`share_*`, бой), и экран их печатать не смеет —
+    // только здесь запрет долей проверяется на данных, где доле есть откуда взяться (у ops_director их в ответе нет вовсе)
+    for (const [n, roles, rows] of [
+      ['ops-businesses', ['ops_director'], BIZ],
+      ['ops-businesses-admin', ['admin'], BIZ.map(r => Object.assign({ share_mode: 'pct', share_club: '30.00', share_partner: '70.00' }, r))]]) {
+      const s = await opsOpen(opsWho(roles), { dirs: () => json(200, rows) });
+      if (await toBiz(s, n)) {
+        const t = await s.view();
+        for (const w of ['Бар', '[партнёр] [фамилия]', 'Массаж', 'Партнёра нет', 'открыт', 'закрыт'])
+          if (!t.includes(w)) bad.push(`${n}: на «Бизнесах клуба» нет «${w}»`);
+        if (t.includes('%')) bad.push(`${n}: на «Бизнесах клуба» есть «%» — долей до шага 21 нет (#855 §2)`);
+        for (const w of ['30', '70']) if (new RegExp('(^|\\D)' + w + '(\\D|$)').test(t)) bad.push(`${n}: на экране число доли «${w}» без знака %`);
+        if (t.includes('4242')) bad.push(`${n}: на экране partner_id — номер Telegram вместо имени`);
+        if (await retryBtn(s)) bad.push(`${n}: на загруженном списке кнопка «Попробовать снова»`);
+        if (t.includes('Прачечная')) bad.push(`${n}: закрытый бизнес (is_active=false) показан плашкой — кадр E75 берёт только действующие`);
+        // плашка не нажимается: за ней в шаге 12 экрана нет (кадр E75 — .card без кнопки)
+        const tap = await s.p.evaluate(() => [...document.querySelectorAll('#view button, #view a, #view [data-go], #view [data-action]')]
+          .map(e => e.textContent.trim()).filter(x => /Бар|Массаж/.test(x)));
+        if (tap.length) bad.push(`${n}: плашка бизнеса нажимается ${JSON.stringify(tap)} — за ней экрана нет (кадр E75)`);
+        await s.p.screenshot({ path: `${OUT}/live-${n}.png`, fullPage: true });
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    // ops-businesses-fail (§4): отказ /directions — НЕ пустой список. Различие данными: тот же экран при `[]` и при 500
+    // обязан выглядеть по-разному, у отказа есть «Попробовать снова» (а у пустого её нет), повтор спрашивает сервер заново
+    // и рисует пришедшее. Третий заход — одна битая строка (нет `title`): разборщик строгий (#877, как `fromPayouts`),
+    // значит это тоже отказ целиком, а не список из одного «Массажа»
+    {
+      const n = 'ops-businesses-fail';
+      const look = async (o, tag) => {
+        const s = await opsOpen(opsWho(['ops_director']), o);
+        const ok = await toBiz(s, `${n} (${tag})`);
+        return { s, ok, t: ok ? await s.view() : '', retry: ok && await retryBtn(s) };
+      };
+      const e = await look({ dirs: () => json(200, []) }, 'пусто');
+      if (e.ok && e.retry) bad.push(`${n}: у пустого списка «Попробовать снова» — пустое прочтётся как отказ`);
+      await e.s.ctx.close();
+      let fail = true;
+      const f = await look({ dirs: () => fail ? json(500, { detail: 'Internal Server Error' }) : json(200, BIZ) }, '500');
+      if (f.ok) {
+        if (!f.retry) bad.push(`${n}: при отказе /directions нет «Попробовать снова» (кадр E75в)`);
+        if (e.ok && f.t === e.t) bad.push(`${n}: отказ /directions выглядит как пустой список: «${f.t.slice(0, 120)}»`);
+        if (f.t.includes('Бар')) bad.push(`${n}: при отказе на экране бизнес — откуда?`);
+        await f.s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+        if (f.retry) {
+          fail = false;
+          const before = dirGets(f.s);
+          await f.s.p.evaluate(() => [...document.querySelectorAll('#view button')].find(b => b.textContent.trim() === 'Попробовать снова').click());
+          await f.s.p.waitForTimeout(400);
+          if (dirGets(f.s) !== before + 1) bad.push(`${n}: «Попробовать снова» спросил /directions ${dirGets(f.s) - before} раз, ждали 1`);
+          const t2 = await f.s.view();
+          if (!t2.includes('[партнёр] [фамилия]') || await retryBtn(f.s)) bad.push(`${n}: после удачного повтора список не нарисован`);
+        }
+      }
+      if (f.s.errs.length) bad.push(`${n}: ошибки страницы ${f.s.errs.join('; ')}`);
+      await f.s.ctx.close();
+      const broken = [BIZ[0], { id: 9, is_active: true, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null }];
+      const k = await look({ dirs: () => json(200, broken) }, 'битая строка');
+      if (k.ok) {
+        if (!k.retry) bad.push(`${n}: строка без title не дала отказа — разборщик не строгий (#877)`);
+        if (k.t.includes('[партнёр]')) bad.push(`${n}: при битой строке показаны остальные — правдоподобный неполный список`);
+      }
+      await k.s.ctx.close();
+    }
+  }
+
   // ── остаток перечитывается по возврату в приложение (v110, Cafe13KPG#638) ──
   // Замеры frontend-upravlenie-ec. /me — управляемая заглушка: остаток меняется по ходу, ответ задерживается или
   // ломается. Возврат — событие focus окна (visibilitychange и activated Telegram — то же onReturn).
@@ -10013,7 +10161,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
     'order-state-worker': { id: 3, number: '261018-03', state: 'making' },
     'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW,
-    'events-afisha': AFISHA, 'places': PLACE_ROWS
+    'events-afisha': AFISHA, 'places': PLACE_ROWS,
+    // шаг 12 (Cafe13KPG#878): плашки «Бизнесов клуба» — та же BIZ, что у случаев ops-*
+    'directions-ops-director': OPS_BIZ
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
