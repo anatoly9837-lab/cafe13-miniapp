@@ -1431,7 +1431,7 @@ if (grantsSet.length !== 1) {
       let fail = true;
       const f = await look({ dirs: () => fail ? json(500, { detail: 'Internal Server Error' }) : json(200, BIZ) }, '500');
       if (f.ok) {
-        if (!f.retry) bad.push(`${n}: при отказе /directions нет «Попробовать снова» (E75g)`);
+        if (!f.retry) bad.push(`${n}: при отказе /directions нет «Попробовать снова» (кадр E75в)`);
         if (e.ok && f.t === e.t) bad.push(`${n}: отказ /directions выглядит как пустой список: «${f.t.slice(0, 120)}»`);
         if (f.t.includes('Бар')) bad.push(`${n}: при отказе на экране бизнес — откуда?`);
         await f.s.p.screenshot({ path: `${OUT}/live-${n}.png` });
