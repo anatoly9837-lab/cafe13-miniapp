@@ -5,7 +5,7 @@ Object.assign(SCREENS, {
   manage: function () {
     // v100: две группы, каждая по своему праву — «Кто в клубе» у главы, «Деньги» у ответственного
     // за пополнения (кадр E46, Cafe13KPG#586). Ни одного права — прежний отказ.
-    if (!mayPeople() && !mayTopups() && !mayMasters() && !(LIVE && msIsMaster())) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (!mayPeople() && !mayTopups() && !mayMasters() && !mayOps() && !(LIVE && msIsMaster())) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
     // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
     // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
@@ -29,14 +29,19 @@ Object.assign(SCREENS, {
       (mayMasters() ? '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
         '<span class="small">' + waitSub(MR.pending, 'Заявки в мастера, ивенты, слоты') + '</span></span>' +
         waitMark(MR.pending) + svg(ICON.chev, 'chev') + '</button>' : '') + own + '</div>' : '';
-    if (!mayPeople()) return money_ + art;
+    // шаг 12 (кадр E46е, Cafe13KPG#877): «Бизнесы» — у операционного директора (и админа). Пометки ждущих нет:
+    // ждать тут нечему до шага 13, его строка «Заявки в партнёры» ляжет в эту же группу
+    var biz = mayOps() ? '<div class="group"><span class="label">Бизнесы</span>' +
+      '<button type="button" class="listitem" data-go="businesses"><span class="grow"><b>Бизнесы клуба</b>' +
+        '<span class="small">Кто партнёр и открыта ли смена</span></span>' + svg(ICON.chev, 'chev') + '</button></div>' : '';
+    if (!mayPeople()) return money_ + art + biz;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
         '<span class="small">' + waitSub(wait, 'Кто просится в клуб') + '</span></span>' +
         waitMark(wait) + svg(ICON.chev, 'chev') + '</button>' +
       '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
         '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
-    '</div>' + money_ + art;
+    '</div>' + money_ + art + biz;
   },
 
   // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g (подтверждение) снят по #695; E56d — причина; E56e — своя
@@ -107,5 +112,27 @@ Object.assign(SCREENS, {
     return rows + check + err +
       '<button type="button" class="btn" data-action="tq-ok:' + q.id + '"' + busy + '>' + (TOPQ.busy ? 'Зачисляем…' : 'Зачислить ' + money(q.sum) + ' ฿') + '</button>' +
       '<button type="button" class="btn quiet" data-action="tq-ask:' + q.id + '"' + busy + '>Отказать</button>';
+  },
+
+  /* ── шаг 12: «Бизнесы клуба» (кадры E75 список, E75b пусто, E75v не загрузилось; Cafe13KPG#877, #881) — данные в
+     06-lyudi.js (`BIZ`). Плашка — НЕ кнопка и без шеврона (решение дизайнера, #881): за ней в шаге 12 нет экрана,
+     а шеврон обещал бы дверь. Пилюля — про СМЕНУ (`is_open`), и это сказано прозой под списком: без неё
+     «закрыт» читался бы как «закрыт навсегда» (`is_active`). Ни одного числа доли: шаг 21. */
+  businesses: function () {
+    if (LIVE && !mayOps()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Бизнесы клуба видит операционный директор.</span></div></div>';
+    if (!BIZ.list) return BIZ.fail ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(BIZ.fail) + '</span></div>' +
+        '<button type="button" class="btn quiet" data-action="biz-retry">Попробовать снова</button>' +
+        '<span class="small">Бизнесы клуба живут на сервере — без ответа показать их нечем.</span>'
+      : '<div class="card quiet"><span class="small">Загружаем бизнесы клуба…</span></div>';
+    if (!BIZ.list.length) return '<div class="note">' + svg(ICON.info) + '<span>Бизнесов в клубе пока нет. ' +
+      'Бизнес появляется, когда клуб договаривается с партнёром.</span></div>';
+    return BIZ.list.map(function (b) {
+      return '<div class="card"><div class="row"><span class="col"><b>' + esc(b.title) + '</b>' +
+          '<span class="small">' + (b.partner ? 'Партнёр: ' + esc(b.who || 'имя не указано') : 'Партнёра нет') + '</span></span>' +
+          (b.open ? '<span class="pill on">открыт</span>' : '<span class="pill">закрыт</span>') + '</div></div>';
+    }).join('') +
+      '<div class="note">' + svg(ICON.info) + '<span>«Открыт» и «закрыт» — про смену на сегодня, а не про закрытие бизнеса: ' +
+      'смену открывает куратор направления или администратор. Условий сделки и долей здесь нет.</span></div>';
   },
 });

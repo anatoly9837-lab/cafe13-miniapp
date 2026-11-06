@@ -225,6 +225,9 @@ function msDemoFill() {
               { id: 912, title: 'Тайский для начинающих', starts: '2026-11-02T19:00:00+07:00', guests: 8, may: false, at: '2026-11-07T12:00:00+07:00',
                 collected: 3200, left: 0, split: [0, 0, 0, 0], out: [2720, 288, 96, 96], pct: [85, 9, 3, 3] }];
   PAY.pending = 1;
+  // шаг 12: «Бизнесы клуба» кадра E75 — бар с партнёром и закрытый без партнёра (обе подписи плашки)
+  BIZ.list = [{ id: 1, title: 'Бар', open: true, partner: true, who: '[партнёр]' },
+              { id: 2, title: 'Кофейня', open: false, partner: false, who: null }];
   MR.price = { 2: 2600, 3: 3900, 4: 5200, 5: 6500 };
   if (!EV_PLACES) { EV_PLACES = [{ id: 1, name: 'Зал', capacity: null }]; EV_PLACES_STATE = 'ok'; MR.demoPlaces = true; }
   MSB.data = { dates: [{ day: '05.11', busy: [], conflict: null }, { day: '12.11', busy: [{ title: 'Чайная церемония', from: '16:00', to: '17:30' }], conflict: null },
@@ -241,6 +244,7 @@ function msDemoClear() {
   if (!MR.demo) return;
   MR.demo = false; MR.mine = null; MR.mineState = ''; MR.q = null; MR.pending = null; MR.slots = null; MR.without = null;
   PAY.list = null; PAY.pending = null; PAY.err = '';
+  BIZ.list = null; BIZ.fail = '';
   MR.price = {}; MR.priceAsk = {}; RNW.prev = null; RNW.key = ''; MSB.data = null; MSB.key = '';
   if (MR.demoPlaces) { MR.demoPlaces = false; EV_PLACES = null; EV_PLACES_STATE = ''; }
 }
