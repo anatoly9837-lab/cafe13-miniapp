@@ -10963,5 +10963,5 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     skipped: [...SKIPPED], notes, bad, ran }));
   const whose = MINE ? ` (часть ${ONLY}: случаев ${SITES.run.length} из ${site}; сводку по обеим судит tools/live-svod.cjs)` : '';
   if (bad.length) { console.log('КРАСНОЕ' + whose + ':\n' + bad.join('\n')); process.exit(1); }
-  console.log('зелёное: ' + ran + ' прогонов экрана (из них ' + CASES.length + ' табличных)' + whose);
+  console.log('зелёное: ' + ran + ' прогонов экрана' + (SITES.run.includes(1) ? ' (из них ' + CASES.length + ' табличных)' : '') + whose);   // таблица — случай №1
 })();
