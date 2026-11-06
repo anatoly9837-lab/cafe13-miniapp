@@ -815,6 +815,105 @@ function loadBusinesses() {
     if (current === 'businesses') render();
   });
 }
+/* ── шаг 13: заявка в партнёры (Cafe13KPG#889, сервер cafe13-api#143, снимки partner-* — cafe13-miniapp#256) ──
+   Образец — заявка мастера: деньги первого месяца списываются при подаче, отказ возвращает их встречной строкой,
+   согласие операционного директора СОЗДАЁТ бизнес. Разборщик строгий: одна битая строка — отказ целиком (§4).
+   ⚠ Рецептов шага 13 в стволе нет (#887): слова и раскладка — по образцу мастера и сверяются, когда рецепт ляжет. */
+// ⚠ ЗАПЛАТКА до Cafe13KPG#902: цену месяца бизнеса сервер наружу не отдаёт (`PRICE_MONTH`, partner.py:52). Число —
+// слово владельца 06.11.2026 («платная, как мастер, 2 600 ฿»; «Месячная, как статус мастера»). Последнее слово — за
+// сервером: не хватит денег — он откажет своими словами, и клиент их покажет
+var PARTNER_PRICE = 2600;
+var PR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail: '', qGen: 0,
+           busy: false, ask: 0, note: '', qErr: '', title: '', about: '', err: '' };
+function prMoment(v) {
+  return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:?\d\d)$/.test(v) && !isNaN(Date.parse(v));
+}
+/* Заявка: снимки partner-request-201, partner-requests-mine, partner-requests-ops-director. Сумма — строкой.
+   Согласие и бизнес идут парой: `approved` без `direction_id` (или наоборот) — не та форма, что пишет сервер.
+   `paid_till` — ключ обязателен: null законен (бизнеса нет), пропавший ключ — нет. Номер человека в разметку не идёт. */
+function fromPartnerReq(x, queue) {
+  if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.about !== 'string') return null;
+  var amount = typeof x.amount === 'string' && /^\d+(\.\d+)?$/.test(x.amount) ? Number(x.amount) : NaN;
+  if (!isFinite(amount) || !{ pending: 1, approved: 1, rejected: 1 }[x.status] || typeof x.status_ru !== 'string') return null;
+  if (!prMoment(x.created_at) || !(x.decided_at === null || prMoment(x.decided_at))) return null;
+  if (!(x.decision_note === null || typeof x.decision_note === 'string') || typeof x.active !== 'boolean') return null;
+  if (!(x.direction_id === null || typeof x.direction_id === 'number') || (x.status === 'approved') !== (x.direction_id !== null)) return null;
+  if (!('paid_till' in x) || !(x.paid_till === null || prMoment(x.paid_till))) return null;
+  var r = { id: x.id, title: x.title, about: x.about, amount: amount, status: x.status, word: x.status_ru,
+            note: x.decision_note || '', iso: x.created_at, done: x.decided_at, biz: x.direction_id, till: x.paid_till, active: x.active };
+  if (queue) {
+    if (typeof x.member_id !== 'number' || typeof x.first_name !== 'string' || typeof x.last_name !== 'string' ||
+        !(x.username === null || typeof x.username === 'string')) return null;
+    r.who = msName(x);
+  }
+  return r;
+}
+function fromPartnerList(d, queue) {
+  if (!d || !Array.isArray(d.requests) || queue && typeof d.pending !== 'number') return null;
+  var out = d.requests.map(function (x) { return fromPartnerReq(x, queue); });
+  if (out.some(function (x) { return !x; })) return null;
+  return { list: out, pending: queue ? d.pending : null };
+}
+function loadMinePartner() {
+  if (!LIVE) return;
+  var gen = ++PR.mineGen; PR.mineState = 'loading';
+  api('GET', '/partner/requests/mine').then(function (r) {
+    if (gen !== PR.mineGen) return;
+    var d = r.status === 200 ? fromPartnerList(r.data, false) : null;
+    PR.mine = d ? d.list : null; PR.mineState = d ? 'ok' : failText(r);
+    if ({ home: 1, partnerApply: 1 }[current]) render();
+  });
+}
+function loadPartnerQueue() {
+  if (!LIVE || !mayOps()) return;
+  var gen = ++PR.qGen; PR.qFail = '';
+  api('GET', '/partner/requests').then(function (r) {
+    if (gen !== PR.qGen) return;
+    var d = r.status === 200 ? fromPartnerList(r.data, true) : null;
+    if (d) { PR.q = d.list; PR.pending = d.pending; } else { PR.q = null; PR.qFail = r.status === 403 ? denyText(r) : failText(r); }
+    if ({ manage: 1, partnerReqs: 1, partnerReq: 1 }[current]) render();
+  });
+}
+function sendPartner() {
+  if (PR.busy) return;
+  PR.err = !PR.title.trim() ? 'Назовите бизнес.' : PR.title.trim().length > 200 ? 'Название — не длиннее 200 знаков.'
+    : PR.about.length > 2000 ? 'О бизнесе — не длиннее 2000 знаков.' : '';
+  if (PR.err) { render(); return; }
+  if (!LIVE) return;
+  PR.busy = true; render();
+  api('POST', '/partner/request', { title: PR.title.trim(), about: PR.about }).then(function (r) {
+    PR.busy = false;
+    var got = r.status === 201 ? fromPartnerReq(r.data, false) : null;
+    // деньги могли уйти и при неразобранном ответе — свою заявку и остаток перечитываем ВСЕГДА
+    loadMinePartner(); refreshMe();
+    if (got) {
+      PR.title = ''; PR.about = ''; PR.err = '';
+      FLASH = { text: 'Заявка отправлена', note: 'Списано ' + money(got.amount) + ' ฿. Решение примет операционный директор; если он откажет, деньги вернутся на счёт.' };
+      go('home'); return;
+    }
+    PR.err = denyText(r);
+    if (current === 'partnerApply') render();
+  });
+}
+// ответ decide — только статус и `direction_id` (названия и `paid_till` в нём нет, Cafe13KPG#902): итог берётся из очереди
+function decidePartner(id, decision) {
+  var note = decision === 'rejected' ? PR.note.trim() : '';
+  if (PR.busy || !LIVE || !mayOps() || decision === 'rejected' && (PR.ask !== id || !note)) return;
+  PR.busy = true; PR.qErr = ''; render();
+  api('POST', '/partner/requests/' + id + '/decide', { decision: decision, note: note }).then(function (r) {
+    PR.busy = false;
+    if (r.status === 200 && r.data && r.data.status === decision) {
+      FLASH = { text: decision === 'approved' ? 'Согласовано' : 'Отказано',
+                note: decision === 'approved' ? 'Бизнес заведён, первый месяц оплачен.' : 'Деньги вернулись на счёт заявителя.' };
+      PR.ask = 0; PR.note = '';
+      loadPartnerQueue(); loadBusinesses(); go('partnerReqs'); return;
+    }
+    PR.qErr = denyText(r);
+    if (r.status === 409) loadPartnerQueue();
+    if (current === 'partnerReq') render();
+  });
+}
+
 // плашка прототипа — механизм на будущее: сейчас PROTO пуст, шаг 3 подключён (v109)
 function protoStrip() {
   return '<div class="proto-strip" role="note"><b>Прототип</b><span class="small">Данные примерные, нажатия ничего не отправляют.</span></div>';
