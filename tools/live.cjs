@@ -1504,7 +1504,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // закрытый бизнес (`closed_at`, is_active=false) в список не берётся вовсе — кадр E75 (Cafe13KPG#881/#882):
     // «открыт/закрыт» на плашке — про СМЕНУ (is_open), а не про закрытие бизнеса
     { id: 11, title: 'Прачечная', is_active: false, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null }];
-  {
+  if (part(1)) {
     const BIZ = OPS_BIZ;
     const opsWho = roles => {
       const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null }));
