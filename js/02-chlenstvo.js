@@ -346,6 +346,10 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               // шаг 7, часть А (Cafe13KPG#755, решение координатора 02.11.2026 по слову владельца в #510 «как дойдём до этих
               // вкладок — посмотрим и настроим»): «Записи» — дверь к благодарности за прошедшее; экран «Поблагодарить мастера» (E65)
               bookings: 1, thanks: 1,
+              // шаг 11 (Cafe13KPG#857): «Распределить деньги» арт-директора — на ручках cafe13-api#136
+              payouts: 1, payout: 1,
+              // шаг 12 (Cafe13KPG#877): «Бизнесы клуба» операционного директора — на `GET /directions` с партнёром (cafe13-api#876)
+              businesses: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
@@ -375,5 +379,6 @@ var PROTO = {};
    отправки модуля мастеров вне LIVE возвращаются, не позвав сервер). Демо-человек — МАСТЕР со своим
    согласованным слотом (решение координатора): живы «Клуб» с «Продлить», продление и «Вы мастер».
    Форму E54b и «Заявка уже ждёт решения» снимает опись своей фикстурой (`MR.mine = []` / `[pending]`). */
-var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1, masterRenew: 1 };
+var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1, masterRenew: 1,
+               payouts: 1, payout: 1, businesses: 1 };
 

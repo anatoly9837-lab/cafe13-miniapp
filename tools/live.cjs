@@ -650,6 +650,151 @@ if (grantsSet.length !== 1) {
     }
   }
 
+  // ── шаг 11: «Распределить деньги» у арт-директора (кадры E46д, E69, E69b; Cafe13KPG#857, ручки cafe13-api#136) ──
+  // ⚠ Доли в заглушке НАРОЧНО не табличные (80/12/4/4 и 4 001 / 511 / 142 / 146 при собранных 4 800; ни одна сумма не равна
+  // табличной 4 080 / 432 / 144 / 144 — прежние 144 у двух долей совпадали с 3 %, находка frontend-11): клиент, посчитавший
+  // 85/9/3/3 сам, напечатал бы «4 080 ฿» и «85 %» и покраснел бы здесь, а с табличными числами прошёл бы зелёным.
+  {
+    const PAY_URL = '/events/undistributed?with_distributed=true';
+    const prow = (id, may, extra) => Object.assign({ event_id: id, title: id === 701 ? 'Керамика по вечерам' : 'Тайский для начинающих',
+      starts_at: id === 701 ? '2026-11-06T11:30:00+00:00' : '2026-11-02T12:00:00+00:00', organizer_id: 77, organizer_first_name: '[мастер]',
+      organizer_last_name: '', entries: '4600.00', paid_bookings: 12, donations: '200.00', donations_count: 1, collected: '4800.00',
+      distributed: may ? '0.00' : '4800.00', undistributed: may ? '4800.00' : '0.00',
+      shares: { master_pct: 80, club_pct: 20, club_net_pct: 12, art_pct: 4, space_pct: 4 },
+      split: may ? { master: '4001.00', club: '799.00', club_net: '511.00', art_amount: '146.00', space_amount: '142.00' }
+                 : { master: '0.00', club: '0.00', club_net: '0.00', art_amount: '0.00', space_amount: '0.00' },
+      distributed_at: may ? null : '2026-11-07T05:00:00+00:00',
+      paid_out: may ? { master: '0.00', club_net: '0.00', art_amount: '0.00', space_amount: '0.00' }
+                    : { master: '2720.00', club_net: '288.00', art_amount: '96.00', space_amount: '96.00' },
+      may_distribute: may }, extra || {});
+    const who = (roles, organizer) => {
+      const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null }));
+      if (organizer) p.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true });
+      return p;
+    };
+    const payOpen = async (me, o) => {
+      const s = await open(true, true, json(200, me), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === PAY_URL) return json(200, o.list());
+        const m = u.match(/^\/events\/(\d+)\/distribute$/);
+        if (m && q.method() === 'POST') { o.posted.push(Number(m[1])); return o.reply(Number(m[1])); }
+        return undefined;
+      });
+      await s.p.waitForTimeout(250);
+      return s;
+    };
+    const tapPay = async (s, n, sel, what) => {
+      const ok = await s.p.evaluate(x => { const b = document.querySelector(x); if (!b || b.disabled) return false; b.click(); return true; }, sel);
+      if (!ok) bad.push(`${n}: нечего нажать — ${what} (${sel})`);
+      await s.p.waitForTimeout(300);
+      return ok;
+    };
+    const groups = s => s.p.evaluate(() => [...document.querySelectorAll('#view .group')].map(g => ({
+      label: (g.querySelector('.label') || {}).textContent, items: [...g.querySelectorAll('.listitem b')].map(b => b.textContent) })));
+    // путь целиком: вход строкой в «Деньги» → плашки → подтверждение присланными числами → одна отправка → список
+    {
+      const n = 'pay-ad-put';
+      const o = { posted: [], done: false, list: () => o.done ? [prow(701, false), prow(702, false)] : [prow(701, true), prow(702, false)],
+                  reply: id => { o.done = true; return json(201, { event_id: id, id: 1, at: '2026-11-07T05:00:00+00:00', base: '4800.00',
+                    master_amount: '4001.00', club_amount: '799.00', club_net: '511.00', art_amount: '146.00', space_amount: '142.00',
+                    ledger_id: 5, shares: { master_pct: 80, club_pct: 20, club_net_pct: 12, art_pct: 4, space_pct: 4 } }); } };
+      const s = await payOpen(who(['art_director']), o);
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      const g = await groups(s), money_ = g.filter(x => x.label === 'Деньги');
+      if (money_.length !== 1) bad.push(`${n}: групп «Деньги» на «Управлении» ${money_.length}, ждали 1 (${JSON.stringify(g)})`);
+      else {
+        if (!money_[0].items.includes('Распределить деньги')) bad.push(`${n}: в «Деньгах» нет «Распределить деньги» у арт-директора (${JSON.stringify(money_[0].items)})`);
+        if (money_[0].items.includes('Заявки на пополнение')) bad.push(`${n}: арт-директору без права пополнений показаны «Заявки на пополнение»`);
+      }
+      const mark = await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="payouts"] .count'); return b ? b.textContent : null; });
+      if (mark !== '1') bad.push(`${n}: пометка ждущих на входе «${mark}», ждали «1» (одна плашка may_distribute)`);
+      if (await tapPay(s, n, '#view [data-go="payouts"]', '«Распределить деньги»')) {
+        const t = await s.view();
+        for (const w of ['Гости — те, кто заплатил за вход', 'Керамика по вечерам', '6 ноября · 18:30', 'ждёт', 'распределено',
+                         'Ушло 7 ноября', 'мастеру 4 001 ฿', 'клубу 511 ฿', 'управляющей пространством 142 ฿', 'арт-директору 146 ฿',
+                         'мастеру 2 720 ฿', 'Гостей12', 'Собрано4 800 ฿'])
+          if (!t.includes(w)) bad.push(`${n}: на списке нет «${w}»`);
+        await s.p.screenshot({ path: `${OUT}/live-${n}-spisok.png`, fullPage: true });
+        for (const w of ['4 080', '432 ฿', '144 ฿']) if (t.includes(w)) bad.push(`${n}: на списке «${w}» — доля посчитана клиентом по таблице 85/9/3/3, а не взята у сервера`);
+        if (await s.p.$('#view [data-action="pay-open:702"]')) bad.push(`${n}: у распределённой плашки есть кнопка — нажимать там нечего`);
+        const no = await s.p.evaluate(() => [...document.querySelectorAll('#view button')].map(b => b.textContent).filter(x => /тказ/.test(x)));
+        if (no.length) bad.push(`${n}: на экране кнопка отказа ${JSON.stringify(no)} — слово владельца: её нет`);
+        if (await tapPay(s, n, '#view [data-action="pay-open:701"]', 'плашка «ждёт»')) {
+          const c = await s.view();
+          for (const w of ['Мастеру, 80 %', '4 001 ฿', 'Клубу, 12 %', '511 ฿', 'Управляющей пространством, 4 %142 ฿', 'Арт-директору, 4 %146 ฿',
+                           'Подтвердить 4 800 ฿', 'Деньги уйдут сразу'])
+            if (!c.includes(w)) bad.push(`${n}: на подтверждении нет «${w}»`);
+          await s.p.screenshot({ path: `${OUT}/live-${n}-podtverdit.png` });
+          for (const w of ['85 %', '9 %', '3 %', '4 080', '432 ฿', '144 ฿']) if (c.includes(w)) bad.push(`${n}: на подтверждении «${w}» — число из головы клиента, а не с сервера`);
+          const before = s.calls.length;
+          if (await tapPay(s, n, '#view [data-action="pay-go:701"]', '«Подтвердить»')) {
+            await s.p.waitForTimeout(300);
+            const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+            if (o.posted.length !== 1 || o.posted[0] !== 701) bad.push(`${n}: распределение ушло ${JSON.stringify(o.posted)}, ждали [701]`);
+            if (!after.includes('GET ' + PAY_URL)) bad.push(`${n}: после распределения список не перечитан (${JSON.stringify(after)})`);
+            if (await s.p.evaluate(() => current) !== 'payouts') bad.push(`${n}: после распределения не на списке`);
+            const r = await s.view();
+            if (!r.includes('Распределено') || !r.includes('мастеру ушло 4 001 ฿')) bad.push(`${n}: итог не назван словами ответа («мастеру ушло 4 001 ฿»)`);
+            if (await s.p.$('#view [data-action="pay-open:701"]')) bad.push(`${n}: после распределения плашка 701 всё ещё «ждёт»`);
+          }
+        }
+      }
+      await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // «Подтвердить» на уже распределённом (другой арт-директор успел): отказ — словами сервера, экран не уходит
+    {
+      const n = 'pay-ad-povtor';
+      const o = { posted: [], list: () => [prow(701, true)],
+                  reply: () => json(409, { detail: 'распределять нечего: собранное уже распределено' }) };
+      const s = await payOpen(who(['art_director']), o);
+      await s.p.evaluate(() => go('payouts')); await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('payout', 701)); await s.p.waitForTimeout(300);
+      if (await tapPay(s, n, '#view [data-action="pay-go:701"]', '«Подтвердить»')) {
+        await s.p.waitForTimeout(300);
+        const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
+        if (alert !== 'Распределять нечего: собранное уже распределено.') bad.push(`${n}: отказ не словами сервера: ${JSON.stringify(alert)}`);
+        if (await s.p.evaluate(() => current) !== 'payout') bad.push(`${n}: после 409 экран подтверждения закрылся`);
+        if ((await s.view()).includes('Распределено')) bad.push(`${n}: после 409 сказано «Распределено»`);
+        if (o.posted.length !== 1) bad.push(`${n}: POST ушёл ${o.posted.length} раз, ждали 1`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // пустой список (E69v)
+    {
+      const n = 'pay-ad-pusto';
+      const s = await payOpen(who(['art_director']), { posted: [], list: () => [], reply: () => json(500, {}) });
+      await s.p.evaluate(() => go('payouts')); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes('Прошедших мероприятий пока нет.')) bad.push(`${n}: пустой список не назван`);
+      await s.ctx.close();
+    }
+    // МАСТЕР (и ответственный за пополнения) — не арт-директор: строки нет, экраны — «Сюда нельзя», ручки не спрошены,
+    // прямой вызов отправки не уходит. Прямой go(), а не кнопка: вход ПРЯЧЕТ экран, а не запрещает его
+    for (const [n, me, topups] of [['pay-master', who([], true), false], ['pay-topups', who(['topups']), true]]) {
+      const o = { posted: [], list: () => [prow(701, true)], reply: () => json(201, {}) };
+      const s = await payOpen(me, o);
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      const g = await groups(s), items = g.reduce((a, x) => a.concat(x.items), []);
+      if (items.includes('Распределить деньги')) bad.push(`${n}: на «Управлении» есть «Распределить деньги» — распределяет арт-директор`);
+      if (topups && !items.includes('Заявки на пополнение')) bad.push(`${n}: у ответственного за пополнения пропали «Заявки на пополнение»`);
+      for (const [sc, arg] of [['payouts', null], ['payout', 701]]) {
+        await s.p.evaluate(([x, a]) => go(x, a), [sc, arg]); await s.p.waitForTimeout(200);
+        const cur = await s.p.evaluate(() => current);
+        if (cur === sc && !(await s.view()).includes('Сюда нельзя')) bad.push(`${n}: «${sc}» открыт без права арт-директора`);
+      }
+      await s.p.evaluate(() => { PAY.list = [{ id: 701, title: 'x', starts: '', guests: 0, may: true, at: null, collected: 1, left: 1,
+                                               split: [1, 0, 0, 0], out: [0, 0, 0, 0], pct: [1, 0, 0, 0] }]; sendPayout(701); });
+      await s.p.waitForTimeout(300);
+      const sent = s.calls.map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
+      if (sent.some(u => u.includes('/events/undistributed'))) bad.push(`${n}: без права спрошен список распределения (сервер ответит 403)`);
+      if (o.posted.length) bad.push(`${n}: без права ушло распределение прямым вызовом sendPayout`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
   // ── «Я мастер» на «Клубе» (v109 на ручках, кадры E54*): цена сервера, «+» по остатку, подача, своя заявка ──
   // Замеры frontend-upravlenie-ec; подлог arhitector-47 на v108 («+» без сверки) держит вторая линия ниже.
   // ⚠ Цена в заглушке НАРОЧНО не 2 600: клиент, подставивший свою константу, совпал бы с «естественной» ценой
@@ -8062,13 +8207,13 @@ if (grantsSet.length !== 1) {
         const folded = await s.view();
         ['Алевтина Тестова', 'Сомчай', 'Член клуба', 'Бизнес-партнёр']
           .forEach(x => { if (!folded.includes(x)) bad.push(`people-head: в свёрнутом списке нет «${x}»`); });
-        if (folded.includes('Куратор направления · Бар')) bad.push('people-head: роль видна в СВЁРНУТОЙ строке — свёртка не свернула настройки');
+        if (folded.includes('Куратор направления (Бар)')) bad.push('people-head: роль видна в СВЁРНУТОЙ строке — свёртка не свернула настройки');
         if (await s.p.$(`${card(s, 0)} .chip`)) bad.push('people-head: чип в свёрнутой карточке');
-        // ⚠ Роль «Куратор направления · Бар» у человека 0, а бейдж «Глава клуба» — у 2:
+        // ⚠ Роль «Куратор направления (Бар)» у человека 0, а бейдж «Глава клуба» — у 2:
         // раскрывать надо ту карточку, чей предмет спрашиваешь, иначе отсутствие означает
         // «не ту открыл», а не «потеряно».
         await pokazhi(s, 0);
-        if (!(await s.view()).includes('Куратор направления · Бар')) bad.push('people-head: в раскрытой карточке нет роли «Куратор направления · Бар»');
+        if (!(await s.view()).includes('Куратор направления (Бар)')) bad.push('people-head: в раскрытой карточке нет роли «Куратор направления (Бар)»');
         await pokazhi(s, 2);
         const t = await s.view();
         // v78 (E47z): уровни и роли — надписи-кнопки; «Ролей нет», «без членства» и «единственный глава
@@ -8231,7 +8376,7 @@ if (grantsSet.length !== 1) {
         const pp = posts(s, /\/roles$/);
         if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'curator', direction_id: 7 }))
           bad.push('people-grant-dir: ушло ' + JSON.stringify(pp.map(c => c.body)));
-        if (!(await note(s, 1)).includes('Выдано: Куратор направления · Бар.')) bad.push('people-grant-dir: в карточке нет итога «Выдано»');
+        if (!(await note(s, 1)).includes('Выдано: Куратор направления (Бар).')) bad.push('people-grant-dir: в карточке нет итога «Выдано»');
         if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-grant-dir: список не перечитан после выдачи');
       }
       await s.ctx.close();
@@ -8273,6 +8418,33 @@ if (grantsSet.length !== 1) {
       const deny = await s.p.$eval(`${card(s, uid)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== detail) bad.push(`${name}: плашка «${deny}», ждали «${detail}»`);
       if ((await s.view()).match(/Выдано:|Снято:/)) bad.push(`${name}: отказ показан успехом`);
+      await s.ctx.close();
+    }
+
+    // ── роль и направление в чипе (Cafe13KPG#869): подпись роли `bar` САМА с « · » («Бар · исполнитель»), поэтому
+    // направление клеится скобками — между ролью и направлением ровно ОДИН разделитель. ⚠ Фикстура нарочно берёт роль,
+    // чья подпись содержит « · »: на curator/staff/head старая склейка неотличима от новой — зелёное там не различает
+    {
+      const n = 'people-rol-napravlenie';
+      const R = clone(ROSTER);
+      R.people[1].roles = [{ id: 44, role: 'bar', direction_id: 12, direction: 'Кофейня', granted_at: '2026-10-20T10:00:00+00:00' }];
+      const s = await peopleCase(OWNER, { people: json(200, R) });
+      if (!(await toPeople(s))) bad.push(`${n}: нет входа «Члены клуба»`);
+      else {
+        await pokazhi(s, 1);
+        const chips = await s.p.$$eval(`${card(s, 1)} .chip`, e => e.map(x => x.textContent.trim()));
+        const want = await s.p.evaluate(() => ROLE_NAME.bar);
+        if (!/ · /.test(want)) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — подпись роли bar «${want}» без « · », фикстура больше не различает склейку`);
+        const chip = chips.filter(x => x.startsWith(want))[0];
+        if (!chip) bad.push(`${n}: в карточке нет чипа роли «${want}» (${JSON.stringify(chips)})`);
+        else {
+          if (!chip.startsWith(want + ' (Кофейня)')) bad.push(`${n}: чип «${chip}» — направление не отделено от роли скобками (ждали «${want} (Кофейня)»)`);
+          if (chip.includes(want + ' · Кофейня')) bad.push(`${n}: чип «${chip}» — роль и направление склеены тем же « · », что внутри подписи роли`);
+          const tail = chip.slice(want.length);
+          if ((tail.match(/ · /g) || []).length) bad.push(`${n}: после подписи роли в чипе ещё « · » («${tail}») — разделителей между ролью и направлением больше нуля точек`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
 
@@ -8581,7 +8753,7 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
       if (posts(s, /\/roles\/31\/revoke$/).length !== 1) bad.push('people-revoke: снятие не ушло ровно один раз');
-      if (!(await note(s, 0)).includes('Снято: Куратор направления · Бар.')) bad.push('people-revoke: в карточке нет итога «Снято»');
+      if (!(await note(s, 0)).includes('Снято: Куратор направления (Бар).')) bad.push('people-revoke: в карточке нет итога «Снято»');
       if (!(await s.p.$(`${card(s, 0)} .note [data-action="p-back"]`))) bad.push('people-revoke: у итога «Снято» нет «Отменить»');
       // «справа» — правилом, а не длиной фразы (designer-55: на коротком итоге кнопка вставала в 154 px от края)
       const gap = await s.p.evaluate(() => { const n = document.querySelector('.note.act'), b = n && n.querySelector('[data-action="p-back"]');
@@ -9084,7 +9256,7 @@ if (grantsSet.length !== 1) {
       const g = posts(s, /\/roles$/);
       if (g.length !== 1 || g[0].body !== JSON.stringify({ member_id: 701, role: 'curator', direction_id: 7 }))
         bad.push(`${n}: отмена снятия ушла не той выдачей: ${JSON.stringify(g.map(c => c.body))}`);
-      if (!(await note(s, 0)).includes('Возвращено: Куратор направления · Бар.')) bad.push(`${n}: нет итога «Возвращено»: ${await note(s, 0)}`);
+      if (!(await note(s, 0)).includes('Возвращено: Куратор направления (Бар).')) bad.push(`${n}: нет итога «Возвращено»: ${await note(s, 0)}`);
       if (await s.p.$('[data-action="p-back"]')) bad.push(`${n}: «Отменить» осталось после отмены`);
       await s.ctx.close();
     }
