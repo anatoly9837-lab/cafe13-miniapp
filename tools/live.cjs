@@ -1192,6 +1192,73 @@ if (grantsSet.length !== 1) {
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // ── М.4 (Cafe13KPG#896): месяц мастера от даты оплаты — «оплачено до» из `paid_till`, превью с датами окна ──
+    // Сервер М.1 — cafe13-api#141/#142, снимки — cafe13-miniapp#255 (`paid_till` момент, `periods[]{starts_at, ends_at}`).
+    // ⚠ `paid_until` (старое поле, держится до М.2) в заглушке НАРОЧНО другой датой: клиент, читающий его, покажет 30.11 /
+    // 31.01 и покраснеет здесь — это и есть подлог карточки. Момент `…T17:00:00Z` = 00:00 следующих суток по часам клуба
+    // (+07): клиент, взявший дату в UTC, напишет 14-е и тоже покраснеет. Дата — «15.12.2026» или «15 декабря»: формат слов
+    // ставит М.2/М.3, случай судит ДАТУ. ⚠ Кадров М.3 и клиента М.2 на момент записи нет — слова сверить по ним.
+    {
+      const TILL = '2026-12-14T17:00:00+00:00', TILL2 = '2027-01-14T17:00:00+00:00';
+      const D15_12 = /15(\.12\.2026|\s+декабря)/, D15_01 = /15(\.01\.2027|\s+января)/;
+      const m4Open = async (row, prev) => {
+        const o = { mine: () => [row], posted: [], prevAsked: [], renewed: [] };
+        const api = masterApi(o);
+        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
+          const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+          if (/^\/master\/requests\/901\/periods\/preview\?months=\d+$/.test(u)) return prev();
+          return api(q);
+        });
+        await s.p.waitForTimeout(300);
+        const ok = await s.p.$('#view [data-go="masterRenew"]');
+        if (ok) { await s.p.click('#view [data-go="masterRenew"]'); await s.p.waitForTimeout(500); }
+        return { s, ok: !!ok };
+      };
+      const PREV = extra => () => json(200, Object.assign({ request_id: 901, months: [{ month: 1 }],
+        periods: [{ starts_at: TILL, ends_at: TILL2 }], per_month: '2700.00', weeks: 4, charged: '2700.00',
+        paid_until: '2027-01-31', paid_till: TILL2, enough: true, short: '0.00' }, extra || {}));
+      // m4-oplacheno-do + m4-prevyu-okno: «оплачено до» из paid_till, «будет до» и окно из periods
+      {
+        const n = 'm4-oplacheno-do';
+        const { s, ok } = await m4Open(mreq(901, 'approved', { paid_until: '2026-11-30', paid_till: TILL }), PREV());
+        if (!ok) bad.push(`${n}: на «Клубе» нет «Продлить» у мастера с согласованным слотом`);
+        else {
+          const t = await s.view();
+          if (!/Оплачено до/i.test(t) || !D15_12.test(t)) bad.push(`${n}: нет «Оплачено до» с 15.12.2026 (paid_till ${TILL}) — «${t.slice(0, 160)}»`);
+          if (/30\.11\.2026|30\s+ноября/.test(t)) bad.push(`${n}: на экране 30.11 — дата из старого paid_until, а не из paid_till`);
+          if (/14(\.12\.2026|\s+декабря)/.test(t)) bad.push(`${n}: на экране 14.12 — момент paid_till прочитан в UTC, а не по часам клуба`);
+          // превью продления (m4-prevyu-okno): окно [15.12.2026, 15.01.2027) датами, «будет до» — из paid_till превью
+          if (!D15_01.test(t)) bad.push(`m4-prevyu-okno: в превью нет конца окна 15.01.2027 (periods[0].ends_at)`);
+          if (/31\.01\.2027|31\s+января/.test(t)) bad.push(`m4-prevyu-okno: в превью 31.01.2027 — дата из старого paid_until превью`);
+          await s.p.screenshot({ path: `${OUT}/live-${n}.png`, fullPage: true });
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // m4-net-polya (§4): поля paid_till НЕТ (старый сервер) — «не загрузилось», и это НЕ «не оплачено». Различие данными:
+      // тот же экран при paid_till: null (оплаченных периодов нет — законно) обязан выглядеть иначе
+      {
+        const n = 'm4-net-polya';
+        const look = async row => { const r = await m4Open(row, PREV()); const t = r.ok ? await r.s.view() : ''; await r.s.ctx.close(); return { ok: r.ok, t }; };
+        const none = await look(mreq(901, 'approved', { paid_until: '2026-11-30' }));          // paid_till нет вовсе
+        const nul = await look(mreq(901, 'approved', { paid_until: null, paid_till: null }));    // оплаты нет — законно
+        if (none.ok) {
+          if (!/не загрузил/i.test(none.t)) bad.push(`${n}: без поля paid_till нет «не загрузилось» — «${none.t.slice(0, 160)}»`);
+          if (/Оплаченных месяцев нет|не оплачен/i.test(none.t)) bad.push(`${n}: без поля paid_till сказано «не оплачено» — нет поля и нет оплаты неразличимы`);
+          if (/Оплачено до/i.test(none.t)) bad.push(`${n}: без поля paid_till есть «Оплачено до» — дата взята не из paid_till`);
+        }
+        if (nul.ok && /не загрузил/i.test(nul.t)) bad.push(`${n}: при paid_till: null (оплаты нет) — «не загрузилось», а ответ законный`);
+        if (none.ok && nul.ok && none.t === nul.t) bad.push(`${n}: «нет поля» и «нет оплаты» выглядят одинаково`);
+        // превью без periods — тоже отказ, а не окно из головы клиента
+        const r = await m4Open(mreq(901, 'approved', { paid_until: '2026-11-30', paid_till: TILL }), () => {
+          const b = JSON.parse(PREV()().body); delete b.periods; return json(200, b); });
+        if (r.ok) {
+          const t = await r.s.view();
+          if (D15_01.test(t)) bad.push(`${n}: превью без periods показало окно до 15.01.2027 — окно не из ответа сервера`);
+        }
+        await r.s.ctx.close();
+      }
+    }
     // ── продление мастера (v113, кадры E59/E59b, Cafe13KPG#651): окно ДО отправки с политикой ухода 'cancel' ──
     // Перенос пяти проб arhitector-47 (ревью #173) словами автора; rnw-send-lost и rnw-lock — его же «не покрыто».
     // Деньги сверяются без пробелов (в т.ч. неразрывных): разрядка — дело money(), а не случая.
