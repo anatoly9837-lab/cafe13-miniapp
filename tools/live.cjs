@@ -1309,7 +1309,7 @@ if (grantsSet.length !== 1) {
     }
   }
 
-  // ── шаг 12: операционный директор — вкладка «Управление» и «Бизнесы клуба» (Cafe13KPG#878, кадры E75* #875) ──
+  // ── шаг 12: операционный директор — вкладка «Управление» и «Бизнесы клуба» (Cafe13KPG#878, кадры E46е и E75* — Cafe13KPG#881, #882) ──
   // Клиент — Cafe13KPG#877 (`mayOps`, экран `businesses`), сервер — #876 (cafe13-api `backend/ops-directions`, `_is_ops`).
   // Строка заглушки — по снимку `directions-ops-director` (семь ключей: id, title, is_active, is_open, partner_id,
   // partner_first_name, partner_last_name); сверка — `STUBS` ниже, заглушка заново не придумывается.
@@ -1362,9 +1362,9 @@ if (grantsSet.length !== 1) {
       else {
         await s.p.click('#tabs [data-go="manage"]'); await s.p.waitForTimeout(250);
         const g = await opsGroups(s);
-        // E75 (#855 §3): ровно одна группа «Бизнесы» со строкой «Бизнесы клуба»; прав главы, пополнений и мастеров у него нет
+        // кадр E46е (#882): ровно одна группа «Бизнесы» со строкой «Бизнесы клуба»; прав главы, пополнений и мастеров у него нет
         if (JSON.stringify(g) !== JSON.stringify([{ label: 'Бизнесы', items: ['Бизнесы клуба'] }]))
-          bad.push(`${n}: на «Управлении» у операционного директора ${JSON.stringify(g)}, ждали одну группу «Бизнесы» → «Бизнесы клуба» (E75)`);
+          bad.push(`${n}: на «Управлении» у операционного директора ${JSON.stringify(g)}, ждали одну группу «Бизнесы» → «Бизнесы клуба» (кадр E46е)`);
         if ((await s.view()).includes('Сюда нельзя')) bad.push(`${n}: «Управление» отказало операционному директору`);
         await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
       }
