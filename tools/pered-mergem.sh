@@ -113,9 +113,40 @@ indocker() { # <каталог для /work> <путь скрипта внутр
 
 # ── 1. живой режим (приговор) ───────────────────────────────────────────────
 step '1. живой режим — tools/live.cjs (приговор)'
+# ⚠ ДВЕ ЧАСТИ В ДВУХ КОНТЕЙНЕРАХ РАЗОМ (Cafe13KPG#912): батарея — 96 % времени ворот. Части делит сам
+# live.cjs (`ONLY=1/2`, `ONLY=2/2`, метка `part(N)` у каждого случая); то, что одна часть судить не может
+# (каждый случай прошёл РОВНО одну часть, реестр join-заглушек по объединению), судит live-svod.cjs. Приговор
+# шага — все ТРИ кода. Частей две, не три — решение координатора: 28.10 веер контейнеров прибил чужую задачу.
+# ⚠ Памяти на две разом нет (MemAvailable меньше двух пределов с запасом) — части идут ПО ОЧЕРЕДИ: медленнее,
+# но приговор тот же. Отказа здесь нет нарочно: занятый хост — не повод не судить дерево.
 mkdir -p "$W/live"
-indocker "$W/live" /app/tools/live.cjs; rc=$?
-[ "$rc" -eq 0 ] || { echo "КРАСНОЕ: live.cjs rc=$rc"; rc_total=1; }
+part_run() { # <k> — часть k/2 в свой лог
+    docker run --rm --memory=2g --memory-swap=2g -v "$T:/app:ro" -v "$W/live:/work" -w /work \
+        -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -e "ONLY=$1/2" -e "ONLY_OUT=/work/part-$1.json" \
+        --entrypoint node "$IMAGE" /app/tools/live.cjs > "$W/live/part-$1.log" 2>&1
+}
+avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+[ -n "$avail_kb" ] || die 'не прочитан MemAvailable из /proc/meminfo'
+t_live=$(date +%s)
+if [ "$avail_kb" -ge 5242880 ]; then
+    part_run 1 & p1=$!
+    part_run 2 & p2=$!
+    wait "$p1"; rc1=$?
+    wait "$p2"; rc2=$?
+    how='разом'
+else
+    echo "⚠ свободной памяти $((avail_kb / 1024)) МБ меньше 5 ГБ — части по очереди"
+    part_run 1; rc1=$?
+    part_run 2; rc2=$?
+    how='по очереди'
+fi
+for k in 1 2; do echo "· часть $k/2:"; sed 's/^/    /' "$W/live/part-$k.log"; done
+node "$T/tools/live-svod.cjs" "$W/live/part-1.json" "$W/live/part-2.json"; rcv=$?
+echo "· live.cjs двумя частями ($how): $(( $(date +%s) - t_live )) с; коды частей $rc1 и $rc2, сводки $rcv"
+if [ "$rc1" -eq 1 ] || [ "$rc2" -eq 1 ] || [ "$rcv" -eq 1 ]; then echo "КРАСНОЕ: live.cjs"; rc_total=1
+elif [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ] || [ "$rcv" -ne 0 ]; then
+    echo "ПРОВЕРКА НЕ ВЫПОЛНЕНА: live.cjs (коды $rc1/$rc2/$rcv)"; [ "$rc_total" -eq 0 ] && rc_total=2
+fi
 
 # ── 2. снимки (отчёт) ───────────────────────────────────────────────────────
 step '2. снимки — tools/shots.cjs против описи дерева (ОТЧЁТ, не приговор)'
