@@ -27,21 +27,21 @@
 | `.listitem` | блок | `12px` | `--card` / `--ink` | строка `manage` → строка «Заявки в партнёры», плашка заявки `partnerReqs` |
 | `.group` + `.label` | блок + подпись | `0` | `--muted` | группа «Бизнесы» `manage` → строка «Заявки в партнёры» |
 | `.note` | блок | `12px` | `--surface` / `--muted` | примечания `home` → блок «Свой бизнес в клубе», `partnerApply`, `partnerReq` |
-| `.rows` | блок | `12px` | `--card` / `--ink` | «Спишется сейчас», «На счёте», «Списано» |
-| `.deny` | блок | `12px` | `--clay` / `--clay-ink` | все отказы сервера |
-| `.btn` | элемент | `9px` (долг: `11px`) | `--accent` / `--accent-ink` | «Я партнёр», «Подать заявку», «Согласовать» |
-| `.btn quiet` | элемент | `9px` (долг: `11px`) | `--surface` / `--ink` | «Повторить», «Отказать» |
-| `.icon-btn` | элемент | `9px` (долг: `10px`) | `--surface` / `--ink` | «назад» в шапке |
-| `.field` | элемент | `9px` | `--surface` / `--ink`, линия `--line` | название, описание, причина отказа |
+| `.rows` | блок | `12px` | `--card` / `--ink` | `partnerApply` · `partnerReq` — «Спишется сейчас», «На счёте», «Списано» |
+| `.deny` | блок | `12px` | `--clay` / `--clay-ink` | `partnerApply` · `partnerReqs` · `partnerReq` — все отказы сервера |
+| `.btn` | элемент | `9px` (долг: `11px`) | `--accent` / `--accent-ink` | `home` · `partnerApply` · `partnerReq` — «Я партнёр», «Подать заявку», «Согласовать» |
+| `.btn quiet` | элемент | `9px` (долг: `11px`) | `--surface` / `--ink` | `home` · `partnerReqs` · `partnerReq` — «Повторить», «Отказать» |
+| `.icon-btn` | элемент | `9px` (долг: `10px`) | `--surface` / `--ink` | `partnerApply` — «назад» в шапке |
+| `.field` | элемент | `9px` | `--surface` / `--ink`, линия `--line` | `partnerApply` · `partnerReq` — название, описание, причина отказа |
 | `.count` | признак | `999px` | `--sage` / `--on-accent` | счётчик ждущих `manage` → строка «Заявки в партнёры» |
 | `.pill` | признак | `999px` (долг: `5px`) | `--surface` / `--muted` | слово статуса в очереди `partnerReqs` |
 | `.st wait` | признак | `999px` | `--sage` | «ждёт решения» `home` → блок «Свой бизнес в клубе» |
 | `.st no` | признак | `999px` | `--clay` / `--clay-ink` | «отказано» `home` → блок «Свой бизнес в клубе» |
-| `.small` | подпись | — | `--muted` | все подписи |
-| `.verbatim` | подпись | — | `--ink` | печать сервера внутри `.deny` |
-| `.said` | подпись | — | `--ink` | причина отказа словами решавшего |
+| `.small` | подпись | — | `--muted` | `home` · `manage` · `partnerReqs` · `partnerReq` — все подписи |
+| `.verbatim` | подпись | — | `--ink` | `home` · `partnerApply` · `partnerReqs` · `partnerReq` — печать сервера внутри `.deny` |
+| `.said` | подпись | — | `--ink` | `home` — причина отказа словами решавшего |
 | `.sending` | признак | — | `--muted` | отправка `partnerApply`, `partnerReq` |
-| `.chev` | признак | — | `--muted` | стрелка у `.listitem` |
+| `.chev` | признак | — | `--muted` | `manage` — стрелка у `.listitem` |
 
 ⚠ Четыре класса приходят со СВОИМ долгом по радиусу (`.btn`, `.btn quiet`,
 `.icon-btn`, `.pill`): пока `styles.css` не приведён, они соберутся с прежним
