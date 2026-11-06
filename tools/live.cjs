@@ -8059,13 +8059,13 @@ if (grantsSet.length !== 1) {
         const folded = await s.view();
         ['Алевтина Тестова', 'Сомчай', 'Член клуба', 'Бизнес-партнёр']
           .forEach(x => { if (!folded.includes(x)) bad.push(`people-head: в свёрнутом списке нет «${x}»`); });
-        if (folded.includes('Куратор направления · Бар')) bad.push('people-head: роль видна в СВЁРНУТОЙ строке — свёртка не свернула настройки');
+        if (folded.includes('Куратор направления (Бар)')) bad.push('people-head: роль видна в СВЁРНУТОЙ строке — свёртка не свернула настройки');
         if (await s.p.$(`${card(s, 0)} .chip`)) bad.push('people-head: чип в свёрнутой карточке');
-        // ⚠ Роль «Куратор направления · Бар» у человека 0, а бейдж «Глава клуба» — у 2:
+        // ⚠ Роль «Куратор направления (Бар)» у человека 0, а бейдж «Глава клуба» — у 2:
         // раскрывать надо ту карточку, чей предмет спрашиваешь, иначе отсутствие означает
         // «не ту открыл», а не «потеряно».
         await pokazhi(s, 0);
-        if (!(await s.view()).includes('Куратор направления · Бар')) bad.push('people-head: в раскрытой карточке нет роли «Куратор направления · Бар»');
+        if (!(await s.view()).includes('Куратор направления (Бар)')) bad.push('people-head: в раскрытой карточке нет роли «Куратор направления (Бар)»');
         await pokazhi(s, 2);
         const t = await s.view();
         // v78 (E47z): уровни и роли — надписи-кнопки; «Ролей нет», «без членства» и «единственный глава
@@ -8228,7 +8228,7 @@ if (grantsSet.length !== 1) {
         const pp = posts(s, /\/roles$/);
         if (pp.length !== 1 || pp[0].body !== JSON.stringify({ member_id: 702, role: 'curator', direction_id: 7 }))
           bad.push('people-grant-dir: ушло ' + JSON.stringify(pp.map(c => c.body)));
-        if (!(await note(s, 1)).includes('Выдано: Куратор направления · Бар.')) bad.push('people-grant-dir: в карточке нет итога «Выдано»');
+        if (!(await note(s, 1)).includes('Выдано: Куратор направления (Бар).')) bad.push('people-grant-dir: в карточке нет итога «Выдано»');
         if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-grant-dir: список не перечитан после выдачи');
       }
       await s.ctx.close();
@@ -8270,6 +8270,33 @@ if (grantsSet.length !== 1) {
       const deny = await s.p.$eval(`${card(s, uid)} .deny`, e => e.textContent).catch(() => null);
       if (deny !== detail) bad.push(`${name}: плашка «${deny}», ждали «${detail}»`);
       if ((await s.view()).match(/Выдано:|Снято:/)) bad.push(`${name}: отказ показан успехом`);
+      await s.ctx.close();
+    }
+
+    // ── роль и направление в чипе (Cafe13KPG#869): подпись роли `bar` САМА с « · » («Бар · исполнитель»), поэтому
+    // направление клеится скобками — между ролью и направлением ровно ОДИН разделитель. ⚠ Фикстура нарочно берёт роль,
+    // чья подпись содержит « · »: на curator/staff/head старая склейка неотличима от новой — зелёное там не различает
+    {
+      const n = 'people-rol-napravlenie';
+      const R = clone(ROSTER);
+      R.people[1].roles = [{ id: 44, role: 'bar', direction_id: 12, direction: 'Кофейня', granted_at: '2026-10-20T10:00:00+00:00' }];
+      const s = await peopleCase(OWNER, { people: json(200, R) });
+      if (!(await toPeople(s))) bad.push(`${n}: нет входа «Члены клуба»`);
+      else {
+        await pokazhi(s, 1);
+        const chips = await s.p.$$eval(`${card(s, 1)} .chip`, e => e.map(x => x.textContent.trim()));
+        const want = await s.p.evaluate(() => ROLE_NAME.bar);
+        if (!/ · /.test(want)) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — подпись роли bar «${want}» без « · », фикстура больше не различает склейку`);
+        const chip = chips.filter(x => x.startsWith(want))[0];
+        if (!chip) bad.push(`${n}: в карточке нет чипа роли «${want}» (${JSON.stringify(chips)})`);
+        else {
+          if (!chip.startsWith(want + ' (Кофейня)')) bad.push(`${n}: чип «${chip}» — направление не отделено от роли скобками (ждали «${want} (Кофейня)»)`);
+          if (chip.includes(want + ' · Кофейня')) bad.push(`${n}: чип «${chip}» — роль и направление склеены тем же « · », что внутри подписи роли`);
+          const tail = chip.slice(want.length);
+          if ((tail.match(/ · /g) || []).length) bad.push(`${n}: после подписи роли в чипе ещё « · » («${tail}») — разделителей между ролью и направлением больше нуля точек`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
 
@@ -8578,7 +8605,7 @@ if (grantsSet.length !== 1) {
       await toPeople(s);
       await pokazhi(s, 0); await act(s, 'p-ask:31'); await s.p.waitForTimeout(300);
       if (posts(s, /\/roles\/31\/revoke$/).length !== 1) bad.push('people-revoke: снятие не ушло ровно один раз');
-      if (!(await note(s, 0)).includes('Снято: Куратор направления · Бар.')) bad.push('people-revoke: в карточке нет итога «Снято»');
+      if (!(await note(s, 0)).includes('Снято: Куратор направления (Бар).')) bad.push('people-revoke: в карточке нет итога «Снято»');
       if (!(await s.p.$(`${card(s, 0)} .note [data-action="p-back"]`))) bad.push('people-revoke: у итога «Снято» нет «Отменить»');
       // «справа» — правилом, а не длиной фразы (designer-55: на коротком итоге кнопка вставала в 154 px от края)
       const gap = await s.p.evaluate(() => { const n = document.querySelector('.note.act'), b = n && n.querySelector('[data-action="p-back"]');
@@ -9081,7 +9108,7 @@ if (grantsSet.length !== 1) {
       const g = posts(s, /\/roles$/);
       if (g.length !== 1 || g[0].body !== JSON.stringify({ member_id: 701, role: 'curator', direction_id: 7 }))
         bad.push(`${n}: отмена снятия ушла не той выдачей: ${JSON.stringify(g.map(c => c.body))}`);
-      if (!(await note(s, 0)).includes('Возвращено: Куратор направления · Бар.')) bad.push(`${n}: нет итога «Возвращено»: ${await note(s, 0)}`);
+      if (!(await note(s, 0)).includes('Возвращено: Куратор направления (Бар).')) bad.push(`${n}: нет итога «Возвращено»: ${await note(s, 0)}`);
       if (await s.p.$('[data-action="p-back"]')) bad.push(`${n}: «Отменить» осталось после отмены`);
       await s.ctx.close();
     }
