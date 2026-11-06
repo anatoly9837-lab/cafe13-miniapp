@@ -1313,13 +1313,17 @@ if (grantsSet.length !== 1) {
   // Клиент — Cafe13KPG#877 (`mayOps`, экран `businesses`), сервер — #876 (cafe13-api `backend/ops-directions`, `_is_ops`).
   // Строка заглушки — по снимку `directions-ops-director` (семь ключей: id, title, is_active, is_open, partner_id,
   // partner_first_name, partner_last_name); сверка — `STUBS` ниже, заглушка заново не придумывается.
-  // ⚠ Слова экрана «Партнёра нет» (регистр — по клиенту #877), «открыт / закрыт», «Попробовать снова» — из таблицы архитектора (#855 §3), а не из
-  // кадров: E75b/E75g ещё не смержены. Разойдутся с кадрами — правится ожидание здесь, по кадру, а не клиент по ожиданию.
+  // Слова экрана — по кадрам E46е (корень), E75 (список), E75б (пусто), E75в (отказ): Cafe13KPG#881, номера по #882;
+  // сверка 06.11.2026 — «Бизнесы», «Бизнесы клуба», «Партнёр: …», «Партнёра нет», «открыт / закрыт», «Попробовать снова».
+  // Слова — зона автора клиента: расхождение кадра с клиентом несут ему и координатору, ожидание здесь под клиент не гнут.
   // Подлог карточки: `grant('ops_director')` снят из `mayOps` → красное здесь (ops-tab, ops-businesses, ops-businesses-fail).
   // на уровне функции, а не в блоке: та же строка уходит в `STUBS` (сверка с `directions-ops-director`)
   const OPS_BIZ = [
     { id: 7, title: 'Бар', is_active: true, is_open: true, partner_id: 4242, partner_first_name: '[партнёр]', partner_last_name: '[фамилия]' },
-    { id: 9, title: 'Массаж', is_active: true, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null }];
+    { id: 9, title: 'Массаж', is_active: true, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null },
+    // закрытый бизнес (`closed_at`, is_active=false) в список не берётся вовсе — кадр E75 (Cafe13KPG#881/#882):
+    // «открыт/закрыт» на плашке — про СМЕНУ (is_open), а не про закрытие бизнеса
+    { id: 11, title: 'Прачечная', is_active: false, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null }];
   {
     const BIZ = OPS_BIZ;
     const opsWho = roles => {
@@ -1399,6 +1403,11 @@ if (grantsSet.length !== 1) {
         for (const w of ['30', '70']) if (new RegExp('(^|\\D)' + w + '(\\D|$)').test(t)) bad.push(`${n}: на экране число доли «${w}» без знака %`);
         if (t.includes('4242')) bad.push(`${n}: на экране partner_id — номер Telegram вместо имени`);
         if (await retryBtn(s)) bad.push(`${n}: на загруженном списке кнопка «Попробовать снова»`);
+        if (t.includes('Прачечная')) bad.push(`${n}: закрытый бизнес (is_active=false) показан плашкой — кадр E75 берёт только действующие`);
+        // плашка не нажимается: за ней в шаге 12 экрана нет (кадр E75 — .card без кнопки)
+        const tap = await s.p.evaluate(() => [...document.querySelectorAll('#view button, #view a, #view [data-go], #view [data-action]')]
+          .map(e => e.textContent.trim()).filter(x => /Бар|Массаж/.test(x)));
+        if (tap.length) bad.push(`${n}: плашка бизнеса нажимается ${JSON.stringify(tap)} — за ней экрана нет (кадр E75)`);
         await s.p.screenshot({ path: `${OUT}/live-${n}.png`, fullPage: true });
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
