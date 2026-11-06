@@ -251,4 +251,55 @@ Object.assign(SCREENS, {
       return '<div class="card quiet"><div class="col"><b>' + esc(r[0]) + '</b><span class="small">' + esc(r[1]) + '</span></div></div>';
     }).join('') + '</div>';
   },
+
+  /* ── шаг 11: «Распределить деньги» (кадры E69, E69b, E69v; Cafe13KPG#857) — данные и отправка в 07-mastera.js.
+     Плашка ждущего — кнопка к подтверждению; ушедшего — карточка без кнопки: нажимать там нечего. */
+  payouts: function () {
+    if (LIVE && !mayMasters()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Деньги мероприятий распределяет арт-директор.</span></div></div>';
+    if (!PAY.list) return PAY.fail ? '<div class="card strong"><h2>Список не загрузился</h2><p>' + esc(PAY.fail) + '</p>' +
+        '<button type="button" class="btn" data-action="pay-retry">Попробовать снова</button></div>'
+      : '<div class="card quiet"><span class="small">Загружаем прошедшие мероприятия…</span></div>';
+    if (!PAY.list.length) return (FLASH ? flash() : '') + '<div class="note">' + svg(ICON.info) + '<span>Прошедших мероприятий пока нет. ' +
+      'Плашка появится, когда мероприятие кончится: до конца сумма ещё меняется.</span></div>';
+    var line = function (what, val) { return '<span class="row"><span class="small">' + what + '</span><b class="num">' + val + '</b></span>'; };
+    var shares = function (head, nums) {
+      return '<span class="col"><span class="small">' + esc(head) + '</span>' + PAY_KEYS.map(function (k, i) {
+        return '<span class="small">' + k[2] + ' ' + payMoney(nums[i]) + '</span>';
+      }).join('') + '</span>';
+    };
+    return (FLASH ? flash() : '') +
+      '<span class="small">Гости — те, кто заплатил за вход: запись без оплаты денег не приносит.</span>' +
+      PAY.list.map(function (r) {
+        var body = '<span class="row"><span class="col"><b>' + esc(r.title) + '</b><span class="small">' + esc(payDay(r.starts, true)) + '</span></span>' +
+            (r.may ? '<span class="st wait">ждёт</span>' : '<span class="st ok">распределено</span>') + '</span>' +
+          line('Гостей', r.guests) + line('Собрано', payMoney(r.collected)) +
+          (r.may ? shares('Доли', r.split) : shares('Ушло ' + payDay(r.at, false), r.out));
+        return r.may ? '<button type="button" class="card" data-action="pay-open:' + r.id + '">' + body + '</button>'
+                     : '<div class="card">' + body + '</div>';
+      }).join('');
+  },
+
+  // E69b. Суммы и проценты — присланные сервером; кнопка называет то, что уйдёт (нераспределённый остаток)
+  payout: function (id) {
+    if (LIVE && !mayMasters()) return SCREENS.payouts();
+    if (!PAY.list) return SCREENS.payouts();
+    var r = payById(id);
+    if (!r) return '<div class="card quiet"><div class="col"><b>Такого мероприятия нет</b>' +
+      '<span class="small">Вернитесь к списку прошедших.</span></div></div>';
+    var err = PAY.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(PAY.err) + '</span></div>' : '';
+    return '<div class="col"><b>' + esc(r.title) + '</b><span class="small">' + esc(payDay(r.starts, false)) + '</span>' +
+        '<span class="small">Гости — те, кто заплатил за вход: запись без оплаты денег не приносит.</span></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">Гостей</span><b class="num">' + r.guests + '</b></div>' +
+        '<div><span class="small">Собрано</span><b class="num">' + payMoney(r.collected) + '</b></div>' +
+        PAY_KEYS.map(function (k, i) {
+          return '<div><span class="small">' + cap(k[2]) + (r.may ? ', ' + r.pct[i] + ' %' : '') + '</span><b class="num">' + payMoney((r.may ? r.split : r.out)[i]) + '</b></div>';
+        }).join('') + '</div>' +
+      err +
+      (r.may ? '<button type="button" class="btn" data-action="pay-go:' + r.id + '"' + (PAY.busy ? ' disabled' : '') + '>' +
+          (PAY.busy ? 'Отправляем…' : 'Подтвердить ' + payMoney(r.left)) + '</button>' +
+        '<span class="small" style="text-align:center">Деньги уйдут сразу: обратного действия в приложении нет.</span>'
+      : '<div class="note">' + svg(ICON.info) + '<span>Делить нечего: собранное ушло ' + esc(payDay(r.at, false)) + '.</span></div>');
+  },
 });
