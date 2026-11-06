@@ -68,7 +68,7 @@
 | `.icon-btn`, `.undo`, `.wk > button` | 10px | 9px | элемент |
 | `.outbtn` | 8px | 9px | элемент |
 | `.chip`, `.pill` | 8px, 5px | 999px | признак-капсула по их же рецепту облика |
-| `.card.strong`, `.tile`, `.tile.big`, `.qr .place` | 14/10/14/10 | 12px | блок |
+| `.card.strong`, `.tile`, `.tile.big`, `.qr .place` | 14px, 10px, 14px, 10px | 12px | блок |
 | `.pass .code-box` | 13px | 9px | элемент внутри пропуска |
 
 ## Усечение — носители, а не инлайн
