@@ -1258,6 +1258,23 @@ if (grantsSet.length !== 1) {
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
       }
+      // М.2: окно, перенесённое миграцией 030, кончается 1-го в 00:00 по острову = `…T17:00:00Z` накануне по UTC.
+      // День берётся по часам КЛУБА: «до 1 декабря», а не «до 30 ноября». Фикстуры выше стоят на 07:30Z, где
+      // UTC и остров дают один день, — подмену часов клуба на UTC видит только этот случай (мутация архитектора, #258)
+      {
+        const n = 'master-paid-till-ostrov';
+        const o = { mine: () => [mreq(901, 'approved', { paid_till: '2026-11-30T17:00:00+00:00' })], posted: [], prevAsked: [], renewed: [] };
+        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, rnwApi(o));
+        await s.p.waitForTimeout(300);
+        if (await tapIf(s, n, '#view [data-go="masterRenew"]', '«Продлить» на «Клубе»')) {
+          await s.p.waitForTimeout(300);
+          const t = await s.view();
+          if (!t.includes('Оплачено до 1 декабря')) bad.push(`${n}: конец окна 1-го 00:00 по острову не назван «Оплачено до 1 декабря» — день не по часам клуба`);
+          if (t.includes('Оплачено до 30 ноября')) bad.push(`${n}: показано «до 30 ноября» — день взят по UTC`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
       // причина погасшей «Продлить»: видимые адресаты её aria-describedby (Cafe13KPG#685)
       const RNW_PRICE = /цен[аы]\s+не\s+(по|пере)?считан/i;
       const rnwWhy = s => s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); if (!b) return null;
