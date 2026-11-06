@@ -1239,21 +1239,25 @@ if (grantsSet.length !== 1) {
       // тот же экран при paid_till: null (оплаченных периодов нет — законно) обязан выглядеть иначе
       {
         const n = 'm4-net-polya';
-        const look = async row => { const r = await m4Open(row, PREV()); const t = r.ok ? await r.s.view() : ''; await r.s.ctx.close(); return { ok: r.ok, t }; };
+        // ⚠ текст читается ВСЕГДА, а дверь — отдельное ожидание: прежняя охрана `if (none.ok)`/`if (nul.ok)` пускала проверки
+        // только при двери «Продлить», то есть на верном клиенте (двери нет) половина «нет поля» не проверяла НИЧЕГО, а мутация
+        // «null отвергается» гасила дверь у `nul` и проходила молча (замер на 8e5da50, 06.11.2026)
+        const look = async row => { const r = await m4Open(row, PREV()); const t = await r.s.view(); await r.s.ctx.close(); return { ok: r.ok, t }; };
         // ключ удаляется ЯВНО: с #258 `mreq` кладёт `paid_till: null` по умолчанию, и без delete «нет поля» молча стал бы «нет оплаты»
         const none = await look((x => (delete x.paid_till, x))(mreq(901, 'approved', { paid_until: '2026-11-30' })));  // paid_till нет вовсе
         const nul = await look(mreq(901, 'approved', { paid_until: null, paid_till: null }));    // оплаты нет — законно
-        if (none.ok) {
-          if (!/не загрузил/i.test(none.t)) bad.push(`${n}: без поля paid_till нет «не загрузилось» — «${none.t.slice(0, 160)}»`);
-          if (/Оплаченных месяцев нет|не оплачен/i.test(none.t)) bad.push(`${n}: без поля paid_till сказано «не оплачено» — нет поля и нет оплаты неразличимы`);
-          if (/Оплачено до/i.test(none.t)) bad.push(`${n}: без поля paid_till есть «Оплачено до» — дата взята не из paid_till`);
-        }
-        if (nul.ok && /не загрузил/i.test(nul.t)) bad.push(`${n}: при paid_till: null (оплаты нет) — «не загрузилось», а ответ законный`);
-        if (none.ok && nul.ok && none.t === nul.t) bad.push(`${n}: «нет поля» и «нет оплаты» выглядят одинаково`);
+        if (!/не загрузил/i.test(none.t)) bad.push(`${n}: без поля paid_till нет «не загрузилось» — «${none.t.slice(0, 160)}»`);
+        if (/Оплаченных месяцев нет|не оплачен/i.test(none.t)) bad.push(`${n}: без поля paid_till сказано «не оплачено» — нет поля и нет оплаты неразличимы`);
+        if (/Оплачено до/i.test(none.t)) bad.push(`${n}: без поля paid_till есть «Оплачено до» — дата взята не из paid_till`);
+        if (none.ok) bad.push(`${n}: без поля paid_till есть «Продлить» — неразобранная заявка продлевается`);
+        if (!nul.ok) bad.push(`${n}: при paid_till: null нет «Продлить» — законный ответ «оплаты нет» не разобран`);
+        if (/не загрузил/i.test(nul.t)) bad.push(`${n}: при paid_till: null (оплаты нет) — «не загрузилось», а ответ законный`);
+        if (none.t === nul.t) bad.push(`${n}: «нет поля» и «нет оплаты» выглядят одинаково`);
         // превью без periods — тоже отказ, а не окно из головы клиента
         const r = await m4Open(mreq(901, 'approved', { paid_until: '2026-11-30', paid_till: TILL }), () => {
           const b = JSON.parse(PREV()().body); delete b.periods; return json(200, b); });
-        if (r.ok) {
+        if (!r.ok) bad.push(`${n}: превью без periods не проверено — нет «Продлить» при paid_till ${TILL}`);
+        else {
           const t = await r.s.view();
           if (D15_01.test(t)) bad.push(`${n}: превью без periods показало окно до 15.01.2027 — окно не из ответа сервера`);
         }
