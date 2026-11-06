@@ -819,12 +819,76 @@ function loadBusinesses() {
    Образец — заявка мастера: деньги первого месяца списываются при подаче, отказ возвращает их встречной строкой,
    согласие операционного директора СОЗДАЁТ бизнес. Разборщик строгий: одна битая строка — отказ целиком (§4).
    ⚠ Рецептов шага 13 в стволе нет (#887): слова и раскладка — по образцу мастера и сверяются, когда рецепт ляжет. */
-// ⚠ ЗАПЛАТКА до Cafe13KPG#902: цену месяца бизнеса сервер наружу не отдаёт (`PRICE_MONTH`, partner.py:52). Число —
-// слово владельца 06.11.2026 («платная, как мастер, 2 600 ฿»; «Месячная, как статус мастера»). Последнее слово — за
-// сервером: не хватит денег — он откажет своими словами, и клиент их покажет
-var PARTNER_PRICE = 2600;
-var PR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail: '', qGen: 0,
+/* Цена месяца — ТОЛЬКО от сервера, `GET /partner/price` → {amount} (рецепт R1, «Заказ серверу»; Cafe13KPG#902).
+   ⚠ На 06.11.2026 этой ручки НЕТ (`PRICE_MONTH` — константа внутри partner.py): сервер отвечает 404, экран говорит
+   «Цену не удалось узнать у сервера.», кнопка погашена — экран есть, купить нельзя. Число в разметке соврало бы при
+   первой смене цены. Ручка ляжет — экран оживёт без правки клиента: это и есть отрицательный контроль заплатки
+   (случаи `partner-cena-404` и `partner-cena-200`). `price`: undefined — не спрашивали, 'loading', число, null — не узнать */
+var PR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail: '', qGen: 0, price: undefined, priceGen: 0,
            busy: false, ask: 0, note: '', qErr: '', title: '', about: '', err: '' };
+function loadPartnerPrice() {
+  if (!LIVE || PR.price === 'loading') return;
+  var gen = ++PR.priceGen; PR.price = 'loading';
+  api('GET', '/partner/price').then(function (r) {
+    if (gen !== PR.priceGen) return;
+    PR.price = r.status === 200 && r.data && typeof r.data.amount === 'string' && /^\d+(\.\d+)?$/.test(r.data.amount) ? Number(r.data.amount) : null;
+    if (current === 'partnerApply') prGrab();   // набранное в полях — до перерисовки
+    if ({ home: 1, partnerApply: 1 }[current]) render();
+  });
+}
+// «до ДД.ММ.ГГГГ» — день МОМЕНТА `paid_till` по часам клуба, без вычитания дня: «до» читается исключающе (рецепт R1)
+function prTill(iso) { var x = bkk(new Date(iso)).ymd.split('-'); return x[2] + '.' + x[1] + '.' + x[0]; }
+// блок «Свой бизнес в клубе» на «Клубе» (рецепт R1): у гостя и вне Telegram — пусто
+function partnerOffer() {
+  if (!LIVE || DATA.role === 'guest') return '';
+  if (PR.mineState === '') loadMinePartner();
+  if (PR.price === undefined) loadPartnerPrice();
+  if (PR.mineState === 'loading' && !PR.mine) return '';
+  if (PR.mineState !== 'ok' && !PR.mine) return '<div class="card quiet"><div class="row"><span class="small">Заявки в партнёры не загрузились: ' +
+      esc(PR.mineState) + '</span><button type="button" class="btn quiet" data-action="pr-retry-mine">Повторить</button></div></div>';
+  var head = function (q, st) {
+    return '<div class="row"><div class="col"><b>Заявка в партнёры</b><span class="small">' + esc(topupDay(q.done || q.iso, !q.done)) + '</span></div>' +
+      '<span class="st ' + st + '">' + esc(q.word) + '</span></div>';
+  };
+  // согласованных бывает больше одного: бизнесов у человека может быть два (шапка partner.py)
+  var yes = PR.mine.filter(function (q) { return q.status === 'approved'; }).map(function (q) {
+    return '<div class="card"><div class="col"><b class="clamp2">Вы партнёр бизнеса «' + esc(q.title) + '»</b>' +
+      (q.till ? '<span class="small">Оплачено до ' + esc(prTill(q.till)) + '</span>' : '') + '</div></div>';
+  }).join('');
+  var last = PR.mine[0];
+  if (last && last.status === 'pending') return yes + '<div class="card quiet">' + head(last, 'wait') +
+      '<span class="small">Списано ' + money(last.amount) + ' ฿.</span></div>' +
+    '<div class="note">' + svg(ICON.info) + '<span>Решение принимает операционный директор. Если он откажет, деньги вернутся на счёт.</span></div>';
+  if (yes) return yes;
+  if (last && last.status === 'rejected') return '<div class="card quiet">' + head(last, 'no') +
+      (last.note ? '<span class="said">' + esc(last.note) + '</span>' : '') +
+      '<span class="small">' + money(last.amount) + ' ฿ вернулись на счёт.</span></div>' +
+    '<button type="button" class="btn" data-action="pr-apply">Подать заново</button>';
+  var p = PR.price, bal = msBalance(), short = typeof p === 'number' && bal < p;
+  return '<div class="card"><div class="col"><b>Свой бизнес в клубе</b>' +
+      '<span class="small">Название, описание и оплаченный месяц. Что в бизнесе появится дальше — следующий шаг.</span></div>' +
+      '<span class="small">' + (typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
+        : short ? 'Не хватает ' + money(p - bal) + ' ฿: нужно ' + money(p) + ' ฿, на счёте ' + money(bal) + ' ฿'
+        : money(p) + ' ฿ в месяц') + '</span>' +
+      '<span class="small">Месяц идёт от даты оплаты. Продлевается оплатой, без новой заявки.</span>' +
+      '<button type="button" class="btn" data-action="pr-apply"' + (typeof p !== 'number' || short ? ' disabled' : '') + '>Я партнёр</button></div>' +
+    (short ? '<div class="note">' + svg(ICON.info) + '<span>Пополнить счёт можно на вкладке «Клуб» — кошельком в шапке.</span></div>' : '');
+}
+// набранное в полях — в PR перед любой перерисовкой, иначе текст пропадёт
+function prGrab() {
+  var t = document.getElementById('pr-title'), a = document.getElementById('pr-about');
+  if (t) PR.title = t.value;
+  if (a) PR.about = a.value;
+}
+// причина отказа: кнопка гаснет и включается на ВВОДЕ, без перерисовки — иначе набор терял бы фокус (как `msNoteSync`)
+function prNoteSync() {
+  var t = document.getElementById('pr-note'); if (!t) return;
+  PR.note = t.value;
+  var b = document.querySelector('#view [data-action^="pr-no:"]'), w = document.getElementById('pr-why'), empty = !PR.note.trim();
+  if (b) { b.disabled = empty || PR.busy; b.setAttribute('aria-disabled', String(b.disabled)); }
+  if (w) w.hidden = !empty;
+}
+document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'pr-note') prNoteSync(); });
 function prMoment(v) {
   return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:?\d\d)$/.test(v) && !isNaN(Date.parse(v));
 }
@@ -861,6 +925,7 @@ function loadMinePartner() {
     if (gen !== PR.mineGen) return;
     var d = r.status === 200 ? fromPartnerList(r.data, false) : null;
     PR.mine = d ? d.list : null; PR.mineState = d ? 'ok' : failText(r);
+    if (current === 'partnerApply') prGrab();   // набранное в полях — до перерисовки
     if ({ home: 1, partnerApply: 1 }[current]) render();
   });
 }
@@ -876,7 +941,10 @@ function loadPartnerQueue() {
 }
 function sendPartner() {
   if (PR.busy) return;
-  PR.err = !PR.title.trim() ? 'Назовите бизнес.' : PR.title.trim().length > 200 ? 'Название — не длиннее 200 знаков.'
+  prGrab();
+  // пустое и сверх предела — отказ ДО отправки: схема сервера ответила бы 422 без слов («Сервер не принял запрос»).
+  // Поле не обрезается (рецепт R2): набранное остаётся, видно, что править
+  PR.err = typeof PR.price !== 'number' ? 'Цена ещё не пришла от сервера.' : PR.price > msBalance() ? 'Не хватает денег на счёте.' : !PR.title.trim() ? 'Назовите бизнес.' : PR.title.trim().length > 200 ? 'Название — не длиннее 200 знаков.'
     : PR.about.length > 2000 ? 'О бизнесе — не длиннее 2000 знаков.' : '';
   if (PR.err) { render(); return; }
   if (!LIVE) return;
@@ -895,7 +963,7 @@ function sendPartner() {
     if (current === 'partnerApply') render();
   });
 }
-// ответ decide — только статус и `direction_id` (названия и `paid_till` в нём нет, Cafe13KPG#902): итог берётся из очереди
+// ответ decide — только статус и `direction_id` (названия и `paid_till` в нём нет, Cafe13KPG#902)
 function decidePartner(id, decision) {
   var note = decision === 'rejected' ? PR.note.trim() : '';
   if (PR.busy || !LIVE || !mayOps() || decision === 'rejected' && (PR.ask !== id || !note)) return;
@@ -903,8 +971,10 @@ function decidePartner(id, decision) {
   api('POST', '/partner/requests/' + id + '/decide', { decision: decision, note: note }).then(function (r) {
     PR.busy = false;
     if (r.status === 200 && r.data && r.data.status === decision) {
+      // название — из уже загруженной очереди: ответ decide его не несёт (рецепт R5)
+      var q = (PR.q || []).filter(function (x) { return x.id === id; })[0];
       FLASH = { text: decision === 'approved' ? 'Согласовано' : 'Отказано',
-                note: decision === 'approved' ? 'Бизнес заведён, первый месяц оплачен.' : 'Деньги вернулись на счёт заявителя.' };
+                note: decision === 'approved' ? (q ? 'Бизнес «' + q.title + '» создан.' : 'Бизнес создан.') : 'Деньги вернулись на счёт заявителя.' };
       PR.ask = 0; PR.note = '';
       loadPartnerQueue(); loadBusinesses(); go('partnerReqs'); return;
     }

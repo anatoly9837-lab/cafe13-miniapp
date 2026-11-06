@@ -33,7 +33,12 @@ Object.assign(SCREENS, {
     // ждать тут нечему до шага 13, его строка «Заявки в партнёры» ляжет в эту же группу
     var biz = mayOps() ? '<div class="group"><span class="label">Бизнесы</span>' +
       '<button type="button" class="listitem" data-go="businesses"><span class="grow"><b>Бизнесы клуба</b>' +
-        '<span class="small">Кто партнёр и открыта ли смена</span></span>' + svg(ICON.chev, 'chev') + '</button></div>' : '';
+        '<span class="small">Кто партнёр и открыта ли смена</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
+      // шаг 13 (рецепт R3): «Заявки в партнёры» — под «Бизнесами клуба», счётчик ждущих чипом `.count`; не загрузилось —
+      // строка есть, счётчика нет (счётчик не выдумывается)
+      '<button type="button" class="listitem" data-go="partnerReqs"><span class="grow"><b>Заявки в партнёры</b>' +
+        '<span class="small">' + waitSub(PR.pending, 'Кто просит бизнес в клубе') + '</span></span>' +
+        waitMark(PR.pending) + svg(ICON.chev, 'chev') + '</button></div>' : '';
     if (!mayPeople()) return money_ + art + biz;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
@@ -42,6 +47,74 @@ Object.assign(SCREENS, {
       '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
         '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
     '</div>' + money_ + art + biz;
+  },
+
+  // ── шаг 13 (Cafe13KPG#889): рецепт `_docs/recept/ekran/13-zayavka-v-partnyory.md` (cafe13-miniapp#257) ──
+  // R2: форма. Цена и остаток — до нажатия; «спишется» — число сервера, своей арифметики нет
+  partnerApply: function () {
+    if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Заявку в партнёры подаёт член клуба.</span></div></div>';
+    var p = PR.price, bal = msBalance();
+    var err = PR.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(PR.err) + '</span></div>' : '';
+    return '<div class="field"><label for="pr-title">Название бизнеса</label><input id="pr-title" value="' + esc(PR.title) + '">' +
+        '<span class="small">Как его назовут гости</span></div>' +
+      '<div class="field"><label for="pr-about">О бизнесе</label><textarea id="pr-about" rows="3">' + esc(PR.about) + '</textarea>' +
+        '<span class="small">Одной строкой: чем он занимается</span></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">Спишется сейчас</span><b class="num">' + (typeof p === 'number' ? money(p) + ' ฿' : p === null ? 'цену не узнать' : '…') + '</b></div>' +
+        '<div><span class="small">На счёте</span><b class="num">' + money(bal) + ' ฿</b></div></div>' +
+      (p === null ? '<div class="row"><span class="small">Цену не удалось узнать у сервера.</span>' +
+        '<button type="button" class="btn quiet" data-action="pr-retry-price">Повторить</button></div>' : '') +
+      err +
+      '<button type="button" class="btn" data-action="pr-send"' + (PR.busy || typeof p !== 'number' || p > bal ? ' disabled' : '') + '>' +
+        (PR.busy ? 'Отправляем…' : 'Подать заявку') + '</button>' +
+      '<div class="note">' + svg(ICON.info) + '<span>Решение принимает операционный директор. Если он откажет, деньги вернутся на счёт.</span></div>';
+  },
+
+  // R4: очередь. Ждущие сверху — так отдаёт сервер (`list_requests`); решённые остаются со своим словом
+  partnerReqs: function () {
+    if (LIVE && !mayOps()) return '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Сюда нельзя. ' +
+      '<span class="verbatim">Заявки в партнёры решает операционный директор.</span></span></div>';
+    if (!PR.q) return PR.qFail ? '<div class="card quiet"><div class="row"><span class="small">Заявки в партнёры не загрузились: ' + esc(PR.qFail) + '</span>' +
+        '<button type="button" class="btn quiet" data-action="pr-retry-q">Повторить</button></div></div>'
+      : '<div class="card quiet"><span class="small">Загружаем заявки…</span></div>';
+    if (!PR.q.length) return (FLASH ? flash() : '') + '<div class="card quiet"><span class="small">Заявок в партнёры нет.</span></div>';
+    return (FLASH ? flash() : '') + PR.q.map(function (q) {
+      return '<button type="button" class="listitem" data-action="pr-open:' + q.id + '"><span class="grow">' +
+          '<b class="clamp1">' + esc(q.title) + '</b><span class="small clamp1">' + esc((q.who || 'Без имени') + ' · ' + topupDay(q.iso, true)) + '</span></span>' +
+          '<span class="pill' + (q.status === 'pending' ? ' on' : '') + '">' + esc(q.word) + '</span>' + svg(ICON.chev, 'chev') + '</button>';
+    }).join('');
+  },
+
+  // R5: решение. «Оплачено до …» здесь нет: ответ decide даты не несёт (рецепт), дата — на «Клубе» партнёра
+  partnerReq: function (id) {
+    if (LIVE && !mayOps()) return SCREENS.partnerReqs();
+    if (!PR.q) return SCREENS.partnerReqs();
+    var q = PR.q.filter(function (x) { return x.id === Number(id); })[0];
+    if (!q) return '<div class="card quiet"><div class="col"><b>Такой заявки нет</b>' +
+      '<span class="small">Вернитесь к заявкам в партнёры.</span></div></div>';
+    // своя — по номеру заявки в СВОИХ (`/partner/requests/mine`): номер человека в разметку не идёт
+    var own = !!(PR.mine && PR.mine.some(function (x) { return x.id === q.id; }));
+    var busy = PR.busy ? ' disabled' : '';
+    var err = PR.qErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(PR.qErr) + '</span></div>' : '';
+    return (FLASH ? flash() : '') +
+      '<div class="card"><div class="col"><b class="clamp2">' + esc(q.title) + '</b><span class="small">' + esc((q.who || 'Без имени') + ' · ' + topupDay(q.iso, true)) + '</span></div></div>' +
+      (q.about ? '<div class="card quiet"><span class="small" style="white-space:pre-wrap">' + esc(q.about) + '</span></div>' : '') +
+      '<div class="rows"><div><span class="small">Списано</span><b class="num">' + money(q.amount) + ' ฿</b></div></div>' +
+      err +
+      (q.status !== 'pending' ? '<div class="card quiet"><div class="row"><span class="small">Решено ' + esc(topupDay(q.done, true)) + '</span>' +
+          '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div>' + (q.note ? '<span class="said">' + esc(q.note) + '</span>' : '') + '</div>'
+      : own ? '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой операционный директор.</span></div>'
+      : PR.ask === q.id ? '<div class="field"><label for="pr-note">Причина отказа</label>' +
+          '<textarea id="pr-note" rows="4" maxlength="500">' + esc(PR.note) + '</textarea>' +
+          '<span class="small">Что исправить, чтобы согласовали</span></div>' +
+        '<button type="button" class="btn" data-action="pr-no:' + q.id + '"' + (PR.busy || !PR.note.trim() ? ' disabled aria-disabled="true"' : ' aria-disabled="false"') +
+          ' aria-describedby="pr-why">' + (PR.busy ? 'Отправляем…' : 'Отказать') + '</button>' +
+        '<span class="small" id="pr-why"' + (PR.note.trim() ? ' hidden' : '') + '>Сначала причина — без неё заявитель не узнает, что исправить.</span>' +
+        '<button type="button" class="btn quiet" data-action="pr-keep"' + busy + '>Назад</button>'
+      : '<button type="button" class="btn" data-action="pr-yes:' + q.id + '"' + busy + '>' + (PR.busy ? 'Отправляем…' : 'Согласовать') + '</button>' +
+        '<button type="button" class="btn quiet" data-action="pr-ask:' + q.id + '"' + busy + '>Отказать</button>' +
+        '<div class="note">' + svg(ICON.info) + '<span>Согласие создаёт бизнес и начинает оплаченный месяц. Отказ вернёт деньги заявителю.</span></div>');
   },
 
   // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g (подтверждение) снят по #695; E56d — причина; E56e — своя
