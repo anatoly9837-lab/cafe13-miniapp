@@ -208,7 +208,7 @@ Object.assign(SCREENS, {
     var P = RNW.prev, waiting = UNDO.key && /^renew:/.test(UNDO.key);
     var busy = RNW.busy || waiting ? ' disabled' : '';
     var top = '<div class="card"><div class="col"><b>Статус мастера</b>' +
-        '<span class="small">' + (own.paidUntil ? 'Оплачено до ' + esc(msDate(own.paidUntil)) : 'Оплаченных месяцев нет') + '</span>' +
+        '<span class="small">' + (own.paidTill ? 'Оплачено до ' + esc(msTill(own.paidTill)) : 'Оплаченных месяцев нет') + '</span>' +
         '<span class="small">' + esc(MS_DAY[own.weekday - 1] + ', ' + own.start + ' · ' + own.hours + ' ' + msHours(own.hours) + ' · ' + own.place) + '</span>' +
       '</div></div>' +
       '<div class="field"><label>Месяцев</label><div class="counter">' +
@@ -217,7 +217,9 @@ Object.assign(SCREENS, {
         '<button type="button" class="round" data-action="rnw-plus"' + (RNW.months < RNW_MAX && !busy ? '' : ' disabled') + ' aria-label="Больше">+</button></div>' +
         '<span class="small">Подряд, не больше ' + RNW_MAX + ' — это предел ввода</span></div>' +
       (P ? '<div class="rows"><div><span class="small">Спишется</span><b class="num">' + money(P.charged) + ' ฿</b></div>' +
-             '<div><span class="small">Оплачено будет до</span><b>' + esc(msDate(P.until)) + '</b></div></div>'
+             // окно, а не месяцы (Cafe13KPG#894): с какого дня пойдёт продление и до какого будет оплачено
+             '<div><span class="small">Начало</span><b>' + esc(msTill(P.from)) + '</b></div>' +
+             '<div><span class="small">Оплачено будет до</span><b>' + esc(msTill(P.till)) + '</b></div></div>'
         // «Посчитать снова», а не «Повторить» (Cafe13KPG#685): повторяется запрос ЦЕНЫ, в слоте ничего не повторяется
         : RNW.prevFail ? '<div class="row"><span class="small">' + esc(rnwSameRefusal() ? 'Цена не пересчитана' : RNW.prevFail) + '</span><button type="button" class="btn quiet" data-action="rnw-retry">Посчитать снова</button></div>'
         : '<span class="small">Считаем у сервера…</span>');
