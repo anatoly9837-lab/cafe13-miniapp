@@ -46,6 +46,7 @@ const ROOT = process.env.APP || path.resolve(__dirname, '..');
 const IMAGE = 'agenthost/playwright:1.59.1';
 const rows = [];
 const say = (kind, name, rc, text) => rows.push({ kind, name, rc, text });
+const notes = [];   // ОТЧЁТ: печатается, в код выхода не входит
 
 function run(cmd, args) {
   const r = spawnSync(cmd, args, { cwd: ROOT, env: Object.assign({}, process.env, { APP: ROOT }), encoding: 'utf8', timeout: 60000 });
@@ -124,6 +125,13 @@ try {
            пропуском. Цена ужесточения — комментарий со скобками требует номер: ошибка в сторону подъёма. */
         const prose = x => /^\s*$/.test(x) || /^\s*(\/\/|\/\*)/.test(x) || /^\s*\*(\s|\/|$)[^{};()=]*$/.test(x);
         const t = tm[1], b = bm && bm[1], seen = lines && lines.some(x => !prose(x));
+        /* Рамка выпуска («0.1 «Путь мастера»») — ОТЧЁТ, а не приговор (просьба координатора 06.11.2026 по #253): какой
+           рамке принадлежит шаг, в проекте не записано, поэтому прибор не знает правильной и судить не может. Задача —
+           чтобы смена рамки перестала быть тихой: прежде любая рамка в VERSION проходила ворота молча. */
+        const frame = x => (x.match(/var VERSION = 'v\d+ · (.+?) · /) || [])[1];
+        const fNow = frame(app), fTrunk = frame(tApp.stdout);
+        if (!fNow || !fTrunk) notes.push(`рамка не прочитана (дерево: ${fNow || '—'}, ствол: ${fTrunk || '—'}) — сменилась ли, не измерено`);
+        else if (fNow !== fTrunk) notes.push(`рамка сменилась: ${fTrunk} → ${fNow}`);
         if (!lines) say('ворота', 'номер версии', 2, 'дифф от точки ответвления не снят (' + why(d) + ') — поднят ли номер, сравнить не с чем');
         else if (seen && Number(n) <= Number(t)) say('ворота', 'номер версии', 1,
           `клиент изменён против ствола (v${t}), а номер v${n} не поднят — владелец увидит старый файл из кэша`);
@@ -145,6 +153,7 @@ else {
 }
 
 const WORD = { 0: 'зелёное', 1: 'КРАСНОЕ', 2: 'НЕ ВЫПОЛНЕНО' };
+for (const x of notes) console.log('ОТЧЁТ ' + x);
 for (const x of rows) console.log(`${x.kind === 'ворота' ? 'ВОРОТА' : 'ПРЕДЕЛ'} ${x.name}: ${WORD[x.rc]} — ${x.text}`);
 const gates = rows.filter(x => x.kind === 'ворота'), lim = rows.find(x => x.kind === 'предел');
 const gc = gates.some(x => x.rc === 1) ? 1 : gates.some(x => x.rc === 2) ? 2 : 0;
