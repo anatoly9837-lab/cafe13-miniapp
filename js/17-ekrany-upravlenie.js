@@ -99,7 +99,8 @@ Object.assign(SCREENS, {
     var err = PR.qErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(PR.qErr) + '</span></div>' : '';
     return (FLASH ? flash() : '') +
       '<div class="card"><div class="col"><b class="clamp2">' + esc(q.title) + '</b><span class="small">' + esc((q.who || 'Без имени') + ' · ' + topupDay(q.iso, true)) + '</span></div></div>' +
-      (q.about ? '<div class="card quiet"><span class="small" style="white-space:pre-wrap">' + esc(q.about) + '</span></div>' : '') +
+      // описание — тушью, не подписью: на нём стоит решение (рецепт R5, «подписью быть не может»); переводы строк сохранены
+      (q.about ? '<div class="card quiet"><p style="margin:0;white-space:pre-wrap">' + esc(q.about) + '</p></div>' : '') +
       '<div class="rows"><div><span class="small">Списано</span><b class="num">' + money(q.amount) + ' ฿</b></div></div>' +
       err +
       (q.status !== 'pending' ? '<div class="card quiet"><div class="row"><span class="small">Решено ' + esc(topupDay(q.done, true)) + '</span>' +
