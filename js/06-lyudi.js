@@ -121,7 +121,9 @@ function peopleLand() {
     return;
   }
 }
-function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' · ' + dirTitle : ''); }
+/* Направление — СКОБКАМИ, а не « · » (Cafe13KPG#869): подпись роли сама бывает с точкой-разделителем
+   («Бар · исполнитель»), и «Бар · исполнитель · Кофейня» не говорит, где кончается роль. Слова ролей не меняются */
+function roleWords(role, dirTitle) { return (ROLE_NAME[role] || role) + (dirTitle ? ' (' + dirTitle + ')' : ''); }
 
 /* Один битый человек — отказ целиком: список с пропавшей строкой выглядит полным. */
 function fromRoster(d) {
