@@ -10,10 +10,16 @@ Object.assign(SCREENS, {
     // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
     // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
     var wait = JOINQ.list ? JOINQ.list.filter(function (q) { return q.status === 'pending'; }).length : null;
-    var money_ = mayTopups() ? '<div class="group"><span class="label">Деньги</span>' +
-      '<button type="button" class="listitem" data-go="topupQueue"><span class="grow"><b>Заявки на пополнение</b>' +
+    // шаг 11 (кадр E46д, Cafe13KPG#857): группа «Деньги» — у того, кто вправе хоть одну её строку; каждая строка —
+    // под СВОИМ правом. Распределяет арт-директор, а пополнения решает ответственный за них: группа на одном
+    // `mayTopups()` прятала вход от того, кому он. Вторая группа с тем же заголовком читалась бы вторым разделом
+    var money_ = mayTopups() || mayMasters() ? '<div class="group"><span class="label">Деньги</span>' +
+      (mayTopups() ? '<button type="button" class="listitem" data-go="topupQueue"><span class="grow"><b>Заявки на пополнение</b>' +
         '<span class="small">' + waitSub(TOPQ.pending, 'Кто просит пополнить счёт') + '</span></span>' +
-        waitMark(TOPQ.pending) + svg(ICON.chev, 'chev') + '</button></div>' : '';
+        waitMark(TOPQ.pending) + svg(ICON.chev, 'chev') + '</button>' : '') +
+      (mayMasters() ? '<button type="button" class="listitem" data-go="payouts"><span class="grow"><b>Распределить деньги</b>' +
+        '<span class="small">' + waitSub(PAY.pending, 'Доли с прошедших мероприятий') + '</span></span>' +
+        waitMark(PAY.pending) + svg(ICON.chev, 'chev') + '</button>' : '') + '</div>' : '';
     // шаг 3: дверь «Слоты и мастера» — группой, как «Деньги» (слово владельца: «во вкладке управление — управление этими ивентами»)
     // «Ивенты», а не «Мероприятия» — слово владельца 29.10.2026 по прототипу: «Не мероприятия а ивенты»
     // шаг 4: «Свои ивенты» — в той же группе, у всякого, кто ведёт свои (мастер, организатор, работник)
