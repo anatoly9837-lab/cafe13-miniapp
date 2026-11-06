@@ -255,7 +255,7 @@ var TITLES = {
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
   masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера', masterRenew: 'Продление',
-  payouts: 'Распределить', payout: 'Распределить'
+  payouts: 'Распределить', payout: 'Распределить', businesses: 'Бизнесы клуба'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -286,7 +286,8 @@ function tabList() {
   // шаг 4: и у МАСТЕРА — его «Ивенты» со СВОИМИ живут там (слово владельца 30.10.2026: «мастер должен начать
   // видеть раздел управление»). Именно мастеру, а не всем с `mayOwnEvents()`: партнёру, куратору и организатору
   // вкладку никто не давал, у них свой вход «Управление своими» на афише
-  if ((mayPeople() || mayTopups() || mayMasters() || LIVE && msIsMaster()) && !t.some(function (x) { return x[0] === 'manage'; }))
+  // шаг 12: и у операционного директора — его «Бизнесы» живут там (Cafe13KPG#877)
+  if ((mayPeople() || mayTopups() || mayMasters() || mayOps() || LIVE && msIsMaster()) && !t.some(function (x) { return x[0] === 'manage'; }))
     t.push(['manage', 'Управление', ICON.people]);
   return t;
 }
@@ -316,7 +317,7 @@ var BACK = {
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
-  payouts: 'manage', payout: 'payouts',
+  payouts: 'manage', payout: 'payouts', businesses: 'manage',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -567,6 +568,8 @@ function go(screen, p) {
   // шаг 11: пометка ждущих на «Распределить деньги» — счёт нужен уже на «Управлении»; каждый вход — свежий список
   if ((screen === 'manage' || screen === 'payouts') && current !== screen && mayMasters()) { PAY.err = ''; loadPayouts(); }
   if (screen === 'payout') { PAY.err = ''; if (!PAY.list && mayMasters()) loadPayouts(); }
+  // шаг 12: каждый вход на «Бизнесы клуба» — свежий список: смена открывается и закрывается без нас
+  if (screen === 'businesses' && current !== 'businesses' && mayOps()) loadBusinesses();
   if (screen === 'masterRenew' && current !== 'masterRenew' && LIVE) { RNW.err = ''; RNW.key = ''; if (MR.mineState === '' || !MR.mine) loadMineMaster(); }
   // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
   // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
@@ -1089,6 +1092,7 @@ function doAction(a) {
     if (a === 'pay-retry' && mayMasters()) { loadPayouts(); render(); return; }
     if (a === 'pay-open') { go('payout', Number(arg)); return; }
     if (a === 'pay-go' && mayMasters()) { sendPayout(Number(arg)); return; }
+    if (a === 'biz-retry' && mayOps()) { loadBusinesses(); render(); return; }
     if (a === 'ms-retry-s' && mayMasters()) { loadSlots(); render(); return; }
     if (a === 'ms-retry-places') { loadPlaces(); render(); return; }
     if (a === 'tq-no' && mayTopups()) { if (TOPQ.step === 'no') decideTopup(Number(arg), 'rejected'); return; }
