@@ -805,7 +805,7 @@ if (grantsSet.length !== 1) {
     const mreq = (id, status, extra) => Object.assign({ id, title: 'Проба мастера', about: '', seats: 8, place_id: 1, place_name: 'Зал',
       weekday: 4, weekday_ru: 'четверг', start_local: '18:00', hours: 2, hours_extra: 0, amount: String(PRICE(2)), status,
       status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
-      created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '' }, extra || {});
+      created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null }, extra || {});
     // заглушки ручек мастера; mine — функцией, чтобы после подачи перечитанный список был уже с заявкой
     const masterApi = o => q => {
       const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
@@ -1201,27 +1201,27 @@ if (grantsSet.length !== 1) {
         const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
         const pm = u.match(/^\/master\/requests\/901\/periods\/preview\?months=(\d+)$/);
         if (pm) { const N = Number(pm[1]); o.prevAsked.push(N); if (o.prevReply) return o.prevReply(N); return json(200, Object.assign({ request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
-          per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', paid_until: N === 2 ? '2027-01-31' : '2026-12-31', enough: true, short: '0.00' }, prev || {})); }
+          per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', periods: Array(N).fill(null).map((_, i) => ({ starts_at: i ? '2026-12-30T07:30:00+00:00' : '2026-11-30T07:30:00+00:00', ends_at: i ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00' })), paid_till: N === 2 ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00', enough: true, short: '0.00' }, prev || {})); }
         if (u === '/master/requests/901/periods' && m === 'POST') { o.renewed.push(JSON.parse(q.postData() || '{}'));
-          return o.post ? o.post() : json(201, Object.assign(mreq(901, 'approved', { paid_until: '2027-01-31' }), { charged: '5400.00', months: [] })); }
+          return o.post ? o.post() : json(201, Object.assign(mreq(901, 'approved', { paid_till: '2027-01-30T07:30:00+00:00' }), { charged: '5400.00', months: [] })); }
         return api(q);
       }; };
-      // общий вход: мастер с оплатой до 30.11.2026, «Клуб» → «Продлить»
+      // общий вход: мастер с оплатой до 30.11.2026 14:30 по острову (`paid_till` — момент, М.2 Cafe13KPG#894), «Клуб» → «Продлить»
       const rnwOpen = async (n, o, prev, wrap) => {
-        o.mine = () => [mreq(901, 'approved', { paid_until: '2026-11-30' })]; o.posted = []; o.prevAsked = []; o.renewed = [];
+        o.mine = () => [mreq(901, 'approved', { paid_till: '2026-11-30T07:30:00+00:00' })]; o.posted = []; o.prevAsked = []; o.renewed = [];
         const api = rnwApi(o, prev);
         const s = await open(true, true, json(200, mem(9000, [])), null, null, null, wrap ? wrap(api) : api);
         await s.p.waitForTimeout(300);
         const ok = await tapIf(s, n, '#view [data-go="masterRenew"]', '«Продлить» на «Клубе»');
         await s.p.waitForTimeout(300);
         // срок слота — на «Продлении», а не на «Клубе» (E68, Cafe13KPG#682: блок «Вы мастер» снят)
-        if (ok && !(await s.view()).includes('Оплачено до 30.11.2026')) bad.push(`${n}: на «Продлении» нет «Оплачено до 30.11.2026»`);
+        if (ok && !(await s.view()).includes('Оплачено до 30 ноября')) bad.push(`${n}: на «Продлении» нет «Оплачено до 30 ноября» — срок не из \`paid_till\``);
         return { s, ok };
       };
       // «Клуб» мастера по E68 (Cafe13KPG#682): роль по-русски, «Продлить» сразу под карточкой ролей и только у своего
       // СОГЛАСОВАННОГО слота; блока «Вы мастер» со сроком на «Клубе» нет. Мастер без слота — по уровню organizer
       for (const [n, slot] of [['klub-master-dver', true], ['klub-master-bez-slota', false]]) {
-        const o = { mine: () => slot ? [mreq(901, 'approved', { paid_until: '2026-11-30' })] : [] };
+        const o = { mine: () => slot ? [mreq(901, 'approved', { paid_till: '2026-11-30T07:30:00+00:00' })] : [] };
         const me = mem(9000, ['master']);
         if (!slot) me.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-01-31T00:00:00+00:00', lifelong: false });
         const s = await open(true, true, json(200, me), null, null, null, rnwApi(o));
@@ -1243,6 +1243,38 @@ if (grantsSet.length !== 1) {
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
       }
+      // М.2 (Cafe13KPG#894): ответ БЕЗ `paid_till` — форма сервера до М.1, только `paid_until`. Экран обязан сказать
+      // «не загрузились», а не «оплаченных нет» и не старый срок: отсутствие значения пришло бы правдоподобным значением.
+      // Краснеет, если разборщик читает `paid_until` или считает пропавший ключ за null
+      {
+        const n = 'master-bez-paid-till';
+        const o = { mine: () => { const x = mreq(901, 'approved', { paid_until: '2026-11-30' }); delete x.paid_till; return [x]; } };
+        const s = await open(true, true, json(200, mem(9000, ['master'])), null, null, null, rnwApi(o));
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        if (!t.includes('Заявки в мастера не загрузились')) bad.push(`${n}: ответ без \`paid_till\` не назван «не загрузились»`);
+        if (t.includes('Оплаченных месяцев нет') || t.includes('Оплачено до')) bad.push(`${n}: ответ без \`paid_till\` показан сроком или «оплаченных нет»`);
+        if (await s.p.$('#view [data-go="masterRenew"]')) bad.push(`${n}: «Продлить» есть при неразобранной заявке`);
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // М.2: окно, перенесённое миграцией 030, кончается 1-го в 00:00 по острову = `…T17:00:00Z` накануне по UTC.
+      // День берётся по часам КЛУБА: «до 1 декабря», а не «до 30 ноября». Фикстуры выше стоят на 07:30Z, где
+      // UTC и остров дают один день, — подмену часов клуба на UTC видит только этот случай (мутация архитектора, #258)
+      {
+        const n = 'master-paid-till-ostrov';
+        const o = { mine: () => [mreq(901, 'approved', { paid_till: '2026-11-30T17:00:00+00:00' })], posted: [], prevAsked: [], renewed: [] };
+        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, rnwApi(o));
+        await s.p.waitForTimeout(300);
+        if (await tapIf(s, n, '#view [data-go="masterRenew"]', '«Продлить» на «Клубе»')) {
+          await s.p.waitForTimeout(300);
+          const t = await s.view();
+          if (!t.includes('Оплачено до 1 декабря')) bad.push(`${n}: конец окна 1-го 00:00 по острову не назван «Оплачено до 1 декабря» — день не по часам клуба`);
+          if (t.includes('Оплачено до 30 ноября')) bad.push(`${n}: показано «до 30 ноября» — день взят по UTC`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
       // причина погасшей «Продлить»: видимые адресаты её aria-describedby (Cafe13KPG#685)
       const RNW_PRICE = /цен[аы]\s+не\s+(по|пере)?считан/i;
       const rnwWhy = s => s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); if (!b) return null;
@@ -1257,7 +1289,7 @@ if (grantsSet.length !== 1) {
           const t = flat(await s.view());
           if (!o.prevAsked.includes(2)) bad.push(`${n}: предпросмотр не спрошен с months=2: ${JSON.stringify(o.prevAsked)}`);
           if (!t.includes('5400฿')) bad.push(`${n}: на экране нет «5 400 ฿» от сервера за два месяца`);
-          if (!t.includes('31.01.2027')) bad.push(`${n}: на экране нет «31.01.2027» от сервера`);
+          if (!t.includes('30января2027')) bad.push(`${n}: на экране нет «30 января 2027» от сервера (\`paid_till\` предпросмотра)`);
           if (await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
             await s.p.waitForTimeout(500);
             if (o.renewed.length) bad.push(`${n}: продление ушло до конца окна отмены (через 0,5 с)`);
@@ -1355,7 +1387,7 @@ if (grantsSet.length !== 1) {
         let taken = false;
         const o = { post: () => { taken = true; return json(409, { detail: BUSY + '. Деньги не списаны, месяц не продлён' }); },
           prevReply: N => taken ? prevAfter() : json(200, { request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
-            per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', paid_until: '2026-12-31', enough: true, short: '0.00' }) };
+            per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', periods: [{ starts_at: '2026-11-30T07:30:00+00:00', ends_at: '2026-12-30T07:30:00+00:00' }], paid_till: '2026-12-30T07:30:00+00:00', enough: true, short: '0.00' }) };
         const { s, ok } = await rnwOpen(n, o);
         const before = ok ? s.calls.length : 0;   // ДО нажатия (см. rnw-send-lost)
         if (ok && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
