@@ -195,6 +195,21 @@
   ],
   "status": 200
  },
+ "directions-ops-director": {
+  "request": "GET /directions",
+  "shape": [
+   {
+    "id": null,
+    "is_active": null,
+    "is_open": null,
+    "partner_first_name": null,
+    "partner_id": null,
+    "partner_last_name": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
  "event-bookings-denied": {
   "request": "GET /events/N/bookings",
   "shape": {
