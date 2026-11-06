@@ -1202,7 +1202,7 @@ if (grantsSet.length !== 1) {
         status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
         created_at: '2026-11-06T03:00:00+00:00', decided_at: status === 'pending' ? null : '2026-11-06T05:00:00+00:00',
         decision_note: '', direction_id: status === 'approved' ? 7 : null, paid_till: null, active: status === 'approved' }, extra || {});
-      const qrow = (id, status, extra) => Object.assign(preq(id, status), { member_id: 200000300 + id, first_name: 'Имя' + id, last_name: '', username: null }, extra || {});
+      const qrow = (id, status, extra) => Object.assign(preq(id, status), { member_id: 200000011, first_name: 'Имя' + id, last_name: '', username: null }, extra || {});
       const partnerApi = o => q => {
         const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
         if (u === '/partner/price') return o.price ? o.price() : json(404, { detail: 'Not Found' });
@@ -1299,7 +1299,7 @@ if (grantsSet.length !== 1) {
         await s.p.evaluate(() => go('partnerReqs')); await s.p.waitForTimeout(400);
         const t0 = await s.view();
         if (!t0.includes('Кофейня') || !t0.includes('Имя31')) bad.push(`${n}: в очереди нет заявки «Кофейня» от Имя31`);
-        if (/2003000\d\d/.test(await s.p.content())) bad.push(`${n}: номер человека попал в разметку`);
+        if ((await s.p.content()).includes('200000011')) bad.push(`${n}: номер человека попал в разметку`);
         await s.p.evaluate(() => go('partnerReq', '33')); await s.p.waitForTimeout(300);
         const t1 = await s.view();
         if (!t1.includes('Свою заявку решает другой операционный директор.') || await s.p.$('#view [data-action^="pr-yes:"]')) bad.push(`${n}: своя заявка решается`);
