@@ -121,7 +121,7 @@ function loadMenu() {
     if (err) {
       DATA.bar.menu = [];
       MENU_STATE = err;
-      if (current === 'bar' || current === 'drink') render();
+      if (current === 'bar' || current === 'drink' || current === 'barRecipe') render();
       return;
     }
     loadBarMenu();
