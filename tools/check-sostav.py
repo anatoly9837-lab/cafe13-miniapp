@@ -51,6 +51,7 @@
 import io
 import os
 import re
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -389,6 +390,21 @@ def самопроверка():
 РАБОЧЕЕ = os.path.join(os.path.expanduser('~'), '.cache', 'check-sostav')
 
 
+def _адрес_дерева():
+    """`адрес_дерева` из `tools/v-oblasti.py` — ОДНА реализация на репозиторий.
+
+    Своей здесь нет нарочно: у соседа она с отрицательным контролем на подмену
+    ревизии (`git rev-parse` из подкаталога отдаёт sha объемлющего). Соседа нет
+    рядом — печатается честное слово, а не догадка."""
+    путь = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'v-oblasti.py')
+    if not os.path.exists(путь):
+        return 'адреса дерева нет: рядом нет tools/v-oblasti.py'
+    спец = importlib.util.spec_from_file_location('_v_oblasti', путь)
+    м = importlib.util.module_from_spec(спец)
+    спец.loader.exec_module(м)
+    return м.адрес_дерева(КОРЕНЬ)
+
+
 def размеры_рецептов(корень):
     """{путь от корня репозитория: размер в БАЙТАХ} по всем `.md` рецептов.
 
@@ -442,6 +458,10 @@ def судить_размер(размеры, в_стволе, печать=True
                           '(в стволе %d)' % (пп, сверх[пп], ПРЕДЕЛ_РЕЦЕПТА, было))
     строки.append('размеры рецептов: файлов %d, сверх предела %d КиБ — %d'
                   % (len(размеры), ПРЕДЕЛ_РЕЦЕПТА // 1024, len(сверх)))
+    # ⚠ Число уезжает в письма и в тела заявок, поэтому несёт АДРЕС ДЕРЕВА:
+    #   правило моё (`rules-pribory.md`), и оно стояло против меня же.
+    if печать:
+        строки.append('снято по дереву %s' % _адрес_дерева())
     if печать:
         for с in строки:
             print(с)
