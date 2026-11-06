@@ -2171,7 +2171,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // а не по перечню, и самоконтроль — что погашенные входы на главной вообще есть.
   if (part(1)) {
     // афиша (`events`) разморожена словом владельца 30.10.2026 «сделать доступным для всех» (Cafe13KPG#670)
-    const n = 'freeze', KEEP = ['home', 'manage', 'events'];
+    // вкладка «Услуги» (`guest`) оттаяна с витриной бара (0.2, Cafe13KPG#269): она носитель двери в бар
+    const n = 'freeze', KEEP = ['home', 'manage', 'events', 'guest'];
     const s = await open(true, true, json(200, OWNER));
     const tabs = await s.p.$$eval('#tabs button', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
     if (tabs.length < 4) bad.push(`${n}: вкладок ${tabs.length} — фикстура не та, проверять нечего`);
@@ -2214,17 +2215,19 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     entries.filter(e => e[1]).forEach(([g]) => { if (['pass', 'topup', 'manage', 'people', 'joinQueue', 'home'].includes(g)) bad.push(`${n}: погашен живой вход «${g}»`); });
     // подпись про кассу (v84, Cafe13KPG#513) переехала с главной на экран пополнения (v94, кадр E52):
     // живая сторона условия — в balans-shapka, здесь — демонстрационная
-    await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(200);
+    // бар оттаян (0.2), очередь на баре — нет: замороженный предмет берётся из тех, что остались
+    await s.p.evaluate(() => go('barQueue')); await s.p.waitForTimeout(200);
     let t = await s.view();
-    if (!t.includes('Бар — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
+    if (!t.includes('Заказы на баре — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
     if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
     // шаг 4 (Cafe13KPG#670) размораживает афишу; шаг 4, п.3 — «Свои ивенты» мастеру и правку недели; «Новое мероприятие» — нет.
     // Шаг 7, часть А (Cafe13KPG#755, решение координатора по слову владельца в #510): «Записи» разморожены — дверь к благодарности
-    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', false]]) {
+    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', false],
+                              ['guest', false], ['bar', false], ['barQueue', true]]) {
       await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
       const said = (await s.view()).includes('временно недоступно');
-      if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — его не размораживали ни шаг 4 (#670), ни шаг 7 (#755)`);
-      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — его разморозили (шаг 4 #670 / шаг 7 #755)`);
+      if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — его не размораживали ни шаг 4 (#670), ни шаг 7 (#755), ни витрина 0.2`);
+      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — его разморозили (шаг 4 #670 / шаг 7 #755 / витрина 0.2)`);
     }
     await s.p.evaluate(() => go('partner')); await s.p.waitForTimeout(200);
     t = await s.view();
@@ -2909,11 +2912,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   // Услуг у клуба нет (решение владельца, Cafe13KPG#102, со слов координатора): гость в живом режиме
   // видит бар и не видит обещания «Услуги острова — ещё не подключено».
-  if (part(1)) if (thawed('экран гостя «Услуги»')) {
-    const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = [];
-    const s = await open(true, true, json(200, guest), null, null, null);
+  if (part(1)) {
+    // `guest` — экран ВКЛАДКИ «Услуги» члена клуба, а не стартовый гостя: человек без членства в живом
+    // попадает на noAccess (startScreen). Прежняя фикстура (гость без членства) спала месяц под заморозкой
+    // и к оттаиванию разошлась со стартом — перемерено на базе 0ff3445 (витрина 0.2)
+    const s = await open(true, true, json(200, OWNER), null, null, null);
+    await s.p.click('#tabs [data-go="guest"]'); await s.p.waitForTimeout(150);
     const t = await s.view();
-    if (!t.includes('Бар Café XIII')) bad.push('guest-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — гость не на своём экране');
+    if (!t.includes('Бар Café XIII')) bad.push('guest-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — член клуба не на экране вкладки «Услуги»');
     else if (t.includes('Услуги острова')) bad.push('guest-services: гостю обещан раздел «Услуги острова», которого у клуба нет');
     await s.ctx.close();
   }
@@ -2997,7 +3003,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.p.waitForTimeout(150);
   }
 
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar());
     await toBar(s);
     const t = await s.view();
@@ -3028,7 +3034,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Поздний ответ опроса прежнего захода не откатывает состояние заказа
   // (гард поколения в pollMine). Первый опрос медленный — заказ ещё «новый»,
   // уход в меню и возврат дают второй, быстрый — «готов». Задержка — от запроса.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     let n = 0, landed = false;
     const slow = () => new Promise(r => setTimeout(() => { landed = true; r(json(200, [row('new')])); }, 1500));
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ list: () => ++n === 1 ? slow() : json(200, [row('ready')]) }));
@@ -3048,7 +3054,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Двойное нажатие, пока заказ в пути, — один заказ.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const slow = () => new Promise(res => setTimeout(() => res(json(201, ORDER)), 600));
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: slow }));
     await toBar(s);
@@ -3060,7 +3066,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Состояние заказа подтягивается с сервера.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     let st = 'new';
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ list: () => json(200, [row(st)]) }));
     await toBar(s);
@@ -3075,7 +3081,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // (макет E23б) и кнопка пополнения из неё. Член без права кассы видит,
   // куда идти; админ — форму внести себе.
   const NOTILL = clone(OWNER); NOTILL.roles = [];
-  if (part(1)) if (thawed('бар')) for (const [who, name, want] of [[NOTILL, 'topup-409', 'перевод по реквизитам клуба'], [OWNER, 'topup-409-admin', null]]) {
+  if (part(1)) for (const [who, name, want] of [[NOTILL, 'topup-409', 'перевод по реквизитам клуба'], [OWNER, 'topup-409-admin', 'перевод по реквизитам клуба']]) {
     const s = await open(true, true, json(200, who), null, null, null,
       bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830' }) }));
     await toBar(s);
@@ -3086,13 +3092,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     else { await s.p.click('[data-go="topup"]'); await s.p.waitForTimeout(150); }
     const t = await s.view();
     (want ? [want] : []).forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
-    if (!want && !(await s.p.$('#t-amount'))) bad.push(`${name}: админу нет формы внесения`);
-    if (want && (await s.p.$('#t-amount'))) bad.push(`${name}: форма внесения без права кассы`);
+    // прямого внесения себе нет и у админа: «Все пополнения — только заявка» (слово владельца 30.10.2026, Cafe13KPG#677);
+    // прежнее «админу — форма» спало под заморозкой и пережило это слово
+    if (await s.p.$('#t-amount')) bad.push(`${name}: на пополнении форма прямого внесения себе`);
     await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
     await s.ctx.close();
   }
   // Кнопка «Не хватает» ведёт туда же без запроса.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, NOTILL), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-go="topup"]');
@@ -3102,7 +3109,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Связь оборвалась на заказе — не повторять вслепую, а спросить сервер.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: 'abort', list: json(200, [row('making')]) }));
     await toBar(s);
     await s.p.click('[data-action="buy:11"]');
@@ -3114,7 +3121,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Позиция снята с меню — причина на экране, меню перезапрошено.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
       bar({ order: json(409, { detail: 'позиция снята с меню: Эспрессо' }) }));
     await toBar(s);
@@ -3129,7 +3136,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // 409, поэтому признак — ТЕКСТ плашки, равный тексту сервера, а не код.
   // Каждый случай: корзина из двух позиций «к столу», отказ — плашка над
   // «Купить», состав и место на месте, нажатие снова возможно.
-  if (part(1)) if (thawed('бар')) for (const [name, status, detail] of [
+  if (part(1)) for (const [name, status, detail] of [
     ['deny-closed', 409, 'бар закрыт: смена не открыта, заказ принять некому'],
     ['deny-noitems', 400, 'нет таких позиций в этом меню: [12]'],
     ['deny-hidden', 409, 'позиция снята с меню: Флэт-уайт'],
@@ -3172,7 +3179,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // Номер заказа — из ответа сервера, а не свой: ответ несёт другой номер.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
       bar({ order: json(201, Object.assign({}, ORDER, { number: '261021-05' })), list: json(200, [Object.assign(row('new'), { number: '261021-05' })]) }));
     await toBar(s);
@@ -3184,7 +3191,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Меню: битое — отказ, пустое — честное «пусто».
-  if (part(1)) if (thawed('бар')) for (const [name, menu, want, nope] of [
+  if (part(1)) for (const [name, menu, want, nope] of [
     ['menu-bad', json(200, [{ id: 'x', title: 'Эспрессо' }]), 'не разобран', '[data-action^="buy:"]'],
     ['menu-500', json(500, {}), 'кодом 500', '[data-action^="buy:"]'],
     ['menu-empty', json(200, []), 'ни одной позиции', '[data-action^="buy:"]']]) {
@@ -3196,9 +3203,127 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
 
+  /* Витрина бара, 0.2 (рецепты Cafe13KPG#269): экран, которому меню приходит со стороны, отличает
+     «меню ещё нет» от «такой позиции нет» — один помощник `menuGate` на `drink` и `barRecipe`, и
+     свой отказ заказа `mineFail` на `barOrder`. Входят через go(): случаи судят экраны, а не дверь. */
+  if (part(2)) {
+    // меню в пути: «Загружаем меню…», а не «Такой позиции нет»; пришло — позиция на экране
+    const later = () => new Promise(r => setTimeout(() => r(json(200, MENU)), 700));
+    const s = await open_(bar({ menu: later }));
+    await s.p.evaluate(() => go('drink', '11'));
+    await s.p.waitForTimeout(200);
+    let t = await s.view();
+    if (!t.includes('Загружаем меню…')) bad.push('drink-menu-v-puti: нет «Загружаем меню…», пока меню в пути');
+    if (t.includes('Такой позиции в меню нет')) bad.push('drink-menu-v-puti: «Такой позиции в меню нет» о меню, которое ещё не пришло');
+    await s.p.waitForTimeout(800);
+    t = await s.view();
+    if (!t.includes('Эспрессо') || t.includes('Загружаем меню…')) bad.push('drink-menu-v-puti: меню пришло, а позиции на экране нет');
+    await s.ctx.close();
+  }
+  if (part(2)) {
+    // меню не загрузилось: причина, «Повторить», и повтор приносит позицию
+    let n = 0;
+    const s = await open_(bar({ menu: () => ++n === 1 ? json(500, {}) : json(200, MENU) }));
+    await s.p.evaluate(() => go('drink', '11'));
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    ['Меню не загрузилось', 'кодом 500'].forEach(x => { if (!t.includes(x)) bad.push(`drink-menu-otkaz: нет «${x}»`); });
+    if (t.includes('Такой позиции в меню нет')) bad.push('drink-menu-otkaz: «Такой позиции в меню нет» при отказе меню');
+    const btn = await s.p.$eval('[data-action="retry-menu"]', e => e.textContent).catch(() => null);
+    if (btn !== 'Повторить') bad.push(`drink-menu-otkaz: кнопка повтора «${btn}», ждали «Повторить»`);
+    else {
+      await s.p.click('[data-action="retry-menu"]');
+      await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes('Эспрессо')) bad.push('drink-menu-otkaz: повтор не принёс позицию');
+      if (n !== 2) bad.push(`drink-menu-otkaz: запросов меню ${n}, ждали 2`);
+    }
+    await s.ctx.close();
+  }
+  if (part(2)) {
+    // меню пришло, позиции в нём нет — тогда и только тогда «Такой позиции в меню нет», без чужой позиции
+    const s = await open_(bar());
+    await s.p.evaluate(() => go('drink', '99'));
+    await s.p.waitForTimeout(250);
+    const t = await s.view();
+    if (!t.includes('Такой позиции в меню нет.')) bad.push('drink-net-pozicii: нет «Такой позиции в меню нет.»');
+    if (t.includes('Эспрессо')) bad.push('drink-net-pozicii: вместо отсутствующей позиции показана первая из меню');
+    if (!(await s.p.$('[data-go="bar"]'))) bad.push('drink-net-pozicii: нет выхода «Открыть меню»');
+    await s.ctx.close();
+  }
+  if (part(2)) {
+    // «Меню ведёт куратор» и слово повтора на самом меню
+    const s = await open_(bar({ menu: json(500, {}) }));
+    await s.p.evaluate(() => go('bar'));
+    await s.p.waitForTimeout(250);
+    const btn = await s.p.$eval('[data-action="retry-menu"]', e => e.textContent).catch(() => null);
+    if (btn !== 'Повторить') bad.push(`bar-povtorit: кнопка повтора меню «${btn}», ждали «Повторить»`);
+    await s.ctx.close();
+  }
+  if (part(2)) {
+    // рецепт без меню: не «Позиция 11» вместо названия, а правда о меню; меню пришло ПОЗЖЕ рецепта — название встаёт само.
+    // Зритель — админ: право бара и куратора спрашивает направление (`mayRecipe`), а его до меню ещё нет
+    const R = { product_id: 11, lang: 'ru', asked_lang: 'ru', exact: true, body: 'Эспрессо: 18 г, 30 мл', created_at: '2026-10-22T05:29:11Z' };
+    for (const [name, menu] of [['recipe-menu-otkaz', json(500, {})],
+                                ['recipe-menu-pozzhe', () => new Promise(r => setTimeout(() => r(json(200, MENU)), 700))]]) {
+      const base = bar({ menu });
+      const s = await open(true, true, json(200, OWNER), null, null, null,
+        q => /\/bar\/products\/\d+\/recipe/.test(q.url()) ? json(200, R) : base(q));
+      await s.p.evaluate(() => go('barRecipe', '11'));
+      await s.p.waitForTimeout(250);
+      let t = await s.view();
+      if (t.includes('Позиция 11')) bad.push(`${name}: номер вместо названия — «Позиция 11»`);
+      if (!t.includes('Эспрессо: 18 г')) bad.push(`${name}: рецепт не показан, пока меню нет`);
+      if (name === 'recipe-menu-otkaz') {
+        if (!t.includes('Меню не загрузилось') || !(await s.p.$('[data-action="retry-menu"]'))) bad.push(`${name}: нет «Меню не загрузилось» с повтором`);
+      } else {
+        if (!t.includes('Загружаем меню…')) bad.push(`${name}: нет «Загружаем меню…», пока меню в пути`);
+        await s.p.waitForTimeout(800);
+        t = await s.view();
+        if (!(await s.p.$eval('h1', e => e.textContent).catch(() => '')).includes('Эспрессо') || t.includes('Загружаем меню…'))
+          bad.push(`${name}: меню пришло после рецепта, а название не встало — экран не перерисован`);
+      }
+      await s.ctx.close();
+    }
+  }
+  if (part(2)) {
+    // свой заказ не загрузился: «Заказ не загрузился», причина и «Повторить»; повтор приносит заказ
+    let fail = true;
+    const s = await open_(bar({ list: () => fail ? json(500, {}) : json(200, [row('making')]) }));
+    await toBar(s);
+    await s.p.click('[data-action="buy:11"]');
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    ['Заказ не загрузился', 'кодом 500'].forEach(x => { if (!t.includes(x)) bad.push(`order-ne-zagruzilsya: нет «${x}»`); });
+    const btn = await s.p.$eval('[data-action="retry-mine"]', e => e.textContent).catch(() => null);
+    if (btn !== 'Повторить') bad.push(`order-ne-zagruzilsya: кнопка повтора «${btn}», ждали «Повторить»`);
+    else {
+      fail = false;
+      await s.p.click('[data-action="retry-mine"]');
+      await s.p.waitForTimeout(300);
+      const u = await s.view();
+      if (!u.includes('готовится') || u.includes('Заказ не загрузился')) bad.push('order-ne-zagruzilsya: повтор не принёс заказ');
+    }
+    await s.ctx.close();
+  }
+  if (part(2)) {
+    // повтор без направления: сперва бар, потом заказ — опросу без BAR спросить некого
+    const s = await open_(bar({ list: json(200, [row('making')]) }));
+    await s.p.evaluate(() => { MINE_FAIL = 'Сервер не ответил — состояние может быть устаревшим.'; go('barOrder'); });
+    await s.p.waitForTimeout(150);
+    if (!(await s.p.$('[data-action="retry-mine"]'))) bad.push('order-povtor-bez-bara: нет «Повторить»');
+    else {
+      await s.p.click('[data-action="retry-mine"]');
+      await s.p.waitForTimeout(300);
+      const dirs = s.calls.filter(c => c.url.endsWith('/directions')).length;
+      const gets = s.calls.filter(c => c.method === 'GET' && c.url.includes('/bar/orders')).length;
+      if (dirs < 1 || gets !== 1) bad.push(`order-povtor-bez-bara: направлений ${dirs}, опросов заказа ${gets} — ждали бар и один опрос`);
+    }
+    await s.ctx.close();
+  }
+
   // 201, но без place и pay_method: не «undefined» и не «не создан» (гость заказал бы
   // второй), а то, что записал сервер, — из очереди.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const bare = Object.assign({}, ORDER); delete bare.place; delete bare.pay_method;
     const srv = Object.assign(row('new'), { place: 'к столу', pay_method: 'cash' });
     const s = await open_(bar({ order: json(201, bare), list: json(200, [srv]) }));
@@ -3216,7 +3341,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   // Очередь целиком (админ, бар): чужой открытый заказ своим не становится;
   // строка без суммы (так её видит работник бара) рисуется без суммы.
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const other = Object.assign(row('making'), { id: 9, number: '261018-02', member_id: 2 });
     const s = await open_(bar({ order: 'abort', list: json(200, [other]) }));
     await toBar(s);
@@ -3226,7 +3351,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (t.includes('261018-02')) bad.push('queue-other: чужой заказ показан своим');
     await s.ctx.close();
   }
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const nosum = row('making'); delete nosum.sum; nosum.items = [{ title: 'Эспрессо', qty: 1 }];
     const s = await open_(bar({ order: 'abort', list: json(200, [nosum]) }));
     await toBar(s);
@@ -3237,7 +3362,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (/NaN|undefined|null ฿/.test(t)) bad.push('queue-nosum: мусор вместо суммы');
     await s.ctx.close();
   }
-  if (part(1)) if (thawed('бар')) {
+  if (part(1)) {
     const noplace = row('making'); delete noplace.place;
     const s = await open_(bar({ order: 'abort', list: json(200, [noplace]) }));
     await toBar(s);
@@ -6843,7 +6968,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
      `recipe-net.json`, `recipe-denied-guest.json` (прогон координатора на
      `2dedaa9`): `lang` — язык ПОКАЗАННОГО, `asked_lang` — запрошенный,
      `exact` — совпали ли; «рецепта нет» — 404 с текстом, а не пустое тело. */
-  if (part(2)) if (thawed('рецепт позиции бара')) {
+  if (part(2)) {
     const R_TH = { product_id: 11, lang: 'th', asked_lang: 'th', exact: true,
                    body: 'ชา: ใบชา 5 กรัม, น้ำ 90 องศา, 3 นาที', created_at: '2026-10-22T05:29:11.317057Z' };
     const R_RU = { product_id: 11, lang: 'ru', asked_lang: 'en', exact: false,

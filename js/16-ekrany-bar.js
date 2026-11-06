@@ -1,3 +1,27 @@
+/* Экран, которому меню приходит со стороны (`drink`, `barRecipe`), обязан отличать «меню ещё нет»
+   от «такой позиции нет»: слово о ПРЕДМЕТЕ правдиво только при `MENU_STATE === 'ok'` (рецепты
+   витрины, Cafe13KPG#269; один приём на семью — решение координатора). Своего загрузчика нет:
+   читается состояние бара. Пустая строка — меню пришло, решает сам экран. */
+function menuGate() {
+  if (MENU_STATE === '' || MENU_STATE === 'loading')
+    return '<div class="card quiet"><span class="small">Загружаем меню…</span></div>';
+  if (MENU_STATE !== 'ok')
+    return '<div class="card strong"><h2>Меню не загрузилось</h2><p>' + esc(MENU_STATE) + '</p>' +
+      '<button type="button" class="btn" data-action="retry-menu">Повторить</button></div>';
+  return '';
+}
+function noDrink() {
+  return '<div class="card quiet"><span class="small">Такой позиции в меню нет.</span></div>' +
+    '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
+}
+/* Тот же приём для своего заказа: отказ опроса — это «заказ не загрузился», а не «заказа нет»,
+   и у него есть выход (рецепт `barOrder`). Прежний заказ, если он был, стоит ниже. */
+function mineFail() {
+  return '<div class="card quiet"><div class="col"><b>Заказ не загрузился</b>' +
+    '<span class="small">' + esc(MINE_FAIL) + '</span></div>' +
+    '<button type="button" class="btn" data-action="retry-mine">Повторить</button></div>';
+}
+
 Object.assign(SCREENS, {
 
   /* ── бар ───────────────────────────────────────────────
@@ -13,7 +37,7 @@ Object.assign(SCREENS, {
         ? '<div class="card quiet"><span class="small">Загружаем меню…</span></div>'
         : MENU_STATE !== 'ok'
         ? '<div class="card strong"><h2>Меню не загрузилось</h2><p>' + esc(MENU_STATE) + '</p>' +
-            '<button type="button" class="btn" data-action="retry-menu">Попробовать снова</button></div>'
+            '<button type="button" class="btn" data-action="retry-menu">Повторить</button></div>'
         : !DATA.bar.menu.length
         ? '<div class="card quiet"><span class="small">В меню пока ни одной позиции — его заводит куратор бара.</span></div>'
         : DATA.bar.menu.map(function (g) {
@@ -60,13 +84,12 @@ Object.assign(SCREENS, {
   },
 
   drink: function (id) {
-    var d = findDrink(id) || drinks()[0];
-    if (LIVE && !d) return '<div class="card quiet"><span class="small">Такой позиции в меню нет.</span></div>' +
-      '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
+    var d = findDrink(id) || (LIVE ? null : drinks()[0]);
+    if (LIVE && !d) return menuGate() || noDrink();
     var n = CART[d.id] || 0;
     if (LIVE) {
       return (FLASH ? flash() : '') + tile(d, true) +
-        '<div class="group"><h1>' + esc(d.title) + '</h1><p>' + esc(d.full || d.about) + '</p></div>' +
+        '<div class="group"><h1 class="clamp2">' + esc(d.title) + '</h1><p>' + esc(d.full || d.about) + '</p></div>' +
         '<div class="rows">' +
           '<div><span class="small">Цена</span><b class="num">' + money(d.price) + ' ฿</b></div>' +
           (d.mins ? '<div><span class="small">Готовится</span><b class="num">' + esc(d.mins) + ' мин</b></div>' : '') +
@@ -120,9 +143,9 @@ Object.assign(SCREENS, {
       '<span class="small">Его показывают бару и куратору направления: гостю сервер его не отдаёт вовсе.</span>' +
       '</div></div>';
     return (!LIVE && FLASH ? flash() : '') +
-      '<div class="col"><h1>' + esc(d ? d.title : 'Позиция ' + id) + '</h1>' +
-        (d ? '<span class="small">' + esc(d.full || d.about || '') + '</span>' : '') +
-      '</div>' +
+      (d ? '<div class="col"><h1 class="clamp2">' + esc(d.title) + '</h1>' +
+             '<span class="small">' + esc(d.full || d.about || '') + '</span></div>'
+         : (LIVE && menuGate()) || noDrink()) +
       recipeBlock('Рецепт · สูตร', 'me', '') +
       recipeBlock('Recipe · English', 'en', 'en') +
       '<div class="note">' + svg(ICON.info) +
@@ -141,7 +164,7 @@ Object.assign(SCREENS, {
         list.map(function (x) {
           var d = findDrink(x.id);
           return '<div class="card"><div class="row top">' +
-            '<div class="col"><b>' + esc(x.title) + '</b>' +
+            '<div class="col"><b class="clamp1">' + esc(x.title) + '</b>' +
               '<span class="small num">' + x.n + ' × ' + x.price + ' = ' + money(x.n * x.price) + ' ฿</span></div>' +
             stepper(d) + '</div></div>';
         }).join('') +
@@ -168,7 +191,7 @@ Object.assign(SCREENS, {
     var o = DATA.bar.mine;
     if (LIVE && !o) {
       return (FLASH ? flash() : '') +
-        (MINE_FAIL ? '<div class="card quiet"><span class="small">' + esc(MINE_FAIL) + '</span></div>'
+        (MINE_FAIL ? mineFail()
                    : '<div class="card quiet"><span class="small">Открытого заказа на сервере нет.</span></div>') +
         '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
     }
@@ -199,9 +222,9 @@ Object.assign(SCREENS, {
           (o.sum === null ? '' : '<div><span class="small">Сумма</span><b class="num">' + money(o.sum) + ' ฿</b></div>') +
         '</div>' +
         '<div class="group"><h2>Что заказано</h2><div class="rows">' + o.items.map(function (i) {
-          return '<div><span>' + esc(i[0]) + '</span><span class="small num">' + i[1] + ' шт</span></div>';
+          return '<div><span class="clamp1">' + esc(i[0]) + '</span><span class="small num">' + i[1] + ' шт</span></div>';
         }).join('') + '</div></div>' +
-        (MINE_FAIL ? '<div class="card quiet"><span class="small">' + esc(MINE_FAIL) + '</span></div>' : '') +
+        (MINE_FAIL ? mineFail() : '') +
         '<button type="button" class="btn ghost" data-go="bar">Вернуться в меню</button>';
     }
     var line = ['new', 'making', 'ready', 'served'];
