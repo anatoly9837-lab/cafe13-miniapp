@@ -128,7 +128,7 @@ part_run() { # <k> — часть k/2 в свой лог
 avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
 [ -n "$avail_kb" ] || die 'не прочитан MemAvailable из /proc/meminfo'
 t_live=$(date +%s)
-if [ "$avail_kb" -ge 5242880 ]; then
+if [ "$avail_kb" -ge $((5 * 1024 * 1024)) ]; then   # 5 ГБ в КБ: два предела по 2 ГБ и запас
     part_run 1 & p1=$!
     part_run 2 & p2=$!
     wait "$p1"; rc1=$?
