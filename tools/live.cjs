@@ -3174,7 +3174,7 @@ if (grantsSet.length !== 1) {
     // меню в пути: «Загружаем меню…», а не «Такой позиции нет»; пришло — позиция на экране
     const later = () => new Promise(r => setTimeout(() => r(json(200, MENU)), 700));
     const s = await open_(bar({ menu: later }));
-    await s.p.evaluate(() => go('drink', 11));
+    await s.p.evaluate(() => go('drink', '11'));
     await s.p.waitForTimeout(200);
     let t = await s.view();
     if (!t.includes('Загружаем меню…')) bad.push('drink-menu-v-puti: нет «Загружаем меню…», пока меню в пути');
@@ -3188,7 +3188,7 @@ if (grantsSet.length !== 1) {
     // меню не загрузилось: причина, «Повторить», и повтор приносит позицию
     let n = 0;
     const s = await open_(bar({ menu: () => ++n === 1 ? json(500, {}) : json(200, MENU) }));
-    await s.p.evaluate(() => go('drink', 11));
+    await s.p.evaluate(() => go('drink', '11'));
     await s.p.waitForTimeout(250);
     const t = await s.view();
     ['Меню не загрузилось', 'кодом 500'].forEach(x => { if (!t.includes(x)) bad.push(`drink-menu-otkaz: нет «${x}»`); });
@@ -3206,7 +3206,7 @@ if (grantsSet.length !== 1) {
   {
     // меню пришло, позиции в нём нет — тогда и только тогда «Такой позиции в меню нет», без чужой позиции
     const s = await open_(bar());
-    await s.p.evaluate(() => go('drink', 99));
+    await s.p.evaluate(() => go('drink', '99'));
     await s.p.waitForTimeout(250);
     const t = await s.view();
     if (!t.includes('Такой позиции в меню нет.')) bad.push('drink-net-pozicii: нет «Такой позиции в меню нет.»');
@@ -3224,15 +3224,15 @@ if (grantsSet.length !== 1) {
     await s.ctx.close();
   }
   {
-    // рецепт без меню: не «Позиция 11» вместо названия, а правда о меню; меню пришло ПОЗЖЕ рецепта — название встаёт само
-    const BARMAN_ = clone(OWNER); BARMAN_.roles = [{ role: 'bar', direction_id: 7 }];
+    // рецепт без меню: не «Позиция 11» вместо названия, а правда о меню; меню пришло ПОЗЖЕ рецепта — название встаёт само.
+    // Зритель — админ: право бара и куратора спрашивает направление (`mayRecipe`), а его до меню ещё нет
     const R = { product_id: 11, lang: 'ru', asked_lang: 'ru', exact: true, body: 'Эспрессо: 18 г, 30 мл', created_at: '2026-10-22T05:29:11Z' };
     for (const [name, menu] of [['recipe-menu-otkaz', json(500, {})],
                                 ['recipe-menu-pozzhe', () => new Promise(r => setTimeout(() => r(json(200, MENU)), 700))]]) {
       const base = bar({ menu });
-      const s = await open(true, true, json(200, BARMAN_), null, null, null,
+      const s = await open(true, true, json(200, OWNER), null, null, null,
         q => /\/bar\/products\/\d+\/recipe/.test(q.url()) ? json(200, R) : base(q));
-      await s.p.evaluate(() => go('barRecipe', 11));
+      await s.p.evaluate(() => go('barRecipe', '11'));
       await s.p.waitForTimeout(250);
       let t = await s.view();
       if (t.includes('Позиция 11')) bad.push(`${name}: номер вместо названия — «Позиция 11»`);
