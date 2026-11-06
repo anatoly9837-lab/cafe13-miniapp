@@ -21,15 +21,15 @@
 
 ## `.chev` — стрелка «ведёт дальше»
 - токены: `--muted`
-- базовая геометрия: своей нет
+- базовая геометрия: height: 18px
 
 ## `.meter` — доля числом и полосой
 - токены: `--gold-mark`, `--surface`
-- базовая геометрия: border-radius: 3px
+- базовая геометрия: border-radius: 3px; height: 5px; overflow: hidden
 
 ## `.ph` — место под картинку, которой ещё нет
 - токены: `--line`, `--muted`, `--surface`
-- базовая геометрия: border-radius: 9px
+- базовая геометрия: border-radius: 9px; height: 62px
 
 ## `.qr` — код пропуска для камеры
 - токены: `--card`, `--line`, `--muted`, `--surface`
@@ -45,4 +45,4 @@
 
 ## `.tile` — плитка-заглушка фото: буква на цветном
 - токены: `--line`, `--muted`, `--surface`
-- базовая геометрия: border-radius: 10px; font-size: 21px; font-weight: 400
+- базовая геометрия: border-radius: 10px; font-size: 21px; font-weight: 400; height: 54px

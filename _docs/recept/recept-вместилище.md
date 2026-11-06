@@ -31,13 +31,13 @@
 - токены: `--muted`, `--paper`, `--surface`
 - базовая геометрия: border-radius: 12px; gap: 10px; padding: 13px 14px
 
-## `.paper` — лист: длинный текст на всю ширину
+## `.paper` — тетрадь: лист с потолком высоты под iframe, один на экран; что не влезло — обрезается
 - токены: `--card`, `--line`, `--sab`, `--sat`
-- базовая геометрия: border: 1px solid var(--line); border-radius: 12px; min-height: 360px
+- базовая геометрия: border: 1px solid var(--line); border-radius: 12px; height: calc(100vh - 94px - var(--sat) - var(--sab)); min-height: 360px; overflow: hidden
 
 ## `.rows` — ряды «подпись — значение» внутри карточки
 - токены: `--line`, `--paper`, `--surface`
-- базовая геометрия: border: 1px solid var(--line); border-radius: 12px; gap: 1px
+- базовая геометрия: border: 1px solid var(--line); border-radius: 12px; gap: 1px; overflow: hidden
 
 ## `.way` — дорога к действию: подсказка с входом
 - токены: `--card`, `--muted`, `--surface`

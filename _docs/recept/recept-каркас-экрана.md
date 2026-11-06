@@ -17,7 +17,7 @@
 
 ## `.bar` — шапка экрана: назад и имя
 - токены: `--line`, `--paper`, `--sat`
-- базовая геометрия: gap: 8px; padding: var(--sat) 12px 0
+- базовая геометрия: gap: 8px; height: calc(58px + var(--sat)); padding: var(--sat) 12px 0
 
 ## `.mf` — форма слота мастера
 - токены: `--accent`, `--ink`, `--muted`, `--surface`
@@ -33,7 +33,7 @@
 
 ## `.tabs` — нижние вкладки
 - токены: `--ink`, `--line`, `--muted`, `--paper`, `--sab`
-- базовая геометрия: gap: 4px
+- базовая геометрия: gap: 4px; height: calc(74px + var(--sab))
 
 ## `.test-strip` — полоса «тестовый режим включён»
 - токены: `--gold`, `--sat`

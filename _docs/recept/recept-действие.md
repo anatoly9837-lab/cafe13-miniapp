@@ -21,7 +21,7 @@
 
 ## `.icon-btn` — действие значком, без слова (назад, закрыть)
 - токены: `--ink`, `--surface`
-- базовая геометрия: border: none; border-radius: 10px
+- базовая геометрия: border: none; border-radius: 10px; height: 44px
 
 ## `.outbtn` — действие снятия в строке человека
 - токены: `--clay`, `--muted`, `--paper`
@@ -29,7 +29,7 @@
 
 ## `.round` — действие кружком в строке: да, нет, отмена
 - токены: `--card`, `--ink`, `--muted`, `--sage`
-- базовая геометрия: border: 0; border-radius: 50%
+- базовая геометрия: border: 0; border-radius: 50%; height: 26px
 
 ## `.undo` — отмена только что сделанного
 - токены: `--ink`, `--muted`, `--paper`, `--surface`
