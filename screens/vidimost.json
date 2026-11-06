@@ -1,17 +1,17 @@
 {
- "снято": "2026-11-06T18:54:09.193Z",
+ "снято": "2026-11-06T23:31:41.156Z",
  "слепки_страницы": {
-  "index.html": "55fb8126b75a318234b13a2572bc02143274ccc13c3039daecc3bbd49dfcb44d",
+  "index.html": "6a7fdf98c3a810b4b60f8d87576bd2325519e1a73d1f815649ae2ac3e7823ece",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
-  "styles.css": "65d733d365c8136bf9100c5ba2d103593a18aa1a1970754d9e1fe289af440c2c",
+  "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/01-osnova.js": "3beacf1b1d6a5202ae295522845b534fd299f88cacd69810c9fa346f6b0a0b03",
-  "js/02-chlenstvo.js": "8adb87d1ae80384c441915ed275be0875844392a9fc21b5e572cbb340840ef3a",
+  "js/01-osnova.js": "f5fe6d13eb314c6fd9ecada13c9b52cf9273e795bb67cd52a46ea05ac2ffa445",
+  "js/02-chlenstvo.js": "5e4ec414c7e256fd463996c52cc540a51096c94fddd138f37b82d3707d552236",
   "js/03-propusk.js": "1b1eca66d0571cb8c1c962f7477b67991198fde538a67d89bc0326d3f30b8cff",
-  "js/04-bar.js": "26da187a2d9784f3f462dc9f8e36ec6acccdf252f38e03a6447e79bb3017fa63",
-  "js/05-kassa.js": "2f019c96d3f52c28d0215560f7ddde8ef0d78c0b165256680a2db28e4111ed27",
+  "js/04-bar.js": "3a334810670f67bdb1a7febc4ec63b6c7c19f06b399ff58df5a591d0c725cd63",
+  "js/05-kassa.js": "97f3967417e068a75a09feab3c26cc3918beb35597689888af9e9a5214c69f3e",
   "js/06-lyudi.js": "a6695761b3b111f95196e7bbe305df6919104c1ec8529ed6d645d42abf357c6a",
   "js/07-mastera.js": "c277a90f1804a7636c1bb72cef487a0dff3fd38f854c533e3209b0cecb850e4e",
   "js/08-kartochki.js": "4797182313db4d2b284e733c4c5847f339e046dcb32b8ee93c45350b8bb9283e",
@@ -22,15 +22,15 @@
   "js/13-ekrany-kassa.js": "f3d292f80d376b9e69a84fa67f8f08fd7c9df93c07b8690cd9026d7b65915227",
   "js/14-ekrany-meropriyatiya.js": "07b49b5749980deb755f8482f4a371f0a91322a41a1d669e0929e998fbcfcfb6",
   "js/15-ekrany-partner-soglasie.js": "f6ec7b568c6dc8f7bdc8e272f3ec2830ab379b065e5263bc17f6da37403a5815",
-  "js/16-ekrany-bar.js": "a537ad517427af45bc5f1c38547c6f8f3e32eb45c130435018088dbd01dca1fd",
+  "js/16-ekrany-bar.js": "944748173b8a7e81a09a6c3971200b76005cb38503664316ae32d550c824187e",
   "js/17-ekrany-upravlenie.js": "1f8c1ac7af9697854e07a941cf225d4bb35d0d9664325df6666106adcdf7b3c2",
   "js/18-ekrany-mastera.js": "b3023994c6a7aa6789f35a56d54870f881cd011e7d57f6389de80bb56768bf38",
   "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
   "js/20-ekrany-sluzhebnye.js": "24947f703becc1f33b67b10fb8b00e6c65c6589e7ec31e4909a3d48aa8ff2f4a",
-  "js/21-navigaciya.js": "0d86b5f10a778bc0fefcbb762334104cdb40095492100b02f9f2a23d6a6af38c",
+  "js/21-navigaciya.js": "36a801fe16e47348e0a59bf736a2cd7ad9597962c9037adf44b37945942c3ea6",
   "js/22-zapusk.js": "708c88e0099aeeffc47974e3fdb28a8d9ec7bd29d03a30c3031f9e5e6d00110a"
  },
- "свод_слепков": "d85cf294d4e197478cecbd308322acb566d2b8945b3819f4e00abe15112d4928",
+ "свод_слепков": "7bb87590de934ae16274fbff4e0458a887e42049546bb65be326458b5eb912ca",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
@@ -55,8 +55,7 @@
      ],
      "закрыты": [
       "staff",
-      "barQueue",
-      "guest"
+      "barQueue"
      ],
      "всего_вкладок": 5,
      "права": {
@@ -68,12 +67,18 @@
      },
      "barSide": true,
      "достижимо": {
+      "guest": [
+       "вкладка"
+      ],
       "events": [
        "вкладка",
        "organizer"
       ],
       "manage": [
        "вкладка"
+      ],
+      "bar": [
+       "guest"
       ],
       "joinQueue": [
        "manage"
@@ -110,8 +115,10 @@
      "при_данных": {},
      "сбои": {},
      "длины": {
+      "guest": 64,
       "events": 247,
       "manage": 329,
+      "bar": 158,
       "joinQueue": 18,
       "people": 16,
       "topupQueue": 17,
@@ -148,8 +155,7 @@
       "Ивенты"
      ],
      "закрыты": [
-      "staff",
-      "guest"
+      "staff"
      ],
      "всего_вкладок": 3,
      "права": {
@@ -161,9 +167,15 @@
      },
      "barSide": false,
      "достижимо": {
+      "guest": [
+       "вкладка"
+      ],
       "events": [
        "вкладка",
        "organizer"
+      ],
+      "bar": [
+       "guest"
       ]
      },
      "при_данных": {
@@ -173,7 +185,9 @@
      },
      "сбои": {},
      "длины": {
+      "guest": 64,
       "events": 247,
+      "bar": 158,
       "organizer": 270
      },
      "проба_подействовала": true,
@@ -205,8 +219,7 @@
       "Ивенты"
      ],
      "закрыты": [
-      "barQueue",
-      "guest"
+      "barQueue"
      ],
      "всего_вкладок": 4,
      "права": {
@@ -221,6 +234,9 @@
       "home": [
        "вкладка"
       ],
+      "guest": [
+       "вкладка"
+      ],
       "events": [
        "вкладка",
        "home",
@@ -232,6 +248,9 @@
       ],
       "bookings": [
        "home"
+      ],
+      "bar": [
+       "guest"
       ]
      },
      "при_данных": {
@@ -242,9 +261,11 @@
      "сбои": {},
      "длины": {
       "home": 298,
+      "guest": 64,
       "events": 247,
       "pass": 74,
       "bookings": 125,
+      "bar": 158,
       "organizer": 270
      },
      "проба_подействовала": true,
@@ -265,7 +286,6 @@
      ],
      "закрыты": [
       "barQueue",
-      "guest",
       "partner"
      ],
      "всего_вкладок": 5,
@@ -281,6 +301,9 @@
       "home": [
        "вкладка"
       ],
+      "guest": [
+       "вкладка"
+      ],
       "events": [
        "вкладка",
        "home",
@@ -292,6 +315,9 @@
       ],
       "bookings": [
        "home"
+      ],
+      "bar": [
+       "guest"
       ]
      },
      "при_данных": {
@@ -302,9 +328,11 @@
      "сбои": {},
      "длины": {
       "home": 298,
+      "guest": 64,
       "events": 247,
       "pass": 74,
       "bookings": 125,
+      "bar": 158,
       "organizer": 270
      },
      "проба_подействовала": true,
@@ -333,8 +361,7 @@
       "Ивенты"
      ],
      "закрыты": [
-      "barQueue",
-      "guest"
+      "barQueue"
      ],
      "всего_вкладок": 3,
      "права": {
@@ -346,20 +373,28 @@
      },
      "barSide": true,
      "достижимо": {
+      "guest": [
+       "вкладка"
+      ],
       "events": [
        "вкладка"
+      ],
+      "bar": [
+       "guest"
       ]
      },
      "при_данных": {},
      "сбои": {},
      "длины": {
-      "events": 211
+      "guest": 64,
+      "events": 211,
+      "bar": 158
      },
      "проба_подействовала": true,
      "афиша_закрыта": false,
      "обзор": {
-      "всего_в_документе": 4,
-      "в_обзоре": 0
+      "всего_в_документе": 5,
+      "в_обзоре": 1
      }
     }
    ]
@@ -376,9 +411,7 @@
       "Услуги",
       "Ивенты"
      ],
-     "закрыты": [
-      "guest"
-     ],
+     "закрыты": [],
      "всего_вкладок": 2,
      "права": {
       "mayCards": false,
@@ -389,20 +422,28 @@
      },
      "barSide": false,
      "достижимо": {
+      "guest": [
+       "вкладка"
+      ],
       "events": [
        "вкладка"
+      ],
+      "bar": [
+       "guest"
       ]
      },
      "при_данных": {},
      "сбои": {},
      "длины": {
-      "events": 211
+      "guest": 64,
+      "events": 211,
+      "bar": 158
      },
      "проба_подействовала": true,
      "афиша_закрыта": false,
      "обзор": {
-      "всего_в_документе": 3,
-      "в_обзоре": 0
+      "всего_в_документе": 4,
+      "в_обзоре": 1
      }
     }
    ]
