@@ -151,8 +151,8 @@ function barRow(d) {
   if (LIVE) {
     return '<div class="card"><div class="row top">' +
       '<button type="button" class="plain drinkbtn" data-drink="' + esc(d.id) + '">' + tile(d) +
-        '<span class="col"><b>' + esc(d.title) + '</b>' +
-          '<span class="small">' + esc(d.about) + '</span>' +
+        '<span class="col"><b class="clamp2">' + esc(d.title) + '</b>' +
+          '<span class="small clamp1">' + esc(d.about) + '</span>' +
           '<b class="num">' + money(d.price) + ' ฿</b></span>' +
       '</button>' +
       '<span class="col" style="gap:6px;align-items:flex-end">' + buyBtn(d) +
@@ -609,7 +609,7 @@ function go(screen, p) {
   if (screen === 'barDay' && LIVE) loadDay();
   if (screen === 'tillDay' && LIVE && canTopup()) { TD.ask = -1; TD.deny = null; tillDayLoad(); }
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
-  if ((screen === 'bar' || screen === 'drink') && LIVE && MENU_STATE === '') loadMenu();
+  if ((screen === 'bar' || screen === 'drink' || screen === 'barRecipe') && LIVE && MENU_STATE === '') loadMenu();
   /* «Записи» строятся из ответа афиши, поэтому грузить её надо и при входе
      сюда: человек попадает на этот экран сразу после записи (`go('bookings')`),
      минуя афишу, и без этой строки `EVENTS` остался бы `null` навсегда —
@@ -713,6 +713,16 @@ function doAction(a) {
 
     if (a === 'buy') { buy(arg); return; }
     if (a === 'retry-menu') { loadMenu(); render(); return; }
+    /* Повтор своего заказа (рецепт `barOrder`): прежний отказ стоит до ответа — гасить его раньше
+       значило бы на миг сказать «заказа нет». Без направления опросу спросить некого: сперва бар. */
+    if (a === 'retry-mine') {
+      if (BAR) pollMine();
+      else loadBar(function (err) {
+        if (current !== 'barOrder') return;
+        if (err) { MINE_FAIL = err; render(); } else pollMine();
+      });
+      return;
+    }
     if (a === 'send-order' && LIVE) {
       var live = cartList();
       if (!live.length) { FLASH = { text: 'Заказ пуст', note: 'Добавьте что-нибудь в меню.' }; render(); return; }

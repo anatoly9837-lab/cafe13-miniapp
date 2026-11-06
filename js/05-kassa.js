@@ -607,7 +607,7 @@ function loadBarMenu() {
     var m = r.status === 200 ? fromMenu(r.data) : null;
     if (m) { DATA.bar.menu = m; MENU_STATE = 'ok'; }
     else { DATA.bar.menu = []; MENU_STATE = failText(r); }
-    if (current === 'bar' || current === 'drink') render();
+    if (current === 'bar' || current === 'drink' || current === 'barRecipe') render();
   });
 }
 
