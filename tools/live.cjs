@@ -91,9 +91,10 @@ const CASES = [
     // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
     ['Пожизненно', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
     // 5 = /me, /events и три запроса блока «Я мастер» на «Клубе»: /master/requests/mine, /master/price?hours=2 и
-    // hours=3 (цена часа сверх — в подписи «ещё час — N ฿», с сервера, а не константой)
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 5],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 5],
+    // hours=3 (цена часа сверх — в подписи «ещё час — N ฿», с сервера, а не константой); 7 — плюс два запроса блока
+    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера)
+    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 7],
+  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 7],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -1191,6 +1192,138 @@ if (grantsSet.length !== 1) {
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
+    }
+    // ── шаг 13: заявка в партнёры (Cafe13KPG#889, рецепт cafe13-miniapp#257, ручки cafe13-api#143) ──
+    // Цена — ТОЛЬКО `GET /partner/price` (ручки на 06.11 нет, Cafe13KPG#902). Пара `partner-cena-404`/`-200` —
+    // отрицательный контроль заплатки: 404 гасит кнопку, 200 оживляет её суммой сервера без правки клиента
+    {
+      const flat = t => t.replace(/[\s  ]/g, '');
+      const preq = (id, status, extra) => Object.assign({ id, title: 'Кофейня', about: 'Кофе и выпечка', amount: '2600.00', status,
+        status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
+        created_at: '2026-11-06T03:00:00+00:00', decided_at: status === 'pending' ? null : '2026-11-06T05:00:00+00:00',
+        decision_note: '', direction_id: status === 'approved' ? 7 : null, paid_till: null, active: status === 'approved' }, extra || {});
+      const qrow = (id, status, extra) => Object.assign(preq(id, status), { member_id: 200000011, first_name: 'Имя' + id, last_name: '', username: null }, extra || {});
+      const partnerApi = o => q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
+        if (u === '/partner/price') return o.price ? o.price() : json(404, { detail: 'Not Found' });
+        if (u === '/partner/requests/mine') return json(200, { requests: o.mine ? o.mine() : [] });
+        if (u === '/partner/requests' && m === 'GET') { const l = o.queue || []; return json(200, { requests: l, pending: l.filter(x => x.status === 'pending').length }); }
+        if (u === '/partner/request' && m === 'POST') { o.posted.push(JSON.parse(q.postData() || '{}')); return o.post ? o.post() : json(201, preq(31, 'pending')); }
+        const d = u.match(/^\/partner\/requests\/(\d+)\/decide$/);
+        if (d && m === 'POST') { const b = JSON.parse(q.postData() || '{}'); o.decided.push(b);
+          return json(200, { id: Number(d[1]), status: b.decision, decided_at: '2026-11-06T06:00:00+00:00', refund_ledger_id: null, direction_id: 7, status_ru: '' }); }
+        return undefined;
+      };
+      const offer = s => s.p.evaluate(() => { const b = document.querySelector('#view [data-action="pr-apply"]'); return b ? { on: !b.disabled, txt: b.textContent } : null; });
+      // 1. цена: ручки нет (404) → «Цену не удалось узнать у сервера.», «Я партнёр» погашена; ручка есть → жива и сумма сервера
+      for (const [n, price, live] of [['partner-cena-404', null, false], ['partner-cena-200', () => json(200, { amount: '2600.00' }), true]]) {
+        const o = { price, posted: [], decided: [] };
+        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(400);
+        const t = await s.view(), b = await offer(s);
+        if (!t.includes('Свой бизнес в клубе')) bad.push(`${n}: на «Клубе» нет блока «Свой бизнес в клубе»`);
+        if (!b || b.txt !== 'Я партнёр') bad.push(`${n}: нет кнопки «Я партнёр»`);
+        else if (b.on !== live) bad.push(`${n}: «Я партнёр» ${b.on ? 'жива' : 'погашена'}, ждали ${live ? 'живую' : 'погашенную'}`);
+        if (!live && !t.includes('Цену не удалось узнать у сервера.')) bad.push(`${n}: при 404 цены нет «Цену не удалось узнать у сервера.»`);
+        if (live && !flat(t).includes('2600฿вмесяц')) bad.push(`${n}: нет «2 600 ฿ в месяц» от сервера`);
+        if (/\d\s?%|дол[ия]\b/.test(t)) bad.push(`${n}: на «Клубе» доля или % — долей до шага 21 нет`);
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // 2. гость блока не видит и ручки не спрашивает
+      {
+        const n = 'partner-gost', G = clone(OWNER); G.membership = null; G.membership_active = false; G.memberships = [];
+        const o = { posted: [], decided: [] };
+        const s = await open(true, true, json(200, G), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(400);
+        if ((await s.view()).includes('Свой бизнес в клубе')) bad.push(`${n}: гость видит блок партнёрства`);
+        if (s.calls.some(c => /\/partner\//.test(c.url))) bad.push(`${n}: у гостя спрошены ручки партнёра: ${s.calls.filter(c => /\/partner\//.test(c.url)).map(c => c.url).join(', ')}`);
+        await s.ctx.close();
+      }
+      // 3. состояния блока: ждёт, отказали, согласовано (день МОМЕНТА по острову, без вычитания), нет поля → «не загрузились»
+      for (const [n, mine, want, not] of [
+        ['partner-zhdet', [preq(31, 'pending')], ['Заявка в партнёры', 'ждёт решения', 'Решение принимает операционный директор'], ['Я партнёр', 'Подать заново']],
+        ['partner-otkaz', [preq(31, 'rejected', { decision_note: 'нужна смета' })], ['отклонено', 'нужна смета', 'вернулись на счёт', 'Подать заново'], ['Я партнёр']],
+        ['partner-soglasie', [preq(31, 'approved', { paid_till: '2026-11-30T17:00:00+00:00' })], ['Вы партнёр бизнеса «Кофейня»', 'Оплачено до 01.12.2026'], ['Я партнёр', '30.11.2026']],
+        ['partner-net-polya', [(() => { const x = preq(31, 'approved', { paid_till: '2026-11-30T17:00:00+00:00' }); delete x.paid_till; return x; })()],
+          ['Заявки в партнёры не загрузились'], ['Вы партнёр', 'Оплачено до', 'Я партнёр']]]) {
+        const o = { mine: () => mine, price: () => json(200, { amount: '2600.00' }), posted: [], decided: [] };
+        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        want.forEach(w => { if (!t.includes(w)) bad.push(`${n}: на «Клубе» нет «${w}»`); });
+        not.forEach(w => { if (t.includes(w)) bad.push(`${n}: на «Клубе» лишнее «${w}»`); });
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // 4. подача: тело — title и about; ответ 201 → вспышка с суммой ответа, своя заявка перечитана
+      {
+        const n = 'partner-podacha', o = { price: () => json(200, { amount: '2600.00' }), posted: [], decided: [] };
+        let sent = false; o.mine = () => sent ? [preq(31, 'pending')] : [];
+        o.post = () => { sent = true; return json(201, preq(31, 'pending')); };
+        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(400);
+        if (await tapIf(s, n, '#view [data-action="pr-apply"]', '«Я партнёр»')) {
+          await s.p.waitForTimeout(300);
+          await s.p.fill('#pr-title', '  Кофейня  '); await s.p.fill('#pr-about', 'Кофе и выпечка');
+          if (await tapIf(s, n, '#view [data-action="pr-send"]', '«Подать заявку»')) {
+            await s.p.waitForTimeout(500);
+            if (JSON.stringify(o.posted) !== JSON.stringify([{ title: 'Кофейня', about: 'Кофе и выпечка' }])) bad.push(`${n}: ушло ${JSON.stringify(o.posted)}`);
+            const t = await s.view();
+            if (!t.includes('Заявка отправлена') || !flat(t).includes('Списано2600฿')) bad.push(`${n}: нет вспышки «Заявка отправлена · Списано 2 600 ฿»`);
+            if (!t.includes('ждёт решения')) bad.push(`${n}: после подачи на «Клубе» нет «ждёт решения» — своя заявка не перечитана`);
+          }
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // 5. «Управление»: строка «Заявки в партнёры» — у опер. директора со счётчиком ждущих; у члена клуба строки нет вовсе
+      for (const [n, roles, row] of [['partner-stroka-ops', ['ops_director'], true], ['partner-stroka-net', ['master'], false]]) {
+        const o = { queue: [qrow(31, 'pending'), qrow(32, 'rejected')], posted: [], decided: [] };
+        const s = await open(true, true, json(200, mem(9000, roles)), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(300);
+        await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(400);
+        const f = await s.p.evaluate(() => { const d = document.querySelector('#view [data-go="partnerReqs"]');
+          return d ? { cnt: (d.querySelector('.count') || {}).textContent || null, txt: d.textContent } : null; });
+        if (row && (!f || f.cnt !== '1')) bad.push(`${n}: у опер. директора нет «Заявки в партнёры» со счётчиком 1: ${JSON.stringify(f)}`);
+        if (!row && f) bad.push(`${n}: строка «Заявки в партнёры» у того, кто не решает`);
+        if (!row && s.calls.some(c => /\/partner\/requests$/.test(c.url.split('?')[0]))) bad.push(`${n}: очередь партнёров спрошена без права`);
+        await s.ctx.close();
+      }
+      // 6. очередь и решение: отказ без причины не уходит; с причиной — тело {rejected, note}; своя — без кнопок; согласие — вспышка с названием
+      {
+        const n = 'partner-reshenie', o = { queue: [qrow(31, 'pending'), qrow(33, 'pending', { title: 'Своё дело' })], posted: [], decided: [] };
+        o.mine = () => [preq(33, 'pending', { title: 'Своё дело' })];
+        const s = await open(true, true, json(200, mem(9000, ['ops_director'])), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(300);
+        await s.p.evaluate(() => go('partnerReqs')); await s.p.waitForTimeout(400);
+        const t0 = await s.view();
+        if (!t0.includes('Кофейня') || !t0.includes('Имя31')) bad.push(`${n}: в очереди нет заявки «Кофейня» от Имя31`);
+        if ((await s.p.content()).includes('200000011')) bad.push(`${n}: номер человека попал в разметку`);
+        await s.p.evaluate(() => go('partnerReq', '33')); await s.p.waitForTimeout(300);
+        const t1 = await s.view();
+        if (!t1.includes('Свою заявку решает другой операционный директор.') || await s.p.$('#view [data-action^="pr-yes:"]')) bad.push(`${n}: своя заявка решается`);
+        await s.p.evaluate(() => go('partnerReq', '31')); await s.p.waitForTimeout(300);
+        if (await tapIf(s, n, '#view [data-action="pr-ask:31"]', '«Отказать»')) {
+          await s.p.waitForTimeout(200);
+          const off = await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="pr-no:31"]'); return b ? b.disabled : null; });
+          if (off !== true) bad.push(`${n}: «Отказать» без причины не погашена (${off})`);
+          await s.p.fill('#pr-note', '  нужна смета  '); await s.p.waitForTimeout(100);
+          if (await tapIf(s, n, '#view [data-action="pr-no:31"]', '«Отказать» с причиной')) {
+            await s.p.waitForTimeout(400);
+            if (JSON.stringify(o.decided) !== JSON.stringify([{ decision: 'rejected', note: 'нужна смета' }])) bad.push(`${n}: ушло ${JSON.stringify(o.decided)}`);
+            if (!(await s.view()).includes('Деньги вернулись на счёт заявителя.')) bad.push(`${n}: нет вспышки об отказе`);
+          }
+        }
+        await s.p.evaluate(() => go('partnerReq', '31')); await s.p.waitForTimeout(300);
+        if (await tapIf(s, n, '#view [data-action="pr-yes:31"]', '«Согласовать»')) {
+          await s.p.waitForTimeout(400);
+          if (o.decided.length !== 2 || o.decided[1].decision !== 'approved') bad.push(`${n}: согласие не ушло: ${JSON.stringify(o.decided)}`);
+          if (!(await s.view()).includes('Бизнес «Кофейня» создан.')) bad.push(`${n}: нет вспышки «Бизнес «Кофейня» создан.»`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
     }
     // ── продление мастера (v113, кадры E59/E59b, Cafe13KPG#651): окно ДО отправки с политикой ухода 'cancel' ──
     // Перенос пяти проб arhitector-47 (ревью #173) словами автора; rnw-send-lost и rnw-lock — его же «не покрыто».
@@ -2575,7 +2708,8 @@ if (grantsSet.length !== 1) {
     await s.p.waitForTimeout(150);
     if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
     // + три запроса блока «Я мастер» на «Клубе» (/master/requests/mine, /master/price?hours=2 и hours=3)
-    if (s.calls.length !== 6) bad.push(`retry: запросов ${s.calls.length}, ждали 6 (/me, /me, /events, /master/requests/mine, /master/price ×2)`);
+    // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
+    if (s.calls.length !== 8) bad.push(`retry: запросов ${s.calls.length}, ждали 8 (/me, /me, /events, /master/requests/mine, /master/price ×2, /partner/requests/mine, /partner/price)`);
     await s.ctx.close();
   }
 

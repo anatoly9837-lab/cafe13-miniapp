@@ -350,6 +350,8 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               payouts: 1, payout: 1,
               // шаг 12 (Cafe13KPG#877): «Бизнесы клуба» операционного директора — на `GET /directions` с партнёром (cafe13-api#876)
               businesses: 1,
+              // шаг 13 (Cafe13KPG#889): заявка в партнёры — на ручках cafe13-api#143; рецепт cafe13-miniapp#257
+              partnerApply: 1, partnerReqs: 1, partnerReq: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
