@@ -1148,7 +1148,14 @@
    "hours_extra": null,
    "id": null,
    "months": [],
+   "paid_till": null,
    "paid_until": null,
+   "periods": [
+    {
+     "ends_at": null,
+     "starts_at": null
+    }
+   ],
    "place_id": null,
    "place_name": null,
    "seats": null,
@@ -1181,8 +1188,15 @@
    "charged": null,
    "enough": null,
    "months": [],
+   "paid_till": null,
    "paid_until": null,
    "per_month": null,
+   "periods": [
+    {
+     "ends_at": null,
+     "starts_at": null
+    }
+   ],
    "request_id": null,
    "short": null,
    "weeks": null
@@ -1195,8 +1209,15 @@
    "charged": null,
    "enough": null,
    "months": [],
+   "paid_till": null,
    "paid_until": null,
    "per_month": null,
+   "periods": [
+    {
+     "ends_at": null,
+     "starts_at": null
+    }
+   ],
    "request_id": null,
    "short": null,
    "weeks": null
@@ -1214,6 +1235,7 @@
    "hours": null,
    "hours_extra": null,
    "id": null,
+   "paid_till": null,
    "paid_until": null,
    "place_id": null,
    "place_name": null,
@@ -1238,6 +1260,7 @@
    "hours": null,
    "hours_extra": null,
    "id": null,
+   "paid_till": null,
    "paid_until": null,
    "place_id": null,
    "place_name": null,
@@ -1337,6 +1360,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_till": null,
      "paid_until": null,
      "place_id": null,
      "place_name": null,
@@ -1372,6 +1396,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_till": null,
      "paid_until": null,
      "place_id": null,
      "place_name": null,
@@ -1400,6 +1425,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_till": null,
      "paid_until": null,
      "place_id": null,
      "place_name": null,
@@ -1431,6 +1457,7 @@
      "hours_extra": null,
      "id": null,
      "last_name": null,
+     "paid_till": null,
      "paid_until": null,
      "place_id": null,
      "place_name": null,
@@ -1466,7 +1493,11 @@
    "place_id": null,
    "place_name": null,
    "weekday": null,
-   "weekday_ru": null
+   "weekday_ru": null,
+   "window": {
+    "ends_at": null,
+    "starts_at": null
+   }
   },
   "status": 200
  },
@@ -1503,7 +1534,11 @@
    "place_id": null,
    "place_name": null,
    "weekday": null,
-   "weekday_ru": null
+   "weekday_ru": null,
+   "window": {
+    "ends_at": null,
+    "starts_at": null
+   }
   },
   "status": 200
  },
