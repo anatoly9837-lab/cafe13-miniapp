@@ -52,7 +52,7 @@
 разметке (`ids-clean.cjs`).
 
 **Признак сборки** (цель числом):
-`rg -c 'partnerReq: function' js/17-ekrany-upravlenie.js` — **сегодня 0,
+`rg -o 'partnerReq: function' js/17-ekrany-upravlenie.js | wc -l` — **вхождений сегодня 0,
 обязано стать 1**. Образец с двоеточием, а не `partnerReq\b`: граница слова
 ловит и `partnerReqs`, то есть соседний экран.
 
