@@ -2135,7 +2135,8 @@ if (grantsSet.length !== 1) {
   // а не по перечню, и самоконтроль — что погашенные входы на главной вообще есть.
   {
     // афиша (`events`) разморожена словом владельца 30.10.2026 «сделать доступным для всех» (Cafe13KPG#670)
-    const n = 'freeze', KEEP = ['home', 'manage', 'events'];
+    // вкладка «Услуги» (`guest`) оттаяна с витриной бара (0.2, Cafe13KPG#269): она носитель двери в бар
+    const n = 'freeze', KEEP = ['home', 'manage', 'events', 'guest'];
     const s = await open(true, true, json(200, OWNER));
     const tabs = await s.p.$$eval('#tabs button', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
     if (tabs.length < 4) bad.push(`${n}: вкладок ${tabs.length} — фикстура не та, проверять нечего`);
@@ -2178,17 +2179,19 @@ if (grantsSet.length !== 1) {
     entries.filter(e => e[1]).forEach(([g]) => { if (['pass', 'topup', 'manage', 'people', 'joinQueue', 'home'].includes(g)) bad.push(`${n}: погашен живой вход «${g}»`); });
     // подпись про кассу (v84, Cafe13KPG#513) переехала с главной на экран пополнения (v94, кадр E52):
     // живая сторона условия — в balans-shapka, здесь — демонстрационная
-    await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(200);
+    // бар оттаян (0.2), очередь на баре — нет: замороженный предмет берётся из тех, что остались
+    await s.p.evaluate(() => go('barQueue')); await s.p.waitForTimeout(200);
     let t = await s.view();
-    if (!t.includes('Бар — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
+    if (!t.includes('Заказы на баре — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
     if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
     // шаг 4 (Cafe13KPG#670) размораживает афишу; шаг 4, п.3 — «Свои ивенты» мастеру и правку недели; «Новое мероприятие» — нет.
     // Шаг 7, часть А (Cafe13KPG#755, решение координатора по слову владельца в #510): «Записи» разморожены — дверь к благодарности
-    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', false]]) {
+    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', false],
+                              ['guest', false], ['bar', false], ['barQueue', true]]) {
       await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
       const said = (await s.view()).includes('временно недоступно');
-      if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — его не размораживали ни шаг 4 (#670), ни шаг 7 (#755)`);
-      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — его разморозили (шаг 4 #670 / шаг 7 #755)`);
+      if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — его не размораживали ни шаг 4 (#670), ни шаг 7 (#755), ни витрина 0.2`);
+      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — его разморозили (шаг 4 #670 / шаг 7 #755 / витрина 0.2)`);
     }
     await s.p.evaluate(() => go('partner')); await s.p.waitForTimeout(200);
     t = await s.view();
@@ -2874,10 +2877,13 @@ if (grantsSet.length !== 1) {
   // Услуг у клуба нет (решение владельца, Cafe13KPG#102, со слов координатора): гость в живом режиме
   // видит бар и не видит обещания «Услуги острова — ещё не подключено».
   {
-    const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = [];
-    const s = await open(true, true, json(200, guest), null, null, null);
+    // `guest` — экран ВКЛАДКИ «Услуги» члена клуба, а не стартовый гостя: человек без членства в живом
+    // попадает на noAccess (startScreen). Прежняя фикстура (гость без членства) спала месяц под заморозкой
+    // и к оттаиванию разошлась со стартом — перемерено на базе 0ff3445 (витрина 0.2)
+    const s = await open(true, true, json(200, OWNER), null, null, null);
+    await s.p.click('#tabs [data-go="guest"]'); await s.p.waitForTimeout(150);
     const t = await s.view();
-    if (!t.includes('Бар Café XIII')) bad.push('guest-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — гость не на своём экране');
+    if (!t.includes('Бар Café XIII')) bad.push('guest-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — член клуба не на экране вкладки «Услуги»');
     else if (t.includes('Услуги острова')) bad.push('guest-services: гостю обещан раздел «Услуги острова», которого у клуба нет');
     await s.ctx.close();
   }
@@ -3039,7 +3045,7 @@ if (grantsSet.length !== 1) {
   // (макет E23б) и кнопка пополнения из неё. Член без права кассы видит,
   // куда идти; админ — форму внести себе.
   const NOTILL = clone(OWNER); NOTILL.roles = [];
-  for (const [who, name, want] of [[NOTILL, 'topup-409', 'перевод по реквизитам клуба'], [OWNER, 'topup-409-admin', null]]) {
+  for (const [who, name, want] of [[NOTILL, 'topup-409', 'перевод по реквизитам клуба'], [OWNER, 'topup-409-admin', 'перевод по реквизитам клуба']]) {
     const s = await open(true, true, json(200, who), null, null, null,
       bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830' }) }));
     await toBar(s);
@@ -3050,8 +3056,9 @@ if (grantsSet.length !== 1) {
     else { await s.p.click('[data-go="topup"]'); await s.p.waitForTimeout(150); }
     const t = await s.view();
     (want ? [want] : []).forEach(x => { if (!t.includes(x)) bad.push(`${name}: нет «${x}»`); });
-    if (!want && !(await s.p.$('#t-amount'))) bad.push(`${name}: админу нет формы внесения`);
-    if (want && (await s.p.$('#t-amount'))) bad.push(`${name}: форма внесения без права кассы`);
+    // прямого внесения себе нет и у админа: «Все пополнения — только заявка» (слово владельца 30.10.2026, Cafe13KPG#677);
+    // прежнее «админу — форма» спало под заморозкой и пережило это слово
+    if (await s.p.$('#t-amount')) bad.push(`${name}: на пополнении форма прямого внесения себе`);
     await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
     await s.ctx.close();
   }
