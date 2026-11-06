@@ -1240,7 +1240,8 @@ if (grantsSet.length !== 1) {
       {
         const n = 'm4-net-polya';
         const look = async row => { const r = await m4Open(row, PREV()); const t = r.ok ? await r.s.view() : ''; await r.s.ctx.close(); return { ok: r.ok, t }; };
-        const none = await look(mreq(901, 'approved', { paid_until: '2026-11-30' }));          // paid_till нет вовсе
+        // ключ удаляется ЯВНО: с #258 `mreq` кладёт `paid_till: null` по умолчанию, и без delete «нет поля» молча стал бы «нет оплаты»
+        const none = await look((x => (delete x.paid_till, x))(mreq(901, 'approved', { paid_until: '2026-11-30' })));  // paid_till нет вовсе
         const nul = await look(mreq(901, 'approved', { paid_until: null, paid_till: null }));    // оплаты нет — законно
         if (none.ok) {
           if (!/не загрузил/i.test(none.t)) bad.push(`${n}: без поля paid_till нет «не загрузилось» — «${none.t.slice(0, 160)}»`);
