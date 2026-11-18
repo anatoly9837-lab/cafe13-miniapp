@@ -10083,7 +10083,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // Бармен без членства: «Клуб» вкладкой не приходит, вход в карточки — на «Заказах»
     // под сменой и над счётчиками (кадр E41, Cafe13KPG#396), и «назад» ведёт обратно
     // в «Заказы», а не на услуги гостя (Cafe13KPG#403).
-    {
+    // ⚠ Шаг 15 оттаял карточки, но НЕ «Заказы»: `barQueue` в FROZEN, а человек без членства стоит на `noAccess`
+    // (homeOf, слово владельца 05.11.2026) — дверь этого случая спит вместе с очередью и вернётся с ней
+    if (thawed('очередь на баре')) {
       const BARMAN_NOMEMBER = clone(WORKER); BARMAN_NOMEMBER.membership_active = false; BARMAN_NOMEMBER.membership = null; BARMAN_NOMEMBER.memberships = [];
       const s = await cardsCase(BARMAN_NOMEMBER, {});
       const n = 'cards-queue';
