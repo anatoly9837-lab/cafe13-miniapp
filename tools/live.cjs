@@ -851,7 +851,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     granted_at: '2026-11-18T05:00:00.123456+00:00', granted_by: 1, granted_by_first_name: 'Тест', granted_by_last_name: '', elsewhere: 0 }, extra || {});
   const BWREV = (d, r) => ({ direction_id: d, role_id: r, revoked_at: '2026-11-18T06:00:00+00:00' });
   // ── шаг 15: карточки работника — построители на уровне функции, те же уходят в `STUBS` (форма cafe13-api d4b6812,
-  // api#147: Cafe13KPG#546, комментарии 6988879934 и 6989078619). Бизнес работника — 9 «Пекарня у моря»: НЕ «Бар»,
+  // api#147: форма и её сверка на зелёной сборке — в карточке Cafe13KPG#546). Бизнес работника — 9 «Пекарня у моря»: НЕ «Бар»,
   // иначе направление из литерала и из роли совпали бы и случай не различал бы их. `created_by` — вымышленные малые числа
   const WCP = (id, state, title, extra) => Object.assign({ id, group: 'Выпечка', title, about: 'тёплая', full_text: '',
     price: '120.00', mins: 10, is_alcohol: false, sort: 0, state, created_by: 3, created_at: '2026-11-18T08:00:00+00:00',
