@@ -9896,7 +9896,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // очереди — по снимку координатора (19 ключей, причина без возврата — "",
   // не null; поля снимка — null). Ответ очереди нарочно в ОБРАТНОМ
   // порядке: группы обязаны раскладываться экраном, а не порядком сервера.
-  if (part(2)) if (thawed('карточки меню')) {
+  // шаг 15 (Cafe13KPG#546): раздел оттаян вместе с экранами — `thawed` снят
+  if (part(2)) {
     const P = (id, state, title, group, recipes, note) => ({ id, direction_id: 7, group, title, about: '', full_text: '',
       price: '180.00', mins: 5, is_alcohol: false, sort: 0, state, created_by: 1, created_at: '2026-10-21T10:00:00+00:00',
       decided_by: null, decided_at: null, decision_note: note === undefined ? '' : note, recipes,
@@ -9950,7 +9951,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (JSON.stringify(order) !== JSON.stringify(['Ждут утверждения', 'Возвращены', 'Черновики', 'В меню', 'Сняты']))
           bad.push('cards-list: порядок групп ' + JSON.stringify(order));
         const t = await s.view();
-        ['Замечание: нет фото', 'рецепта нет', 'рецепт: ru, th', 'Направление «Бар»'].forEach(x => { if (!t.includes(x)) bad.push(`cards-list: нет «${x}»`); });
+        ['Замечание: нет фото', 'рецепта нет', 'рецепт: ru, th', 'Бизнес «Бар»'].forEach(x => { if (!t.includes(x)) bad.push(`cards-list: нет «${x}»`); });
+        // название — словом сервера (рецепт 15/barCards): прежний литерал «Направление «Бар»» снят
+        if (t.includes('Направление «Бар»')) bad.push('cards-list: осталось «Направление «Бар»» литералом');
         // Вернули автору — оба вида в «Возвращены», с замечанием в строке и глиной;
         // черновик без замечания — в «Черновиках», и пустой подписи там нет (близнец, designer-55).
         const groups = await s.p.evaluate(() => Object.fromEntries([...document.querySelectorAll('#view [data-cards]')].map(g =>
@@ -10132,12 +10135,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
-      if (!(await s.view()).includes('Поля потом не исправить')) bad.push('cards-create: нет предупреждения до сохранения');
+      // с ручкой правки (шаг 15) «поля потом не исправить» стало ложью — подпись из рецепта 15/barCard
+      if (!(await s.view()).includes('Пока карточка в работе, поля можно исправить.')) bad.push('cards-create: нет подписи о правке до сохранения');
       // облик формы — по стандарту eventNew (ревью designer-55, 23.10.2026)
       const f = await s.p.evaluate(() => {
         const top = id => { const l = document.querySelector(`label[for="${id}"]`); return l ? l.getBoundingClientRect().top : null; };
         const save = document.querySelector('#view [data-action="c-save"]');
-        const warn = [...document.querySelectorAll('#view .small')].find(x => x.textContent.startsWith('Поля потом не исправить'));
+        const warn = [...document.querySelectorAll('#view .small')].find(x => x.textContent.startsWith('Пока карточка в работе, поля можно исправить.'));
         return {
           ph: [...document.querySelectorAll('#view input[placeholder]')].map(x => x.placeholder).filter(x => !x.startsWith('Например: ')),
           tops: [top('c-price'), top('c-mins')],
@@ -10147,7 +10151,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       });
       if (f.ph.length) bad.push('cards-create: заполнитель читается введённым значением: ' + JSON.stringify(f.ph));
       if (f.tops[0] === null || f.tops[1] === null || Math.abs(f.tops[0] - f.tops[1]) > 1) bad.push('cards-create: подписи «Цена» и «Минуты» на разной высоте: ' + JSON.stringify(f.tops));
-      if (!f.under) bad.push('cards-create: «Поля потом не исправить» не под кнопкой сохранения');
+      if (!f.under) bad.push('cards-create: «Пока карточка в работе…» не под кнопкой сохранения');
       ['До 200 знаков.', 'До 80 знаков.'].forEach(x => { if (!f.text.includes(x)) bad.push(`cards-create: предел поля не назван — нет «${x}»`); });
       await put(s, '#c-title', 'Флэт-уайт', 'cards'); await put(s, '#c-group', ' кофе ', 'cards'); await put(s, '#c-price', '180', 'cards');
       if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push('cards-create: у формы нет главной кнопки');

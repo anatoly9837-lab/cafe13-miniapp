@@ -513,6 +513,8 @@ function demoWork(screen, p) {
   var W = DATA.work;
   if (screen === 'people' && !PEOPLE.list) { PEOPLE.list = fromRoster(W.people); PEOPLE.dirs = fromDirList(W.dirs); }
   if ((screen === 'barCards' || screen === 'barCard') && !CARDS.list) CARDS.list = fromCards(W.cards);
+  // название направления — тем же словарём демо, что «Члены клуба» (W.dirs): экран литерала не пишет (шаг 15)
+  if ((screen === 'barCards' || screen === 'barCard') && !CARDS.dir) CARDS.dir = (fromDirList(W.dirs) || [])[0] || null;
   if (screen === 'barRecipe' && RECIPE.pid !== p)
     RECIPE = { pid: p, gen: RECIPE.gen, me: { state: 'ok', r: fromRecipe(W.recipe.me) }, en: { state: 'ok', r: fromRecipe(W.recipe.en) } };
   if (screen === 'barMoney' && !BOOK.done.length) BOOK.done = W.book.slice();
@@ -608,8 +610,9 @@ function go(screen, p) {
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
   if (screen === 'home' && current !== 'home' && mayRequests() && WIRED.memberRequests) loadRequests();
   // с самой карточки в список возвращаются — это не новый вход, «откуда» не трогать
+  // «Услуги» — дверь работника (шаг 15): без неё «назад» увёл бы работника с членством на «Клуб», где двери нет
   if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard')
-    CARDS.from = current === 'barQueue' ? 'barQueue' : homeOf();
+    CARDS.from = current === 'barQueue' || current === 'guest' ? current : homeOf();
   if (screen === 'barCards' && current !== 'barCards' && mayCards()) loadCards();
   if (screen === 'barCard' && (current !== 'barCard' || String(param) !== String(p))) {
     // заметка «черновик сохранён» переживает переход с формы на саму карточку
@@ -824,8 +827,11 @@ function doAction(a) {
       if (a === 'c-new') { go('barCard', 'new'); return; }
       if (a === 'c-open') { go('barCard', arg); return; }
       if (a === 'c-save') { cardSave(); return; }
-      if (a === 'c-group-theirs') { cardSave('theirs'); return; }
-      if (a === 'c-group-mine') { cardSave('mine'); return; }
+      // правка черновика (шаг 15): дверь у карточки и сохранение; вопрос «та же группа?» — в форму, которая открыта
+      if (a === 'c-edit') { cardEditStart(Number(arg)); haptic(); render(); return; }
+      if (a === 'c-edit-save') { cardEditSave(Number(arg)); return; }
+      if (a === 'c-group-theirs') { if (CARD.edit) cardEditSave(CARD.edit, 'theirs'); else cardSave('theirs'); return; }
+      if (a === 'c-group-mine') { if (CARD.edit) cardEditSave(CARD.edit, 'mine'); else cardSave('mine'); return; }
       if (a === 'c-recipe') { recipeSave(Number(arg)); return; }
       if (a === 'c-review') { cardState(Number(arg), 'review'); return; }
       if (a === 'c-approve') { cardState(Number(arg), 'active'); return; }

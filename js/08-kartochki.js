@@ -6,23 +6,38 @@
    «снятых нет» значило бы «не спрашивали».
    ⚠ Группы раскладываются здесь, а не порядком ответа: очередь куратора
    обязана стоять сверху при любой сортировке сервера.
-   ⚠ Правки карточки на сервере нет: поля пишутся один раз, и это сказано до
-   сохранения. Рецепт языка ЗАМЕНЯЕТСЯ, а не добавляется версией.
+   ⚠ Правка — только у ЧЕРНОВИКА (`PATCH /bar/products/{id}`, cafe13-api#147, шаг 15): в теле только
+   изменённые поля, замечание куратора правка не стирает. Рецепт языка ЗАМЕНЯЕТСЯ, а не добавляется версией.
+   ⚠ Шаг 15 (Cafe13KPG#546, рецепт `_docs/recept/ekran/15/`): карточки ведёт и РАБОТНИК бизнеса (`worker`) —
+   направление тогда из его РОЛИ, а не из `BAR`: `fromDirections` ищет клубный бар литералом названия, а бизнес
+   партнёра зовётся словом его заявки. Вне черновика работнику сервер не отдаёт даже чтения рецепта (403), поэтому
+   группы «Рецепт» у него там нет вовсе. Экран знает ОДИН бизнес: с двумя ролями `worker` — первая.
    ⚠ «В меню» без рецепта откажет триггер базы; экран знает про рецепт по
    полю recipes и гасит кнопку заранее. Отказы — текстом сервера. */
 var CARD_STATES = ['draft', 'review', 'active', 'hidden'];
 var CARD_LANGS = [['ru', 'RU'], ['en', 'EN'], ['th', 'TH']];
 var CARD_FIELDS = ['c-title', 'c-group', 'c-price', 'c-mins', 'c-about'];
-var CARDS = { list: null, fail: '', gen: 0, from: '' };
+var CARDS = { list: null, fail: '', gen: 0, from: '', dir: null, lost: false };   // dir — { id, title } направления карточек
 var CARD = { v: {}, alcohol: false, lang: 'ru', text: {}, body: {}, err: '', deny: '', note: '',
-             busy: false, back: false, reason: '', hideAsk: false, groupAsk: '' };
+             busy: false, back: false, reason: '', hideAsk: false, groupAsk: '', edit: 0 };   // edit — номер черновика в правке
 
 function cardReset() {
   CARD.v = {}; CARD.alcohol = false; CARD.lang = 'ru'; CARD.text = {}; CARD.body = {}; CARD.err = '';
-  CARD.deny = ''; CARD.note = ''; CARD.back = false; CARD.reason = ''; CARD.hideAsk = false; CARD.groupAsk = '';
+  CARD.deny = ''; CARD.note = ''; CARD.back = false; CARD.reason = ''; CARD.hideAsk = false; CARD.groupAsk = ''; CARD.edit = 0;
 }
-function mayCards() { return LIVE && (grant('admin') || grant('bar') || grant('curator')); }
-function cardCurator() { return !!BAR && (grant('admin') || grant('curator', BAR.id)); }
+function mayCards() { return LIVE && (grant('admin') || grant('bar') || grant('curator') || grant('worker')); }
+// роль работника с направлением — первая: переключателя бизнесов в 0.2 нет (слово владельца)
+function cardWorkerDir() {
+  return (DATA.grants || []).filter(function (g) { return g.role === 'worker' && typeof g.dir === 'number'; })[0] || null;
+}
+// направление из РОЛИ — когда пришли дверью работника («Услуги») или барной стороны у человека нет вовсе
+function cardsByRole() {
+  return !!cardWorkerDir() && (CARDS.from === 'guest' || !(grant('admin') || grant('bar') || grant('curator')));
+}
+function cardCurator() { return !!CARDS.dir && (grant('admin') || grant('curator', CARDS.dir.id)); }
+// барная сторона ЭТОГО направления; без неё зритель — работник: ведёт карточку, пока она черновик
+function cardBarSide() { return !!CARDS.dir && (grant('admin') || grant('bar', CARDS.dir.id) || grant('curator', CARDS.dir.id)); }
+function cardWorkerOnly() { return LIVE && !cardBarSide(); }
 function fromCards(d) {
   if (!Array.isArray(d)) return null;
   for (var i = 0; i < d.length; i++) {
@@ -41,21 +56,39 @@ function fromCards(d) {
 }
 function loadCards() {
   var gen = ++CARDS.gen, who = WHO;
-  CARDS.fail = '';
-  var go2 = function () {
-    api('GET', '/bar/products?direction_id=' + BAR.id + '&state=' + CARD_STATES.join(',')).then(function (r) {
+  CARDS.fail = ''; CARDS.lost = false;
+  var show = function () { if (current === 'barCards' || current === 'barCard') render(); };
+  var go2 = function (dir) {
+    // другое направление — прежний список не его: не показывать чужие карточки до ответа
+    if (CARDS.dir && CARDS.dir.id !== dir.id) CARDS.list = null;
+    CARDS.dir = dir;
+    api('GET', '/bar/products?direction_id=' + dir.id + '&state=' + CARD_STATES.join(',')).then(function (r) {
       if (gen !== CARDS.gen || who !== WHO) return;
       var list = r.status === 200 ? fromCards(r.data) : null;
       if (list) CARDS.list = list;
       else { CARDS.list = null; CARDS.fail = r.status === 403 ? denyText(r) : failText(r); }
-      if (current === 'barCards' || current === 'barCard') render();
+      show();
     });
   };
-  if (BAR) { go2(); return; }
+  if (cardsByRole()) {
+    var w = cardWorkerDir();
+    // название бизнеса — словом сервера: `GET /directions` открыта любому допущенному
+    api('GET', '/directions').then(function (r) {
+      if (gen !== CARDS.gen || who !== WHO) return;
+      var all = r.status === 200 && Array.isArray(r.data) ? r.data : null;
+      if (!all) { CARDS.list = null; CARDS.fail = r.status === 403 ? denyText(r) : failText(r); show(); return; }
+      var d = all.filter(function (x) { return x && x.id === w.dir && typeof x.title === 'string'; })[0];
+      // роль пережила закрытие направления — состояние законное, молчать о нём нельзя
+      if (!d) { CARDS.list = null; CARDS.dir = null; CARDS.lost = true; show(); return; }
+      go2({ id: d.id, title: d.title });
+    });
+    return;
+  }
+  if (BAR) { go2({ id: BAR.id, title: BAR.title }); return; }
   loadBar(function (err) {
     if (gen !== CARDS.gen) return;
-    if (err) { CARDS.fail = err; if (current === 'barCards' || current === 'barCard') render(); return; }
-    go2();
+    if (err) { CARDS.fail = err; show(); return; }
+    go2({ id: BAR.id, title: BAR.title });
   });
 }
 function cardBy(id) { return (CARDS.list || []).filter(function (c) { return String(c.id) === String(id); })[0] || null; }
@@ -82,20 +115,26 @@ function cardMissing() {
   if (m && !(/^\d+$/.test(m) && +m > 0 && +m <= 600)) return 'Минуты — целое число от 1 до 600 или пусто.';
   return '';
 }
-function cardSave(sure) {
-  if (CARD.busy || !BAR) return;
-  grabCard();
-  CARD.deny = '';                             // прошлый отказ сервера не висит рядом с новым своим
-  CARD.err = cardMissing();
-  if (CARD.err) { haptic('warn'); render(); return; }
+// группа меню: та же без регистра — берём заведённую; похожая — спрашиваем. null — вопрос задан, ждём ответа
+function cardGroup(sure) {
   var g = CARD.v['c-group'].trim().replace(/\s+/g, ' ');
   var same = groupsOf().filter(function (x) { return x.toLowerCase() === g.toLowerCase(); })[0];
   var like = groupsOf().filter(function (x) { return groupKey(x) === groupKey(g); })[0];
   if (same) g = same;
-  else if (like && !sure) { CARD.groupAsk = like; render(); return; }
+  else if (like && !sure) { CARD.groupAsk = like; render(); return null; }
   if (sure === 'theirs') g = CARD.groupAsk;
   CARD.groupAsk = '';
-  var body = { direction_id: BAR.id, group: g, title: CARD.v['c-title'].trim(),
+  return g;
+}
+function cardSave(sure) {
+  if (CARD.busy || !CARDS.dir) return;
+  grabCard();
+  CARD.deny = '';                             // прошлый отказ сервера не висит рядом с новым своим
+  CARD.err = cardMissing();
+  if (CARD.err) { haptic('warn'); render(); return; }
+  var g = cardGroup(sure);
+  if (g === null) return;
+  var body = { direction_id: CARDS.dir.id, group: g, title: CARD.v['c-title'].trim(),
                price: Number(String(CARD.v['c-price']).replace(',', '.')),
                about: (CARD.v['c-about'] || '').trim(), is_alcohol: CARD.alcohol };
   var m = String(CARD.v['c-mins'] || '').trim();
@@ -116,6 +155,54 @@ function cardSave(sure) {
       mins: body.mins || null, about: body.about, alcohol: body.is_alcohol, state: 'draft', recipes: [], note: '' }]);
     go('barCard', String(id));
     loadCards();
+  });
+}
+/* Правка черновика (шаг 15): форма открывается полями карточки, в PATCH уходят ТОЛЬКО изменённые — сервер пишет
+   присланное, и неизменённое поле в теле перезаписало бы правку соседа той же строкой из старого списка. Ничего не
+   изменено — запроса нет: на пустое тело сервер ответит 422, а сказать человеку тут нечего. */
+function cardEditStart(id) {
+  var c = cardBy(id);
+  if (!c || c.state !== 'draft') return;
+  CARD.edit = c.id; CARD.err = ''; CARD.deny = ''; CARD.note = ''; CARD.groupAsk = '';
+  CARD.v = { 'c-title': c.title, 'c-group': c.group, 'c-price': String(c.price), 'c-mins': c.mins ? String(c.mins) : '', 'c-about': c.about };
+  CARD.alcohol = c.alcohol;
+}
+function cardEditSave(id, sure) {
+  var c = cardBy(id);
+  if (CARD.busy || !c) return;
+  grabCard();
+  CARD.deny = '';
+  CARD.err = cardMissing();
+  if (CARD.err) { haptic('warn'); render(); return; }
+  var g = cardGroup(sure);
+  if (g === null) return;
+  var now = { group: g, title: CARD.v['c-title'].trim(), price: Number(String(CARD.v['c-price']).replace(',', '.')),
+              about: (CARD.v['c-about'] || '').trim(), is_alcohol: CARD.alcohol };
+  var m = String(CARD.v['c-mins'] || '').trim();
+  now.mins = m ? +m : null;
+  var was = { group: c.group, title: c.title, price: c.price, about: c.about, is_alcohol: c.alcohol, mins: c.mins || null };
+  var body = {};
+  Object.keys(now).forEach(function (k) { if (now[k] !== was[k]) body[k] = now[k]; });
+  if (!Object.keys(body).length) { CARD.edit = 0; CARD.v = {}; render(); return; }
+  var gen = CARDS.gen;
+  CARD.busy = true; render();
+  api('PATCH', '/bar/products/' + id, body).then(function (r) {
+    CARD.busy = false;
+    if (gen !== CARDS.gen) return;
+    // после любого нажатия список перечитывается: состояние могло смениться рукой куратора (409 — ровно это)
+    if (!(r.status === 200 && r.data && r.data.id === id && r.data.state === 'draft')) {
+      CARD.deny = denyText(r); haptic('warn'); loadCards(); render(); return;
+    }
+    haptic('ok');
+    var d = r.data;
+    // карточка из ответа — до перечитывания; замечание куратора правка не стирает (так и отвечает сервер)
+    CARDS.list = (CARDS.list || []).map(function (x) {
+      return x.id !== id ? x : Object.assign({}, x, { title: d.title, group: d.group, price: num(d.price), mins: d.mins || null,
+        about: d.about || '', alcohol: !!d.is_alcohol });
+    });
+    CARD.edit = 0; CARD.v = {}; CARD.groupAsk = '';
+    CARD.note = 'Изменения сохранены.';
+    loadCards(); render();
   });
 }
 function recipeLoad(id, lang) {
@@ -212,12 +299,12 @@ function cardRow(c) {
   var rec = c.recipes.length ? 'рецепт: ' + c.recipes.join(', ') : '';
   var back = cardReturned(c);
   return '<button type="button" class="listitem' + (back ? ' warm' : '') + '" data-action="c-open:' + c.id + '">' +
-    '<span class="grow"><b>' + esc(c.title) + '</b><span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' +
+    '<span class="grow"><b class="clamp1">' + esc(c.title) + '</b><span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' +
       // глина — только там, где это запрет (review без рецепта отобьёт триггер базы);
       // у черновика рецепта нет по определению — это «ещё не сделано», не ошибка
       (rec ? ' · ' + esc(rec) : ' · <span' + (c.state === 'review' ? ' style="color:var(--clay-ink)"' : '') + '>рецепта нет</span>') + '</span>' +
       // замечание живёт до следующей смены состояния — читать его до нажатия
-      (back ? '<span class="said">Замечание: ' + esc(c.note) + '</span>' : '') +
+      (back ? '<span class="said clamp2">Замечание: ' + esc(c.note) + '</span>' : '') +
     '</span>' + svg(ICON.chev, 'chev') + '</button>';
 }
 
