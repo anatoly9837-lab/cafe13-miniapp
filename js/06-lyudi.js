@@ -838,8 +838,10 @@ function loadPartnerPrice() {
 }
 // «до ДД.ММ.ГГГГ» — день МОМЕНТА `paid_till` по часам клуба, без вычитания дня: «до» читается исключающе (рецепт R1)
 function prTill(iso) { var x = bkk(new Date(iso)).ymd.split('-'); return x[2] + '.' + x[1] + '.' + x[0]; }
-// блок «Свой бизнес в клубе» на «Клубе» (рецепт R1): у гостя и вне Telegram — пусто
-function partnerOffer() {
+// блок «Свой бизнес в клубе» на «Клубе» (рецепт R1): у гостя и вне Telegram — пусто.
+// door — дверь «Работники» (шаг 14): разметку держит `home`, сюда она приходит готовой и встаёт в ПОСЛЕДНЮЮ карточку
+// согласованного бизнеса — одна на все бизнесы
+function partnerOffer(door) {
   if (!LIVE || DATA.role === 'guest') return '';
   if (PR.mineState === '') loadMinePartner();
   if (PR.price === undefined) loadPartnerPrice();
@@ -851,9 +853,10 @@ function partnerOffer() {
       '<span class="st ' + st + '">' + esc(q.word) + '</span></div>';
   };
   // согласованных бывает больше одного: бизнесов у человека может быть два (шапка partner.py)
-  var yes = PR.mine.filter(function (q) { return q.status === 'approved'; }).map(function (q) {
+  var yes = PR.mine.filter(function (q) { return q.status === 'approved'; }).map(function (q, i, all) {
     return '<div class="card"><div class="col"><b class="clamp2">Вы партнёр бизнеса «' + esc(q.title) + '»</b>' +
-      (q.till ? '<span class="small">Оплачено до ' + esc(prTill(q.till)) + '</span>' : '') + '</div></div>';
+      (q.till ? '<span class="small">Оплачено до ' + esc(prTill(q.till)) + '</span>' : '') + '</div>' +
+      (i === all.length - 1 && door ? door : '') + '</div>';
   }).join('');
   var last = PR.mine[0];
   if (last && last.status === 'pending') return yes + '<div class="card quiet">' + head(last, 'wait') +
@@ -983,6 +986,128 @@ function decidePartner(id, decision) {
     if (current === 'partnerReq') render();
   });
 }
+
+/* ── шаг 14: работники бизнеса (Cafe13KPG#545, рецепт `_docs/recept/ekran/14/bizWorkers.md`, ручки cafe13-api#146,
+   форма снята на api 9ad148e, в бою 91b26f7) ──
+   Право — владение бизнесом (`directions.partner_id`), а не роль: экран спрашивает только СВОИ бизнесы
+   (`GET /partner/directions`) и работников ровно того, что пришёл оттуда. Чужой бизнес сервер отдаёт 404 одним текстом.
+   Назначение бесплатное (развилка 2): денег на экране нет. Номер человека (`member_id`) в память экрана НЕ берётся —
+   в разметку класть нечего; имя назначенного приходит только ОТВЕТОМ на назначение (предпросмотра нет, STAGE 18.11).
+   `biz` — выбранный бизнес; `lost` — прежний выбор пропал из свежего списка (слово designer-55 18.11: молча на первый
+   не переезжать). `ask` — «бизнес:роль» в окне отмены снятия; `err` — отказ назначения {text, seal}: seal — печать
+   сервера (`.verbatim`), иначе слова клиента; `rowErr` — отказ снятия (печать сервера). */
+var BW = { dirs: null, dirsFail: '', dirsGen: 0, biz: null, lost: false, list: null, listFail: '', listGen: 0,
+           uid: '', busy: false, err: null, rowErr: '', ask: null, done: '' };
+// снимок partner-directions. `paid_till` — ключ обязателен, null законен (бизнес заведён до периодов, 031)
+function fromMyBiz(d) {
+  if (!d || !Array.isArray(d.directions)) return null;
+  var out = [];
+  for (var i = 0; i < d.directions.length; i++) {
+    var x = d.directions[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.active !== 'boolean' ||
+        !('paid_till' in x) || !(x.paid_till === null || prMoment(x.paid_till)) || typeof x.workers !== 'number') return null;
+    out.push({ id: x.id, title: x.title, active: x.active });
+  }
+  return out;
+}
+// снимки directions-workers и directions-workers-assign — одна строка. `elsewhere` — ЧИСЛО других бизнесов, без названий
+function fromWorker(x) {
+  var s = function (v) { return v === null || typeof v === 'string'; };
+  if (!x || typeof x.role_id !== 'number' || typeof x.member_id !== 'number' || typeof x.first_name !== 'string' || !s(x.last_name) ||
+      !prMoment(x.granted_at) || !(x.granted_by === null || typeof x.granted_by === 'number') ||
+      !s(x.granted_by_first_name) || !s(x.granted_by_last_name) || typeof x.elsewhere !== 'number' || x.elsewhere < 0) return null;
+  return { rid: x.role_id, name: msName({ first_name: x.first_name, last_name: x.last_name }), elsewhere: x.elsewhere > 0 };
+}
+function fromWorkers(d, biz) {
+  if (!d || d.direction_id !== biz || !Array.isArray(d.workers)) return null;
+  var out = d.workers.map(fromWorker);
+  return out.some(function (x) { return !x; }) ? null : out;
+}
+function bwBiz() { return (BW.dirs || []).filter(function (x) { return x.id === BW.biz; })[0] || null; }
+// список бизнесов — на входе и после каждого назначения и снятия: оплаченность ВЫЧИСЛЯЕМАЯ и истекает сама
+function loadMyBiz(withList) {
+  if (!LIVE) return;
+  var gen = ++BW.dirsGen; BW.dirsFail = '';
+  api('GET', '/partner/directions').then(function (r) {
+    if (gen !== BW.dirsGen) return;
+    var l = r.status === 200 ? fromMyBiz(r.data) : null;
+    BW.dirs = l; BW.dirsFail = l ? '' : denyText(r);
+    if (l) {
+      var had = BW.biz !== null, still = l.some(function (x) { return x.id === BW.biz; });
+      if (had && !still) { BW.lost = true; BW.biz = null; BW.list = null; }
+      if (BW.biz === null && l.length === 1) { BW.biz = l[0].id; withList = true; }
+      if (withList && BW.biz !== null) loadWorkers();
+    }
+    if (current === 'bizWorkers') { bwGrab(); render(); }
+  });
+}
+function loadWorkers() {
+  if (!LIVE || BW.biz === null) return;
+  var biz = BW.biz, gen = ++BW.listGen; BW.listFail = '';
+  api('GET', '/directions/' + biz + '/workers').then(function (r) {
+    if (gen !== BW.listGen || biz !== BW.biz) return;
+    var l = r.status === 200 ? fromWorkers(r.data, biz) : null;
+    BW.list = l; BW.listFail = l ? '' : denyText(r);
+    if (current === 'bizWorkers') { bwGrab(); render(); }
+  });
+}
+// набранный номер — в BW перед любой перерисовкой: отказ поле НЕ чистит (рецепт: номер правят, а не набирают заново)
+function bwGrab() { var f = document.getElementById('bw-uid'); if (f) BW.uid = f.value; }
+function bwAssign() {
+  if (BW.busy) return;
+  bwGrab();
+  var b = bwBiz(), uid = BW.uid.trim();
+  // неоплаченный — запроса нет (развилка 3): кнопка погашена, это вторая линия на случай нажатия мимо погашения
+  if (!b || !b.active) return;
+  if (!/^\d{1,15}$/.test(uid)) { BW.err = { text: 'Впишите Telegram ID — одни цифры.', seal: false }; render(); return; }
+  if (!LIVE) return;
+  var biz = b.id;
+  BW.busy = true; BW.err = null; BW.rowErr = ''; BW.done = ''; render();
+  api('POST', '/directions/' + biz + '/workers', { member_id: Number(uid) }).then(function (r) {
+    BW.busy = false;
+    var got = r.status === 201 ? fromWorker(r.data) : null;
+    if (current === 'bizWorkers') bwGrab();
+    if (got) {
+      haptic('ok'); BW.uid = '';
+      // имя — из ОТВЕТА назначения: до него его не показывают (STAGE 18.11); список следом перечитывается
+      if (BW.biz === biz && BW.list) BW.list = BW.list.concat([got]);
+      loadWorkers(); loadMyBiz(false);
+    } else {
+      haptic('warn'); BW.err = { text: denyText(r), seal: true };
+      // 409: «не оплачено» (период истёк между входом и нажатием) или «уже работник» — перечитать обе правды
+      if (r.status === 409) { loadMyBiz(false); loadWorkers(); }
+    }
+    if (current === 'bizWorkers') render();
+  });
+}
+/* Снятие — окно отмены ДО отправки (`undoStart`, одно на приложение): сервер назад не умеет, вернуть можно только
+   новым назначением. Ушёл с экрана в окне — снятие уходит (политика 'send', как у уровня: денег нет, решение принято). */
+function bwRevokeAsk(rid) {
+  if (BW.busy || BW.biz === null) return;
+  BW.err = null; BW.rowErr = ''; BW.done = '';
+  BW.ask = BW.biz + ':' + rid;
+  undoStart('bw:' + BW.ask, bwRevokeSend);
+}
+function bwRevokeSend(key) {
+  if (BW.ask === null || 'bw:' + BW.ask !== key) return;
+  undoStop(); BW.ask = null;
+  var m = /^bw:(\d+):(\d+)$/.exec(String(key)); if (!m) return;
+  var biz = Number(m[1]), rid = Number(m[2]);
+  if (!LIVE) return;
+  BW.busy = true; if (current === 'bizWorkers') { bwGrab(); render(); }
+  api('POST', '/directions/' + biz + '/workers/' + rid + '/revoke').then(function (r) {
+    BW.busy = false;
+    var ok = r.status === 200 && r.data && r.data.direction_id === biz && r.data.role_id === rid && prMoment(r.data.revoked_at);
+    if (ok) {
+      haptic('ok'); BW.done = 'Сняли. Доступ закрылся сразу.';
+      if (BW.biz === biz && BW.list) BW.list = BW.list.filter(function (x) { return x.rid !== rid; });
+    } else { haptic('warn'); BW.rowErr = denyText(r); }
+    loadWorkers(); loadMyBiz(false);
+    if (current === 'bizWorkers') { bwGrab(); render(); }
+  });
+}
+// ссылка на бота — первая внешняя ссылка клиента: внутри Telegram её открывает Telegram, `<a href>` увёл бы из окна клуба
+function bwBot() { if (tg && typeof tg.openTelegramLink === 'function') tg.openTelegramLink('https://t.me/userinfobot'); }
 
 // плашка прототипа — механизм на будущее: сейчас PROTO пуст, шаг 3 подключён (v109)
 function protoStrip() {

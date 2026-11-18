@@ -119,6 +119,64 @@ Object.assign(SCREENS, {
         '<div class="note">' + svg(ICON.info) + '<span>Согласие создаёт бизнес и начинает оплаченный месяц. Отказ вернёт деньги заявителю.</span></div>');
   },
 
+  // ── шаг 14 (Cafe13KPG#545): рецепт `_docs/recept/ekran/14/bizWorkers.md`; выбор бизнеса и слова неоплаченного —
+  // письмо designer-55 18.11.2026 (правка рецепта следом). Вход — «Работники» в блоке «Свой бизнес в клубе» на «Клубе»
+  bizWorkers: function () {
+    var dirs = LIVE ? BW.dirs : [{ id: 0, title: 'Кофейня', active: true }];
+    var bizId = LIVE ? BW.biz : 0, list = LIVE ? BW.list : [];
+    var retry = function (words, why, act) {
+      return '<div class="card quiet"><div class="row"><span class="small">' + words + esc(why) + '</span>' +
+        '<button type="button" class="btn quiet" data-action="' + act + '">Повторить</button></div></div>';
+    };
+    if (!dirs) return BW.dirsFail ? retry('Ваши бизнесы не загрузились: ', BW.dirsFail, 'bw-retry-biz')
+      : '<div class="card quiet"><span class="small">Загружаем ваши бизнесы…</span></div>';
+    if (!dirs.length) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Работников назначает партнёр своего бизнеса.</span></div></div>';
+    var b = dirs.filter(function (x) { return x.id === bizId; })[0] || null;
+    var head = '<span class="small">Назначенный работник появится в этом списке. Что ему будет видно в приложении — решают следующие шаги.</span>' +
+      (BW.lost ? '<div class="note">' + svg(ICON.info) + '<span>Прежде выбранный бизнес больше не ваш.</span></div>' : '');
+    // один бизнес — выбора нет; два и больше — переключатель формы «Смотреть как» (js/20), слова — названия сервера
+    var pick = dirs.length === 1 ? '<span class="small">Бизнес «' + esc(dirs[0].title) + '»</span>'
+      : '<div class="group"><span class="label">Ваши бизнесы</span>' + dirs.map(function (x) {
+          return '<button type="button" class="listitem" data-action="bw-biz:' + x.id + '"' + (x.id === bizId ? ' aria-current="true"' : '') + '>' +
+            '<span class="grow"><b class="clamp1">' + esc(x.title) + '</b></span>' +
+            (x.id === bizId ? '<span class="pill on">сейчас</span>' : svg(ICON.chev, 'chev')) + '</button>';
+        }).join('') + '<span class="small">Работника назначают в один бизнес. Выберите, в какой.</span></div>';
+    if (!b) return head + pick;
+    var off = BW.busy || BW.ask !== null ? ' disabled' : '';
+    var rows = !list ? (BW.listFail ? retry('Работники бизнеса не загрузились: ', BW.listFail, 'bw-retry')
+        : '<div class="card quiet"><span class="small">Загружаем работников…</span></div>')
+      : !list.length ? '<div class="note">' + svg(ICON.info) + '<span>Работников пока нет. Назначьте первого — номер он узнает у бота.</span></div>'
+      : list.map(function (w) {
+          var asked = BW.ask === b.id + ':' + w.rid;
+          return '<div class="listitem"><span class="grow"><b class="clamp1">' + esc(w.name) + '</b>' +
+              '<span class="small">' + esc(ROLE_NAME.worker) + '</span></span>' +
+              (w.elsewhere ? '<span class="pill">и в другом бизнесе</span>' : '') +
+              (asked ? '' : '<button type="button" class="btn quiet" data-action="bw-revoke:' + w.rid + '"' + off + '>Снять</button>') + '</div>' +
+            (asked ? '<div class="undo"><span class="small">Снимаем: ' + esc(w.name) + '</span>' +
+              '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="bw-keep">Отменить</button></div>' : '');
+        }).join('');
+    var seal = function (t) { return '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(t) + '</span></div>'; };
+    var err = !BW.err ? '' : BW.err.seal ? seal(BW.err.text)
+      : '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(BW.err.text) + '</span></div>';
+    // неоплаченный (развилка 3): поле и кнопка погашены, запроса нет; слова — клиента (печати до запроса не существует)
+    var shut = b.active ? '' : ' disabled';
+    var bot = tg && typeof tg.openTelegramLink === 'function' ? '<u role="link" tabindex="0" data-action="bw-bot">@userinfobot</u>' : '@userinfobot';
+    return head + pick +
+      '<div class="group"><span class="label">Кто работает</span>' + rows +
+        (BW.rowErr ? seal(BW.rowErr) : '') +
+        (BW.done ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(BW.done) + '</span></div>' : '') + '</div>' +
+      '<div class="group"><span class="label">Назначить работника</span>' +
+        (b.active ? '' : '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Оплаченный месяц бизнеса закончился. ' +
+          'Назначать работников можно после оплаты — уже назначенные работают дальше.</span></div>') +
+        '<div class="field"><label for="bw-uid">Telegram ID</label><input id="bw-uid" inputmode="numeric" autocomplete="off" value="' + esc(BW.uid) + '"' + shut + '>' +
+          '<span class="small">Свой номер человек узнаёт у бота ' + bot + ' — в Telegram, за полминуты. Попросите его прислать номер вам.</span></div>' +
+        err +
+        '<button type="button" class="btn" data-action="bw-send"' + (shut || (BW.busy ? ' disabled' : '')) + '>' + (BW.busy ? 'Назначаем…' : 'Назначить') + '</button>' +
+        '<div class="note">' + svg(ICON.info) + '<span>Имя появится в списке ПОСЛЕ назначения. Ошиблись номером — снимите строку и назначьте снова.</span></div>' +
+      '</div>';
+  },
+
   // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g (подтверждение) снят по #695; E56d — причина; E56e — своя
   topupQueue: function () {
     // слова отказа — сервера (`_may_decide`, 403) буквой
