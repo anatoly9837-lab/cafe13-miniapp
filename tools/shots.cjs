@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const crypto = require('crypto');
 const fs = require('fs');
 
 /* Признак экрана берётся из СОДЕРЖИМОГО #view, а не из шапки: шапка у разных
@@ -191,6 +192,25 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
   const errs = [], bad = [], manifest = [], разметка = {};
   p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   p.on('pageerror', e => errs.push('pageerror: ' + e.message));
+  /* ⚠ ШРИФТЫ ТЯНУТСЯ ИЗ СЕТИ НА КАЖДОМ ПРОГОНЕ, и это единственный вход съёмки,
+     который может смениться БЕЗ правки дерева. Замер 18.11.2026: под
+     `--network none` съёмка честно отказывает («не загрузились шрифты»), то
+     есть зависимость настоящая, а не теоретическая. В тот же день снимки
+     сдвинулись РАЗОМ — 31 из 32 против прежней описи, при этом четыре
+     последующих прогона дали побайтовое совпадение между собой. Назвать
+     причину было НЕЧЕМ: байты шрифтов того прогона никто не записал.
+     Поэтому теперь записываются — вопрос «сменились ли шрифты» становится
+     замером, а не догадкой (Cafe13KPG#934). Приговором это НЕ делается:
+     обновление шрифта законно, и красное тут звало бы разбирать чужой выпуск. */
+  const шрифты = {};
+  p.on('response', async (r) => {
+    const u = r.url();
+    if (!/fonts\.(googleapis|gstatic)\.com/.test(u)) return;
+    try {
+      const т = await r.body();
+      шрифты[u] = { байт: т.length, sha256: crypto.createHash('sha256').update(т).digest('hex').slice(0, 16) };
+    } catch (e) { шрифты[u] = { байт: null, sha256: 'тело не прочиталось: ' + ((e && e.message) || String(e)) }; }
+  });
 
   const text = () => p.evaluate(() => document.getElementById('view').textContent);
   /* ⚠ СНИМОК ПРИНИМАЕТСЯ, ТОЛЬКО ЕСЛИ ДВА ПОДРЯД СОВПАЛИ БАЙТ В БАЙТ.
@@ -432,6 +452,9 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
   fs.writeFileSync('/work/razmetka.json', JSON.stringify({
     снято: new Date().toISOString(),
     слепки_страницы: слепки,
+    // ⚠ сверка слепка (tools/sverka-razmetki.py) читает ТОЛЬКО карту `экраны`:
+    // смена шрифта приговора не даёт, но остаётся записанной
+    шрифты: шрифты,
     свод_слепков: свод_слепков,
     область: 'вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть ' +
              'на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает',
@@ -442,6 +465,8 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
   console.log('написан razmetka.json: видов ' + Object.keys(разметка).length + ', наборов классов ' +
               Object.values(разметка).reduce((н, в) => н + Object.keys(в.классы).length, 0) +
               ', свод слепков ' + свод_слепков.slice(0, 12));
+  console.log('шрифты из сети: ресурсов ' + Object.keys(шрифты).length + ' · ' +
+              Object.keys(шрифты).sort().map(u => шрифты[u].sha256.slice(0, 8)).join(' '));
 
   console.log(errs.length ? 'ОШИБКИ КОНСОЛИ:\n  ' + errs.join('\n  ') : '✓ ошибок консоли нет');
   console.log(bad.length ? '\nОТКАЗЫ (' + bad.length + '):\n  ' + bad.join('\n  ') : '\n✓ все ' + manifest.length + ' снимков прошли проверку признака');

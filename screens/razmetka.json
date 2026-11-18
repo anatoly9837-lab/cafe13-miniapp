@@ -1,5 +1,5 @@
 {
- "снято": "2026-11-18T21:11:26.765Z",
+ "снято": "2026-11-18T21:32:58.934Z",
  "слепки_страницы": {
   "index.html": "f175a6cdfa1fc2787dda15a472b5e4b655eaa222c1038c437fe9a1ecfb273a5d",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
@@ -29,6 +29,28 @@
   "js/20-ekrany-sluzhebnye.js": "24947f703becc1f33b67b10fb8b00e6c65c6589e7ec31e4909a3d48aa8ff2f4a",
   "js/21-navigaciya.js": "8e4d521752a92cae00eebc62add947e08062c58627499e463ae0e885c18fdfb3",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
+ },
+ "шрифты": {
+  "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": {
+   "байт": 7282,
+   "sha256": "df94402b8a87ffd3"
+  },
+  "https://fonts.gstatic.com/s/prata/v22/6xKhdSpbNNCT-sWPCm4.woff2": {
+   "байт": 19224,
+   "sha256": "1b85a8c794709747"
+  },
+  "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExd8hLxR.woff2": {
+   "байт": 22032,
+   "sha256": "17d048ca05cb1218"
+  },
+  "https://fonts.gstatic.com/s/prata/v22/6xKhdSpbNNCT-sWLCm7JLQ.woff2": {
+   "байт": 13132,
+   "sha256": "3392de5a383deac6"
+  },
+  "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExN8hA.woff2": {
+   "байт": 37916,
+   "sha256": "9a69d0aa4734c402"
+  }
  },
  "свод_слепков": "babfc5cf0bbdeba014d3f17a7cd3fd279f684e1a43928a81f9aed9bed54e0216",
  "область": "вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает",
