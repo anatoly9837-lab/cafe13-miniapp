@@ -102,6 +102,26 @@ const DARK = [['30-home-dark', 'home', 'Пропуск', 'Ночная тема'
    Что поле на телефоне покажет форму телефона — ВЫВОД из устройства родного
    контрола, телефона в прогоне не было. */
 const { FIXED_NOW } = require('./chasy-opisi.cjs');   /* ОДИН источник часов описи */
+/* ⚠ СЛЕПКИ ДЕРЕВА СНИМАЮТСЯ ДО СЪЁМКИ. Рядом со снимками съёмка кладёт
+   `razmetka.json` — съём КЛАССОВ собранного экрана для сверки экран ↔ рецепт
+   (шаг 7 порядка разработки). Без слепков этот файл старел бы МОЛЧА: правка
+   клиента меняет классы, а приговор сверки читался бы о прежнем дереве — то
+   есть о чужом предмете. Признак не свой, а общий с видимостью: состав
+   страницы читается из `index.html` помощником tools/klient.cjs, своего списка
+   файлов здесь нет НАРОЧНО (он разошёлся бы с тем, что грузит страница).
+   Не собрался состав — «НЕ ВЫПОЛНЕНО» до запуска браузера, а не съёмка,
+   которую потом нечем сверить. */
+const { slepkiStranicy, svod, chitatelDereva } = require('./klient.cjs');
+let слепки, свод_слепков;
+try {
+  слепки = slepkiStranicy(chitatelDereva('/app'));
+  свод_слепков = svod(слепки);
+} catch (e) {
+  console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: состав страницы не собрался: ' +
+              ((e && e.message) || String(e)) + ' — съём разметки без слепков нельзя ' +
+              'сверить с деревом, и сверка экран ↔ рецепт судила бы о чужом предмете');
+  process.exit(2);
+}
 if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
   console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: опись снимается с русской локалью процесса — запустите с ' +
               '`-e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8`, иначе поле даты на снимке будет «ММ/ДД/ГГГГ» ' +
@@ -114,7 +134,7 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
   await ctx.clock.setFixedTime(new Date(FIXED_NOW));
   const p = await ctx.newPage();
-  const errs = [], bad = [], manifest = [];
+  const errs = [], bad = [], manifest = [], разметка = {};
   p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   p.on('pageerror', e => errs.push('pageerror: ' + e.message));
 
@@ -142,6 +162,34 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
     неустойчивые.push(n);
     fs.writeFileSync(`/work/${n}.png`, a);
   };
+
+  /* ⚠ СЪЁМ РАЗМЕТКИ ИДЁТ РЯДОМ СО СНИМКОМ, тем же состоянием и теми же
+     фикстурами: источник правды о СОБРАННОМ экране — то, что отрисовано, а не
+     то, что написано в клиенте. Поэтому он здесь, а не отдельным обходом:
+     отдельный повторил бы роли, доводы, порядок экранов и демо-набор — вторая
+     копия устройства съёмки разошлась бы с этой молча.
+
+     Ключ — КОМБИНАЦИЯ классов элемента (`card quiet`), а не плоский набор:
+     состав различает `.card` и `.card quiet` цветом, и по плоскому набору они
+     были бы неразличимы. Сверка ищет подстроку-набор, как это делает сам CSS.
+
+     ⚠ ВИДИМЫХ СЧИТАЕМ ОТДЕЛЬНО, и это не придирка: класс, лежащий в разметке
+     погашенным, на экране ОТСУТСТВУЕТ — а по разметке он выглядел бы
+     ингредиентом. Наш записанный класс: охрана, которую дверь может погасить,
+     — это ожидание, а не охрана. Признак — есть ли у элемента боксы отрисовки
+     (`getClientRects`) и не снят ли он `visibility`. */
+  const классы = () => p.evaluate(() => {
+    const карта = {};
+    for (const э of document.querySelectorAll('body *')) {
+      const имена = Array.from(э.classList).sort();
+      if (!имена.length) continue;
+      const ключ = имена.join(' ');
+      const з = карта[ключ] || (карта[ключ] = { всего: 0, видимых: 0 });
+      з.всего++;
+      if (э.getClientRects().length && getComputedStyle(э).visibility !== 'hidden') з.видимых++;
+    }
+    return карта;
+  });
 
   await p.goto('file:///app/index.html', { waitUntil: 'networkidle' });
   console.log('control: clientWidth =', await p.evaluate(() => document.documentElement.clientWidth), '(ждём 390)');
@@ -273,6 +321,7 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
     const t = await text();
     if (t.indexOf(marker) === -1) bad.push(name + ': признака «' + marker + '» на экране нет (взято: ' + t.slice(0, 60).replace(/\s+/g, ' ') + '…)');
     await shot(name);
+    разметка[name] = { экран: screen, довод: prm || null, роль: role, тема: 'светлая', классы: await классы() };
     manifest.push({ file: name + '.png', group, caption, screen });
   }
   for (const [name, screen, marker, group, caption] of DARK) {
@@ -280,9 +329,23 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
     const t = await text();
     if (t.indexOf(marker) === -1) bad.push(name + ': признака «' + marker + '» нет');
     await shot(name);
+    разметка[name] = { экран: screen, довод: null, роль: 'member', тема: 'тёмная', классы: await классы() };
     manifest.push({ file: name + '.png', group, caption, screen });
   }
   fs.writeFileSync('/work/manifest.json', JSON.stringify(manifest, null, 1));
+  fs.writeFileSync('/work/razmetka.json', JSON.stringify({
+    снято: new Date().toISOString(),
+    слепки_страницы: слепки,
+    свод_слепков: свод_слепков,
+    область: 'вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть ' +
+             'на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает',
+    предел: 'ОДИН снятый вид каждого экрана. Состояния рецепта (отказ, пусто, отправка, вспышка) ' +
+            'опись не снимает, и класс, живущий только в них, сверке «не измерен», а не зелёный',
+    экраны: разметка
+  }, null, 1));
+  console.log('написан razmetka.json: видов ' + Object.keys(разметка).length + ', наборов классов ' +
+              Object.values(разметка).reduce((н, в) => н + Object.keys(в.классы).length, 0) +
+              ', свод слепков ' + свод_слепков.slice(0, 12));
 
   console.log(errs.length ? 'ОШИБКИ КОНСОЛИ:\n  ' + errs.join('\n  ') : '✓ ошибок консоли нет');
   console.log(bad.length ? '\nОТКАЗЫ (' + bad.length + '):\n  ' + bad.join('\n  ') : '\n✓ все ' + manifest.length + ' снимков прошли проверку признака');
