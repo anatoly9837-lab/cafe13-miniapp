@@ -255,7 +255,9 @@ var TITLES = {
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
   masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера', masterRenew: 'Продление',
-  payouts: 'Распределить', payout: 'Распределить', businesses: 'Бизнесы клуба'
+  payouts: 'Распределить', payout: 'Распределить', businesses: 'Бизнесы клуба',
+  partnerApply: 'Заявка в партнёры', partnerReqs: 'Заявки в партнёры', partnerReq: 'Заявка в партнёры',
+  bizWorkers: 'Работники бизнеса'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -317,7 +319,7 @@ var BACK = {
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
-  payouts: 'manage', payout: 'payouts', businesses: 'manage',
+  payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -525,7 +527,7 @@ function demoWork(screen, p) {
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
 var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
-                  'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
+                  'tp-send', 'tp-reload', 'td-cancel', 'td-reload', 'bw-send', 'bw-revoke'];
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
@@ -565,6 +567,18 @@ function go(screen, p) {
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
+  // шаг 13 (рецепт R3–R5): счётчик «Заявок в партнёры» — на каждом входе во «Управление»; очередь — на каждом входе:
+  // решение мог принять другой операционный директор. Своя заявка нужна, чтобы узнать СВОЮ в очереди
+  if ((screen === 'manage' || screen === 'partnerReqs') && current !== screen && mayOps()) { PR.qErr = ''; loadPartnerQueue(); if (screen === 'partnerReqs') loadMinePartner(); }
+  if (screen === 'partnerReq') { PR.qErr = ''; if (current !== 'partnerReq' || param !== p) { PR.ask = 0; PR.note = ''; } if (!PR.q && mayOps()) loadPartnerQueue(); }
+  // форма: остаток и цена — на входе (рецепт R2, правило Cafe13KPG#638)
+  if (screen === 'partnerApply' && current !== 'partnerApply' && LIVE) { PR.err = ''; refreshMe(); loadPartnerPrice(); }
+  if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') PR.mineState = '';
+  // шаг 14 (рецепт 14/bizWorkers, «Перечитать на входе»): свои бизнесы с оплаченностью и работники — на каждом входе;
+  // запомненный бизнес сверяется со свежим списком в loadMyBiz
+  if (screen === 'bizWorkers' && current !== 'bizWorkers' && LIVE) {
+    BW.err = null; BW.rowErr = ''; BW.done = ''; BW.uid = ''; BW.lost = false; BW.dirs = null; BW.list = null; BW.listFail = ''; loadMyBiz(true);
+  }
   // шаг 11: пометка ждущих на «Распределить деньги» — счёт нужен уже на «Управлении»; каждый вход — свежий список
   if ((screen === 'manage' || screen === 'payouts') && current !== screen && mayMasters()) { PAY.err = ''; loadPayouts(); }
   if (screen === 'payout') { PAY.err = ''; if (!PAY.list && mayMasters()) loadPayouts(); }
@@ -1103,6 +1117,28 @@ function doAction(a) {
     if (a === 'pay-open') { go('payout', Number(arg)); return; }
     if (a === 'pay-go' && mayMasters()) { sendPayout(Number(arg)); return; }
     if (a === 'biz-retry' && mayOps()) { loadBusinesses(); render(); return; }
+    // шаг 14: работники бизнеса
+    if (a === 'bw-send') { bwAssign(); return; }
+    if (a === 'bw-revoke') { bwGrab(); bwRevokeAsk(Number(arg)); render(); return; }
+    if (a === 'bw-keep') { if (UNDO.key && /^bw:/.test(UNDO.key)) undoStop(); BW.ask = null; bwGrab(); render(); return; }
+    if (a === 'bw-retry') { loadWorkers(); bwGrab(); render(); return; }
+    if (a === 'bw-retry-biz') { loadMyBiz(true); render(); return; }
+    if (a === 'bw-bot') { bwBot(); return; }
+    if (a === 'bw-biz' && !BW.busy && BW.ask === null) {
+      bwGrab(); BW.biz = Number(arg); BW.lost = false; BW.list = null; BW.listFail = ''; BW.err = null; BW.rowErr = ''; BW.done = '';
+      loadWorkers(); render(); return;
+    }
+    // шаг 13: заявка в партнёры
+    if (a === 'pr-apply') { PR.err = ''; go('partnerApply'); return; }
+    if (a === 'pr-send') { sendPartner(); return; }
+    if (a === 'pr-retry-mine') { loadMinePartner(); render(); return; }
+    if (a === 'pr-retry-price') { prGrab(); loadPartnerPrice(); render(); return; }
+    if (a === 'pr-retry-q' && mayOps()) { loadPartnerQueue(); render(); return; }
+    if (a === 'pr-open') { go('partnerReq', arg); return; }
+    if (a === 'pr-yes' && mayOps()) { decidePartner(Number(arg), 'approved'); return; }
+    if (a === 'pr-ask' && mayOps() && !PR.busy) { PR.ask = Number(arg); PR.note = ''; PR.qErr = ''; render(); return; }
+    if (a === 'pr-keep' && !PR.busy) { PR.ask = 0; PR.qErr = ''; render(); return; }
+    if (a === 'pr-no' && mayOps()) { decidePartner(Number(arg), 'rejected'); return; }
     if (a === 'ms-retry-s' && mayMasters()) { loadSlots(); render(); return; }
     if (a === 'ms-retry-places') { loadPlaces(); render(); return; }
     if (a === 'tq-no' && mayTopups()) { if (TOPQ.step === 'no') decideTopup(Number(arg), 'rejected'); return; }

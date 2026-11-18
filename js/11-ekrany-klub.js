@@ -31,6 +31,9 @@ var SCREENS = {
 
       // шаг 3: «Я мастер» — под карточкой членства (кадр E54); у гостя пусто
       masterOffer() +
+      // шаг 13 (рецепт R1): «Свой бизнес в клубе» — ниже блока мастера. Шаг 14 (рецепт 14/bizWorkers): дверь «Работники»
+      // в согласованном состоянии блока — одна на все бизнесы, выбор бизнеса на самом экране
+      partnerOffer(WIRED.bizWorkers ? '<button type="button" class="btn quiet" data-go="bizWorkers">Работники</button>' : '') +
       rolePanel() +
 
       (LIVE ? myRoles() +

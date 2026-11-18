@@ -815,6 +815,301 @@ function loadBusinesses() {
     if (current === 'businesses') render();
   });
 }
+/* ── шаг 13: заявка в партнёры (Cafe13KPG#889, сервер cafe13-api#143, снимки partner-* — cafe13-miniapp#256) ──
+   Образец — заявка мастера: деньги первого месяца списываются при подаче, отказ возвращает их встречной строкой,
+   согласие операционного директора СОЗДАЁТ бизнес. Разборщик строгий: одна битая строка — отказ целиком (§4).
+   ⚠ Рецептов шага 13 в стволе нет (#887): слова и раскладка — по образцу мастера и сверяются, когда рецепт ляжет. */
+/* Цена месяца — ТОЛЬКО от сервера, `GET /partner/price` → {amount} (рецепт R1, «Заказ серверу»; Cafe13KPG#902).
+   ⚠ На 06.11.2026 этой ручки НЕТ (`PRICE_MONTH` — константа внутри partner.py): сервер отвечает 404, экран говорит
+   «Цену не удалось узнать у сервера.», кнопка погашена — экран есть, купить нельзя. Число в разметке соврало бы при
+   первой смене цены. Ручка ляжет — экран оживёт без правки клиента: это и есть отрицательный контроль заплатки
+   (случаи `partner-cena-404` и `partner-cena-200`). `price`: undefined — не спрашивали, 'loading', число, null — не узнать */
+var PR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail: '', qGen: 0, price: undefined, priceGen: 0,
+           busy: false, ask: 0, note: '', qErr: '', title: '', about: '', err: '' };
+function loadPartnerPrice() {
+  if (!LIVE || PR.price === 'loading') return;
+  var gen = ++PR.priceGen; PR.price = 'loading';
+  api('GET', '/partner/price').then(function (r) {
+    if (gen !== PR.priceGen) return;
+    PR.price = r.status === 200 && r.data && typeof r.data.amount === 'string' && /^\d+(\.\d+)?$/.test(r.data.amount) ? Number(r.data.amount) : null;
+    if (current === 'partnerApply') prGrab();   // набранное в полях — до перерисовки
+    if ({ home: 1, partnerApply: 1 }[current]) render();
+  });
+}
+// «до ДД.ММ.ГГГГ» — день МОМЕНТА `paid_till` по часам клуба, без вычитания дня: «до» читается исключающе (рецепт R1)
+function prTill(iso) { var x = bkk(new Date(iso)).ymd.split('-'); return x[2] + '.' + x[1] + '.' + x[0]; }
+// блок «Свой бизнес в клубе» на «Клубе» (рецепт R1): у гостя и вне Telegram — пусто.
+// door — дверь «Работники» (шаг 14): разметку держит `home`, сюда она приходит готовой и встаёт в ПОСЛЕДНЮЮ карточку
+// согласованного бизнеса — одна на все бизнесы
+function partnerOffer(door) {
+  if (!LIVE || DATA.role === 'guest') return '';
+  if (PR.mineState === '') loadMinePartner();
+  if (PR.price === undefined) loadPartnerPrice();
+  if (PR.mineState === 'loading' && !PR.mine) return '';
+  if (PR.mineState !== 'ok' && !PR.mine) return '<div class="card quiet"><div class="row"><span class="small">Заявки в партнёры не загрузились: ' +
+      esc(PR.mineState) + '</span><button type="button" class="btn quiet" data-action="pr-retry-mine">Повторить</button></div></div>';
+  var head = function (q, st) {
+    return '<div class="row"><div class="col"><b>Заявка в партнёры</b><span class="small">' + esc(topupDay(q.done || q.iso, !q.done)) + '</span></div>' +
+      '<span class="st ' + st + '">' + esc(q.word) + '</span></div>';
+  };
+  // согласованных бывает больше одного: бизнесов у человека может быть два (шапка partner.py)
+  var yes = PR.mine.filter(function (q) { return q.status === 'approved'; }).map(function (q, i, all) {
+    return '<div class="card"><div class="col"><b class="clamp2">Вы партнёр бизнеса «' + esc(q.title) + '»</b>' +
+      (q.till ? '<span class="small">Оплачено до ' + esc(prTill(q.till)) + '</span>' : '') + '</div>' +
+      (i === all.length - 1 && door ? door : '') + '</div>';
+  }).join('');
+  var last = PR.mine[0];
+  if (last && last.status === 'pending') return yes + '<div class="card quiet">' + head(last, 'wait') +
+      '<span class="small">Списано ' + money(last.amount) + ' ฿.</span></div>' +
+    '<div class="note">' + svg(ICON.info) + '<span>Решение принимает операционный директор. Если он откажет, деньги вернутся на счёт.</span></div>';
+  if (yes) return yes;
+  if (last && last.status === 'rejected') return '<div class="card quiet">' + head(last, 'no') +
+      (last.note ? '<span class="said">' + esc(last.note) + '</span>' : '') +
+      '<span class="small">' + money(last.amount) + ' ฿ вернулись на счёт.</span></div>' +
+    '<button type="button" class="btn" data-action="pr-apply">Подать заново</button>';
+  var p = PR.price, bal = msBalance(), short = typeof p === 'number' && bal < p;
+  return '<div class="card"><div class="col"><b>Свой бизнес в клубе</b>' +
+      '<span class="small">Название, описание и оплаченный месяц. Что в бизнесе появится дальше — следующий шаг.</span></div>' +
+      '<span class="small">' + (typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
+        : short ? 'Не хватает ' + money(p - bal) + ' ฿: нужно ' + money(p) + ' ฿, на счёте ' + money(bal) + ' ฿'
+        : money(p) + ' ฿ в месяц') + '</span>' +
+      '<span class="small">Месяц идёт от даты оплаты. Продлевается оплатой, без новой заявки.</span>' +
+      '<button type="button" class="btn" data-action="pr-apply"' + (typeof p !== 'number' || short ? ' disabled' : '') + '>Я партнёр</button></div>' +
+    (short ? '<div class="note">' + svg(ICON.info) + '<span>Пополнить счёт можно на вкладке «Клуб» — кошельком в шапке.</span></div>' : '');
+}
+// набранное в полях — в PR перед любой перерисовкой, иначе текст пропадёт
+function prGrab() {
+  var t = document.getElementById('pr-title'), a = document.getElementById('pr-about');
+  if (t) PR.title = t.value;
+  if (a) PR.about = a.value;
+}
+// причина отказа: кнопка гаснет и включается на ВВОДЕ, без перерисовки — иначе набор терял бы фокус (как `msNoteSync`)
+function prNoteSync() {
+  var t = document.getElementById('pr-note'); if (!t) return;
+  PR.note = t.value;
+  var b = document.querySelector('#view [data-action^="pr-no:"]'), w = document.getElementById('pr-why'), empty = !PR.note.trim();
+  if (b) { b.disabled = empty || PR.busy; b.setAttribute('aria-disabled', String(b.disabled)); }
+  if (w) w.hidden = !empty;
+}
+document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'pr-note') prNoteSync(); });
+function prMoment(v) {
+  return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:?\d\d)$/.test(v) && !isNaN(Date.parse(v));
+}
+/* Заявка: снимки partner-request-201, partner-requests-mine, partner-requests-ops-director. Сумма — строкой.
+   Согласие и бизнес идут парой: `approved` без `direction_id` (или наоборот) — не та форма, что пишет сервер.
+   `paid_till` — ключ обязателен: null законен (бизнеса нет), пропавший ключ — нет. Номер человека в разметку не идёт. */
+function fromPartnerReq(x, queue) {
+  if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.about !== 'string') return null;
+  var amount = typeof x.amount === 'string' && /^\d+(\.\d+)?$/.test(x.amount) ? Number(x.amount) : NaN;
+  if (!isFinite(amount) || !{ pending: 1, approved: 1, rejected: 1 }[x.status] || typeof x.status_ru !== 'string') return null;
+  if (!prMoment(x.created_at) || !(x.decided_at === null || prMoment(x.decided_at))) return null;
+  if (!(x.decision_note === null || typeof x.decision_note === 'string') || typeof x.active !== 'boolean') return null;
+  if (!(x.direction_id === null || typeof x.direction_id === 'number') || (x.status === 'approved') !== (x.direction_id !== null)) return null;
+  if (!('paid_till' in x) || !(x.paid_till === null || prMoment(x.paid_till))) return null;
+  var r = { id: x.id, title: x.title, about: x.about, amount: amount, status: x.status, word: x.status_ru,
+            note: x.decision_note || '', iso: x.created_at, done: x.decided_at, biz: x.direction_id, till: x.paid_till, active: x.active };
+  if (queue) {
+    if (typeof x.member_id !== 'number' || typeof x.first_name !== 'string' || typeof x.last_name !== 'string' ||
+        !(x.username === null || typeof x.username === 'string')) return null;
+    r.who = msName(x);
+  }
+  return r;
+}
+function fromPartnerList(d, queue) {
+  if (!d || !Array.isArray(d.requests) || queue && typeof d.pending !== 'number') return null;
+  var out = d.requests.map(function (x) { return fromPartnerReq(x, queue); });
+  if (out.some(function (x) { return !x; })) return null;
+  return { list: out, pending: queue ? d.pending : null };
+}
+function loadMinePartner() {
+  if (!LIVE) return;
+  var gen = ++PR.mineGen; PR.mineState = 'loading';
+  api('GET', '/partner/requests/mine').then(function (r) {
+    if (gen !== PR.mineGen) return;
+    var d = r.status === 200 ? fromPartnerList(r.data, false) : null;
+    PR.mine = d ? d.list : null; PR.mineState = d ? 'ok' : failText(r);
+    if (current === 'partnerApply') prGrab();   // набранное в полях — до перерисовки
+    if ({ home: 1, partnerApply: 1 }[current]) render();
+  });
+}
+function loadPartnerQueue() {
+  if (!LIVE || !mayOps()) return;
+  var gen = ++PR.qGen; PR.qFail = '';
+  api('GET', '/partner/requests').then(function (r) {
+    if (gen !== PR.qGen) return;
+    var d = r.status === 200 ? fromPartnerList(r.data, true) : null;
+    if (d) { PR.q = d.list; PR.pending = d.pending; } else { PR.q = null; PR.qFail = r.status === 403 ? denyText(r) : failText(r); }
+    if ({ manage: 1, partnerReqs: 1, partnerReq: 1 }[current]) render();
+  });
+}
+function sendPartner() {
+  if (PR.busy) return;
+  prGrab();
+  // пустое и сверх предела — отказ ДО отправки: схема сервера ответила бы 422 без слов («Сервер не принял запрос»).
+  // Поле не обрезается (рецепт R2): набранное остаётся, видно, что править
+  PR.err = typeof PR.price !== 'number' ? 'Цена ещё не пришла от сервера.' : PR.price > msBalance() ? 'Не хватает денег на счёте.' : !PR.title.trim() ? 'Назовите бизнес.' : PR.title.trim().length > 200 ? 'Название — не длиннее 200 знаков.'
+    : PR.about.length > 2000 ? 'О бизнесе — не длиннее 2000 знаков.' : '';
+  if (PR.err) { render(); return; }
+  if (!LIVE) return;
+  PR.busy = true; render();
+  api('POST', '/partner/request', { title: PR.title.trim(), about: PR.about }).then(function (r) {
+    PR.busy = false;
+    var got = r.status === 201 ? fromPartnerReq(r.data, false) : null;
+    // деньги могли уйти и при неразобранном ответе — свою заявку и остаток перечитываем ВСЕГДА
+    loadMinePartner(); refreshMe();
+    if (got) {
+      PR.title = ''; PR.about = ''; PR.err = '';
+      FLASH = { text: 'Заявка отправлена', note: 'Списано ' + money(got.amount) + ' ฿. Решение примет операционный директор; если он откажет, деньги вернутся на счёт.' };
+      go('home'); return;
+    }
+    PR.err = denyText(r);
+    if (current === 'partnerApply') render();
+  });
+}
+// ответ decide — только статус и `direction_id` (названия и `paid_till` в нём нет, Cafe13KPG#902)
+function decidePartner(id, decision) {
+  var note = decision === 'rejected' ? PR.note.trim() : '';
+  if (PR.busy || !LIVE || !mayOps() || decision === 'rejected' && (PR.ask !== id || !note)) return;
+  PR.busy = true; PR.qErr = ''; render();
+  api('POST', '/partner/requests/' + id + '/decide', { decision: decision, note: note }).then(function (r) {
+    PR.busy = false;
+    if (r.status === 200 && r.data && r.data.status === decision) {
+      // название — из уже загруженной очереди: ответ decide его не несёт (рецепт R5)
+      var q = (PR.q || []).filter(function (x) { return x.id === id; })[0];
+      FLASH = { text: decision === 'approved' ? 'Согласовано' : 'Отказано',
+                note: decision === 'approved' ? (q ? 'Бизнес «' + q.title + '» создан.' : 'Бизнес создан.') : 'Деньги вернулись на счёт заявителя.' };
+      PR.ask = 0; PR.note = '';
+      loadPartnerQueue(); loadBusinesses(); go('partnerReqs'); return;
+    }
+    PR.qErr = denyText(r);
+    if (r.status === 409) loadPartnerQueue();
+    if (current === 'partnerReq') render();
+  });
+}
+
+/* ── шаг 14: работники бизнеса (Cafe13KPG#545, рецепт `_docs/recept/ekran/14/bizWorkers.md`, ручки cafe13-api#146,
+   форма снята на api 9ad148e, в бою 91b26f7) ──
+   Право — владение бизнесом (`directions.partner_id`), а не роль: экран спрашивает только СВОИ бизнесы
+   (`GET /partner/directions`) и работников ровно того, что пришёл оттуда. Чужой бизнес сервер отдаёт 404 одним текстом.
+   Назначение бесплатное (развилка 2): денег на экране нет. Номер человека (`member_id`) в память экрана НЕ берётся —
+   в разметку класть нечего; имя назначенного приходит только ОТВЕТОМ на назначение (предпросмотра нет, STAGE 18.11).
+   `biz` — выбранный бизнес; `lost` — прежний выбор пропал из свежего списка (слово designer-55 18.11: молча на первый
+   не переезжать). `ask` — «бизнес:роль» в окне отмены снятия; `err` — отказ назначения {text, seal}: seal — печать
+   сервера (`.verbatim`), иначе слова клиента; `rowErr` — отказ снятия (печать сервера). */
+var BW = { dirs: null, dirsFail: '', dirsGen: 0, biz: null, lost: false, list: null, listFail: '', listGen: 0,
+           uid: '', busy: false, err: null, rowErr: '', ask: null, done: '' };
+// снимок partner-directions. `paid_till` — ключ обязателен, null законен (бизнес заведён до периодов, 031)
+function fromMyBiz(d) {
+  if (!d || !Array.isArray(d.directions)) return null;
+  var out = [];
+  for (var i = 0; i < d.directions.length; i++) {
+    var x = d.directions[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.active !== 'boolean' ||
+        !('paid_till' in x) || !(x.paid_till === null || prMoment(x.paid_till)) || typeof x.workers !== 'number') return null;
+    out.push({ id: x.id, title: x.title, active: x.active });
+  }
+  return out;
+}
+// снимки directions-workers и directions-workers-assign — одна строка. `elsewhere` — ЧИСЛО других бизнесов, без названий
+function fromWorker(x) {
+  var s = function (v) { return v === null || typeof v === 'string'; };
+  if (!x || typeof x.role_id !== 'number' || typeof x.member_id !== 'number' || typeof x.first_name !== 'string' || !s(x.last_name) ||
+      !prMoment(x.granted_at) || !(x.granted_by === null || typeof x.granted_by === 'number') ||
+      !s(x.granted_by_first_name) || !s(x.granted_by_last_name) || typeof x.elsewhere !== 'number' || x.elsewhere < 0) return null;
+  return { rid: x.role_id, name: msName({ first_name: x.first_name, last_name: x.last_name }), elsewhere: x.elsewhere > 0 };
+}
+function fromWorkers(d, biz) {
+  if (!d || d.direction_id !== biz || !Array.isArray(d.workers)) return null;
+  var out = d.workers.map(fromWorker);
+  return out.some(function (x) { return !x; }) ? null : out;
+}
+function bwBiz() { return (BW.dirs || []).filter(function (x) { return x.id === BW.biz; })[0] || null; }
+// список бизнесов — на входе и после каждого назначения и снятия: оплаченность ВЫЧИСЛЯЕМАЯ и истекает сама
+function loadMyBiz(withList) {
+  if (!LIVE) return;
+  var gen = ++BW.dirsGen; BW.dirsFail = '';
+  api('GET', '/partner/directions').then(function (r) {
+    if (gen !== BW.dirsGen) return;
+    var l = r.status === 200 ? fromMyBiz(r.data) : null;
+    BW.dirs = l; BW.dirsFail = l ? '' : denyText(r);
+    if (l) {
+      var had = BW.biz !== null, still = l.some(function (x) { return x.id === BW.biz; });
+      if (had && !still) { BW.lost = true; BW.biz = null; BW.list = null; }
+      if (BW.biz === null && l.length === 1) { BW.biz = l[0].id; withList = true; }
+      if (withList && BW.biz !== null) loadWorkers();
+    }
+    if (current === 'bizWorkers') { bwGrab(); render(); }
+  });
+}
+function loadWorkers() {
+  if (!LIVE || BW.biz === null) return;
+  var biz = BW.biz, gen = ++BW.listGen; BW.listFail = '';
+  api('GET', '/directions/' + biz + '/workers').then(function (r) {
+    if (gen !== BW.listGen || biz !== BW.biz) return;
+    var l = r.status === 200 ? fromWorkers(r.data, biz) : null;
+    BW.list = l; BW.listFail = l ? '' : denyText(r);
+    if (current === 'bizWorkers') { bwGrab(); render(); }
+  });
+}
+// набранный номер — в BW перед любой перерисовкой: отказ поле НЕ чистит (рецепт: номер правят, а не набирают заново)
+function bwGrab() { var f = document.getElementById('bw-uid'); if (f) BW.uid = f.value; }
+function bwAssign() {
+  if (BW.busy) return;
+  bwGrab();
+  var b = bwBiz(), uid = BW.uid.trim();
+  // неоплаченный — запроса нет (развилка 3): кнопка погашена, это вторая линия на случай нажатия мимо погашения
+  if (!b || !b.active) return;
+  if (!/^\d{1,15}$/.test(uid)) { BW.err = { text: 'Впишите Telegram ID — одни цифры.', seal: false }; render(); return; }
+  if (!LIVE) return;
+  var biz = b.id;
+  BW.busy = true; BW.err = null; BW.rowErr = ''; BW.done = ''; render();
+  api('POST', '/directions/' + biz + '/workers', { member_id: Number(uid) }).then(function (r) {
+    BW.busy = false;
+    var got = r.status === 201 ? fromWorker(r.data) : null;
+    if (current === 'bizWorkers') bwGrab();
+    if (got) {
+      haptic('ok'); BW.uid = '';
+      // имя — из ОТВЕТА назначения: до него его не показывают (STAGE 18.11); список следом перечитывается
+      if (BW.biz === biz && BW.list) BW.list = BW.list.concat([got]);
+      loadWorkers(); loadMyBiz(false);
+    } else {
+      haptic('warn'); BW.err = { text: denyText(r), seal: true };
+      // 409: «не оплачено» (период истёк между входом и нажатием) или «уже работник» — перечитать обе правды
+      if (r.status === 409) { loadMyBiz(false); loadWorkers(); }
+    }
+    if (current === 'bizWorkers') render();
+  });
+}
+/* Снятие — окно отмены ДО отправки (`undoStart`, одно на приложение): сервер назад не умеет, вернуть можно только
+   новым назначением. Ушёл с экрана в окне — снятие уходит (политика 'send', как у уровня: денег нет, решение принято). */
+function bwRevokeAsk(rid) {
+  if (BW.busy || BW.biz === null) return;
+  BW.err = null; BW.rowErr = ''; BW.done = '';
+  BW.ask = BW.biz + ':' + rid;
+  undoStart('bw:' + BW.ask, bwRevokeSend);
+}
+function bwRevokeSend(key) {
+  if (BW.ask === null || 'bw:' + BW.ask !== key) return;
+  undoStop(); BW.ask = null;
+  var m = /^bw:(\d+):(\d+)$/.exec(String(key)); if (!m) return;
+  var biz = Number(m[1]), rid = Number(m[2]);
+  if (!LIVE) return;
+  BW.busy = true; if (current === 'bizWorkers') { bwGrab(); render(); }
+  api('POST', '/directions/' + biz + '/workers/' + rid + '/revoke').then(function (r) {
+    BW.busy = false;
+    var ok = r.status === 200 && r.data && r.data.direction_id === biz && r.data.role_id === rid && prMoment(r.data.revoked_at);
+    if (ok) {
+      // третья фраза — обратный ход: у работника он есть (назначить заново), у снятия уровня его нет (возврат arhitector-47 по #282)
+      haptic('ok'); BW.done = 'Сняли. Доступ закрылся сразу. Понадобится снова — назначьте по номеру.';
+      if (BW.biz === biz && BW.list) BW.list = BW.list.filter(function (x) { return x.rid !== rid; });
+    } else { haptic('warn'); BW.rowErr = denyText(r); }
+    loadWorkers(); loadMyBiz(false);
+    if (current === 'bizWorkers') { bwGrab(); render(); }
+  });
+}
+// ссылка на бота — первая внешняя ссылка клиента: внутри Telegram её открывает Telegram, `<a href>` увёл бы из окна клуба
+function bwBot() { if (tg && typeof tg.openTelegramLink === 'function') tg.openTelegramLink('https://t.me/userinfobot'); }
+
 // плашка прототипа — механизм на будущее: сейчас PROTO пуст, шаг 3 подключён (v109)
 function protoStrip() {
   return '<div class="proto-strip" role="note"><b>Прототип</b><span class="small">Данные примерные, нажатия ничего не отправляют.</span></div>';

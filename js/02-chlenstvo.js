@@ -350,6 +350,10 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               payouts: 1, payout: 1,
               // шаг 12 (Cafe13KPG#877): «Бизнесы клуба» операционного директора — на `GET /directions` с партнёром (cafe13-api#876)
               businesses: 1,
+              // шаг 13 (Cafe13KPG#889): заявка в партнёры — на ручках cafe13-api#143; рецепт cafe13-miniapp#257
+              partnerApply: 1, partnerReqs: 1, partnerReq: 1,
+              // шаг 14 (Cafe13KPG#545): работники бизнеса — ручки cafe13-api#146 (в бою 91b26f7); рецепт cafe13-miniapp#276
+              bizWorkers: 1,
               // 0.2, витрина бара (Cafe13KPG#269, рецепты): оттаяна из FROZEN — вкладка «Услуги» (`guest`, носитель
               // двери в бар, план владельца 0.2.5 в Cafe13KPG#855), меню, позиция, рецепт, заказ, мой заказ
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1,
