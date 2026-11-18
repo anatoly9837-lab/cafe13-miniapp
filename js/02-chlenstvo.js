@@ -350,14 +350,17 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               payouts: 1, payout: 1,
               // шаг 12 (Cafe13KPG#877): «Бизнесы клуба» операционного директора — на `GET /directions` с партнёром (cafe13-api#876)
               businesses: 1,
+              // 0.2, витрина бара (Cafe13KPG#269, рецепты): оттаяна из FROZEN — вкладка «Услуги» (`guest`, носитель
+              // двери в бар, план владельца 0.2.5 в Cafe13KPG#855), меню, позиция, рецепт, заказ, мой заказ
+              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
    всех»; «не удаляем — делаем временно недоступным». Экраны ниже были в `WIRED` и стоят на данных
    сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
    тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
-var FROZEN = { guest: 1, eventNew: 1,
-               bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1, barQueue: 1, barMoney: 1, barDay: 1,
+var FROZEN = { eventNew: 1,
+               barQueue: 1, barMoney: 1, barDay: 1,
                barCards: 1, barCard: 1, staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
 // куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
