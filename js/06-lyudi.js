@@ -853,6 +853,8 @@ function partnerOffer(door) {
       '<span class="st ' + st + '">' + esc(q.word) + '</span></div>';
   };
   // согласованных бывает больше одного: бизнесов у человека может быть два (шапка partner.py)
+  // шаг 16: согласованный бизнес есть — свои направления (`/partner/directions`) нужны двери карточек; спрашиваются раз
+  if (!BW.dirs && !BW.dirsAsked && PR.mine.some(function (q) { return q.status === 'approved'; })) { BW.dirsAsked = true; loadPartnerDirs(); }
   var yes = PR.mine.filter(function (q) { return q.status === 'approved'; }).map(function (q, i, all) {
     return '<div class="card"><div class="col"><b class="clamp2">Вы партнёр бизнеса «' + esc(q.title) + '»</b>' +
       (q.till ? '<span class="small">Оплачено до ' + esc(prTill(q.till)) + '</span>' : '') + '</div>' +
