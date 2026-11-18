@@ -1,19 +1,19 @@
 {
- "снято": "2026-11-06T14:20:43.286Z",
+ "снято": "2026-11-06T18:54:09.193Z",
  "слепки_страницы": {
-  "index.html": "8baeb55fe961e9bc85a90f0cf1a5b313d0728cf6247105af8143e3dc1782e33a",
+  "index.html": "55fb8126b75a318234b13a2572bc02143274ccc13c3039daecc3bbd49dfcb44d",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "65d733d365c8136bf9100c5ba2d103593a18aa1a1970754d9e1fe289af440c2c",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/01-osnova.js": "7787ce217737902cba9501f7dcdaeda1928b3e88994ac4e9906eaf4031c407fa",
-  "js/02-chlenstvo.js": "d2d90075b7a41f40948fc3e291b0b7aa35606135c28761c870befc835c18e46b",
+  "js/01-osnova.js": "3beacf1b1d6a5202ae295522845b534fd299f88cacd69810c9fa346f6b0a0b03",
+  "js/02-chlenstvo.js": "8adb87d1ae80384c441915ed275be0875844392a9fc21b5e572cbb340840ef3a",
   "js/03-propusk.js": "1b1eca66d0571cb8c1c962f7477b67991198fde538a67d89bc0326d3f30b8cff",
   "js/04-bar.js": "26da187a2d9784f3f462dc9f8e36ec6acccdf252f38e03a6447e79bb3017fa63",
   "js/05-kassa.js": "2f019c96d3f52c28d0215560f7ddde8ef0d78c0b165256680a2db28e4111ed27",
-  "js/06-lyudi.js": "dbee95717446e0b3d710deec2c255e864ea844894fc905e92f44b53e1df86b30",
-  "js/07-mastera.js": "c4de41f2b11e24f573cfaa845a659c04044a3c05505d010c927325d1df0a6c2c",
+  "js/06-lyudi.js": "a6695761b3b111f95196e7bbe305df6919104c1ec8529ed6d645d42abf357c6a",
+  "js/07-mastera.js": "c277a90f1804a7636c1bb72cef487a0dff3fd38f854c533e3209b0cecb850e4e",
   "js/08-kartochki.js": "4797182313db4d2b284e733c4c5847f339e046dcb32b8ee93c45350b8bb9283e",
   "js/09-afisha.js": "588d991f0100c923877407bc5273b8b08d2f2a6f5824612520f1369e531e12a4",
   "js/10-utility.js": "089f9695e558301b8b1298e14fc0ae8ae06fe660662ad93286cf0d7558058228",
@@ -23,14 +23,14 @@
   "js/14-ekrany-meropriyatiya.js": "07b49b5749980deb755f8482f4a371f0a91322a41a1d669e0929e998fbcfcfb6",
   "js/15-ekrany-partner-soglasie.js": "f6ec7b568c6dc8f7bdc8e272f3ec2830ab379b065e5263bc17f6da37403a5815",
   "js/16-ekrany-bar.js": "a537ad517427af45bc5f1c38547c6f8f3e32eb45c130435018088dbd01dca1fd",
-  "js/17-ekrany-upravlenie.js": "44c67494ad87634401abed32819cbb12c48edadff24348b1c24772e2a6f441b2",
+  "js/17-ekrany-upravlenie.js": "1f8c1ac7af9697854e07a941cf225d4bb35d0d9664325df6666106adcdf7b3c2",
   "js/18-ekrany-mastera.js": "b3023994c6a7aa6789f35a56d54870f881cd011e7d57f6389de80bb56768bf38",
   "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
   "js/20-ekrany-sluzhebnye.js": "24947f703becc1f33b67b10fb8b00e6c65c6589e7ec31e4909a3d48aa8ff2f4a",
-  "js/21-navigaciya.js": "56eab4a9ae1cd5c6c643c6a1bcf1e427b3fd1c9f0831191e6261ab3422be15c4",
+  "js/21-navigaciya.js": "0d86b5f10a778bc0fefcbb762334104cdb40095492100b02f9f2a23d6a6af38c",
   "js/22-zapusk.js": "708c88e0099aeeffc47974e3fdb28a8d9ec7bd29d03a30c3031f9e5e6d00110a"
  },
- "свод_слепков": "b1c2745e9632c544a78fe376e947c1516317be2defc8f572c26ba7a70f395f9a",
+ "свод_слепков": "d85cf294d4e197478cecbd308322acb566d2b8945b3819f4e00abe15112d4928",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
@@ -94,6 +94,9 @@
        "manage",
        "events"
       ],
+      "businesses": [
+       "manage"
+      ],
       "masterReqs": [
        "masters"
       ],
@@ -108,13 +111,14 @@
      "сбои": {},
      "длины": {
       "events": 247,
-      "manage": 279,
+      "manage": 329,
       "joinQueue": 18,
       "people": 16,
       "topupQueue": 17,
       "payouts": 32,
       "masters": 117,
       "organizer": 270,
+      "businesses": 24,
       "masterReqs": 17,
       "masterEvents": 17,
       "masterList": 17
@@ -122,8 +126,8 @@
      "проба_подействовала": true,
      "афиша_закрыта": false,
      "обзор": {
-      "всего_в_документе": 12,
-      "в_обзоре": 6
+      "всего_в_документе": 13,
+      "в_обзоре": 7
      }
     }
    ]

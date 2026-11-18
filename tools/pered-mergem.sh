@@ -89,11 +89,22 @@ command -v python3 >/dev/null 2>&1 || die 'на хосте нет python3'
 RUNS_BASE=${PM_WORK:-$HOME/.cache/cafe13-pered-mergem}
 mkdir -p "$RUNS_BASE" || die "не создаётся $RUNS_BASE"
 W=$(mktemp -d "$RUNS_BASE/run-XXXXXX") || die 'не создался рабочий каталог'
-# ⚠ На ЗЕЛЁНОМ прогоне рабочий каталог убирается, на красном ОСТАЁТСЯ: в нём
-# лежат свежие снимки, свежая видимость и собранная заново страница — то, чем
-# человек смотрит, ЧЕМ именно разошлось. Прибор, уносящий своё свидетельство
-# вместе с отказом, заставляет прогонять его второй раз руками.
-trap '[ "$rc_total" -eq 0 ] && rm -rf "$W" || echo "рабочий каталог прогона ОСТАВЛЕН: $W"' EXIT
+# ⚠ Рабочий каталог убирается ТОЛЬКО на чистом зелёном: код выхода 0 И ни один
+# отчётный шаг ничего не нашёл. На красном, на «не выполнено» (в том числе через
+# die — код выхода, а не rc_total) и на ЗЕЛЁНОМ С НАХОДКОЙ отчёта он ОСТАЁТСЯ, и
+# путь печатается: в нём свежие снимки, свежая видимость и собранная заново
+# страница — то, чем человек смотрит, ЧЕМ именно разошлось.
+# ⚠ Куплено Cafe13KPG#909 (замер frontend-events-9d, 06.11.2026): приговор
+# зелёный, все контроли съёмки прошли, а шаг 2 напечатал «отличается от описи
+# дерева 21» из 22 — и каталог был уже стёрт, улику стирала прежняя редакция
+# (`[ "$rc_total" -eq 0 ] && rm -rf`) ровно тогда, когда она единственная:
+# отклонение такого класса приговора не трогает. Отклонение редкое (1 из 5
+# прогонов), второй прогон его не повторит.
+keep_why=''
+mark() { keep_why="${keep_why:+$keep_why; }$1"; }
+trap 'ec=$?
+if [ "$ec" -eq 0 ] && [ -z "$keep_why" ]; then rm -rf "$W"
+else echo "рабочий каталог прогона ОСТАВЛЕН: $W${keep_why:+ — нашлось: $keep_why}"; fi' EXIT
 echo "предмет: ДЕРЕВО МЕРДЖА $T"
 echo "образ:   $IMAGE"
 
@@ -113,9 +124,40 @@ indocker() { # <каталог для /work> <путь скрипта внутр
 
 # ── 1. живой режим (приговор) ───────────────────────────────────────────────
 step '1. живой режим — tools/live.cjs (приговор)'
+# ⚠ ДВЕ ЧАСТИ В ДВУХ КОНТЕЙНЕРАХ РАЗОМ (Cafe13KPG#912): батарея — 96 % времени ворот. Части делит сам
+# live.cjs (`ONLY=1/2`, `ONLY=2/2`, метка `part(N)` у каждого случая); то, что одна часть судить не может
+# (каждый случай прошёл РОВНО одну часть, реестр join-заглушек по объединению), судит live-svod.cjs. Приговор
+# шага — все ТРИ кода. Частей две, не три — решение координатора: 28.10 веер контейнеров прибил чужую задачу.
+# ⚠ Памяти на две разом нет (MemAvailable меньше двух пределов с запасом) — части идут ПО ОЧЕРЕДИ: медленнее,
+# но приговор тот же. Отказа здесь нет нарочно: занятый хост — не повод не судить дерево.
 mkdir -p "$W/live"
-indocker "$W/live" /app/tools/live.cjs; rc=$?
-[ "$rc" -eq 0 ] || { echo "КРАСНОЕ: live.cjs rc=$rc"; rc_total=1; }
+part_run() { # <k> — часть k/2 в свой лог
+    docker run --rm --memory=2g --memory-swap=2g -v "$T:/app:ro" -v "$W/live:/work" -w /work \
+        -e LANG=ru_RU.UTF-8 -e LC_ALL=ru_RU.UTF-8 -e "ONLY=$1/2" -e "ONLY_OUT=/work/part-$1.json" \
+        --entrypoint node "$IMAGE" /app/tools/live.cjs > "$W/live/part-$1.log" 2>&1
+}
+avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+[ -n "$avail_kb" ] || die 'не прочитан MemAvailable из /proc/meminfo'
+t_live=$(date +%s)
+if [ "$avail_kb" -ge $((5 * 1024 * 1024)) ]; then   # 5 ГБ в КБ: два предела по 2 ГБ и запас
+    part_run 1 & p1=$!
+    part_run 2 & p2=$!
+    wait "$p1"; rc1=$?
+    wait "$p2"; rc2=$?
+    how='разом'
+else
+    echo "⚠ свободной памяти $((avail_kb / 1024)) МБ меньше 5 ГБ — части по очереди"
+    part_run 1; rc1=$?
+    part_run 2; rc2=$?
+    how='по очереди'
+fi
+for k in 1 2; do echo "· часть $k/2:"; sed 's/^/    /' "$W/live/part-$k.log"; done
+node "$T/tools/live-svod.cjs" "$W/live/part-1.json" "$W/live/part-2.json"; rcv=$?
+echo "· live.cjs двумя частями ($how): $(( $(date +%s) - t_live )) с; коды частей $rc1 и $rc2, сводки $rcv"
+if [ "$rc1" -eq 1 ] || [ "$rc2" -eq 1 ] || [ "$rcv" -eq 1 ]; then echo "КРАСНОЕ: live.cjs"; rc_total=1
+elif [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ] || [ "$rcv" -ne 0 ]; then
+    echo "ПРОВЕРКА НЕ ВЫПОЛНЕНА: live.cjs (коды $rc1/$rc2/$rcv)"; [ "$rc_total" -eq 0 ] && rc_total=2
+fi
 
 # ── 2. снимки (отчёт) ───────────────────────────────────────────────────────
 step '2. снимки — tools/shots.cjs против описи дерева (ОТЧЁТ, не приговор)'
@@ -136,6 +178,9 @@ else
   # уезжает на зелёном (`trap` выше, и это решение), поэтому имена печатаются
   # СРАЗУ — те два пришлось добывать второй съёмкой руками, уже после ворот.
   # Решение arhitector-47: лучше напечатать имена, чем описывать, что их нет.
+  # С Cafe13KPG#909 находка шага 2 держит рабочий каталог и на зелёном: имена
+  # остаются, а снимки лежат рядом (`$W/shots`). Подоболочка наружу пишет только
+  # ФАЙЛ-признак — переменная из неё не выходит.
   ( differ=0; absent=0
     for p in "$W/shots"/*.png; do
         nm=$(basename "$p")
@@ -147,6 +192,7 @@ else
     done
     total_png=$(ls "$W/shots"/*.png 2>/dev/null | wc -l)
     echo "снимков снято $total_png · отличается от описи дерева $differ · нет в описи $absent"
+    { [ "$differ" -gt 0 ] || [ "$absent" -gt 0 ]; } && echo "$differ/$absent" > "$W/shots-found"
     # ⚠ ПОСЛЕДНЯЯ команда подоболочки задаёт её код возврата, поэтому цепочка
     # `[ … ] && [ … ] && echo` здесь НЕ годится: при «нет в описи 1» второе
     # условие ложно, подоболочка выходит с 1, и `||` ниже печатает ложное
@@ -157,6 +203,7 @@ else
     fi
   ) || { echo '⚠ отчёт о снимках НЕ ВЫПОЛНЕН (сам счёт умер) — и мердж он не держит'
          reports_dead=$((reports_dead + 1)); }
+  [ -f "$W/shots-found" ] && mark "шаг 2: снимки разошлись с описью (≠/+ $(cat "$W/shots-found")), свежие в $W/shots"
 fi
 
 # ── 3. видимость (отчёт) ────────────────────────────────────────────────────
@@ -210,14 +257,19 @@ d = json.load(io.open(sys.argv[1], encoding="utf-8"))
 for ключ in ("снято", "слепки_страницы", "свод_слепков"):
     d.pop(ключ, None)
 print(json.dumps(d, ensure_ascii=False, sort_keys=True, indent=1))' "$1"; }
-    slepki_report "$W/vid/vidimost.json" "$T/screens/vidimost.json" ||
-        { echo '  ⚠ сверка слепков НЕ ВЫПОЛНЕНА'; reports_dead=$((reports_dead + 1)); }
+    if sl=$(slepki_report "$W/vid/vidimost.json" "$T/screens/vidimost.json"); then
+        echo "$sl"
+        case "$sl" in *'сошлись все'*) ;; *) mark 'шаг 3: слепки страницы не сошлись';; esac
+    else
+        echo "$sl"; echo '  ⚠ сверка слепков НЕ ВЫПОЛНЕНА'; reports_dead=$((reports_dead + 1))
+    fi
     if strip_time "$W/vid/vidimost.json" > "$W/vid-new.json" &&
        strip_time "$T/screens/vidimost.json" > "$W/vid-old.json"; then
         if diff -q "$W/vid-new.json" "$W/vid-old.json" >/dev/null; then
             echo '  видимость (люди, вкладки, двери) совпала с описью дерева'
         else
             echo '  видимость РАЗОШЛАСЬ с описью дерева — опись под этот клиент не пересобрана:'
+            mark "шаг 3: видимость разошлась, свежая в $W/vid/vidimost.json"
             diff "$W/vid-old.json" "$W/vid-new.json" | head -20
         fi
     else
@@ -258,6 +310,7 @@ else
         if cmp -s "$W/tree/screens.html" "$T/screens.html"; then
             echo 'страница дерева совпала с собранной заново'
         else
+            mark "шаг 4: страница описи отличается, собранная заново в $W/tree/screens.html"
             echo "страница дерева ОТЛИЧАЕТСЯ от собранной заново на $(diff "$T/screens.html" "$W/tree/screens.html" | grep -c '^[<>]') строк — опись не пересобрана (отчёт, мердж не держит)"
         fi
     fi
@@ -280,6 +333,7 @@ indocker "$W/live" /app/tools/ids-clean.cjs /app; rc=$?
 [ "$rc" -eq 0 ] && echo 'номеров живых людей в дереве мерджа нет'
 
 # ── приговор ────────────────────────────────────────────────────────────────
+[ "$reports_dead" -gt 0 ] && mark "отчётов НЕ ВЫПОЛНЕНО: $reports_dead"
 printf '\n'
 case "$rc_total" in
   0) echo "ЗЕЛЁНОЕ: дерево мерджа $T прошло все приговорные шаги (1, 4, 5, 6, 7)"
