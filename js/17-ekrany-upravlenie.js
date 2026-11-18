@@ -136,7 +136,7 @@ Object.assign(SCREENS, {
     var head = '<span class="small">Назначенный работник появится в этом списке. Что ему будет видно в приложении — решают следующие шаги.</span>' +
       (BW.lost ? '<div class="note">' + svg(ICON.info) + '<span>Прежде выбранный бизнес больше не ваш.</span></div>' : '');
     // один бизнес — выбора нет; два и больше — переключатель формы «Смотреть как» (js/20), слова — названия сервера
-    var pick = dirs.length === 1 ? '<span class="small">Бизнес «' + esc(dirs[0].title) + '»</span>'
+    var pick = dirs.length === 1 ? '<span class="small">Бизнес „' + esc(dirs[0].title) + '“</span>'
       : '<div class="group"><span class="label">Ваши бизнесы</span>' + dirs.map(function (x) {
           return '<button type="button" class="listitem" data-action="bw-biz:' + x.id + '"' + (x.id === bizId ? ' aria-current="true"' : '') + '>' +
             '<span class="grow"><b class="clamp1">' + esc(x.title) + '</b></span>' +

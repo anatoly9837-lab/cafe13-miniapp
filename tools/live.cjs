@@ -10433,7 +10433,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (ok) {
         const t = await s.view();
         if ((await s.p.evaluate(() => document.getElementById('title').textContent)) !== 'Работники бизнеса') bad.push(`${n}: шапка не «Работники бизнеса»`);
-        ['Бизнес «Кофейня»', 'Иван Тестов', 'Анна Тестов', 'Работник бизнеса', 'Telegram ID', '@userinfobot'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
+        ['Бизнес „Кофейня“', 'Иван Тестов', 'Анна Тестов', 'Работник бизнеса', 'Telegram ID', '@userinfobot'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
         // пометка развилки 4 — у той строки, где elsewhere > 0, и только у неё
         const pills = await s.p.evaluate(() => [...document.querySelectorAll('#view .listitem')].map(r => [r.querySelector('b').textContent, (r.querySelector('.pill') || {}).textContent || '']));
         if (JSON.stringify(pills) !== JSON.stringify([['Иван Тестов', ''], ['Анна Тестов', 'и в другом бизнесе']])) bad.push(`${n}: пометки строк ${JSON.stringify(pills)}, ждали «и в другом бизнесе» только у Анны`);
