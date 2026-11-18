@@ -10589,6 +10589,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       }
       await done(s, n);
     }
+    // 8б. 200 с чужим телом — не успех: «Сняли» нет, «Ответ сервера не разобран.» (слова шага 13, denyText), список перечитан.
+    // Подлог C arhitector-47 по #282 (`ok = r.status === 200` без сверки тела) был зелёным: случаев на тело не было
+    for (const [n, body] of [[`${n0}-200-chuzhoy-role`, BWREV(7, 99)],
+      [`${n0}-200-bez-revoked`, (() => { const x = BWREV(7, 51); delete x.revoked_at; return x; })()]]) {
+      const o = mk({ revoke: () => json(200, body) });
+      const { s, ok } = await enter(o, n);
+      if (ok && await tapIf(s, n, '#view [data-action="bw-revoke:51"]', '«Снять»')) {
+        await s.p.waitForTimeout(5600);
+        if (JSON.stringify(o.revoked) !== JSON.stringify([[7, 51]])) bad.push(`${n}: снятие не ушло: ${JSON.stringify(o.revoked)}`);
+        const t = await s.view();
+        if (t.includes('Сняли.')) bad.push(`${n}: 200 с чужим телом напечатал «Сняли»`);
+        if (!(await deny(s)).some(x => x.seal === 'Ответ сервера не разобран.')) bad.push(`${n}: нет «Ответ сервера не разобран.»`);
+        if (o.seen.filter(c => c === 'GET /directions/7/workers').length < 2) bad.push(`${n}: после неразобранного ответа список не перечитан`);
+      }
+      await done(s, n);
+    }
     // 9. не загрузилось: причина + ЖИВОЕ «Повторить»; повтор приносит список
     {
       const n = `${n0}-ne-zagruzilos`; let fail = true;
