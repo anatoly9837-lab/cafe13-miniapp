@@ -1264,6 +1264,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // отрицательный контроль заплатки: 404 гасит кнопку, 200 оживляет её суммой сервера без правки клиента
     {
       const flat = t => t.replace(/[\s  ]/g, '');
+      // доля или % — долей до шага 21 нет (миграция 031). Один образец на «Клуб» и на три экрана заявки в партнёры
+      const DOLYA = /\d\s?%|дол(?:я|и|ю|е|ей|ям|ями|ях)(?![a-zа-яё])/i;
       const partnerApi = o => q => {
         const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
         if (u === '/partner/price') return o.price ? o.price() : json(404, { detail: 'Not Found' });
@@ -1287,7 +1289,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (!live && !t.includes('Цену не удалось узнать у сервера.')) bad.push(`${n}: при 404 цены нет «Цену не удалось узнать у сервера.»`);
         if (live && !flat(t).includes('2600฿вмесяц')) bad.push(`${n}: нет «2 600 ฿ в месяц» от сервера`);
         // ⚠ без `\b`: в JS он видит только ASCII-слова, и `дол[ия]\b` ловил «доляX», а «доля клуба» — нет (до 18.11.2026)
-        if (/\d\s?%|дол(?:я|и|ю|е|ей|ям|ями|ях)(?![a-zа-яё])/i.test(t)) bad.push(`${n}: на «Клубе» доля или % — долей до шага 21 нет`);
+        if (DOLYA.test(t)) bad.push(`${n}: на «Клубе» доля или % — долей до шага 21 нет`);
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
       }
@@ -1381,6 +1383,27 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           await s.p.waitForTimeout(400);
           if (o.decided.length !== 2 || o.decided[1].decision !== 'approved') bad.push(`${n}: согласие не ушло: ${JSON.stringify(o.decided)}`);
           if (!(await s.view()).includes('Бизнес «Кофейня» создан.')) bad.push(`${n}: нет вспышки «Бизнес «Кофейня» создан.»`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // 7. доли и % нет на ТРЁХ экранах шага: `partner-cena-*` смотрит «Клуб» и до них не достаёт (область признака).
+      // У нуля два контроля (#288): образец жив — ловит заведомую долю и не ловит соседнее слово; область не пуста — экран нарисован
+      {
+        const n = 'partner-dolya-ekrany';
+        for (const [w, hit] of [['доля клуба', true], ['Доли партнёров', true], ['85 %', true], ['15%', true], ['Должность', false], ['Заявка в партнёры', false]])
+          if (DOLYA.test(w) !== hit) bad.push(`${n}: образец мёртв — на «${w}» ${hit ? 'не сработал' : 'сработал'}`);
+        const o = { price: () => json(200, { amount: '2600.00' }), queue: [qrow(31, 'pending'), qrow(33, 'rejected')], posted: [], decided: [] };
+        const s = await open(true, true, json(200, mem(9000, ['ops_director'])), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(300);
+        for (const [scr, arg, marks] of [['partnerApply', null, ['Подать заявку', 'Спишется сейчас']], ['partnerReqs', null, ['Кофейня', 'Имя31']],
+          ['partnerReq', '31', ['Согласовать', 'Списано']], ['partnerReq', '33', ['Решено', 'Списано']]]) {
+          await s.p.evaluate(([k, a]) => go(k, a), [scr, arg]); await s.p.waitForTimeout(400);
+          const t = await s.view(), at = scr + (arg ? ':' + arg : '');
+          const miss = marks.filter(m => !t.includes(m));
+          if (miss.length) bad.push(`${n}: ${at} не нарисован — нет ${miss.map(m => '«' + m + '»').join(', ')}; смотреть не на что`);
+          const m = t.match(DOLYA);
+          if (m) bad.push(`${n}: на ${at} доля или % («${m[0]}») — долей до шага 21 нет`);
         }
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
