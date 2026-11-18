@@ -60,6 +60,19 @@ function msName(p) {
   return [p.first_name, p.last_name].filter(Boolean).join(' ') || (p.username ? '@' + p.username : 'Без имени');
 }
 function msHours(n) { return n % 10 === 1 && n % 100 !== 11 ? 'час' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'часа' : 'часов'; }
+/* Момент сервера — ISO с поясом («2027-02-15T07:30:00+00:00»). Дата без часа и без пояса — не момент: конец
+   окна по ней не назвать. */
+function msMoment(v) {
+  return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:?\d\d)$/.test(v) && !isNaN(Date.parse(v));
+}
+/* Конец окна словами: «15 февраля» — день момента по часам клуба, год — только если не нынешний. «До» здесь
+   правда буквой: окно `[15.01 14:30, 15.02 14:30)` даёт 15 февраля, ровно слова владельца («заплатили 15 января —
+   15 февраля закончилось»). У окна, перенесённого миграцией из календаря (конец — 1-е 00:00), выйдет «до 1 марта»:
+   28 февраля оплачено целиком, 1 марта — уже нет. */
+function msTill(iso) {
+  var x = bkk(new Date(iso)).ymd.split('-');
+  return Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1] + (x[0] !== bkk(new Date()).ymd.slice(0, 4) ? ' ' + x[0] : '');
+}
 function msWhen(r) { return msSpan(MS_DAY[r.weekday - 1], r.start, r.hours); }
 /* Заявка: снимки master-request-201, master-requests-mine-*, master-requests-queue. Сумма — СТРОКОЙ
    («3900.00»). Номера человека в ответе нет вовсе — и в разметку класть нечего. Битая строка — null. */
@@ -75,9 +88,11 @@ function fromMasterReq(x, queue) {
             start: x.start_local, hours: x.hours, extra: x.hours_extra, amount: amount, status: x.status,
             word: x.status_ru, note: typeof x.decision_note === 'string' ? x.decision_note : '',
             iso: x.created_at, done: typeof x.decided_at === 'string' ? x.decided_at : null };
-  // `paid_until` — последний день последнего оплаченного месяца (api#99); null — ни одного; нет поля — старый сервер
-  if (x.paid_until !== undefined && x.paid_until !== null && !(typeof x.paid_until === 'string' && /^\d{4}-\d\d-\d\d$/.test(x.paid_until))) return null;
-  r.paidUntil = typeof x.paid_until === 'string' ? x.paid_until : null;
+  // `paid_till` — конец последнего оплаченного окна, МОМЕНТ (api#141, М.1); null — окон нет. Месяц — от даты
+  // оплаты (слово владельца 06.11.2026, Cafe13KPG#894): окно `[оплата, оплата + месяц)`. Поля НЕТ — отказ строки,
+  // а не «не оплачено»: отсутствие значения иначе пришло бы правдоподобным значением. `paid_until` не читается
+  if (!('paid_till' in x) || x.paid_till !== null && !msMoment(x.paid_till)) return null;
+  r.paidTill = x.paid_till;
   if (queue) { if (typeof x.first_name !== 'string') return null; r.who = msName(x); }
   return r;
 }
@@ -195,10 +210,10 @@ function msDemoFill() {
   MR.demo = true;
   var own = { id: 901, title: 'Звуковая практика', about: 'Чаши, гонг, голос.', seats: 0, place: 'Зал', weekday: 4, start: '18:30',
               hours: 2, extra: 0, amount: 2600, status: 'approved', word: 'одобрена', note: '', iso: '2026-10-20T10:00:00+07:00',
-              done: '2026-10-21T10:00:00+07:00', paidUntil: '2026-11-30' };
+              done: '2026-10-21T10:00:00+07:00', paidTill: '2026-12-06T07:30:00+00:00' };
   MR.mine = [own]; MR.mineState = 'ok';
   MR.q = [Object.assign({}, own, { id: 902, title: 'Утренняя растяжка', weekday: 2, start: '08:00', status: 'pending', word: 'ждёт решения',
-                                   done: null, paidUntil: null, iso: '2026-10-29T09:00:00+07:00', who: '[член клуба]' }),
+                                   done: null, paidTill: null, iso: '2026-10-29T09:00:00+07:00', who: '[член клуба]' }),
           Object.assign({}, own, { who: '[мастер]' })];
   MR.pending = 1;
   MR.slots = [{ id: 901, title: 'Звуковая практика', weekday: 4, start: '18:30', hours: 2, place: 'Зал', who: '[мастер]', on: true, weeksOn: 4, weeksOff: 0, live: true },
@@ -220,10 +235,9 @@ function msDemoFill() {
 }
 // предпросмотр продления в витрине: те же поля, что у `fromPreview`; цена примерная, как и всё под плашкой
 function msDemoPreview(own, months) {
-  var x = own.paidUntil.split('-'), y = Number(x[0]), m = Number(x[1]) + months;
-  y += Math.floor((m - 1) / 12); m = (m - 1) % 12 + 1;
-  var last = new Date(Date.UTC(y, m, 0)).getUTCDate(), charged = 2600 * months, bal = msBalance();
-  return { charged: charged, until: y + '-' + (m < 10 ? '0' : '') + m + '-' + last, enough: charged <= bal, short: Math.max(0, charged - bal), months: months };
+  var end = new Date(own.paidTill); end.setUTCMonth(end.getUTCMonth() + months);
+  var charged = 2600 * months, bal = msBalance();
+  return { charged: charged, from: own.paidTill, till: end.toISOString(), enough: charged <= bal, short: Math.max(0, charged - bal), n: months };
 }
 // вход состоялся — демо уходит целиком, иначе живой экран взял бы примерное за ответ сервера
 function msDemoClear() {
@@ -240,7 +254,8 @@ function msIsMaster() {
   return lv.indexOf('organizer') !== -1 || !!(MR.mine && MR.mine.some(function (r) { return r.status === 'approved'; }));
 }
 /* ── продление статуса мастера (кадры E59, E59b; Cafe13KPG#632 `953a1af`) — на ручках api#99/#102.
-   Слово владельца: подписка, календарный месяц, продление оплатой без новой заявки. ЦЕНУ СЧИТАЕТ СЕРВЕР:
+   Слово владельца: подписка, продление оплатой без новой заявки. Месяц — от даты оплаты (06.11.2026, Cafe13KPG#894;
+   прежнее «календарный» 29.10 им отменено): предпросмотр показывает окно — начало и конец, а не названия месяцев. ЦЕНУ СЧИТАЕТ СЕРВЕР:
    «Спишется», «Оплачено будет до» и «Не хватает» — из `GET …/periods/preview?months=N` (снимок
    master-renew-preview*), клиентской арифметики на экране нет (решение координатора: иначе
    «правдоподобное вместо известного» там, где сервер обрежет план или откажет членством).
@@ -248,7 +263,6 @@ function msIsMaster() {
    снятия уровня (`undoStart`, E47y). Окно задерживает ОТПРАВКУ, отменить на сервере нечего. */
 var RNW = { months: 1, prev: null, prevFail: '', prevCode: 0, gen: 0, key: '', busy: false, err: '', errCode: 0 };
 function msOwnSlot() { return MR.mine ? MR.mine.filter(function (r) { return r.status === 'approved'; })[0] || null : null; }
-function msDate(ymd) { var x = String(ymd).split('-'); return x[2] + '.' + x[1] + '.' + x[0]; }
 function msMonths(n) { return n % 10 === 1 && n % 100 !== 11 ? 'месяц' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'месяца' : 'месяцев'; }
 var RNW_MAX = 12;   // предел ВВОДА сервера («защита от опечатки, а не правило клуба»)
 function moneyOf(v) { return typeof v === 'number' ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : NaN; }
@@ -261,9 +275,11 @@ function loadRenewPreview() {
   api('GET', '/master/requests/' + own.id + '/periods/preview?months=' + RNW.months).then(function (r) {
     if (gen !== RNW.gen) return;
     var d = r.data, charged = d && moneyOf(d.charged), short = d && moneyOf(d.short);
+    // окна `periods` — цепочкой от первого; без `paid_till` или с пустым/битым окном предпросмотр не разобран
+    var per = d && Array.isArray(d.periods) && d.periods.length ? d.periods : null;
     var ok = r.status === 200 && d && isFinite(charged) && isFinite(short) && typeof d.enough === 'boolean' &&
-      typeof d.paid_until === 'string' && /^\d{4}-\d\d-\d\d$/.test(d.paid_until) && Array.isArray(d.months);
-    if (ok) RNW.prev = { charged: charged, until: d.paid_until, enough: d.enough, short: short, months: d.months.length };
+      msMoment(d.paid_till) && !!per && per.every(function (w) { return w && msMoment(w.starts_at) && msMoment(w.ends_at); });
+    if (ok) RNW.prev = { charged: charged, from: per[0].starts_at, till: d.paid_till, enough: d.enough, short: short, n: per.length };
     else { RNW.prevFail = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r); RNW.prevCode = r.status; }
     if (current === 'masterRenew') render();
   });
@@ -279,8 +295,8 @@ function renewSend(key) {
     var got = r.status === 201 ? fromMasterReq(r.data, false) : null, charged = r.data && moneyOf(r.data.charged);
     // деньги могли уйти и при неразобранном ответе — своя заявка и остаток перечитываются ВСЕГДА
     loadMineMaster(); refreshMe(); RNW.key = '';
-    if (got && got.paidUntil) {
-      FLASH = { text: 'Продлено', note: 'Оплачено до ' + msDate(got.paidUntil) + (isFinite(charged) ? '. Списано ' + money(charged) + ' ฿.' : '.') };
+    if (got && got.paidTill) {
+      FLASH = { text: 'Продлено', note: 'Оплачено до ' + msTill(got.paidTill) + (isFinite(charged) ? '. Списано ' + money(charged) + ' ฿.' : '.') };
       RNW.months = 1;
     } else { RNW.err = denyText(r); RNW.errCode = r.status; }
     if (current === 'masterRenew') render();
