@@ -256,7 +256,8 @@ var TITLES = {
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
   masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера', masterRenew: 'Продление',
   payouts: 'Распределить', payout: 'Распределить', businesses: 'Бизнесы клуба',
-  partnerApply: 'Заявка в партнёры', partnerReqs: 'Заявки в партнёры', partnerReq: 'Заявка в партнёры'
+  partnerApply: 'Заявка в партнёры', partnerReqs: 'Заявки в партнёры', partnerReq: 'Заявка в партнёры',
+  bizWorkers: 'Работники бизнеса'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -318,7 +319,7 @@ var BACK = {
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
-  payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs',
+  payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -526,7 +527,7 @@ function demoWork(screen, p) {
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
 var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
-                  'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
+                  'tp-send', 'tp-reload', 'td-cancel', 'td-reload', 'bw-send', 'bw-revoke'];
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
@@ -573,6 +574,11 @@ function go(screen, p) {
   // форма: остаток и цена — на входе (рецепт R2, правило Cafe13KPG#638)
   if (screen === 'partnerApply' && current !== 'partnerApply' && LIVE) { PR.err = ''; refreshMe(); loadPartnerPrice(); }
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') PR.mineState = '';
+  // шаг 14 (рецепт 14/bizWorkers, «Перечитать на входе»): свои бизнесы с оплаченностью и работники — на каждом входе;
+  // запомненный бизнес сверяется со свежим списком в loadMyBiz
+  if (screen === 'bizWorkers' && current !== 'bizWorkers' && LIVE) {
+    BW.err = null; BW.rowErr = ''; BW.done = ''; BW.uid = ''; BW.lost = false; BW.dirs = null; BW.list = null; BW.listFail = ''; loadMyBiz(true);
+  }
   // шаг 11: пометка ждущих на «Распределить деньги» — счёт нужен уже на «Управлении»; каждый вход — свежий список
   if ((screen === 'manage' || screen === 'payouts') && current !== screen && mayMasters()) { PAY.err = ''; loadPayouts(); }
   if (screen === 'payout') { PAY.err = ''; if (!PAY.list && mayMasters()) loadPayouts(); }
@@ -1111,6 +1117,17 @@ function doAction(a) {
     if (a === 'pay-open') { go('payout', Number(arg)); return; }
     if (a === 'pay-go' && mayMasters()) { sendPayout(Number(arg)); return; }
     if (a === 'biz-retry' && mayOps()) { loadBusinesses(); render(); return; }
+    // шаг 14: работники бизнеса
+    if (a === 'bw-send') { bwAssign(); return; }
+    if (a === 'bw-revoke') { bwGrab(); bwRevokeAsk(Number(arg)); render(); return; }
+    if (a === 'bw-keep') { if (UNDO.key && /^bw:/.test(UNDO.key)) undoStop(); BW.ask = null; bwGrab(); render(); return; }
+    if (a === 'bw-retry') { loadWorkers(); bwGrab(); render(); return; }
+    if (a === 'bw-retry-biz') { loadMyBiz(true); render(); return; }
+    if (a === 'bw-bot') { bwBot(); return; }
+    if (a === 'bw-biz' && !BW.busy && BW.ask === null) {
+      bwGrab(); BW.biz = Number(arg); BW.lost = false; BW.list = null; BW.listFail = ''; BW.err = null; BW.rowErr = ''; BW.done = '';
+      loadWorkers(); render(); return;
+    }
     // шаг 13: заявка в партнёры
     if (a === 'pr-apply') { PR.err = ''; go('partnerApply'); return; }
     if (a === 'pr-send') { sendPartner(); return; }
