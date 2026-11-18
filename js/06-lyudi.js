@@ -1099,7 +1099,8 @@ function bwRevokeSend(key) {
     BW.busy = false;
     var ok = r.status === 200 && r.data && r.data.direction_id === biz && r.data.role_id === rid && prMoment(r.data.revoked_at);
     if (ok) {
-      haptic('ok'); BW.done = 'Сняли. Доступ закрылся сразу.';
+      // третья фраза — обратный ход: у работника он есть (назначить заново), у снятия уровня его нет (возврат arhitector-47 по #282)
+      haptic('ok'); BW.done = 'Сняли. Доступ закрылся сразу. Понадобится снова — назначьте по номеру.';
       if (BW.biz === biz && BW.list) BW.list = BW.list.filter(function (x) { return x.rid !== rid; });
     } else { haptic('warn'); BW.rowErr = denyText(r); }
     loadWorkers(); loadMyBiz(false);
