@@ -2633,5 +2633,23 @@
    ]
   },
   "status": 200
+ },
+ "product-edit": {
+  "request": "PATCH /bar/products/N",
+  "shape": {
+   "about": null,
+   "decision_note": null,
+   "direction_id": null,
+   "full_text": null,
+   "group": null,
+   "id": null,
+   "is_alcohol": null,
+   "mins": null,
+   "price": null,
+   "sort": null,
+   "state": null,
+   "title": null
+  },
+  "status": 200
  }
 }
