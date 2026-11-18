@@ -10399,7 +10399,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (JSON.stringify(asked) !== JSON.stringify(['GET /partner/directions', 'GET /directions/7/workers'])) bad.push(`${n}: на входе спрошено ${JSON.stringify(asked)}`);
         if (/฿|[Зз]аказ|[Сс]мен|[Мм]еню/.test(t)) bad.push(`${n}: на экране цена или обещание работнику (заказы, смена, меню)`);
         const html = await s.p.content();
-        if (/20000001[23]/.test(html)) bad.push(`${n}: номер человека попал в разметку`);
+        if (['200000012', '200000013'].some(x => html.includes(x))) bad.push(`${n}: номер человека попал в разметку`);
         if (/<a[\s>]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push(`${n}: на экране <a> — внешняя ссылка уводит из окна клуба`);
         // ссылка на бота — через Telegram, а не разметкой
         if (await tapIf(s, n, '#view [data-action="bw-bot"]', 'ссылка @userinfobot'))
@@ -10482,7 +10482,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           const t = await s.view();
           if (!t.includes('Пётр Тестов')) bad.push(`${n}: после назначения имени нет в списке`);
           if ((await s.p.evaluate(() => document.getElementById('bw-uid').value)) !== '') bad.push(`${n}: после назначения поле не пусто`);
-          if (/20000001[23]/.test(await s.p.content())) bad.push(`${n}: номер человека попал в разметку после назначения`);
+          { const h = await s.p.content(); if (['200000012', '200000013'].some(x => h.includes(x))) bad.push(`${n}: номер человека попал в разметку после назначения`); }
         }
         // пустое и не цифры — отказ ДО отправки, словами клиента
         await s.p.fill('#bw-uid', 'ivan'); await tapIf(s, n, '#view [data-action="bw-send"]', '«Назначить» с буквами');
