@@ -1,13 +1,13 @@
 {
- "снято": "2026-11-18T21:51:54.471Z",
+ "снято": "2026-11-18T22:14:40.928Z",
  "слепки_страницы": {
-  "index.html": "f175a6cdfa1fc2787dda15a472b5e4b655eaa222c1038c437fe9a1ecfb273a5d",
+  "index.html": "052eb0560481694ca8e1007738bc518ba264f2bb69179a92fc7ca12bf9f157a9",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/01-osnova.js": "71db8a58a018ba5c659137b30c20975af11b682121101a716a7e568872da99d3",
+  "js/01-osnova.js": "839fe2ad7d0de1c2d218db254d48e582cefc1a69c47eaae6b1868243d1b9eae8",
   "js/02-chlenstvo.js": "3ed44390574b058f14e920b011f872d2af7b660c8553a403dac4fcab92560a51",
   "js/03-propusk.js": "1b1eca66d0571cb8c1c962f7477b67991198fde538a67d89bc0326d3f30b8cff",
   "js/04-bar.js": "458fdc0bb121a156eb54d533722765a247f87908c981157d4cc9675b0dd863ae",
@@ -27,7 +27,7 @@
   "js/18-ekrany-mastera.js": "e69d3b051fdce093b432604cf2d65c553c95dbaac8e554377b45b13e6ef29f6a",
   "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
   "js/20-ekrany-sluzhebnye.js": "24947f703becc1f33b67b10fb8b00e6c65c6589e7ec31e4909a3d48aa8ff2f4a",
-  "js/21-navigaciya.js": "8e4d521752a92cae00eebc62add947e08062c58627499e463ae0e885c18fdfb3",
+  "js/21-navigaciya.js": "531766188c87d746064ea24989db087417a913a19c60cbad2136ceda6eb0e9fa",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
  },
  "шрифты": {
@@ -52,7 +52,7 @@
    "слепок": "jkgjnakkehdemeac"
   }
  },
- "свод_слепков": "babfc5cf0bbdeba014d3f17a7cd3fd279f684e1a43928a81f9aed9bed54e0216",
+ "свод_слепков": "7af56270e7b766f67a11f0f7eb9bc70dcdc1612689071fcb97cb1469180de499",
  "область": "вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает",
  "предел": "ОДИН снятый вид каждого экрана. Состояния рецепта (отказ, пусто, отправка, вспышка) опись не снимает, и класс, живущий только в них, сверке «не измерен», а не зелёный",
  "экраны": {

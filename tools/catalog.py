@@ -71,7 +71,7 @@ def _клиент():
     except м.НеВыполнено as е:
         не_выполнено(str(е))
 
-VERSION = 'v159 · 19.11.2026'
+VERSION = 'v160 · 19.11.2026'
 LIVE = 'https://anatoly9837-lab.github.io/cafe13-miniapp/'
 
 # ⚠ Признак клиента — ТОТ ЖЕ, что у ворот показа (`tools/pered-pokazom.cjs`,
