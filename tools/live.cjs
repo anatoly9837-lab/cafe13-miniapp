@@ -1393,13 +1393,17 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const n = 'partner-dolya-ekrany';
         for (const [w, hit] of [['доля клуба', true], ['Доли партнёров', true], ['85 %', true], ['15%', true], ['Должность', false], ['Заявка в партнёры', false]])
           if (DOLYA.test(w) !== hit) bad.push(`${n}: образец мёртв — на «${w}» ${hit ? 'не сработал' : 'сработал'}`);
-        const o = { price: () => json(200, { amount: '2600.00' }), queue: [qrow(31, 'pending'), qrow(33, 'rejected')], posted: [], decided: [] };
+        const o = { price: () => json(200, { amount: '2600.00' }), queue: [qrow(31, 'pending'), qrow(33, 'rejected'), qrow(35, 'pending', { title: 'Своё дело' })], posted: [], decided: [] };
+        o.mine = () => [preq(35, 'pending', { title: 'Своё дело' })];   // своя ждущая — ветка own экрана partnerReq
         const s = await open(true, true, json(200, mem(9000, ['ops_director'])), null, null, null, partnerApi(o));
         await s.p.waitForTimeout(300);
-        for (const [scr, arg, marks] of [['partnerApply', null, ['Подать заявку', 'Спишется сейчас']], ['partnerReqs', null, ['Кофейня', 'Имя31']],
-          ['partnerReq', '31', ['Согласовать', 'Списано']], ['partnerReq', '33', ['Решено', 'Списано']]]) {
+        // partnerReq рисует ЧЕТЫРЕ ветки: кнопки, решено, своя (own), причина отказа (PR.ask) — каждая своей строкой ниже
+        for (const [scr, arg, marks, tap] of [['partnerApply', null, ['Подать заявку', 'Спишется сейчас']], ['partnerReqs', null, ['Кофейня', 'Имя31']],
+          ['partnerReq', '31', ['Согласовать', 'Списано']], ['partnerReq', '33', ['Решено', 'Списано']],
+          ['partnerReq', '35', ['Свою заявку решает', 'Списано']], ['partnerReq', '31', ['Причина отказа', 'Списано'], 'pr-ask:31']]) {
           await s.p.evaluate(([k, a]) => go(k, a), [scr, arg]); await s.p.waitForTimeout(400);
-          const t = await s.view(), at = scr + (arg ? ':' + arg : '');
+          if (tap && await tapIf(s, n, `#view [data-action="${tap}"]`, `«${tap}»`)) await s.p.waitForTimeout(300);
+          const t = await s.view(), at = scr + (arg ? ':' + arg : '') + (tap ? ' после ' + tap : '');
           const miss = marks.filter(m => !t.includes(m));
           if (miss.length) bad.push(`${n}: ${at} не нарисован — нет ${miss.map(m => '«' + m + '»').join(', ')}; смотреть не на что`);
           const m = t.match(DOLYA);
