@@ -10764,8 +10764,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await done(s, n);
     }
     // 2. член без ролей и барная сторона — двери на «Услугах» нет; прямой вход — отказ права словами рецепта.
-    //    ⚠ Гостя и работника БЕЗ членства здесь нет: в живом режиме они стоят на `noAccess` без вкладок (homeOf,
-    //    слово владельца 05.11.2026), до «Услуг» не дойти — предел назван в PR, а не обойдён случаем
+    //    Работник БЕЗ членства — случай 2а ниже (Cafe13KPG#927); гость без членства стоит на `noAccess`
     for (const [n, roles, member] of [['worker-cards-net-dveri-chlen', [], true],
                                         ['worker-cards-net-dveri-bar', [{ role: 'bar', direction_id: 7 }], true]]) {
       const o = mk();
@@ -10780,6 +10779,18 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           if (o.seen.some(c => c.includes('/bar/products'))) bad.push(`${n}: без права спрошены карточки`);
         }
       }
+      await done(s, n);
+    }
+    // 2а. работник БЕЗ членства (решение владельца №13, Cafe13KPG#927): старт — «Услуги» с вкладками, дверь на месте.
+    //     Отрицательный контроль — `bez-chlenstva-prosba-pravo` выше: прочая роль без членства остаётся на noAccess
+    {
+      const n = 'worker-bez-chlenstva-uslugi', o = mk();
+      const s = await open(true, true, json(200, wcMe(WORKER9, false)), null, null, null, wcApi(o));
+      await s.p.waitForTimeout(400);
+      const at = await s.p.evaluate(() => current);
+      if (at !== 'guest') bad.push(`${n}: стартовый экран «${at}», ждали «guest»`);
+      if (!(await s.p.$('#tabs [data-go="guest"]'))) bad.push(`${n}: нет вкладки «Услуги»`);
+      if (!(await s.p.$('#view [data-go="barCards"]'))) bad.push(`${n}: на «Услугах» нет двери «Карточки меню»`);
       await done(s, n);
     }
     // 3. «назад» из карточек — на «Услуги», откуда пришли (у работника С членством homeOf() — «Клуб», там двери нет)
