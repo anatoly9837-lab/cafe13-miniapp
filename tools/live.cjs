@@ -24,6 +24,8 @@ function tgStub(inside) {
     platform: ${inside ? "'ios'" : "'unknown'"}, initData: ${signed ? JSON.stringify(INIT) : "''"},
     initDataUnsafe: ${signed ? '{ user: { id: 1 } }' : '{}'}, colorScheme: 'light', version: '7.0',
     openLink: function (u) { window.__link = u; },
+    // шаг 14: ссылка на @userinfobot открывается внутри Telegram (рецепт 14/bizWorkers)
+    openTelegramLink: function (u) { window.__tlink = u; },
     isVersionAtLeast: function () { return true; },
     ready: function () {}, expand: function () {}, onEvent: function () {},
     HapticFeedback: { notificationOccurred: function () {}, selectionChanged: function () {} },
@@ -841,6 +843,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const PQUEUE = l => ({ requests: l, pending: l.filter(x => x.status === 'pending').length });
   const PDECIDE = (id, decision) => ({ id, status: decision, decided_at: '2026-11-06T06:00:00+00:00', refund_ledger_id: null,
     direction_id: decision === 'approved' ? 7 : null, status_ru: '' });
+  // ── шаг 14: заглушки ручек работников — на уровне функции, как у шага 13: те же построители уходят в `STUBS`
+  // (сверка с формой cafe13-api 9ad148e). `elsewhere` — число других бизнесов (без названий), `paid_till` — момент
+  const BWDIR = (id, active) => ({ id, title: { 7: 'Кофейня', 9: 'Пекарня' }[id] || 'Бизнес ' + id, active,
+    paid_till: active ? '2026-12-01T17:00:00+00:00' : '2026-11-01T17:00:00+00:00', workers: 1 });
+  const BWROW = (rid, mid, first, extra) => Object.assign({ role_id: rid, member_id: mid, first_name: first, last_name: 'Тестов',
+    granted_at: '2026-11-18T05:00:00.123456+00:00', granted_by: 1, granted_by_first_name: 'Тест', granted_by_last_name: '', elsewhere: 0 }, extra || {});
+  const BWREV = (d, r) => ({ direction_id: d, role_id: r, revoked_at: '2026-11-18T06:00:00+00:00' });
 
   // ── «Я мастер» на «Клубе» (v109 на ручках, кадры E54*): цена сервера, «+» по остатку, подача, своя заявка ──
   // Замеры frontend-upravlenie-ec; подлог arhitector-47 на v108 («+» без сверки) держит вторая линия ниже.
@@ -10322,6 +10331,250 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
   }
 
+  // ── шаг 14: работники бизнеса (Cafe13KPG#545, рецепт `_docs/recept/ekran/14/bizWorkers.md`, ручки cafe13-api#146;
+  // форма снята на api 9ad148e, в бою 91b26f7). Заглушки — построители BWDIR/BWROW/BWREV, те же уходят в `STUBS`.
+  // Партнёр — член клуба без ролей с СОГЛАСОВАННОЙ заявкой (дверь стоит только в согласованном блоке); номера людей —
+  // вымышленные из общей фикстуры (tools/ids-clean.cjs). Каждое нажатие — через tapIf: нет элемента — красная строка
+  if (part(2)) {
+    const n0 = 'bw';
+    const flat = t => t.replace(/[\s  ]/g, '');
+    const bwMe = () => { const p = clone(OWNER); p.roles = []; p.balance = 9000; return p; };
+    const tapIf = async (s, n, sel, what) => {
+      const ok = await s.p.evaluate(x => { const b = document.querySelector(x); if (!b || b.disabled) return false; b.click(); return true; }, sel);
+      if (!ok) bad.push(`${n}: нечего нажать — ${what} (${sel})`);
+      await s.p.waitForTimeout(250);
+      return ok;
+    };
+    // o.dirs — мои бизнесы; o.rows[d] — работники; o.post/o.revoke/o.list — свой ответ; всё, что ушло, — в o.seen
+    const bwApi = o => q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
+      o.seen.push(m + ' ' + u);
+      if (u === '/partner/price') return json(200, { amount: '2600.00' });
+      if (u === '/partner/requests/mine') return json(200, { requests: o.mine || [preq(31, 'approved', { paid_till: '2026-12-01T17:00:00+00:00' })] });
+      if (u === '/partner/directions') return o.dirsFail ? o.dirsFail() : json(200, { directions: o.dirs() });
+      let x = u.match(/^\/directions\/(\d+)\/workers$/);
+      if (x && m === 'GET') {
+        const d = Number(x[1]);
+        if (o.list) { const r = o.list(d); if (r) return r; }
+        if (!o.dirs().some(b => b.id === d)) return json(404, { detail: 'такого бизнеса у вас нет' });
+        return json(200, { direction_id: d, workers: o.rows[d] || [] });
+      }
+      if (x && m === 'POST') {
+        const d = Number(x[1]), b = JSON.parse(q.postData() || '{}'); o.posted.push({ d, b });
+        if (o.post) return o.post(d, b);
+        const w = BWROW(60 + o.posted.length, b.member_id, 'Пётр'); (o.rows[d] = o.rows[d] || []).push(w); return json(201, w);
+      }
+      x = u.match(/^\/directions\/(\d+)\/workers\/(\d+)\/revoke$/);
+      if (x && m === 'POST') {
+        const d = Number(x[1]), r = Number(x[2]); o.revoked.push([d, r]);
+        if (o.revoke) return o.revoke(d, r);
+        o.rows[d] = (o.rows[d] || []).filter(w => w.role_id !== r); return json(200, BWREV(d, r));
+      }
+      return undefined;
+    };
+    const mk = (extra) => Object.assign({ dirs: () => [BWDIR(7, true)], rows: { 7: [BWROW(51, 200000012, 'Иван')] }, seen: [], posted: [], revoked: [] }, extra || {});
+    // вход — ДВЕРЬЮ «Работники» с «Клуба», а не go(): дверь и есть предмет рецепта
+    const enter = async (o, n) => {
+      const s = await open(true, true, json(200, bwMe()), null, null, null, bwApi(o));
+      await s.p.waitForTimeout(400);
+      const ok = await tapIf(s, n, '#view [data-go="bizWorkers"]', 'дверь «Работники» на «Клубе»');
+      await s.p.waitForTimeout(400);
+      return { s, ok };
+    };
+    const deny = s => s.p.evaluate(() => [...document.querySelectorAll('#view .deny')].map(d => ({ seal: (d.querySelector('.verbatim') || {}).textContent || null, txt: d.textContent })));
+    const done = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
+
+    // 1. дверь и список: партнёр входит с «Клуба»; спрошены ТОЛЬКО свои бизнесы и работники своего; слово роли — из таблицы
+    {
+      const n = `${n0}-spisok`, o = mk({ rows: { 7: [BWROW(51, 200000012, 'Иван'), BWROW(52, 200000013, 'Анна', { elsewhere: 1 })] } });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const t = await s.view();
+        if ((await s.p.evaluate(() => document.getElementById('title').textContent)) !== 'Работники бизнеса') bad.push(`${n}: шапка не «Работники бизнеса»`);
+        ['Бизнес «Кофейня»', 'Иван Тестов', 'Анна Тестов', 'Работник бизнеса', 'Telegram ID', '@userinfobot'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
+        // пометка развилки 4 — у той строки, где elsewhere > 0, и только у неё
+        const pills = await s.p.evaluate(() => [...document.querySelectorAll('#view .listitem')].map(r => [r.querySelector('b').textContent, (r.querySelector('.pill') || {}).textContent || '']));
+        if (JSON.stringify(pills) !== JSON.stringify([['Иван Тестов', ''], ['Анна Тестов', 'и в другом бизнесе']])) bad.push(`${n}: пометки строк ${JSON.stringify(pills)}, ждали «и в другом бизнесе» только у Анны`);
+        const asked = o.seen.filter(c => /\/directions|\/partner\/directions/.test(c));
+        if (JSON.stringify(asked) !== JSON.stringify(['GET /partner/directions', 'GET /directions/7/workers'])) bad.push(`${n}: на входе спрошено ${JSON.stringify(asked)}`);
+        if (/฿|[Зз]аказ|[Сс]мен|[Мм]еню/.test(t)) bad.push(`${n}: на экране цена или обещание работнику (заказы, смена, меню)`);
+        const html = await s.p.content();
+        if (/20000001[23]/.test(html)) bad.push(`${n}: номер человека попал в разметку`);
+        if (/<a[\s>]/.test(await s.p.evaluate(() => document.getElementById('view').innerHTML))) bad.push(`${n}: на экране <a> — внешняя ссылка уводит из окна клуба`);
+        // ссылка на бота — через Telegram, а не разметкой
+        if (await tapIf(s, n, '#view [data-action="bw-bot"]', 'ссылка @userinfobot'))
+          if ((await s.p.evaluate(() => window.__tlink)) !== 'https://t.me/userinfobot') bad.push(`${n}: @userinfobot не открыт через openTelegramLink`);
+        // «назад» — на «Клуб»
+        await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(250);
+        if ((await s.p.evaluate(() => current)) !== 'home') bad.push(`${n}: «назад» ведёт не на «Клуб»`);
+      }
+      await done(s, n);
+    }
+    // 2. двери нет: гость, член клуба без бизнеса, ждущая заявка. Ручек шага 14 никто из них не спрашивает
+    for (const [n, me, mine] of [[`${n0}-net-gost`, 'guest', []], [`${n0}-net-chlen`, 'member', []], [`${n0}-net-zhdet`, 'member', [preq(31, 'pending')]]]) {
+      const o = mk({ mine });
+      const M = bwMe(); if (me === 'guest') { M.membership = null; M.membership_active = false; M.memberships = []; }
+      const s = await open(true, true, json(200, M), null, null, null, bwApi(o));
+      await s.p.waitForTimeout(400);
+      if (await s.p.$('#view [data-go="bizWorkers"]')) bad.push(`${n}: дверь «Работники» видна`);
+      if (o.seen.some(c => /\/directions/.test(c))) bad.push(`${n}: спрошены ручки работников: ${o.seen.filter(c => /\/directions/.test(c)).join(', ')}`);
+      await done(s, n);
+    }
+    // 3. право: партнёр бизнеса 7 не видит и не трогает работников бизнеса 9. Был партнёром обоих, выбрал 9; бизнес 9
+    // ушёл — на входе прежний выбор назван пропавшим, и запроса о 9-м нет ни одного
+    {
+      const n = `${n0}-pravo`;
+      let both = true;
+      const o = mk({ dirs: () => both ? [BWDIR(7, true), BWDIR(9, true)] : [BWDIR(7, true)], rows: { 7: [BWROW(51, 200000012, 'Иван')], 9: [BWROW(71, 200000014, 'Ольга')] } });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const t0 = await s.view();
+        if (!t0.includes('Ваши бизнесы') || !t0.includes('Выберите, в какой')) bad.push(`${n}: при двух бизнесах нет выбора «Ваши бизнесы»`);
+        if (o.seen.some(c => /\/directions\/\d+\/workers/.test(c))) bad.push(`${n}: до выбора спрошены работники: ${o.seen.join(', ')}`);
+        if (await tapIf(s, n, '#view [data-action="bw-biz:9"]', 'бизнес 9')) {
+          await s.p.waitForTimeout(300);
+          const pill = await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="bw-biz:9"] .pill.on'); return b ? b.textContent : null; });
+          if (pill !== 'сейчас') bad.push(`${n}: у выбранного бизнеса нет «сейчас»`);
+          if (!(await s.view()).includes('Ольга')) bad.push(`${n}: после выбора 9 нет его работника`);
+        }
+        both = false; const k = o.seen.length;
+        await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(300);
+        await tapIf(s, n, '#view [data-go="bizWorkers"]', 'дверь «Работники» второй раз'); await s.p.waitForTimeout(500);
+        const t1 = await s.view(), after = o.seen.slice(k);
+        if (after.some(c => /\/directions\/9\b/.test(c))) bad.push(`${n}: после ухода бизнеса 9 спрошено о нём: ${after.join(', ')}`);
+        if (!t1.includes('Прежде выбранный бизнес больше не ваш.')) bad.push(`${n}: пропавший выбор не назван`);
+        if (t1.includes('Ольга')) bad.push(`${n}: работник чужого бизнеса 9 на экране`);
+        if ((await s.p.$$('#view [data-action^="bw-revoke:71"]')).length) bad.push(`${n}: «Снять» у работника бизнеса 9`);
+      }
+      await done(s, n);
+    }
+    // 4. неоплаченный (развилка 3): «Назначить» и поле погашены, причина словами клиента БЕЗ .verbatim; нажатие мимо
+    // погашения (вторая линия) не отправляет. Уже назначенные — в списке и снимаются
+    {
+      const n = `${n0}-neoplachen`, o = mk({ dirs: () => [BWDIR(7, false)] });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const st = await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="bw-send"]'), f = document.getElementById('bw-uid');
+          return { b: b ? b.disabled : null, f: f ? f.disabled : null }; });
+        if (st.b !== true || st.f !== true) bad.push(`${n}: у неоплаченного «Назначить»/поле не погашены: ${JSON.stringify(st)}`);
+        const d = await deny(s);
+        if (!d.some(x => x.seal === null && x.txt.includes('Оплаченный месяц бизнеса закончился'))) bad.push(`${n}: нет причины словами клиента без .verbatim: ${JSON.stringify(d)}`);
+        if (!(await s.view()).includes('Иван Тестов') || !(await s.p.$('#view [data-action="bw-revoke:51"]'))) bad.push(`${n}: уже назначенный пропал или не снимается`);
+        await s.p.evaluate(() => { const f = document.getElementById('bw-uid'); f.disabled = false; f.value = '200000013';
+          const b = document.querySelector('#view [data-action="bw-send"]'); b.disabled = false; b.click(); });
+        await s.p.waitForTimeout(400);
+        if (o.posted.length) bad.push(`${n}: неоплаченный отправил назначение: ${JSON.stringify(o.posted)}`);
+      }
+      await done(s, n);
+    }
+    // 5. назначение: тело — {member_id} числом; имени до ответа нет нигде, после — строка в списке и пустое поле
+    {
+      const n = `${n0}-naznachen`, o = mk({ rows: { 7: [] } });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        if (!(await s.view()).includes('Работников пока нет.')) bad.push(`${n}: пустой список без «Работников пока нет.»`);
+        await s.p.fill('#bw-uid', ' 200000013 '); await s.p.waitForTimeout(150);
+        if ((await s.view()).includes('Пётр')) bad.push(`${n}: имя видно ДО назначения`);
+        if (o.seen.some(c => c.includes('200000013'))) bad.push(`${n}: номер ушёл серверу до нажатия: ${o.seen.join(', ')}`);
+        if (await tapIf(s, n, '#view [data-action="bw-send"]', '«Назначить»')) {
+          await s.p.waitForTimeout(500);
+          if (JSON.stringify(o.posted) !== JSON.stringify([{ d: 7, b: { member_id: 200000013 } }])) bad.push(`${n}: ушло ${JSON.stringify(o.posted)}`);
+          const t = await s.view();
+          if (!t.includes('Пётр Тестов')) bad.push(`${n}: после назначения имени нет в списке`);
+          if ((await s.p.evaluate(() => document.getElementById('bw-uid').value)) !== '') bad.push(`${n}: после назначения поле не пусто`);
+          if (/20000001[23]/.test(await s.p.content())) bad.push(`${n}: номер человека попал в разметку после назначения`);
+        }
+        // пустое и не цифры — отказ ДО отправки, словами клиента
+        await s.p.fill('#bw-uid', 'ivan'); await tapIf(s, n, '#view [data-action="bw-send"]', '«Назначить» с буквами');
+        if (o.posted.length !== 1) bad.push(`${n}: номер буквами ушёл серверу`);
+        if (!(await deny(s)).some(x => x.seal === null && x.txt.includes('одни цифры'))) bad.push(`${n}: на номер буквами нет отказа клиента`);
+      }
+      await done(s, n);
+    }
+    // 6. отказы назначения — печать сервера в .verbatim; поле НЕ чистится. 409 «не оплачено» перечитывает бизнесы
+    for (const [n, code, detail] of [[`${n0}-404-chelovek`, 404, 'такого члена клуба нет'], [`${n0}-409-uzhe`, 409, 'этот человек уже работник этого бизнеса'],
+      [`${n0}-409-neoplacheno`, 409, 'подписка бизнеса не оплачена: назначать работников можно после продления. Уже назначенные остаются']]) {
+      let paid = true;
+      const o = mk({ dirs: () => [BWDIR(7, paid)], post: () => { if (code === 409 && /оплачена/.test(detail)) paid = false; return json(code, { detail }); } });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        await s.p.fill('#bw-uid', '200000013');
+        if (await tapIf(s, n, '#view [data-action="bw-send"]', '«Назначить»')) {
+          await s.p.waitForTimeout(500);
+          const want = detail[0].toUpperCase() + detail.slice(1) + '.';
+          const d = await deny(s);
+          if (!d.some(x => x.seal === want)) bad.push(`${n}: нет печати сервера «${want}» в .verbatim: ${JSON.stringify(d)}`);
+          if ((await s.p.evaluate(() => document.getElementById('bw-uid').value)) !== '200000013') bad.push(`${n}: после отказа поле очищено`);
+          if (!paid) {
+            if (o.seen.filter(c => c === 'GET /partner/directions').length < 2) bad.push(`${n}: после 409 «не оплачено» бизнесы не перечитаны`);
+            if ((await s.p.evaluate(() => (document.querySelector('#view [data-action="bw-send"]') || {}).disabled)) !== true) bad.push(`${n}: после 409 «не оплачено» «Назначить» не погашена`);
+          }
+        }
+      }
+      await done(s, n);
+    }
+    // 7. снятие с окном отмены: «Отменить» — запроса нет; второй раз окно выходит — запрос, строка ушла, «Сняли…»
+    {
+      const n = `${n0}-snyat`, o = mk();
+      const { s, ok } = await enter(o, n);
+      if (ok && await tapIf(s, n, '#view [data-action="bw-revoke:51"]', '«Снять»')) {
+        if (!(await s.p.$('#view .undo'))) bad.push(`${n}: нет окна отмены`);
+        if (o.revoked.length) bad.push(`${n}: снятие ушло сразу, без окна`);
+        if (await tapIf(s, n, '#view [data-action="bw-keep"]', '«Отменить»')) {
+          await s.p.waitForTimeout(5600);
+          if (o.revoked.length) bad.push(`${n}: после «Отменить» снятие всё равно ушло`);
+          if (!(await s.view()).includes('Иван Тестов')) bad.push(`${n}: после «Отменить» строка пропала`);
+        }
+        if (await tapIf(s, n, '#view [data-action="bw-revoke:51"]', '«Снять» второй раз')) {
+          await s.p.waitForTimeout(5600);
+          if (JSON.stringify(o.revoked) !== JSON.stringify([[7, 51]])) bad.push(`${n}: снято ${JSON.stringify(o.revoked)}, ждали [[7,51]]`);
+          const t = await s.view();
+          if (t.includes('Иван Тестов')) bad.push(`${n}: после снятия строка осталась`);
+          if (!t.includes('Сняли. Доступ закрылся сразу.')) bad.push(`${n}: нет «Сняли. Доступ закрылся сразу.»`);
+        }
+      }
+      await done(s, n);
+    }
+    // 8. 409 снятия — печать сервера, список перечитан
+    {
+      const n = `${n0}-409-snyat`, o = mk({ revoke: () => json(409, { detail: 'работник уже снят' }) });
+      const { s, ok } = await enter(o, n);
+      if (ok && await tapIf(s, n, '#view [data-action="bw-revoke:51"]', '«Снять»')) {
+        await s.p.waitForTimeout(5600);
+        if (!(await deny(s)).some(x => x.seal === 'Работник уже снят.')) bad.push(`${n}: нет печати «Работник уже снят.»`);
+        if (o.seen.filter(c => c === 'GET /directions/7/workers').length < 2) bad.push(`${n}: после 409 список не перечитан`);
+      }
+      await done(s, n);
+    }
+    // 9. не загрузилось: причина + ЖИВОЕ «Повторить»; повтор приносит список
+    {
+      const n = `${n0}-ne-zagruzilos`; let fail = true;
+      const o = mk({ list: () => fail ? json(500, { detail: 'внутренняя ошибка' }) : null });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const t = await s.view();
+        if (!t.includes('Работники бизнеса не загрузились')) bad.push(`${n}: нет «Работники бизнеса не загрузились»`);
+        if (t.includes('Работников пока нет')) bad.push(`${n}: отказ показан пустым списком`);
+        fail = false;
+        if (await tapIf(s, n, '#view [data-action="bw-retry"]', '«Повторить»')) {
+          await s.p.waitForTimeout(400);
+          if (!(await s.view()).includes('Иван Тестов')) bad.push(`${n}: после «Повторить» списка нет`);
+        }
+      }
+      await done(s, n);
+    }
+    // 10. своих бизнесов нет (заявку согласовали, бизнес передан) — «Сюда нельзя», работников не спрашивают
+    {
+      const n = `${n0}-syuda-nelzya`, o = mk({ dirs: () => [] });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        if (!(await s.view()).includes('Работников назначает партнёр своего бизнеса.')) bad.push(`${n}: нет «Сюда нельзя»`);
+        if (o.seen.some(c => /\/directions\/\d+\/workers/.test(c))) bad.push(`${n}: без своих бизнесов спрошены работники`);
+      }
+      await done(s, n);
+    }
+  }
+
   // tools/api-keys.json — форма ответов из снимков cafe13-api (DUMP_DIR,
   // tools/keys.py): только ключи, без значений. Заглушка, придумавшая поле
   // или потерявшая обязательное, краснеет здесь, а не на проде.
@@ -10434,7 +10687,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'partner-request-201': preq(31, 'pending'),
     'partner-requests-mine': { requests: [preq(31, 'approved', { paid_till: '2026-11-30T17:00:00+00:00' })] },
     'partner-requests-ops-director': PQUEUE([qrow(31, 'pending'), qrow(33, 'rejected')]),
-    'partner-decide-approved': PDECIDE(31, 'approved'), 'partner-decide-rejected': PDECIDE(33, 'rejected')
+    'partner-decide-approved': PDECIDE(31, 'approved'), 'partner-decide-rejected': PDECIDE(33, 'rejected'),
+    // шаг 14 (Cafe13KPG#545): заглушки bwApi против формы cafe13-api 9ad148e (cafe13-api#146). Список — НЕпустой:
+    // пустой прибор красит «форма элемента не сверена»
+    'partner-directions': { directions: [BWDIR(7, true), BWDIR(9, false)] },
+    'directions-workers': { direction_id: 7, workers: [BWROW(51, 200000012, 'Иван', { elsewhere: 1 })] },
+    'directions-workers-assign': BWROW(61, 200000013, 'Пётр'),
+    'directions-workers-revoke': BWREV(7, 51)
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
