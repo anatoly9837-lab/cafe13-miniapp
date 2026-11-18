@@ -1148,7 +1148,14 @@
    "hours_extra": null,
    "id": null,
    "months": [],
+   "paid_till": null,
    "paid_until": null,
+   "periods": [
+    {
+     "ends_at": null,
+     "starts_at": null
+    }
+   ],
    "place_id": null,
    "place_name": null,
    "seats": null,
@@ -1181,8 +1188,15 @@
    "charged": null,
    "enough": null,
    "months": [],
+   "paid_till": null,
    "paid_until": null,
    "per_month": null,
+   "periods": [
+    {
+     "ends_at": null,
+     "starts_at": null
+    }
+   ],
    "request_id": null,
    "short": null,
    "weeks": null
@@ -1195,8 +1209,15 @@
    "charged": null,
    "enough": null,
    "months": [],
+   "paid_till": null,
    "paid_until": null,
    "per_month": null,
+   "periods": [
+    {
+     "ends_at": null,
+     "starts_at": null
+    }
+   ],
    "request_id": null,
    "short": null,
    "weeks": null
@@ -1214,6 +1235,7 @@
    "hours": null,
    "hours_extra": null,
    "id": null,
+   "paid_till": null,
    "paid_until": null,
    "place_id": null,
    "place_name": null,
@@ -1238,6 +1260,7 @@
    "hours": null,
    "hours_extra": null,
    "id": null,
+   "paid_till": null,
    "paid_until": null,
    "place_id": null,
    "place_name": null,
@@ -1337,6 +1360,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_till": null,
      "paid_until": null,
      "place_id": null,
      "place_name": null,
@@ -1372,6 +1396,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_till": null,
      "paid_until": null,
      "place_id": null,
      "place_name": null,
@@ -1400,6 +1425,7 @@
      "hours": null,
      "hours_extra": null,
      "id": null,
+     "paid_till": null,
      "paid_until": null,
      "place_id": null,
      "place_name": null,
@@ -1431,6 +1457,7 @@
      "hours_extra": null,
      "id": null,
      "last_name": null,
+     "paid_till": null,
      "paid_until": null,
      "place_id": null,
      "place_name": null,
@@ -1466,7 +1493,11 @@
    "place_id": null,
    "place_name": null,
    "weekday": null,
-   "weekday_ru": null
+   "weekday_ru": null,
+   "window": {
+    "ends_at": null,
+    "starts_at": null
+   }
   },
   "status": 200
  },
@@ -1503,7 +1534,11 @@
    "place_id": null,
    "place_name": null,
    "weekday": null,
-   "weekday_ru": null
+   "weekday_ru": null,
+   "window": {
+    "ends_at": null,
+    "starts_at": null
+   }
   },
   "status": 200
  },
@@ -1799,6 +1834,141 @@
     "sum": null
    }
   ],
+  "status": 200
+ },
+ "partner-decide-400-no-note": {
+  "request": "POST /partner/requests/N/decide",
+  "shape": {
+   "detail": null
+  },
+  "status": 400
+ },
+ "partner-decide-409-own": {
+  "request": "POST /partner/requests/N/decide",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "partner-decide-approved": {
+  "request": "POST /partner/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "direction_id": null,
+   "id": null,
+   "refund_ledger_id": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 200
+ },
+ "partner-decide-rejected": {
+  "request": "POST /partner/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "direction_id": null,
+   "id": null,
+   "refund_ledger_id": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 200
+ },
+ "partner-renew-201": {
+  "request": "POST /directions/N/periods",
+  "shape": {
+   "active": null,
+   "charged": null,
+   "direction_id": null,
+   "paid_till": null,
+   "periods": [
+    {
+     "ends_at": null,
+     "starts_at": null
+    }
+   ]
+  },
+  "status": 201
+ },
+ "partner-renew-403-not-partner": {
+  "request": "POST /directions/N/periods",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "partner-request-201": {
+  "request": "POST /partner/request",
+  "shape": {
+   "about": null,
+   "active": null,
+   "amount": null,
+   "created_at": null,
+   "decided_at": null,
+   "decision_note": null,
+   "direction_id": null,
+   "id": null,
+   "paid_till": null,
+   "status": null,
+   "status_ru": null,
+   "title": null
+  },
+  "status": 201
+ },
+ "partner-request-409-pending": {
+  "request": "POST /partner/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "partner-requests-mine": {
+  "request": "GET /partner/requests/mine",
+  "shape": {
+   "requests": [
+    {
+     "about": null,
+     "active": null,
+     "amount": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "direction_id": null,
+     "id": null,
+     "paid_till": null,
+     "status": null,
+     "status_ru": null,
+     "title": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "partner-requests-ops-director": {
+  "request": "GET /partner/requests",
+  "shape": {
+   "pending": null,
+   "requests": [
+    {
+     "about": null,
+     "active": null,
+     "amount": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "direction_id": null,
+     "first_name": null,
+     "id": null,
+     "last_name": null,
+     "member_id": null,
+     "paid_till": null,
+     "status": null,
+     "status_ru": null,
+     "title": null,
+     "username": null
+    }
+   ]
+  },
   "status": 200
  },
  "pass-member": {
