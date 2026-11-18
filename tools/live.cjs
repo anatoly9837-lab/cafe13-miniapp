@@ -839,7 +839,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
     created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null, paid_until: null },
     extra && extra.paid_till ? { paid_until: '2026-10-01' } : {}, extra || {});
-  const MPREVIEW = N => ({ request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
+  // `months` в ответе — пустой список, как в снимке `master-renew-preview` (элемента сверить не с чем); клиент его не читает
+  const MPREVIEW = N => ({ request_id: 901, months: [],
     per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', periods: Array(N).fill(null).map((_, i) => ({ starts_at: i ? '2026-12-30T07:30:00+00:00' : '2026-11-30T07:30:00+00:00', ends_at: i ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00' })),
     paid_till: N === 2 ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00', paid_until: '2026-10-01', enough: true, short: '0.00' });
   const MRENEWED = () => Object.assign(mreq(901, 'approved', { paid_till: '2027-01-30T07:30:00+00:00' }), { charged: '5400.00', months: [],
