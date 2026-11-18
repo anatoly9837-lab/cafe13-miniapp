@@ -831,6 +831,17 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
   }
 
+  // ── шаг 13: заглушки ручек партнёра — на уровне функции, а не в блоке случаев: те же построители уходят в `STUBS`
+  // (сверка с формой сервера по снимкам `partner-*`, cafe13-miniapp#256), заглушка заново не придумывается.
+  const preq = (id, status, extra) => Object.assign({ id, title: 'Кофейня', about: 'Кофе и выпечка', amount: '2600.00', status,
+    status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
+    created_at: '2026-11-06T03:00:00+00:00', decided_at: status === 'pending' ? null : '2026-11-06T05:00:00+00:00',
+    decision_note: '', direction_id: status === 'approved' ? 7 : null, paid_till: null, active: status === 'approved' }, extra || {});
+  const qrow = (id, status, extra) => Object.assign(preq(id, status), { member_id: 200000011, first_name: 'Имя' + id, last_name: '', username: null }, extra || {});
+  const PQUEUE = l => ({ requests: l, pending: l.filter(x => x.status === 'pending').length });
+  const PDECIDE = (id, decision) => ({ id, status: decision, decided_at: '2026-11-06T06:00:00+00:00', refund_ledger_id: null,
+    direction_id: decision === 'approved' ? 7 : null, status_ru: '' });
+
   // ── «Я мастер» на «Клубе» (v109 на ручках, кадры E54*): цена сервера, «+» по остатку, подача, своя заявка ──
   // Замеры frontend-upravlenie-ec; подлог arhitector-47 на v108 («+» без сверки) держит вторая линия ниже.
   // ⚠ Цена в заглушке НАРОЧНО не 2 600: клиент, подставивший свою константу, совпал бы с «естественной» ценой
@@ -1233,20 +1244,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // отрицательный контроль заплатки: 404 гасит кнопку, 200 оживляет её суммой сервера без правки клиента
     {
       const flat = t => t.replace(/[\s  ]/g, '');
-      const preq = (id, status, extra) => Object.assign({ id, title: 'Кофейня', about: 'Кофе и выпечка', amount: '2600.00', status,
-        status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
-        created_at: '2026-11-06T03:00:00+00:00', decided_at: status === 'pending' ? null : '2026-11-06T05:00:00+00:00',
-        decision_note: '', direction_id: status === 'approved' ? 7 : null, paid_till: null, active: status === 'approved' }, extra || {});
-      const qrow = (id, status, extra) => Object.assign(preq(id, status), { member_id: 200000011, first_name: 'Имя' + id, last_name: '', username: null }, extra || {});
       const partnerApi = o => q => {
         const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
         if (u === '/partner/price') return o.price ? o.price() : json(404, { detail: 'Not Found' });
         if (u === '/partner/requests/mine') return json(200, { requests: o.mine ? o.mine() : [] });
-        if (u === '/partner/requests' && m === 'GET') { const l = o.queue || []; return json(200, { requests: l, pending: l.filter(x => x.status === 'pending').length }); }
+        if (u === '/partner/requests' && m === 'GET') return json(200, PQUEUE(o.queue || []));
         if (u === '/partner/request' && m === 'POST') { o.posted.push(JSON.parse(q.postData() || '{}')); return o.post ? o.post() : json(201, preq(31, 'pending')); }
         const d = u.match(/^\/partner\/requests\/(\d+)\/decide$/);
-        if (d && m === 'POST') { const b = JSON.parse(q.postData() || '{}'); o.decided.push(b);
-          return json(200, { id: Number(d[1]), status: b.decision, decided_at: '2026-11-06T06:00:00+00:00', refund_ledger_id: null, direction_id: 7, status_ru: '' }); }
+        if (d && m === 'POST') { const b = JSON.parse(q.postData() || '{}'); o.decided.push(b); return json(200, PDECIDE(Number(d[1]), b.decision)); }
         return undefined;
       };
       const offer = s => s.p.evaluate(() => { const b = document.querySelector('#view [data-action="pr-apply"]'); return b ? { on: !b.disabled, txt: b.textContent } : null; });
@@ -10423,7 +10428,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW,
     'events-afisha': AFISHA, 'places': PLACE_ROWS,
     // шаг 12 (Cafe13KPG#878): плашки «Бизнесов клуба» — та же BIZ, что у случаев ops-*
-    'directions-ops-director': OPS_BIZ
+    'directions-ops-director': OPS_BIZ,
+    // шаг 13 (Cafe13KPG#889): заглушки partnerApi против снимков cafe13-miniapp#256. `partner-renew-201` не берётся:
+    // продления партнёра клиент не зовёт (кнопки нет), сверять нечего
+    'partner-request-201': preq(31, 'pending'),
+    'partner-requests-mine': { requests: [preq(31, 'approved', { paid_till: '2026-11-30T17:00:00+00:00' })] },
+    'partner-requests-ops-director': PQUEUE([qrow(31, 'pending'), qrow(33, 'rejected')]),
+    'partner-decide-approved': PDECIDE(31, 'approved'), 'partner-decide-rejected': PDECIDE(33, 'rejected')
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
