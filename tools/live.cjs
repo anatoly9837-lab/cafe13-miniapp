@@ -830,17 +830,27 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
   }
 
+  // ── М.2: заглушки ручек мастера — на уровне функции, а не в блоке случаев: те же построители уходят в `STUBS`
+  // (сверка с формой сервера по снимкам `master-*`, cafe13-miniapp#255). ⚠ `paid_until` (старое поле, сервер отдаёт
+  // его рядом с `paid_till`) стоит НАРОЧНО другим днём: разборщик, читающий его вместо `paid_till`, обязан краснеть.
+  const PRICE = h => 2700 + 1300 * (h - 2);
+  const mreq = (id, status, extra) => Object.assign({ id, title: 'Проба мастера', about: '', seats: 8, place_id: 1, place_name: 'Зал',
+    weekday: 4, weekday_ru: 'четверг', start_local: '18:00', hours: 2, hours_extra: 0, amount: String(PRICE(2)), status,
+    status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
+    created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null, paid_until: null },
+    extra && extra.paid_till ? { paid_until: '2026-10-01' } : {}, extra || {});
+  const MPREVIEW = N => ({ request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
+    per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', periods: Array(N).fill(null).map((_, i) => ({ starts_at: i ? '2026-12-30T07:30:00+00:00' : '2026-11-30T07:30:00+00:00', ends_at: i ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00' })),
+    paid_till: N === 2 ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00', paid_until: '2026-10-01', enough: true, short: '0.00' });
+  const MRENEWED = () => Object.assign(mreq(901, 'approved', { paid_till: '2027-01-30T07:30:00+00:00' }), { charged: '5400.00', months: [],
+    events: [], periods: [{ starts_at: '2026-12-30T07:30:00+00:00', ends_at: '2027-01-30T07:30:00+00:00' }] });
+
   // ── «Я мастер» на «Клубе» (v109 на ручках, кадры E54*): цена сервера, «+» по остатку, подача, своя заявка ──
   // Замеры frontend-upravlenie-ec; подлог arhitector-47 на v108 («+» без сверки) держит вторая линия ниже.
   // ⚠ Цена в заглушке НАРОЧНО не 2 600: клиент, подставивший свою константу, совпал бы с «естественной» ценой
   // и прошёл бы зелёным. Каждое нажатие — через tapIf: нет элемента — красная строка, а не обрыв батареи.
   if (part(1)) {
-    const PRICE = h => 2700 + 1300 * (h - 2);
     const mem = (bal, roles) => { const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null })); p.balance = bal; return p; };
-    const mreq = (id, status, extra) => Object.assign({ id, title: 'Проба мастера', about: '', seats: 8, place_id: 1, place_name: 'Зал',
-      weekday: 4, weekday_ru: 'четверг', start_local: '18:00', hours: 2, hours_extra: 0, amount: String(PRICE(2)), status,
-      status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
-      created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null }, extra || {});
     // заглушки ручек мастера; mine — функцией, чтобы после подачи перечитанный список был уже с заявкой
     const masterApi = o => q => {
       const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
@@ -1235,10 +1245,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const rnwApi = (o, prev) => { const api = masterApi(o); return q => {
         const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
         const pm = u.match(/^\/master\/requests\/901\/periods\/preview\?months=(\d+)$/);
-        if (pm) { const N = Number(pm[1]); o.prevAsked.push(N); if (o.prevReply) return o.prevReply(N); return json(200, Object.assign({ request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
-          per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', periods: Array(N).fill(null).map((_, i) => ({ starts_at: i ? '2026-12-30T07:30:00+00:00' : '2026-11-30T07:30:00+00:00', ends_at: i ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00' })), paid_till: N === 2 ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00', enough: true, short: '0.00' }, prev || {})); }
+        if (pm) { const N = Number(pm[1]); o.prevAsked.push(N); if (o.prevReply) return o.prevReply(N); return json(200, Object.assign(MPREVIEW(N), prev || {})); }
         if (u === '/master/requests/901/periods' && m === 'POST') { o.renewed.push(JSON.parse(q.postData() || '{}'));
-          return o.post ? o.post() : json(201, Object.assign(mreq(901, 'approved', { paid_till: '2027-01-30T07:30:00+00:00' }), { charged: '5400.00', months: [] })); }
+          return o.post ? o.post() : json(201, MRENEWED()); }
         return api(q);
       }; };
       // общий вход: мастер с оплатой до 30.11.2026 14:30 по острову (`paid_till` — момент, М.2 Cafe13KPG#894), «Клуб» → «Продлить»
@@ -10320,7 +10329,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW,
     'events-afisha': AFISHA, 'places': PLACE_ROWS,
     // шаг 12 (Cafe13KPG#878): плашки «Бизнесов клуба» — та же BIZ, что у случаев ops-*
-    'directions-ops-director': OPS_BIZ
+    'directions-ops-director': OPS_BIZ,
+    // М.2 (Cafe13KPG#894): заглушки masterApi/rnwApi против снимков cafe13-miniapp#255
+    'master-request-201': mreq(901, 'pending'), 'master-price': { hours: 2, hours_included: 2, amount: String(PRICE(2)) },
+    'master-requests-mine-approved': { requests: [mreq(901, 'approved', { paid_till: '2026-11-30T07:30:00+00:00' })] },
+    'master-renew-preview': MPREVIEW(1), 'master-renew-201': MRENEWED()
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
