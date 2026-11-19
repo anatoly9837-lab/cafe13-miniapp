@@ -1766,11 +1766,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Подлог карточки: `grant('ops_director')` снят из `mayOps` → красное здесь (ops-tab, ops-businesses, ops-businesses-fail).
   // на уровне функции, а не в блоке: та же строка уходит в `STUBS` (сверка с `directions-ops-director`)
   const OPS_BIZ = [
-    { id: 7, title: 'Бар', is_active: true, is_open: true, partner_id: 4242, partner_first_name: '[партнёр]', partner_last_name: '[фамилия]', wallet: '640.25', wallet_through: '2026-10-31T17:00:00+00:00' },
-    { id: 9, title: 'Массаж', is_active: true, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null, wallet: null, wallet_through: null },
+    { id: 7, title: 'Бар', is_active: true, is_open: true, partner_id: 4242, partner_first_name: '[партнёр]', partner_last_name: '[фамилия]', wallet: '640.25', wallet_through: '2026-10-31T17:00:00+00:00',
+      share_mode: 'net', share_club: '30.00', share_partner: '70.00' },
+    { id: 9, title: 'Массаж', is_active: true, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null, wallet: null, wallet_through: null,
+      share_mode: null, share_club: null, share_partner: null },
     // закрытый бизнес (`closed_at`, is_active=false) в список не берётся вовсе — кадр E75 (Cafe13KPG#881/#882):
     // «открыт/закрыт» на плашке — про СМЕНУ (is_open), а не про закрытие бизнеса
-    { id: 11, title: 'Прачечная', is_active: false, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null, wallet: null, wallet_through: null }];
+    { id: 11, title: 'Прачечная', is_active: false, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null, wallet: null, wallet_through: null,
+      share_mode: null, share_club: null, share_partner: null }];
   if (part(1)) {
     const BIZ = OPS_BIZ;
     const opsWho = roles => {
@@ -1836,19 +1839,18 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await m.ctx.close();
     }
 
-    // ops-businesses: плашка бара с партнёром, без партнёра — словами, открыт/закрыт по смене, и НИ ОДНОГО «%».
-    // Второй заход — админ (`mayOps` пускает и его): ему сервер ДОЛИ ОТДАЁТ (`share_*`, бой), и экран их печатать не смеет —
-    // только здесь запрет долей проверяется на данных, где доле есть откуда взяться (у ops_director их в ответе нет вовсе)
+    // ops-businesses: плашка бара с партнёром, без партнёра — словами, открыт/закрыт по смене.
+    // Второй заход — админ (`mayOps` пускает и его). С шага 21 доли НОВОЙ модели приходят обоим (снимок Cafe13KPG#552,
+    // api 7054bda) и печатаются процентом — прежний запрет «ни одного %» снят шагом 21; доли судят случаи ops-doli-*
     for (const [n, roles, rows] of [
       ['ops-businesses', ['ops_director'], BIZ],
-      ['ops-businesses-admin', ['admin'], BIZ.map(r => Object.assign({ share_mode: 'pct', share_club: '30.00', share_partner: '70.00' }, r))]]) {
+      ['ops-businesses-admin', ['admin'], BIZ]]) {
       const s = await opsOpen(opsWho(roles), { dirs: () => json(200, rows) });
       if (await toBiz(s, n)) {
         const t = await s.view();
         for (const w of ['Бар', '[партнёр] [фамилия]', 'Массаж', 'Партнёра нет', 'открыт', 'закрыт'])
           if (!t.includes(w)) bad.push(`${n}: на «Бизнесах клуба» нет «${w}»`);
-        if (t.includes('%')) bad.push(`${n}: на «Бизнесах клуба» есть «%» — долей до шага 21 нет (#855 §2)`);
-        for (const w of ['30', '70']) if (new RegExp('(^|\\D)' + w + '(\\D|$)').test(t)) bad.push(`${n}: на экране число доли «${w}» без знака %`);
+        if (!t.includes('Клубу · 30 %') || !t.includes('Партнёру · 70 %')) bad.push(`${n}: доли бара не напечатаны процентами сервера`);
         if (t.includes('4242')) bad.push(`${n}: на экране partner_id — номер Telegram вместо имени`);
         if (await retryBtn(s)) bad.push(`${n}: на загруженном списке кнопка «Попробовать снова»`);
         if (t.includes('Прачечная')) bad.push(`${n}: закрытый бизнес (is_active=false) показан плашкой — кадр E75 берёт только действующие`);
@@ -11516,7 +11518,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const t = await s.view();
       if (!t.includes('Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».')) bad.push(`${n}: нет слов прочерка`);
       if ((await cards(s)).some(c => !c[1].includes('На счёте—'))) bad.push(`${n}: не у каждого бизнеса прочерк`);
-      if (/฿|нет партнёра/.test(t.replace('Партнёра нет', ''))) bad.push(`${n}: без поля — ноль или слова состояния`);
+      // строка остатка без группы долей: у бизнеса без партнёра группа шага 21 говорит «нет партнёра» сама, по partner_id
+      const wt = await s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => { const k = c.cloneNode(true);
+        k.querySelectorAll('.group').forEach(g => g.remove()); return k.textContent; }).join(' '));
+      if (/฿|нет партнёра/.test(wt.replace('Партнёра нет', ''))) bad.push(`${n}: без поля — ноль или слова состояния`);
       await done(s, n);
     }
     // отрицательный контроль права (ТЗ требует явно): партнёр без роли опер-директора остатков чужих бизнесов не видит
@@ -11527,6 +11532,183 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!t.includes('Бизнесы клуба видит операционный директор.')) bad.push(`${n}: нет отказа «Сюда нельзя»`);
       if (/1 250|На счёте/.test(t)) bad.push(`${n}: остаток чужого бизнеса на экране`);
       if (seen.includes('/directions')) bad.push(`${n}: список бизнесов клуба спрошен без права`);
+      await done(s, n);
+    }
+
+    // ── шаг 21 (рецепт 21/businesses, ТЗ Cafe13KPG#552): доли клуб/партнёр в карточке бизнеса. Форма — снимок
+    // Cafe13KPG#552 (api 7054bda): чтение — три ключа share_* в GET /directions (null×3 = не назначены), запись —
+    // POST /directions/{id}/shares {share_club, share_partner}, отказы строкой detail. Сумму 100 судит СЕРВЕР.
+    const S = (club, partner) => club === null ? { share_mode: null, share_club: null, share_partner: null }
+      : { share_mode: 'net', share_club: club, share_partner: partner };
+    // st.list() — ответ /directions на КАЖДЫЙ запрос; st.post(body, id) — ответ записи; посланные тела — в st.sent
+    const doliBiz = async (me, st) => {
+      st.sent = []; st.gets = 0;
+      const s = await open(true, true, json(200, me), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/directions') { st.gets++; return json(200, st.list()); }
+        const m = /^\/directions\/(\d+)\/shares$/.exec(u);
+        if (m && q.method() === 'POST') { const b = JSON.parse(q.postData() || '{}'); st.sent.push([Number(m[1]), b]); return st.post(b, Number(m[1])); }
+        return undefined;
+      });
+      await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('businesses')); await s.p.waitForTimeout(400);
+      return s;
+    };
+    const card = (s, title) => s.p.evaluate(t => {
+      const c = [...document.querySelectorAll('#view .card')].find(x => (x.querySelector('b') || {}).textContent === t);
+      if (!c) return null;
+      const g = c.querySelector('.group');
+      return { text: c.textContent, group: g ? g.textContent : null, label: g && g.querySelector('.label') ? g.querySelector('.label').textContent : null,
+        quote: g ? [...g.querySelectorAll('.verbatim')].map(x => x.textContent) : [], inputs: g ? [...g.querySelectorAll('input')].map(i => [i.id, i.value]) : [],
+        btns: g ? [...g.querySelectorAll('button')].map(b => [b.textContent.trim(), b.disabled]) : [],
+        deny: g ? [...g.querySelectorAll('.deny .verbatim')].map(x => x.textContent) : [] };
+    }, title);
+    const tapIn = (s, title, word) => s.p.evaluate(([t, w]) => {
+      const c = [...document.querySelectorAll('#view .card')].find(x => (x.querySelector('b') || {}).textContent === t);
+      const b = c && [...c.querySelectorAll('button')].find(x => x.textContent.trim() === w);
+      if (b) b.click(); return !!b;
+    }, [title, word]);
+    // полей нет — находка случая, а не исключение: обрыв батареи гасил бы все случаи после этого
+    const typeDoli = async (s, k, p, n) => {
+      if (!(await s.p.$('#doli-club')) || !(await s.p.$('#doli-partner')) || !(await s.p.$('#doli-save'))) { bad.push(`${n}: нет полей долей для ввода ${k}/${p}`); return false; }
+      await s.p.fill('#doli-club', k); await s.p.fill('#doli-partner', p); await s.p.waitForTimeout(60);
+      await s.p.click('#doli-save'); await s.p.waitForTimeout(500);
+      return true;
+    };
+    const S7 = 'Сумма обязана быть 100. Новые доли действуют вперёд: уже записанные деньги не пересчитываются.';
+    const ok200 = (id, k, p) => json(200, Object.assign({ id }, S(k, p), W('640.25', OCT)));
+    // 1. доли назначены: два процента сервера, «Изменить доли», полей нет
+    {
+      const n = 'ops-doli-naznacheny';
+      const st = { list: () => [B(7, 'Бар', true, Object.assign(W('640.25', OCT), S('35.50', '64.50')))] };
+      const s = await doliBiz(opsMe(['ops_director']), st);
+      const c = await card(s, 'Бар');
+      if (!c || c.label !== 'Доли') bad.push(`${n}: нет группы «Доли»: ${c && c.text}`);
+      else {
+        if (!c.group.includes('Клубу · 35,5 %') || !c.group.includes('Партнёру · 64,5 %')) bad.push(`${n}: проценты не сервера: «${c.group}»`);
+        if (JSON.stringify(c.btns.map(b => b[0])) !== '["Изменить доли"]') bad.push(`${n}: кнопки ${JSON.stringify(c.btns)}, ждали «Изменить доли»`);
+        if (c.inputs.length || c.group.includes('не назначены')) bad.push(`${n}: у назначенных поля или слова неназначенных`);
+      }
+      await done(s, n);
+    }
+    // 2. доли не назначены: слово ШАГА 20 цитатой, следствие S4, «Назначить доли»
+    {
+      const n = 'ops-doli-ne-naznacheny';
+      const st = { list: () => [B(7, 'Бар', true, Object.assign(W(null, null), S(null)))] };
+      const s = await doliBiz(opsMe(['ops_director']), st);
+      const c = await card(s, 'Бар');
+      if (!c || JSON.stringify(c.quote) !== '["доли ещё не назначены"]') bad.push(`${n}: в группе нет цитаты шага 20: ${c && JSON.stringify(c.quote)}`);
+      else {
+        if (!c.group.includes('Пока доли не назначены, бизнес не продаёт: покупку сервер отклоняет.')) bad.push(`${n}: нет следствия S4`);
+        if (JSON.stringify(c.btns.map(b => b[0])) !== '["Назначить доли"]') bad.push(`${n}: кнопки ${JSON.stringify(c.btns)}, ждали «Назначить доли»`);
+        if (/%/.test(c.group)) bad.push(`${n}: у неназначенных процент: «${c.group}»`);
+      }
+      await done(s, n);
+    }
+    // 3. запись: поля пустые (умолчания нет), S7 стоит; сумма 90 уходит СЕРВЕРУ и его отказ печатается дословно,
+    // доли не меняются; затем 30/70 записываются, и карточка показывает их по перечитанному списку
+    {
+      const n = 'ops-doli-zapis';
+      let cur = S(null);
+      const st = { list: () => [B(7, 'Бар', true, Object.assign(W(null, null), cur))],
+        post: (b, id) => b.share_club + b.share_partner !== 100
+          ? json(422, { detail: `доли клуба и партнёра в сумме должны давать 100, а дают ${b.share_club + b.share_partner}` })
+          : (cur = S(b.share_club.toFixed(2), b.share_partner.toFixed(2)), ok200(id, cur.share_club, cur.share_partner)) };
+      const s = await doliBiz(opsMe(['ops_director']), st);
+      if (!(await tapIn(s, 'Бар', 'Назначить доли'))) bad.push(`${n}: нет «Назначить доли»`);
+      else {
+        await s.p.waitForTimeout(150);
+        let c = await card(s, 'Бар');
+        if (JSON.stringify(c.inputs) !== '[["doli-club",""],["doli-partner",""]]') bad.push(`${n}: поля не пустые или не те: ${JSON.stringify(c.inputs)}`);
+        if (!c.group.includes('Клубу, %') || !c.group.includes('Партнёру, %')) bad.push(`${n}: нет подписей полей S6`);
+        if (!c.group.includes(S7)) bad.push(`${n}: под полями нет S7`);
+        await typeDoli(s, '40', '50', n);
+        c = await card(s, 'Бар');
+        if (JSON.stringify(st.sent) !== '[[7,{"share_club":40,"share_partner":50}]]') bad.push(`${n}: сумма 90 не ушла серверу целыми: ${JSON.stringify(st.sent)}`);
+        if (JSON.stringify(c.deny) !== JSON.stringify(['Доли клуба и партнёра в сумме должны давать 100, а дают 90.'])) bad.push(`${n}: отказ не словами сервера: ${JSON.stringify(c.deny)}`);
+        if (/Клубу · 40|Клубу · 30/.test(c.group)) bad.push(`${n}: после отказа доли на экране — тихий успех`);
+        if (JSON.stringify(c.inputs) !== '[["doli-club","40"],["doli-partner","50"]]') bad.push(`${n}: отказ стёр набранное: ${JSON.stringify(c.inputs)}`);
+        await typeDoli(s, '30', '70', n);
+        c = await card(s, 'Бар');
+        if (st.sent.length !== 2 || JSON.stringify(st.sent[1]) !== '[7,{"share_club":30,"share_partner":70}]') bad.push(`${n}: запись 30/70 не ушла: ${JSON.stringify(st.sent)}`);
+        if (!c.group.includes('Клубу · 30 %') || !c.group.includes('Партнёру · 70 %') || c.inputs.length || c.deny.length) bad.push(`${n}: после записи карточка «${c.group}»`);
+      }
+      await done(s, n);
+    }
+    // 4. переназначение: поля пустые и у назначенных, S7 «действуют вперёд», остаток (записанные деньги) клиент не трогает
+    {
+      const n = 'ops-doli-perenaznachenie';
+      let cur = S('30.00', '70.00');
+      const st = { list: () => [B(7, 'Бар', true, Object.assign(W('640.25', OCT), cur))],
+        post: (b, id) => (cur = S(b.share_club.toFixed(2), b.share_partner.toFixed(2)), ok200(id, cur.share_club, cur.share_partner)) };
+      const s = await doliBiz(opsMe(['ops_director']), st);
+      if (!(await tapIn(s, 'Бар', 'Изменить доли'))) bad.push(`${n}: нет «Изменить доли»`);
+      else {
+        await s.p.waitForTimeout(150);
+        let c = await card(s, 'Бар');
+        if (JSON.stringify(c.inputs) !== '[["doli-club",""],["doli-partner",""]]') bad.push(`${n}: в полях прежние доли или умолчание: ${JSON.stringify(c.inputs)}`);
+        if (!c.group.includes(S7)) bad.push(`${n}: у переназначения нет «действуют вперёд»`);
+        await typeDoli(s, '50', '50', n);
+        c = await card(s, 'Бар');
+        if (!c.group.includes('Клубу · 50 %') || !c.group.includes('Партнёру · 50 %')) bad.push(`${n}: новые доли не показаны: «${c.group}»`);
+        if (!c.text.includes('640.25 ฿')) bad.push(`${n}: остаток после переназначения пересчитан или пропал: «${c.text}»`);
+      }
+      await done(s, n);
+    }
+    // 5. бизнес без партнёра: слово шага 20 цитатой, ни полей, ни кнопки; а если партнёр ушёл между списком и
+    // нажатием — отказ СЕРВЕРА (409) словами, не тихий успех
+    {
+      const n = 'ops-doli-bez-partnyora';
+      let partner = false;
+      const st = { list: () => [B(9, 'Массаж', partner, Object.assign(W(null, null), S(null)))],
+        post: () => (partner = false, json(409, { detail: 'у бизнеса нет партнёра — долю партнёра зачислять некому' })) };
+      let s = await doliBiz(opsMe(['ops_director']), st);
+      let c = await card(s, 'Массаж');
+      if (!c || JSON.stringify(c.quote) !== '["счёта нет: у бизнеса нет партнёра"]') bad.push(`${n}: нет цитаты шага 20: ${c && JSON.stringify(c.quote)}`);
+      else if (c.btns.length || c.inputs.length || /%/.test(c.group)) bad.push(`${n}: у бизнеса без партнёра действия или проценты: «${c.group}»`);
+      await done(s, n);
+      partner = true;
+      s = await doliBiz(opsMe(['ops_director']), st);
+      if (!(await tapIn(s, 'Массаж', 'Назначить доли'))) bad.push(`${n}: при партнёре нет «Назначить доли»`);
+      else {
+        await s.p.waitForTimeout(150); await typeDoli(s, '30', '70', n);
+        c = await card(s, 'Массаж');
+        if (JSON.stringify(c.deny) !== JSON.stringify(['У бизнеса нет партнёра — долю партнёра зачислять некому.'])) bad.push(`${n}: 409 не словами сервера: ${JSON.stringify(c.deny)}`);
+        if (/Клубу · 30/.test(c.group)) bad.push(`${n}: после 409 доли на экране — тихий успех`);
+        if (JSON.stringify(c.quote.filter(x => x.startsWith('счёта нет'))) !== '["счёта нет: у бизнеса нет партнёра"]') bad.push(`${n}: список после 409 не перечитан`);
+      }
+      await done(s, n);
+    }
+    // 6. право: без mayOps долей нет вовсе и список не спрошен; у опер-директора 403 сервера на записи — словами
+    {
+      const n = 'ops-doli-chuzhoy-rolyu';
+      const st = { list: () => [B(7, 'Бар', true, Object.assign(W(null, null), S(null)))],
+        post: () => json(403, { detail: 'назначать доли может операционный директор' }) };
+      let s = await doliBiz(opsMe([]), st);
+      const t = await s.view();
+      if (/Доли|Назначить доли|%/.test(t) || st.gets) bad.push(`${n}: без права доли или запрос списка (${st.gets})`);
+      await s.p.evaluate(() => { doliOpen(7); doliSave(); }); await s.p.waitForTimeout(300);
+      if (st.sent.length) bad.push(`${n}: без права ушла запись долей: ${JSON.stringify(st.sent)}`);
+      await done(s, n);
+      s = await doliBiz(opsMe(['ops_director']), st);
+      await tapIn(s, 'Бар', 'Назначить доли'); await s.p.waitForTimeout(150); await typeDoli(s, '30', '70', n);
+      const c = await card(s, 'Бар');
+      if (JSON.stringify(c && c.deny) !== JSON.stringify(['Назначать доли может операционный директор.'])) bad.push(`${n}: 403 не словами сервера: ${JSON.stringify(c && c.deny)}`);
+      await done(s, n);
+    }
+    // 7. вход перечитывает: доли поменялись на сервере, второй вход показывает новые (паспорт, поле 6)
+    {
+      const n = 'ops-doli-perechitany';
+      let cur = S('30.00', '70.00');
+      const st = { list: () => [B(7, 'Бар', true, Object.assign(W(null, null), cur))] };
+      const s = await doliBiz(opsMe(['ops_director']), st);
+      const g0 = st.gets;
+      cur = S('45.00', '55.00');
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(200);
+      await s.p.evaluate(() => go('businesses')); await s.p.waitForTimeout(400);
+      const c = await card(s, 'Бар');
+      if (st.gets !== g0 + 1) bad.push(`${n}: второй вход спросил /directions ${st.gets - g0} раз, ждали 1`);
+      if (!c || !c.group.includes('Клубу · 45 %')) bad.push(`${n}: второй вход показал замёрзшие доли: «${c && c.group}»`);
       await done(s, n);
     }
   }

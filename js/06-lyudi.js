@@ -779,9 +779,7 @@ function mayMasters() { return LIVE && (grant('art_director') || grant('admin'))
 function mayOps() { return LIVE && (grant('ops_director') || grant('admin')); }
 
 /* «Бизнесы клуба» (кадры E75/E75b/E75v) — `GET /directions`. Партнёра сервер отдаёт только тем, кому
-   `_is_ops`: тремя ключами `partner_id`, `partner_first_name`, `partner_last_name`. ДОЛЕЙ НА ЭКРАНЕ НЕТ:
-   `share_*` операционному директору не приходят, а у админа приходят доли СТАРОЙ модели, которые заменит
-   шаг 21 — разборщик их не читает вовсе. Закрытые бизнесы (`is_active: false`) в список не идут: кадр E75b
+   `_is_ops`: тремя ключами `partner_id`, `partner_first_name`, `partner_last_name`. Доли — шаг 21, `fromShares`. Закрытые бизнесы (`is_active: false`) в список не идут: кадр E75b
    «бизнесов нет» — и до первого, и после закрытия всех.
    ⚠ Ключа партнёра нет — отказ целиком, а не «партнёра нет»: так выглядит ответ сервера без #876, и
    правдоподобное «ни у кого нет партнёра» было бы ложью (§4). Партнёра нет — это `partner_id: null`. */
@@ -803,9 +801,60 @@ function fromBusinesses(d) {
     }
     // шаг 20: остаток полем (api#156), договор `20/ostatok.md`; битая пара — отказ целиком
     var w = fromWallet(x); if (w === null) return null;
-    if (x.is_active) out.push({ id: x.id, title: x.title, open: x.is_open, partner: x.partner_id !== null, who: who, wallet: w });
+    // шаг 21: доли НОВОЙ модели (снимок формы Cafe13KPG#552, api 7054bda); у бизнеса без партнёра не читаются вовсе
+    var sh = x.partner_id === null ? undefined : fromShares(x); if (sh === null) return null;
+    if (x.is_active) out.push({ id: x.id, title: x.title, open: x.is_open, partner: x.partner_id !== null, who: who, wallet: w, shares: sh });
   }
   return out;
+}
+/* шаг 21 — доли клуб/партнёр (рецепт `21/businesses`, ТЗ Cafe13KPG#552). Три ключа `share_mode`, `share_club`,
+   `share_partner` читаются ВМЕСТЕ: все три ключа отсутствуют → `undefined` («не спросили», сервер без шага 21);
+   все три `null` → `false` — «доли ещё не назначены»; иначе два процента строками-числами и сумма 100, ровно как
+   пишет сервер. Половинка или сумма мимо 100 — ответ не разобран, отказ целиком (§4), а не правдоподобное число. */
+function fromShares(x) {
+  var a = 'share_mode' in x, b = 'share_club' in x, c = 'share_partner' in x;
+  if (!a && !b && !c) return undefined;
+  if (!(a && b && c)) return null;
+  if (x.share_mode === null && x.share_club === null && x.share_partner === null) return false;
+  if (typeof x.share_mode !== 'string') return null;
+  var k = num(x.share_club), p = num(x.share_partner);
+  if (!(k >= 0) || !(p > 0) || Math.abs(k + p - 100) > 0.001) return null;
+  return { club: k, partner: p };
+}
+function pct(n) { return String(Math.round(n * 100) / 100).replace('.', ','); }
+// правка долей: одна карточка за раз; набранное держится в памяти — отказ поля не чистит
+var DOLI = { id: null, club: '', partner: '', busy: false, err: '' };
+function doliGrab() {
+  var a = document.getElementById('doli-club'), b = document.getElementById('doli-partner');
+  if (a) DOLI.club = a.value; if (b) DOLI.partner = b.value;
+}
+function doliOpen(id) {
+  if (DOLI.busy) return;
+  // умолчания НЕТ (ТЗ): поля пустые и у назначенных — чужая сделка шаблоном не предлагается
+  DOLI.id = id; DOLI.club = ''; DOLI.partner = ''; DOLI.err = '';
+}
+// гашение кнопки — удобство (обе клетки — целые числа); сумму 100 судит СЕРВЕР, его отказ печатается дословно
+function doliReady() { return /^\d{1,3}$/.test(DOLI.club.trim()) && /^\d{1,3}$/.test(DOLI.partner.trim()); }
+function doliSave() {
+  if (DOLI.busy || DOLI.id === null || !LIVE || !mayOps()) return;
+  doliGrab();
+  if (!doliReady()) return;
+  var id = DOLI.id;
+  DOLI.busy = true; DOLI.err = ''; render();
+  api('POST', '/directions/' + id + '/shares',
+      { share_club: Number(DOLI.club.trim()), share_partner: Number(DOLI.partner.trim()) }).then(function (r) {
+    DOLI.busy = false;
+    var d = r.data, sh = r.status === 200 && d && d.id === id ? fromShares(d) : null;
+    if (sh) {
+      haptic('ok'); DOLI.id = null; DOLI.club = ''; DOLI.partner = '';
+      (BIZ.list || []).forEach(function (b) { if (b.id === id) b.shares = sh; });
+    } else {
+      haptic('warn'); DOLI.err = denyText(r);
+    }
+    // правда — у сервера: после записи и после отказа (409 «нет партнёра» значит, что список устарел) перечитать
+    loadBusinesses();
+    if (current === 'businesses') { if (DOLI.id !== null) doliGrab(); render(); }
+  });
 }
 function loadBusinesses() {
   if (!LIVE || !mayOps()) return;

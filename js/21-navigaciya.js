@@ -591,7 +591,10 @@ function go(screen, p) {
   if ((screen === 'manage' || screen === 'payouts') && current !== screen && mayMasters()) { PAY.err = ''; loadPayouts(); }
   if (screen === 'payout') { PAY.err = ''; if (!PAY.list && mayMasters()) loadPayouts(); }
   // шаг 12: каждый вход на «Бизнесы клуба» — свежий список: смена открывается и закрывается без нас
-  if (screen === 'businesses' && current !== 'businesses' && mayOps()) loadBusinesses();
+  // шаг 21: вход перечитывает список (доли не замерзают), а начатая правка долей не переживает уход
+  if (screen === 'businesses' && current !== 'businesses' && mayOps()) {
+    if (!DOLI.busy) { DOLI.id = null; DOLI.err = ''; } loadBusinesses();
+  }
   if (screen === 'masterRenew' && current !== 'masterRenew' && LIVE) { RNW.err = ''; RNW.key = ''; if (MR.mineState === '' || !MR.mine) loadMineMaster(); }
   // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
   // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
@@ -1136,6 +1139,10 @@ function doAction(a) {
     if (a === 'pay-open') { go('payout', Number(arg)); return; }
     if (a === 'pay-go' && mayMasters()) { sendPayout(Number(arg)); return; }
     if (a === 'biz-retry' && mayOps()) { loadBusinesses(); render(); return; }
+    // шаг 21: доли бизнеса
+    if (a === 'doli-open' && mayOps()) { doliOpen(Number(arg)); render(); return; }
+    if (a === 'doli-keep') { if (!DOLI.busy) { DOLI.id = null; DOLI.err = ''; } render(); return; }
+    if (a === 'doli-save') { doliSave(); return; }
     // шаг 14: работники бизнеса
     if (a === 'bw-send') { bwAssign(); return; }
     if (a === 'bw-revoke') { bwGrab(); bwRevokeAsk(Number(arg)); render(); return; }
@@ -1189,6 +1196,12 @@ document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'p-find') { PEOPLE.find = ev.target.value; peopleFilter(); }
   if (ev.target && ev.target.id === 'd-note') MREQS.note = ev.target.value;
   if (ev.target && ev.target.id === 'join-said') JOIN.said = ev.target.value;
+  // доли: набранное в память, кнопка без перерисовки (фокус не теряется)
+  if (ev.target && (ev.target.id === 'doli-club' || ev.target.id === 'doli-partner')) {
+    doliGrab();
+    var ds = document.getElementById('doli-save');
+    if (ds) ds.disabled = DOLI.busy || !doliReady();
+  }
   // сумма пополнения — в память формы, кнопка отправки без перерисовки (фокус не теряется)
   if (ev.target && ev.target.id === 'tu-amount') {
     TUP.amount = ev.target.value;
