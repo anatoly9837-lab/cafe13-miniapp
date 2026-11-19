@@ -678,6 +678,11 @@ Object.assign(SCREENS, {
           '<button type="button" class="btn quiet" data-action="c-hide-keep"' + lock + '>Оставить</button>' +
           '<button type="button" class="btn quiet" data-action="c-hide:' + c.id + '"' + lock + '>Точно снять</button></div>'
         : '<button type="button" class="btn quiet" data-action="c-hide-ask">Снять с меню</button>';
+    // шаг 18: снятую возвращает в меню тот, кто утверждает (партнёр — set_product_state, bar.py:514); без рецепта — погашена, отказ базы — печатью
+    if (cur && c.state === 'hidden')
+      acts += c.recipes.length
+        ? '<button type="button" class="btn" data-action="c-approve:' + c.id + '"' + lock + '>Вернуть в меню</button>'
+        : '<span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span><button type="button" class="btn ghost" disabled>Вернуть в меню</button>';
     if (!acts && c.state === 'review') acts = '<span class="small">Ждёт решения того, кто утверждает карточки бизнеса.</span>';
     // вне черновика у работника — одна строка на состояние: КТО может и чего ждать, а не общее «Действий нет.»
     if (!acts && wo && c.state === 'active') acts = '<span class="small">В меню. Рецепт ведёт бар или тот, кто её утверждает, с меню снимает тот, кто утверждает карточки бизнеса.</span>';
