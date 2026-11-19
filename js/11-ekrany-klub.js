@@ -48,7 +48,7 @@ var SCREENS = {
           (DATA.barSide ? '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' +
-          (mayCards() ? '<button type="button" class="listitem" data-go="barCards">' +
+          (mayCards() && !workerOnly() ? '<button type="button" class="listitem" data-go="barCards">' +
             '<span class="grow"><b>Карточки меню</b><span class="small">Новые позиции и утверждение</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' : '') +
           (mayBook() ? '<button type="button" class="listitem" data-go="barMoney">' +

@@ -184,6 +184,9 @@ function queueDir() {
 }
 // отмена возвращает деньги — работнику бизнеса её сервер не даёт (403 «отменяет заказ бар или куратор
 // направления», api 41e2e35): кнопки, которая заведомо откажет, у него нет
+// работник бизнеса без барной стороны: его дверь в карточки — на «Услугах» (рецепт 15/barCards, подпись без
+// «утверждения»), а не строкой бара на «Клубе» и «Заказах», которую ему с шага 22 открыл barSide
+function workerOnly() { return grant('worker') && !(grant('admin') || grant('bar') || grant('curator')); }
 function queueBoss() { return grant('admin') || grant('bar', QUEUE_DIR) || grant('curator', QUEUE_DIR); }
 var QUEUE_GEN = 0, QUEUE_POLL = null;
 var STATE_BUSY = {};       // id заказа → нажатие в пути

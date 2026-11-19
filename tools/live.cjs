@@ -2437,7 +2437,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   if (part(1)) {
     // афиша (`events`) разморожена словом владельца 30.10.2026 «сделать доступным для всех» (Cafe13KPG#670)
     // вкладка «Услуги» (`guest`) оттаяна с витриной бара (0.2, Cafe13KPG#269): она носитель двери в бар
-    const n = 'freeze', KEEP = ['home', 'manage', 'events', 'guest'];
+    // «Заказы» (`barQueue`) оттаяны шагом 22 (Cafe13KPG#553): работник бизнеса ведёт очередь
+    const n = 'freeze', KEEP = ['home', 'manage', 'events', 'guest', 'barQueue'];
     const s = await open(true, true, json(200, OWNER));
     const tabs = await s.p.$$eval('#tabs button', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
     if (tabs.length < 4) bad.push(`${n}: вкладок ${tabs.length} — фикстура не та, проверять нечего`);
@@ -2480,19 +2481,19 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     entries.filter(e => e[1]).forEach(([g]) => { if (['pass', 'topup', 'manage', 'people', 'joinQueue', 'home'].includes(g)) bad.push(`${n}: погашен живой вход «${g}»`); });
     // подпись про кассу (v84, Cafe13KPG#513) переехала с главной на экран пополнения (v94, кадр E52):
     // живая сторона условия — в balans-shapka, здесь — демонстрационная
-    // бар оттаян (0.2), очередь на баре — нет: замороженный предмет берётся из тех, что остались
-    await s.p.evaluate(() => go('barQueue')); await s.p.waitForTimeout(200);
+    // бар оттаян (0.2), очередь — шагом 22; «Доход и расход» — нет: замороженный предмет берётся из тех, что остались
+    await s.p.evaluate(() => go('barMoney')); await s.p.waitForTimeout(200);
     let t = await s.view();
-    if (!t.includes('Заказы на баре — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
+    if (!t.includes('Доход и расход — временно недоступно') || !t.includes('данные на сервере на месте')) bad.push(`${n}: замороженный экран не говорит «временно недоступно»: ${t.slice(0, 80)}`);
     if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
     // шаг 4 (Cafe13KPG#670) размораживает афишу; шаг 4, п.3 — «Свои ивенты» мастеру и правку недели; «Новое мероприятие» — нет.
     // Шаг 7, часть А (Cafe13KPG#755, решение координатора по слову владельца в #510): «Записи» разморожены — дверь к благодарности
     for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', false],
-                              ['guest', false], ['bar', false], ['barQueue', true]]) {
+                              ['guest', false], ['bar', false], ['barQueue', false], ['barMoney', true]]) {
       await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
       const said = (await s.view()).includes('временно недоступно');
-      if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — его не размораживали ни шаг 4 (#670), ни шаг 7 (#755), ни витрина 0.2`);
-      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — его разморозили (шаг 4 #670 / шаг 7 #755 / витрина 0.2)`);
+      if (cold && !said) bad.push(`${n}: экран «${g}» не заморожен — его не размораживали ни шаг 4 (#670), ни шаг 7 (#755), ни витрина 0.2, ни шаг 22 (#553)`);
+      if (!cold && said) bad.push(`${n}: экран «${g}» заморожен — его разморозили (шаг 4 #670 / шаг 7 #755 / витрина 0.2 / шаг 22 #553)`);
     }
     await s.p.evaluate(() => go('partner')); await s.p.waitForTimeout(200);
     t = await s.view();
@@ -3973,7 +3974,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   if (part(1)) for (const [name, list, want] of [
-    ['queue-403', json(403, { detail: 'нет' }), 'Очередь видна бару и куратору'],
+    ['queue-403', json(403, { detail: 'нет' }), 'Очередь видна работникам, бару и куратору направления'],   // слово Q5 рецепта 22
     ['queue-bad', json(200, [Object.assign(worker(3, '261018-03', 'new'), { place: undefined })]), 'не разобран']]) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ list }));
     await toQueue(s);
@@ -4212,8 +4213,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open(true, true, json(200, other), null, null, null, shift());
     await toQueue(s);
     const t = await s.view();
-    if (!t.includes('Смена не открыта')) bad.push('shift-other: экран смены не показан');
-    if (t.includes('Открыть смену на себя')) bad.push('shift-other: куратору чужого направления предложено открыть смену');
+    // шаг 22: очередь — по направлению РОЛИ (8), поэтому смены бара 7 над ней нет вовсе; прежде здесь стояла
+    // «Смена не открыта» чужого бара — смена не того бизнеса, чья очередь на экране
+    if (t.includes('Открыть смену на себя') || t.includes('Закрыть смену')) bad.push('shift-other: куратору чужого направления предложено вести смену');
+    if (t.includes('Смена не открыта') || t.includes('Смена открыта')) bad.push('shift-other: над очередью направления 8 — смена бара 7');
+    const ql = s.calls.filter(c => c.method === 'GET' && c.url.includes('/bar/orders')).map(c => c.url.replace(/^.*\?/, ''));
+    if (!ql.length || ql.some(x => x !== 'direction_id=8')) bad.push('shift-other: очередь спрошена не по направлению роли: ' + JSON.stringify(ql));
     await s.ctx.close();
   }
   // Сервер отказал — его причина на экране, бар остаётся закрытым.
@@ -5456,8 +5461,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── вход в очередь по роли, а не по уровню членства ──
   // Бармен без членства и бармен с членством — обе ветки уровня; оба
   // обязаны дойти до очереди за нажатия, без знания адресов.
-  if (part(1)) for (const [name, member] of [['barman-guest', false], ['barman-member', true]]) {
-    const who = clone(OWNER); who.roles = [{ role: 'bar', direction_id: 7 }];
+  // Без членства до очереди доходит только РАБОЧАЯ роль `worker` (решение владельца №13, Cafe13KPG#927); бар без
+  // членства стоит на `noAccess` (слово владельца 05.11.2026) — прежний `barman-guest` проснулся с этим отставшим ожиданием
+  if (part(1)) for (const [name, member, role] of [['rabotnik-guest', false, 'worker'], ['barman-member', true, 'bar']]) {
+    const who = clone(OWNER); who.roles = [{ role, direction_id: 7 }];
     if (!member) { who.membership_active = false; who.membership = null; who.memberships = []; }
     const s = await open(true, true, json(200, who), null, null, null, queue());
     let reached = false;
@@ -10316,16 +10323,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       } else bad.push('cards-home-back: у работника с членством нет входа в «Клубе»');
       await s.ctx.close();
     }
-    // Бармен без членства: «Клуб» вкладкой не приходит, вход в карточки — на «Заказах»
+    // Бар на «Заказах»: вход в карточки — под сменой и над счётчиками
     // под сменой и над счётчиками (кадр E41, Cafe13KPG#396), и «назад» ведёт обратно
     // в «Заказы», а не на услуги гостя (Cafe13KPG#403).
     // Шаг 15 оттаял карточки, «Заказы» — шаг 22 (Cafe13KPG#553); случай спал вместе с очередью и проснулся с ней.
     // ⚠ Человек без членства и без роли `worker` стоит на `noAccess` (homeOf, слово владельца 05.11.2026)
     {
-      const BARMAN_NOMEMBER = clone(WORKER); BARMAN_NOMEMBER.membership_active = false; BARMAN_NOMEMBER.membership = null; BARMAN_NOMEMBER.memberships = [];
-      const s = await cardsCase(BARMAN_NOMEMBER, {});
+      // шаг 22: бар БЕЗ членства стоит на `noAccess` — случай идёт баром с членством и входит вкладкой «Заказы»;
+      // размещение и «назад» от этого не меняются, а работник бизнеса дверь в карточки получает на «Услугах» (рецепт 15)
+      const s = await cardsCase(WORKER, {});
       const n = 'cards-queue';
-      if (await s.p.$('#tabs [data-go="home"]')) bad.push(`${n}: у работника без членства есть вкладка «Клуб» — фикстура не та`);
       if (!(await s.p.$('#tabs [data-go="barQueue"]'))) bad.push(`${n}: у работника бара нет вкладки «Заказы»`);
       else {
         await s.p.click('#tabs [data-go="barQueue"]'); await s.p.waitForTimeout(250);

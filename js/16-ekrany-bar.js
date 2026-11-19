@@ -349,7 +349,7 @@ Object.assign(SCREENS, {
         // Вход в карточки — здесь, а не только в «Клубе»: «Клуб» приходит вкладкой лишь
         // при живом членстве, а «Заказы» работник бара видит всегда (barSide). Кадр E41,
         // Cafe13KPG#396. Строка та же, что в группе «Работа» на home.
-        (mayCards() ? '<div class="group"><span class="label">Работа</span>' +
+        (mayCards() && !workerOnly() ? '<div class="group"><span class="label">Работа</span>' +
           '<button type="button" class="listitem" data-go="barCards">' +
             '<span class="grow"><b>Карточки меню</b><span class="small">Новые позиции и утверждение</span></span>' +
             svg(ICON.chev, 'chev') + '</button></div>' : '') +
