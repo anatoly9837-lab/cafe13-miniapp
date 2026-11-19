@@ -4189,7 +4189,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.p.waitForTimeout(150);
     await s.p.evaluate(() => { go('home'); go('barQueue'); });
     await s.p.waitForTimeout(300);
-    if (name === 'shift-stale-empty') { await toBar(s); await s.p.waitForTimeout(300); }
+    // меню — go('bar') мимо строки «Услуг», как входит персонал без выбора: с шага 19 вход через «Услуги» зовёт
+    // сперва loadBiz, и четвёртый /directions (отказ этой фикстуры) доставался списку бизнесов, а не меню (проснулся шагом 22)
+    if (name === 'shift-stale-empty') { await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(300); }
     await s.p.waitForTimeout(2000);
     const last = Math.max(...fail);
     if (order.indexOf(2) < order.indexOf(last) || order.indexOf(last) === -1)
