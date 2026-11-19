@@ -801,7 +801,9 @@ function fromBusinesses(d) {
           typeof x.partner_last_name !== 'string') return null;
       who = (x.partner_first_name + ' ' + x.partner_last_name).trim();
     }
-    if (x.is_active) out.push({ id: x.id, title: x.title, open: x.is_open, partner: x.partner_id !== null, who: who });
+    // шаг 20: остаток полем (api#156), договор `20/ostatok.md`; битая пара — отказ целиком
+    var w = fromWallet(x); if (w === null) return null;
+    if (x.is_active) out.push({ id: x.id, title: x.title, open: x.is_open, partner: x.partner_id !== null, who: who, wallet: w });
   }
   return out;
 }
@@ -841,7 +843,8 @@ function prTill(iso) { var x = bkk(new Date(iso)).ymd.split('-'); return x[2] + 
 // блок «Свой бизнес в клубе» на «Клубе» (рецепт R1): у гостя и вне Telegram — пусто.
 // door — дверь «Работники» (шаг 14): разметку держит `home`, сюда она приходит готовой и встаёт в ПОСЛЕДНЮЮ карточку
 // согласованного бизнеса — одна на все бизнесы
-function partnerOffer(door) {
+// wallet(biz) — строка остатка карточки (шаг 20): разметку держит `home`, как и дверь
+function partnerOffer(door, wallet) {
   if (!LIVE || DATA.role === 'guest') return '';
   if (PR.mineState === '') loadMinePartner();
   if (PR.price === undefined) loadPartnerPrice();
@@ -854,10 +857,12 @@ function partnerOffer(door) {
   };
   // согласованных бывает больше одного: бизнесов у человека может быть два (шапка partner.py)
   // шаг 16: согласованный бизнес есть — свои направления (`/partner/directions`) нужны двери карточек; спрашиваются раз
-  if (!BW.dirs && !BW.dirsAsked && PR.mine.some(function (q) { return q.status === 'approved'; })) { BW.dirsAsked = true; loadPartnerDirs(); }
+  // шаг 20: список перечитывается на КАЖДОМ входе на «Клуб» (`dirsAsked` сбрасывает вход) — иначе остаток в карточке замёрз бы
+  if (!BW.dirsAsked && PR.mine.some(function (q) { return q.status === 'approved'; })) { BW.dirsAsked = true; loadPartnerDirs(); }
   var yes = PR.mine.filter(function (q) { return q.status === 'approved'; }).map(function (q, i, all) {
     return '<div class="card"><div class="col"><b class="clamp2">Вы партнёр бизнеса «' + esc(q.title) + '»</b>' +
       (q.till ? '<span class="small">Оплачено до ' + esc(prTill(q.till)) + '</span>' : '') + '</div>' +
+      (wallet ? wallet(q.biz) : '') +
       (i === all.length - 1 && door ? door : '') + '</div>';
   }).join('');
   var last = PR.mine[0];
@@ -1008,7 +1013,8 @@ function fromMyBiz(d) {
     var x = d.directions[i];
     if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.active !== 'boolean' ||
         !('paid_till' in x) || !(x.paid_till === null || prMoment(x.paid_till)) || typeof x.workers !== 'number') return null;
-    out.push({ id: x.id, title: x.title, active: x.active });
+    var w = fromWallet(x); if (w === null) return null;
+    out.push({ id: x.id, title: x.title, active: x.active, wallet: w });
   }
   return out;
 }
@@ -1027,7 +1033,8 @@ function fromWorkers(d, biz) {
 }
 function bwBiz() { return (BW.dirs || []).filter(function (x) { return x.id === BW.biz; })[0] || null; }
 // список бизнесов — на входе и после каждого назначения и снятия: оплаченность ВЫЧИСЛЯЕМАЯ и истекает сама
-function loadMyBiz(withList) {
+// money — вход на «Деньги бизнеса» (шаг 20): тот же список и выбор, но следом отчёт месяца, а не работники
+function loadMyBiz(withList, money) {
   if (!LIVE) return;
   var gen = ++BW.dirsGen; BW.dirsFail = '';
   api('GET', '/partner/directions').then(function (r) {
@@ -1038,9 +1045,80 @@ function loadMyBiz(withList) {
       var had = BW.biz !== null, still = l.some(function (x) { return x.id === BW.biz; });
       if (had && !still) { BW.lost = true; BW.biz = null; BW.list = null; }
       if (BW.biz === null && l.length === 1) { BW.biz = l[0].id; withList = true; }
-      if (withList && BW.biz !== null) loadWorkers();
+      if (money) { if (BW.biz !== null) loadMonth(); }
+      else if (withList && BW.biz !== null) loadWorkers();
     }
     if (current === 'bizWorkers') { bwGrab(); render(); }
+    if (current === 'bizMoney') render();
+  });
+}
+
+/* ── шаг 20: деньги бизнеса (Cafe13KPG#551, рецепты `_docs/recept/ekran/20/`, ручки cafe13-api#153 и #156) ──
+   Остаток — договор `20/ostatok.md`, общий на три предмета (карточка на «Клубе», bizMoney, «Бизнесы клуба»):
+   поля `wallet` и `wallet_through` читаются ПАРОЙ. Нет обоих ключей — undefined («не спросили», живое состояние
+   до выкладки api#156); половина пары или битое значение — null, и разборщик списка отказывает целиком (§4). */
+function fromWallet(x) {
+  var a = 'wallet' in x, b = 'wallet_through' in x;
+  if (!a && !b) return undefined;
+  if (a !== b) return null;
+  var s = x.wallet === null ? null : num(x.wallet);
+  if (s !== null && !(s >= 0)) return null;
+  if (!(x.wallet_through === null || prMoment(x.wallet_through))) return null;
+  if (s === null && x.wallet_through !== null) return null;   // закрытий без долей сервер не пишет
+  return { sum: s, through: x.wallet_through };
+}
+// сумма денег: копейки только когда они есть; минус — знаком «−», как расход в отчёте дня
+function bmSum(n) { var a = Math.abs(n); return (n < 0 ? '−' : '') + money(a % 1 ? a.toFixed(2) : a) + ' ฿'; }
+// месяц словом в поясе клуба: «Ноябрь 2026» (без «г.»)
+function bmMonth(ms) {
+  var s = new Date(ms).toLocaleDateString('ru-RU', { timeZone: TZ, month: 'long', year: 'numeric' }).replace(/\s*г\.?$/, '');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+/* Состояние остатка по договору `ostatok.md`: 'dash' — поля нет, 'nopartner' — пятое (только список опер-директора:
+   пустой `wallet` у бизнеса без партнёра — не «доли не назначены»), 'null' — доли не назначены, 'wait' — ни одного
+   закрытия, 'zero' — закрывали, зачислять было нечего, 'sum' — число. Слова состояний держит КАЖДЫЙ предмет у себя
+   (признаки рецепта меряют область экрана), классификация — одна: два ответа на «сколько на счёте» не разойдутся */
+function walletKind(w, noPartner) {
+  return w === undefined ? 'dash' : noPartner ? 'nopartner' : w.sum === null ? 'null'
+    : w.through === null ? 'wait' : w.sum === 0 ? 'zero' : 'sum';
+}
+// строка остатка в карточке (`home`, `businesses`): подпись и слова приходят от места вызова
+function walletRow(label, w, say, noPartner) {
+  var k = walletKind(w, noPartner);
+  return '<div class="row"><span class="small">' + label + '</span>' +
+    (k === 'sum' ? '<b class="num">' + esc(bmSum(w.sum)) + '</b>' : k === 'dash' ? '<b class="num">—</b>'
+      : '<span class="small">' + esc(say[k]) + '</span>') + '</div>';
+}
+/* Отчёт месяца — отчёт ручки `month_report` (api `bar.py`). Деньги строками numeric. `month` НЕ
+   читается: он врёт поясом (Cafe13KPG#961), подпись — из `period_start`. серверная подпись вложений на экран не идёт.
+   Сверка (правило отчёта дня): чистая = выручка − затраты, проценты 0…100 и в сумме ≤ 100, доля не больше чистой,
+   при убытке обе доли — ноль. Не сошлось — {bad}, ни одной суммы на экран. */
+function fromMonth(d) {
+  if (!d || typeof d.direction !== 'string' || !prMoment(d.period_start)) return null;
+  var v = {}, k = ['revenue', 'opex', 'net', 'invest', 'share_club_pct', 'club_share'];
+  for (var i = 0; i < k.length; i++) { v[k[i]] = num(d[k[i]]); if (!isFinite(v[k[i]])) return null; }
+  var pp = d.share_partner_pct === null ? null : num(d.share_partner_pct);
+  var ps = d.partner_share === null ? null : num(d.partner_share);
+  if ((pp === null) !== (ps === null) || (pp !== null && !isFinite(pp)) || (ps !== null && !isFinite(ps))) return null;
+  var c = 0.005, bad = Math.abs(v.net - (v.revenue - v.opex)) > c || v.share_club_pct < 0 || v.share_club_pct > 100 ||
+    (pp !== null && (pp < 0 || pp > 100 || pp + v.share_club_pct > 100)) || v.club_share < 0 || (ps !== null && ps < 0) ||
+    (v.net > 0 ? v.club_share + (ps || 0) > v.net + c : v.club_share !== 0 || (ps !== null && ps !== 0));
+  if (bad) return { bad: true };
+  return { title: d.direction, start: Date.parse(d.period_start), revenue: v.revenue, opex: v.opex, net: v.net, invest: v.invest,
+           clubPct: v.share_club_pct, club: v.club_share, partnerPct: pp, partner: ps };
+}
+// code: 409 — доли не назначены (узнаётся ПО КОДУ, слова сервера печатью), 403 — не свой бизнес
+var MM = { biz: null, data: null, fail: '', code: 0, gen: 0 };
+function loadMonth() {
+  if (!LIVE || BW.biz === null) return;
+  var biz = BW.biz, gen = ++MM.gen;
+  if (MM.biz !== biz) MM.data = null;
+  MM.biz = biz; MM.fail = ''; MM.code = 0;
+  api('GET', '/bar/month?direction_id=' + biz).then(function (r) {
+    if (gen !== MM.gen) return;
+    var m = r.status === 200 ? fromMonth(r.data) : null;
+    MM.data = m; MM.code = m ? 0 : r.status; MM.fail = m ? '' : denyText(r);
+    if (current === 'bizMoney') render();
   });
 }
 function loadWorkers() {

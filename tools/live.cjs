@@ -846,7 +846,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── шаг 14: заглушки ручек работников — на уровне функции, как у шага 13: те же построители уходят в `STUBS`
   // (сверка с формой cafe13-api 9ad148e). `elsewhere` — число других бизнесов (без названий), `paid_till` — момент
   const BWDIR = (id, active) => ({ id, title: { 7: 'Кофейня', 9: 'Пекарня' }[id] || 'Бизнес ' + id, active,
-    paid_till: active ? '2026-12-01T17:00:00+00:00' : '2026-11-01T17:00:00+00:00', workers: 1 });
+    paid_till: active ? '2026-12-01T17:00:00+00:00' : '2026-11-01T17:00:00+00:00', workers: 1,
+    // шаг 20 (api#156, форма 55507a5): остаток парой; у бизнеса без долей — оба null
+    wallet: null, wallet_through: null });
   const BWROW = (rid, mid, first, extra) => Object.assign({ role_id: rid, member_id: mid, first_name: first, last_name: 'Тестов',
     granted_at: '2026-11-18T05:00:00.123456+00:00', granted_by: 1, granted_by_first_name: 'Тест', granted_by_last_name: '', elsewhere: 0 }, extra || {});
   const BWREV = (d, r) => ({ direction_id: d, role_id: r, revoked_at: '2026-11-18T06:00:00+00:00' });
@@ -1725,11 +1727,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Подлог карточки: `grant('ops_director')` снят из `mayOps` → красное здесь (ops-tab, ops-businesses, ops-businesses-fail).
   // на уровне функции, а не в блоке: та же строка уходит в `STUBS` (сверка с `directions-ops-director`)
   const OPS_BIZ = [
-    { id: 7, title: 'Бар', is_active: true, is_open: true, partner_id: 4242, partner_first_name: '[партнёр]', partner_last_name: '[фамилия]' },
-    { id: 9, title: 'Массаж', is_active: true, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null },
+    { id: 7, title: 'Бар', is_active: true, is_open: true, partner_id: 4242, partner_first_name: '[партнёр]', partner_last_name: '[фамилия]', wallet: '640.25', wallet_through: '2026-10-31T17:00:00+00:00' },
+    { id: 9, title: 'Массаж', is_active: true, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null, wallet: null, wallet_through: null },
     // закрытый бизнес (`closed_at`, is_active=false) в список не берётся вовсе — кадр E75 (Cafe13KPG#881/#882):
     // «открыт/закрыт» на плашке — про СМЕНУ (is_open), а не про закрытие бизнеса
-    { id: 11, title: 'Прачечная', is_active: false, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null }];
+    { id: 11, title: 'Прачечная', is_active: false, is_open: false, partner_id: null, partner_first_name: null, partner_last_name: null, wallet: null, wallet_through: null }];
   if (part(1)) {
     const BIZ = OPS_BIZ;
     const opsWho = roles => {
@@ -11254,6 +11256,237 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (t.includes('Вернуть в меню')) bad.push(`${n}: у работника «Вернуть в меню»`);
         if (!t.includes('Снята с меню. Вернуть её в работу может тот, кто утверждает карточки бизнеса.')) bad.push(`${n}: у работника пропала строка снятой`);
       }
+      await done(s, n);
+    }
+  }
+
+  // ── шаг 20: деньги бизнеса (Cafe13KPG#551, рецепты `_docs/recept/ekran/20/`, ручки cafe13-api#153 и #156).
+  // Остаток — пара `wallet` + `wallet_through` в `/partner/directions` и `/directions` (договор `20/ostatok.md`),
+  // отчёт месяца — `/bar/month`. Суммы фикстуры нарочно не круглые и не совпадают с долями из таблиц (70/30 от 21 220)
+  if (part(1)) {
+    const n0 = 'pm';
+    const OCT = '2026-10-31T17:00:00+00:00';   // полночь 1 ноября по Пхангану: месяц момента — ноябрь, зачислено — по октябрь
+    const MON = extra => Object.assign({ direction: 'Кофейня', month: '2026-10', period_start: OCT, period_end: '2026-11-30T17:00:00+00:00',
+      revenue: '52340.00', opex: '31120.00', opex_paid: '30000.00', payroll_accrued: '1120.00', net: '21220.00', share_mode: 'net',
+      share_club_pct: '30.00', club_share: '6366.00', share_partner_pct: '70.00', partner_share: '14854.00',
+      invest: '0.00', invest_note: 'в чистую прибыль и долю клуба не входит (bar-unit.md §6.1)' }, extra || {});
+    const W = (wallet, through) => ({ wallet, wallet_through: through });
+    const pmMe = () => { const p = clone(OWNER); p.roles = []; p.balance = 9000; return p; };
+    // o.dirs — мои бизнесы; o.month(d) — ответ отчёта; всё, что ушло, — в o.seen
+    const pmApi = o => q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
+      o.seen.push(m + ' ' + u);
+      if (u === '/partner/price') return json(200, { amount: '2600.00' });
+      if (u === '/partner/requests/mine') return json(200, { requests: o.mine || [preq(31, 'approved', { paid_till: '2026-12-01T17:00:00+00:00' })] });
+      if (u === '/partner/directions') return json(200, { directions: o.dirs() });
+      if (/^\/bar\/products\?/.test(u)) return json(200, []);
+      const x = u.match(/^\/bar\/month\?direction_id=(\d+)$/);
+      if (x) return o.month(Number(x[1]));
+      return undefined;
+    };
+    const mk = extra => Object.assign({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT))], month: () => json(200, MON()), seen: [] }, extra || {});
+    const tap = async (s, n, sel, what) => {
+      const ok = await s.p.evaluate(x => { const b = document.querySelector(x); if (!b || b.disabled) return false; b.click(); return true; }, sel);
+      if (!ok) bad.push(`${n}: нечего нажать — ${what} (${sel})`);
+      await s.p.waitForTimeout(400);
+      return ok;
+    };
+    // вход — ДВЕРЬЮ «Деньги бизнеса» с «Клуба»: дверь и есть предмет рецепта 20/home
+    const enter = async (o, n) => {
+      const s = await open(true, true, json(200, pmMe()), null, null, null, pmApi(o));
+      await s.p.waitForTimeout(400);
+      const home = await s.view();
+      const ok = await tap(s, n, '#view [data-go="bizMoney"]', 'дверь «Деньги бизнеса» на «Клубе»');
+      return { s, ok, home };
+    };
+    const body = s => s.p.evaluate(() => { const v = document.getElementById('view').cloneNode(true); const h = v.querySelector('.card.strong'); if (h) h.remove(); return v.textContent; });
+    const done = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
+    const flat = t => t.replace(/[\s  ]/g, '');
+
+    // 1. доли назначены, net > 0: три суммы итога, две доли и ДВА процента — от сервера; месяц — из period_start по Пхангану
+    // (`month: "2026-10"` врёт, Cafe13KPG#961); дверь на «Клубе» — третья, без суммы
+    {
+      const n = `${n0}-doli-naznacheny`, o = mk();
+      const { s, ok, home } = await enter(o, n);
+      if (!home.includes('Деньги бизнеса') || !home.includes('Чистая, ваша доля и доля клуба — за месяц')) bad.push(`${n}: на «Клубе» нет двери «Деньги бизнеса» с подстрочником`);
+      if (ok) {
+        if ((await s.p.evaluate(() => document.getElementById('title').textContent)) !== 'Деньги бизнеса') bad.push(`${n}: шапка не «Деньги бизнеса»`);
+        const t = flat(await s.view());
+        ['Ноябрь2026', 'Бизнес„Кофейня“·месяцпоПхангану', 'Итогмесяца', 'Выручка52340฿', 'Текущиезатраты31120฿', 'Чистаяприбыль21220฿',
+         'Какделится', 'Вашадоля·70%14854฿', 'Клубу·30%6366฿', 'Вашадолязачислитсянасчётпозакрытиюмесяца.', 'Обновить']
+          .forEach(w => { if (!t.includes(flat(w))) bad.push(`${n}: нет «${w}»`); });
+        if (/Октябрь2026|2026-10/.test(t)) bad.push(`${n}: подпись месяца взята из ключа month (октябрь вместо ноября, Cafe13KPG#961)`);
+        if (/30\.00|70\.00|bar-unit|Вложения|шаг21/.test(t)) bad.push(`${n}: на экране процент с хвостом, invest_note, пустые вложения или номер шага`);
+        if (!o.seen.includes('GET /bar/month?direction_id=7')) bad.push(`${n}: отчёт месяца своего бизнеса не спрошен: ${o.seen.join(', ')}`);
+        await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(250);
+        if ((await s.p.evaluate(() => current)) !== 'home') bad.push(`${n}: «назад» ведёт не на «Клуб»`);
+      }
+      await done(s, n);
+    }
+    // 2. убыток: чистая с минусом, обе доли — 0 ฿, и ноль НАЗВАН словами
+    {
+      const n = `${n0}-ubytok`, o = mk({ month: () => json(200, MON({ revenue: '1830.00', opex: '2410.00', net: '-580.00', club_share: '0.00', partner_share: '0.00' })) });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const t = flat(await body(s));
+        ['Чистаяприбыль−580฿', 'Вашадоля·70%0฿', 'Клубу·30%0฿', 'Замесяцприбылинет:долисчитаютсятолькосприбыли,поэтомуобепонулю.']
+          .forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
+      }
+      await done(s, n);
+    }
+    // 3. доли не назначены — 409: слова СЕРВЕРА печатью, ни одного числа. Подлог текста меняет экран — значит не набран в клиенте
+    for (const [n, detail, seal] of [[`${n0}-doli-null`, 'доли бизнеса ещё не назначены — долю клуба и партнёра посчитать нельзя',
+        'Доли бизнеса ещё не назначены — долю клуба и партнёра посчитать нельзя.'], [`${n0}-doli-null-podlog`, 'подлог слов сервера', 'Подлог слов сервера.']]) {
+      const o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W(null, null))], month: () => json(409, { detail }) });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const got = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny .verbatim')].map(x => x.textContent));
+        if (JSON.stringify(got) !== JSON.stringify([seal])) bad.push(`${n}: печать отказа ${JSON.stringify(got)}, ждали ${JSON.stringify([seal])}`);
+        const t = await s.view();
+        if (!t.includes('Как только доли появятся, здесь будут выручка, затраты и доли.')) bad.push(`${n}: нет слов под отказом`);
+        if (/฿|\d\s?%|шаг 21/.test(t)) bad.push(`${n}: при отказе на экране число, процент или номер шага`);
+        if (!t.includes('доли ещё не назначены')) bad.push(`${n}: в шапке нет «доли ещё не назначены» при wallet = null`);
+      }
+      await done(s, n);
+    }
+    // 4. доля партнёра пуста при назначенной доле клуба: «не назначена», а не 0 ฿
+    {
+      const n = `${n0}-dolya-partnera-pusta`, o = mk({ month: () => json(200, MON({ share_partner_pct: null, partner_share: null })) });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const t = flat(await body(s));
+        if (!t.includes('Вашадоляненазначена') || !t.includes('Долюпартнёрауэтогобизнесаещёненазначили.')) bad.push(`${n}: пустая доля не названа словами`);
+        if (/Вашадоля[^К]*฿/.test(t)) bad.push(`${n}: в строке пустой доли — сумма`);
+        if (!t.includes('Клубу·30%6366฿')) bad.push(`${n}: доля клуба пропала`);
+      }
+      await done(s, n);
+    }
+    // 5. не свой бизнес: 403 на отчёте и пустой список своих — «Сюда нельзя», чисел нет; при пустом списке отчёт не спрошен
+    for (const [n, o] of [[`${n0}-chuzhoy-biznes`, mk({ month: () => json(403, { detail: 'нет доступа' }) })],
+                          [`${n0}-chuzhoy-pusto`, mk({ dirs: () => [] })]]) {
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const t = await body(s);
+        if (!t.includes('Сюда нельзя') || !t.includes('Деньги бизнеса видит его партнёр, куратор направления или глава клуба.')) bad.push(`${n}: нет «Сюда нельзя»`);
+        if (/฿|Выручка/.test(t)) bad.push(`${n}: у чужого бизнеса на экране числа`);
+        if (n.endsWith('pusto') && o.seen.some(c => c.includes('/bar/month'))) bad.push(`${n}: без своих бизнесов спрошен отчёт: ${o.seen.join(', ')}`);
+      }
+      await done(s, n);
+    }
+    // 6. числа не сходятся (чистая ≠ выручка − затраты): отказ вместо чисел
+    {
+      const n = `${n0}-chisla-ne-shodyatsya`, o = mk({ month: () => json(200, MON({ net: '25000.00' })) });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        const t = await body(s);
+        if (!t.includes('Числа отчёта не сходятся между собой — показывать их нельзя. Сообщите администратору клуба.')) bad.push(`${n}: нет отказа «не сходятся»`);
+        if (/฿/.test(t)) bad.push(`${n}: при несходящихся числах на экране суммы`);
+      }
+      await done(s, n);
+    }
+    // 7. остаток: пять состояний договора, одни слова на «Клубе» и в шапке экрана; «раз в месяц» — при ЛЮБОМ из них.
+    // При закрытиях — «Зачислено по октябрь 2026» (месяц ПЕРЕД wallet_through) и слова о месяце выкладки
+    for (const [k, wal, want, nowant] of [
+      ['doli-null', W(null, null), 'доли ещё не назначены', /฿|Зачислено/],
+      ['do-zakrytiya', W('0.00', null), 'доля будет зачислена по закрытию месяца', /На счёте0|Зачислено/],
+      ['zachislyat-nechego', W('0.00', OCT), 'по закрытым месяцам зачислять было нечего', /На счёте0|продаж не было/],
+      ['summa', W('1250.50', OCT), '1 250.50 ฿', /ноябрь 2026Счёт/],
+      ['polya-net', {}, 'Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».', /На счёте0/]]) {
+      // «поля нет» — ключей нет ВОВСЕ: из построителя их убрать, а не обнулить
+      const dir = () => { const d = Object.assign(BWDIR(7, true), wal); if (!('wallet' in wal)) { delete d.wallet; delete d.wallet_through; } return d; };
+      const n = `${n0}-ostatok-${k}`, o = mk({ dirs: () => [dir()] });
+      const { s, ok, home } = await enter(o, n);
+      if (!home.includes('На счёте') || !home.includes(want)) bad.push(`${n}: в карточке бизнеса на «Клубе» нет «На счёте» и «${want}»`);
+      if (ok) {
+        const h = await s.p.evaluate(() => (document.querySelector('#view .card.strong') || {}).textContent || '');
+        if (!h.includes('На счёте') || !h.includes(want)) bad.push(`${n}: в шапке нет «${want}»: ${h}`);
+        if (!h.includes('Доля зачисляется раз в месяц, по закрытию. Продажи месяца видны ниже.')) bad.push(`${n}: нет «раз в месяц» под остатком`);
+        if (nowant.test(h)) bad.push(`${n}: в шапке лишнее (${nowant}): ${h}`);
+        const closed = wal.wallet_through;
+        if (closed && !(h.includes('Зачислено по октябрь 2026') && h.includes('Счёт ведётся с месяца, когда появился в клубе'))) bad.push(`${n}: нет «Зачислено по октябрь 2026» и слов о месяце выкладки`);
+        if (k === 'polya-net' && !h.includes('—')) bad.push(`${n}: без поля нет прочерка`);
+      }
+      await done(s, n);
+    }
+    // 8. два бизнеса: выбор как у «Работников», до выбора отчёта нет; шапка называет ТОТ бизнес, чьи числа показаны
+    {
+      const n = `${n0}-dva-biznesa`, o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT)), Object.assign(BWDIR(9, true), W('0.00', null))],
+        month: d => json(200, MON({ direction: d === 9 ? 'Пекарня' : 'Кофейня' })) });
+      const { s, ok } = await enter(o, n);
+      if (ok) {
+        if (!(await s.view()).includes('Ваши бизнесы')) bad.push(`${n}: нет выбора «Ваши бизнесы»`);
+        if (o.seen.some(c => c.includes('/bar/month'))) bad.push(`${n}: до выбора спрошен отчёт`);
+        if (await tap(s, n, '#view [data-action="bm-biz:9"]', 'бизнес 9')) {
+          const h = await s.p.evaluate(() => document.querySelector('#view .card.strong').textContent);
+          if (!h.includes('Бизнес „Пекарня“') || !h.includes('доля будет зачислена по закрытию месяца')) bad.push(`${n}: шапка не про бизнес 9: ${h}`);
+          if (!o.seen.includes('GET /bar/month?direction_id=9')) bad.push(`${n}: отчёт бизнеса 9 не спрошен`);
+          const pill = await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="bm-biz:9"] .pill.on'); return b ? b.textContent : null; });
+          if (pill !== 'сейчас') bad.push(`${n}: у выбранного бизнеса нет «сейчас»`);
+        }
+      }
+      await done(s, n);
+    }
+    // 9. двери нет: гость и ждущая заявка; ни отчёта, ни списка своих бизнесов
+    for (const [n, guest, mine] of [[`${n0}-net-gost`, true, []], [`${n0}-net-zhdet`, false, [preq(31, 'pending')]]]) {
+      const o = mk({ mine }), M = pmMe();
+      if (guest) { M.membership = null; M.membership_active = false; M.memberships = []; }
+      const s = await open(true, true, json(200, M), null, null, null, pmApi(o));
+      await s.p.waitForTimeout(400);
+      if (await s.p.$('#view [data-go="bizMoney"]')) bad.push(`${n}: дверь «Деньги бизнеса» видна`);
+      if (/На счёте/.test(await s.view())) bad.push(`${n}: строка остатка без бизнеса`);
+      if (o.seen.some(c => /\/bar\/month|\/partner\/directions/.test(c))) bad.push(`${n}: спрошено ${o.seen.join(', ')}`);
+      await done(s, n);
+    }
+
+    // ── «Бизнесы клуба» (рецепт 20/businesses): остаток строкой в карточке КАЖДОГО бизнеса, у каждого — своё состояние
+    const opsMe = roles => { const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null })); return p; };
+    const B = (id, title, partner, wal) => Object.assign({ id, title, is_active: true, is_open: false,
+      partner_id: partner ? 4242 : null, partner_first_name: partner ? '[партнёр]' : null, partner_last_name: partner ? '[фамилия]' : null }, wal);
+    const opsBiz = async (me, list, n) => {
+      const seen = [];
+      const s = await open(true, true, json(200, me), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, ''); seen.push(u);
+        if (u === '/directions') return json(200, list);
+        if (u === '/partner/requests/mine') return json(200, { requests: [preq(31, 'approved')] });
+        if (u === '/partner/directions') return json(200, { directions: [Object.assign(BWDIR(7, true), W('14854.00', OCT))] });
+        return undefined;
+      });
+      await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('businesses')); await s.p.waitForTimeout(400);
+      return { s, seen };
+    };
+    const cards = s => s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => [c.querySelector('b').textContent, c.textContent]));
+    {
+      const n = 'ops-biz-ostatok', list = [B(7, 'Бар', true, W('1250.50', OCT)), B(9, 'Массаж', false, W(null, null)),
+        B(12, 'Пекарня', true, W('0.00', OCT)), B(13, 'Кофейня', true, W('0.00', null)), B(14, 'Сауна', true, W(null, null))];
+      const { s } = await opsBiz(opsMe(['ops_director']), list, n);
+      const want = { 'Бар': '1 250.50 ฿', 'Массаж': 'счёта нет: у бизнеса нет партнёра', 'Пекарня': 'по закрытым месяцам зачислять было нечего',
+                     'Кофейня': 'доля будет зачислена по закрытию месяца', 'Сауна': 'доли ещё не назначены' };
+      const got = await cards(s);
+      Object.keys(want).forEach(t => { const c = got.filter(x => x[0] === t)[0]; if (!c || !c[1].includes('На счёте') || !c[1].includes(want[t])) bad.push(`${n}: у «${t}» нет «На счёте ${want[t]}»: ${c && c[1]}`); });
+      const m = got.filter(x => x[0] === 'Массаж')[0];
+      if (m && /доли ещё не назначены|0 ฿/.test(m[1])) bad.push(`${n}: у бизнеса без партнёра слова о долях или ноль`);
+      if (['Пекарня', 'Кофейня', 'Сауна'].some(t => /На счёте0 ฿/.test((got.filter(x => x[0] === t)[0] || [])[1] || ''))) bad.push(`${n}: на месте слов — 0 ฿`);
+      if ((await s.view()).includes('не спросили')) bad.push(`${n}: «не спросили» при пришедшем поле`);
+      await done(s, n);
+    }
+    {
+      const n = 'ops-biz-polya-net';
+      const { s } = await opsBiz(opsMe(['ops_director']), [B(7, 'Бар', true, {}), B(9, 'Массаж', false, {})], n);
+      const t = await s.view();
+      if (!t.includes('Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».')) bad.push(`${n}: нет слов прочерка`);
+      if ((await cards(s)).some(c => !c[1].includes('На счёте—'))) bad.push(`${n}: не у каждого бизнеса прочерк`);
+      if (/฿|нет партнёра/.test(t.replace('Партнёра нет', ''))) bad.push(`${n}: без поля — ноль или слова состояния`);
+      await done(s, n);
+    }
+    // отрицательный контроль права (ТЗ требует явно): партнёр без роли опер-директора остатков чужих бизнесов не видит
+    {
+      const n = 'ops-biz-chuzhie-dengi';
+      const { s, seen } = await opsBiz(opsMe([]), [B(7, 'Бар', true, W('1250.50', OCT))], n);
+      const t = await s.view();
+      if (!t.includes('Бизнесы клуба видит операционный директор.')) bad.push(`${n}: нет отказа «Сюда нельзя»`);
+      if (/1 250|На счёте/.test(t)) bad.push(`${n}: остаток чужого бизнеса на экране`);
+      if (seen.includes('/directions')) bad.push(`${n}: список бизнесов клуба спрошен без права`);
       await done(s, n);
     }
   }
