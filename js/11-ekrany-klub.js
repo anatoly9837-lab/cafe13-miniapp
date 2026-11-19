@@ -33,7 +33,10 @@ var SCREENS = {
       masterOffer() +
       // шаг 13 (рецепт R1): «Свой бизнес в клубе» — ниже блока мастера. Шаг 14 (рецепт 14/bizWorkers): дверь «Работники»
       // в согласованном состоянии блока — одна на все бизнесы, выбор бизнеса на самом экране
-      partnerOffer(WIRED.bizWorkers ? '<button type="button" class="btn quiet" data-go="bizWorkers">Работники</button>' : '') +
+      // шаг 16 (рецепт 16/home): дверь очереди согласования — партнёру по владению; счётчик по списку, null — без чипа
+      partnerOffer((WIRED.bizWorkers ? '<button type="button" class="btn quiet" data-go="bizWorkers">Работники</button>' : '') +
+        (cardPartnerDir() ? '<button type="button" class="listitem" data-go="barCards"><span class="grow"><b>Карточки на согласовании</b>' +
+          '<span class="small">' + esc(waitSub(PCARDS.n, 'Что ждёт вашего решения')) + '</span></span>' + waitMark(PCARDS.n) + svg(ICON.chev, 'chev') + '</button>' : '')) +
       rolePanel() +
 
       (LIVE ? myRoles() +

@@ -10287,7 +10287,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.calls.filter(c => /\/bar\/products\?/.test(c.url)).length < 2) bad.push('cards-review: очередь не перечитана');
       await s.p.evaluate(() => go('barCard', '51')); await s.p.waitForTimeout(200);
       if (await s.p.$('[data-action^="c-approve"]')) bad.push('cards-review: работнику бара предложено «Утвердить»');
-      if (!(await s.view()).includes('Ждёт решения куратора')) bad.push('cards-review: работник не видит, что ждёт куратора');
+      if (!(await s.view()).includes('Ждёт решения того, кто утверждает')) bad.push('cards-review: работник не видит, что ждёт куратора');
       await s.ctx.close();
     }
     // куратор: без рецепта «в меню» погашена заранее; с рецептом — уходит active
@@ -10481,7 +10481,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const pills = await s.p.evaluate(() => [...document.querySelectorAll('#view .listitem')].map(r => [r.querySelector('b').textContent, (r.querySelector('.pill') || {}).textContent || '']));
         if (JSON.stringify(pills) !== JSON.stringify([['Иван Тестов', ''], ['Анна Тестов', 'и в другом бизнесе']])) bad.push(`${n}: пометки строк ${JSON.stringify(pills)}, ждали «и в другом бизнесе» только у Анны`);
         const asked = o.seen.filter(c => /\/directions|\/partner\/directions/.test(c));
-        if (JSON.stringify(asked) !== JSON.stringify(['GET /partner/directions', 'GET /directions/7/workers'])) bad.push(`${n}: на входе спрошено ${JSON.stringify(asked)}`);
+        // первый /partner/directions — «Клуб» (дверь карточек шага 16), второй и список — вход в экран
+        if (JSON.stringify(asked) !== JSON.stringify(['GET /partner/directions', 'GET /partner/directions', 'GET /directions/7/workers'])) bad.push(`${n}: на входе спрошено ${JSON.stringify(asked)}`);
         if (/฿|[Зз]аказ|[Сс]мен|[Мм]еню/.test(t)) bad.push(`${n}: на экране цена или обещание работнику (заказы, смена, меню)`);
         const html = await s.p.content();
         if (['200000012', '200000013'].some(x => html.includes(x))) bad.push(`${n}: номер человека попал в разметку`);
@@ -10733,8 +10734,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const openCard = async (s, n, id) => { const ok = await tapIf(s, n, `#view [data-action="c-open:${id}"]`, `строка карточки ${id}`); await s.p.waitForTimeout(300); return ok; };
     const done = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
     const CURATOR_WORDS = ['Утвердить — в меню', 'Вернуть с причиной', 'Снять с меню', 'Сначала рецепт'];
-    const DECIDE = { review: 'Ждёт решения куратора направления.', active: 'В меню. Рецепт ведёт бар, снимает с меню куратор направления.',
-                     hidden: 'Снята с меню. Вернуть её в работу может куратор направления.' };
+    const DECIDE = { review: 'Ждёт решения того, кто утверждает карточки бизнеса.', active: 'В меню. Рецепт ведёт бар, с меню снимает тот, кто утверждает карточки бизнеса.',
+                     hidden: 'Снята с меню. Вернуть её в работу может тот, кто утверждает карточки бизнеса.' };
     const groupLabels = s => s.p.evaluate(() => [...document.querySelectorAll('#view .group > .label')].map(e => e.textContent));
 
     // 1. дверь на «Услугах»: группа «Работа», строка «Карточки меню» с подписью рецепта; на «Клубе» двери работнику нет
@@ -10775,7 +10776,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (!roles.length) {
           await s.p.evaluate(() => go('barCards')); await s.p.waitForTimeout(300);
           const t = await s.view();
-          if (!t.includes('Карточки меню заводит бар, работник бизнеса или куратор направления.')) bad.push(`${n}: отказ права не словами рецепта: ${t.slice(0, 120)}`);
+          if (!t.includes('Карточки меню заводит бар, работник бизнеса, партнёр направления или его куратор.')) bad.push(`${n}: отказ права не словами рецепта: ${t.slice(0, 120)}`);
           if (o.seen.some(c => c.includes('/bar/products'))) bad.push(`${n}: без права спрошены карточки`);
         }
       }
@@ -10971,6 +10972,96 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           if (o.bodies.some(b => b[0] === 'patch')) bad.push(`${n}: без изменений ушёл PATCH ${JSON.stringify(o.bodies)}`);
         }
       }
+      await done(s, n);
+    }
+
+    // ── шаг 16 (Cafe13KPG#547, рецепт `_docs/recept/ekran/16/`): партнёр бизнеса согласует карточки. Партнёр — по
+    // ВЛАДЕНИЮ (`/partner/directions`), роли у него нет. Направление 7 «Кофейня» — его; карточки — те же FOUR
+    const pcApi = (o, dirs, mine) => { const w = wcApi(o); return q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+      if (u === '/partner/directions') return json(200, { directions: dirs });
+      if (u === '/partner/requests/mine') return json(200, { requests: mine });
+      if (u === '/partner/price') return json(200, { amount: '2600.00' });
+      if (o.fail && /^\/bar\/products\?/.test(u)) { o.seen.push('GET ' + u); return json(500, { detail: 'сбой' }); }
+      return w(q);
+    }; };
+    const PMINE = [preq(31, 'approved', { paid_till: '2026-11-30T17:00:00+00:00' })];
+    const pcOpen = async (o, dirs, mine) => {
+      const s = await open(true, true, json(200, wcMe([], true)), null, null, null, pcApi(o, dirs, mine));
+      await s.p.waitForTimeout(700);
+      return s;
+    };
+    const pcDoor = s => s.p.evaluate(() => {
+      const b = document.querySelector('#view [data-go="barCards"]'); if (!b) return null;
+      const c = b.closest('.card');
+      return { inBiz: !!c && c.textContent.includes('Вы партнёр бизнеса'), b: (b.querySelector('b') || {}).textContent,
+               small: (b.querySelector('.small') || {}).textContent, count: b.querySelector('.count') ? b.querySelector('.count').textContent : null };
+    });
+    // 1. дверь в блоке бизнеса со счётчиком ждущих; вход — «Ждут утверждения» первой; спрошено СВОЁ направление (7), не чужое
+    {
+      const n = 'partner-cards-dver-v-biznese', o = mk();
+      const s = await pcOpen(o, [BWDIR(7, true)], PMINE);
+      const d = await pcDoor(s);
+      if (!d) bad.push(`${n}: на «Клубе» нет двери «Карточки на согласовании»`);
+      else {
+        if (!d.inBiz) bad.push(`${n}: дверь не в карточке бизнеса`);
+        if (d.b !== 'Карточки на согласовании') bad.push(`${n}: подпись двери «${d.b}»`);
+        if (d.count !== '1' || d.small !== 'Что ждёт вашего решения') bad.push(`${n}: счётчик ${d.count}, подстрочник «${d.small}», ждали 1 и «Что ждёт вашего решения»`);
+        await tapIf(s, n, '#view [data-go="barCards"]', 'дверь'); await s.p.waitForTimeout(500);
+        const lb = await groupLabels(s);
+        if (!lb.length || !lb[0].startsWith('Ждут утверждения')) bad.push(`${n}: первая группа «${lb[0]}», ждали «Ждут утверждения»`);
+        if (!(await s.view()).includes('Бизнес «Кофейня»')) bad.push(`${n}: нет «Бизнес «Кофейня»» словом сервера`);
+        if (!o.seen.some(c => c.includes('direction_id=7&'))) bad.push(`${n}: список своего направления 7 не спрошен`);
+        if (o.seen.some(c => /direction_id=(?!7\b)\d+/.test(c))) bad.push(`${n}: спрошено чужое направление: ${o.seen.filter(c => c.includes('direction_id')).join(', ')}`);
+      }
+      await done(s, n);
+    }
+    // 2. очередь не загрузилась — дверь есть, чипа НЕТ (счётчик не выдумывается); 3. без своего бизнеса — двери нет
+    for (const [n, fail, dirs, mine, door] of [['partner-cards-schetchik-ne-vydumyvaetsya', true, [BWDIR(7, true)], PMINE, true],
+                                                 ['partner-cards-net-dveri-bez-biznesa', false, [], [], false]]) {
+      const o = mk({ fail });
+      const s = await pcOpen(o, dirs, mine);
+      const d = await pcDoor(s);
+      if (door && (!d || d.count !== null || d.small !== 'Что ждёт вашего решения')) bad.push(`${n}: ждали дверь без чипа и «Что ждёт вашего решения»: ${JSON.stringify(d)}`);
+      if (!door && d) bad.push(`${n}: дверь в карточки у члена без своего бизнеса`);
+      if (!door && o.seen.some(c => c.includes('/bar/products'))) bad.push(`${n}: без бизнеса спрошены карточки`);
+      await done(s, n);
+    }
+    // 4. три решения партнёра; возврат без замечания не уходит; правки и рецепта у партнёра нет
+    {
+      const n = 'partner-card-resheniya', o = mk();
+      const s = await pcOpen(o, [BWDIR(7, true)], PMINE);
+      await tapIf(s, n, '#view [data-go="barCards"]', 'дверь'); await s.p.waitForTimeout(500);
+      const noEdit = async (id) => {
+        const t = await s.view(), lb = await groupLabels(s);
+        if (t.includes('Изменить карточку') || lb.includes('Рецепт') || t.includes('Отправить на утверждение')) bad.push(`${n}: у партнёра на ${id} правка, рецепт или «на утверждение»`);
+      };
+      if (await openCard(s, n, 82)) {
+        await noEdit(82);
+        if (await tapIf(s, n, '#view [data-action="c-approve:82"]', '«Утвердить — в меню»')) await s.p.waitForTimeout(400);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 82 && b[2].state === 'active')) bad.push(`${n}: утверждение не ушло: ${JSON.stringify(o.bodies)}`);
+      }
+      await s.p.evaluate(() => go('barCard', '82')); await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="c-back"]', '«Вернуть с причиной»')) {
+        const st = () => s.p.evaluate(() => { const b = document.querySelector('#view [data-action="c-back-send:82"]');
+          const vis = id => { const e = document.getElementById(id); return !!e && !e.hidden; };
+          return { off: b ? b.disabled : null, why: vis('c-reason-why'), last: vis('c-reason-last') }; });
+        const e = await st();
+        if (e.off !== true || !e.why || e.last) bad.push(`${n}: пустое замечание — «Вернуть» не погашена или подпись не та: ${JSON.stringify(e)}`);
+        await s.p.type('#c-reason', 'нет фото'); await s.p.waitForTimeout(150);
+        const f = await st();
+        if (f.off !== false || f.why || !f.last) bad.push(`${n}: замечание набрано — «Вернуть» погашена или нет «прежнее затрётся»: ${JSON.stringify(f)}`);
+        if (await tapIf(s, n, '#view [data-action="c-back-send:82"]', '«Вернуть»')) await s.p.waitForTimeout(400);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 82 && b[2].state === 'hidden' && b[2].note === 'нет фото')) bad.push(`${n}: возврат не ушёл с замечанием: ${JSON.stringify(o.bodies)}`);
+      }
+      await s.p.evaluate(() => go('barCard', '83')); await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="c-hide-ask"]', '«Снять с меню»') && await tapIf(s, n, '#view [data-action="c-hide:83"]', '«Точно снять»')) {
+        await s.p.waitForTimeout(400);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 83 && b[2].state === 'hidden')) bad.push(`${n}: снятие не ушло: ${JSON.stringify(o.bodies)}`);
+      }
+      await s.p.evaluate(() => go('barCard', '81')); await s.p.waitForTimeout(300);
+      await noEdit(81);
+      if (o.seen.some(c => /\/recipe/.test(c) && c.startsWith('POST'))) bad.push(`${n}: партнёр записал рецепт`);
       await done(s, n);
     }
   }
