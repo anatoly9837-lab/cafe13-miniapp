@@ -92,8 +92,8 @@ function mainFor() {
   // меняет лишь applyMe, перед которым список сброшен. Мутация на mayCards() здесь
   // осталась зелёной — проверка была недостижимой. Что DATA.grants присваивается
   // в одном месте, сторожит tools/live.cjs до первого случая.
-  if (current === 'barCards' && LIVE && CARDS.list && !cardPartnerOnly()) return { text: 'Новая карточка', a: 'c-new' };
-  if (current === 'barCard' && param === 'new' && !CARD.busy && !cardPartnerOnly()) return { text: 'Сохранить черновик', a: 'c-save' };
+  if (current === 'barCards' && LIVE && CARDS.list) return { text: 'Новая карточка', a: 'c-new' };
+  if (current === 'barCard' && param === 'new' && !CARD.busy) return { text: 'Сохранить черновик', a: 'c-save' };
   // форма правки черновика (шаг 15) — то же условие, при котором экран её рисует
   if (current === 'barCard' && CARD.edit && String(CARD.edit) === String(param) && !CARD.busy && (cardBy(param) || {}).state === 'draft')
     return { text: 'Сохранить изменения', a: 'c-edit-save:' + CARD.edit };
