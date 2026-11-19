@@ -39,14 +39,14 @@ Object.assign(SCREENS, {
         ? '<div class="card strong"><h2>Меню не загрузилось</h2><p>' + esc(MENU_STATE) + '</p>' +
             '<button type="button" class="btn" data-action="retry-menu">Повторить</button></div>'
         : !DATA.bar.menu.length
-        ? '<div class="card quiet"><span class="small">В меню пока ни одной позиции — его заводит куратор бара.</span></div>'
+        ? '<div class="card quiet"><span class="small">В меню пока ни одной позиции.</span></div>'
         : DATA.bar.menu.map(function (g) {
             return '<div class="group"><span class="label">' + esc(g.group) + '</span>' +
               g.items.map(barRow).join('') + '</div>';
           }).join('');
       return (FLASH ? flash() : '') +
         '<div class="card strong"><div class="row top">' +
-          '<div class="col"><h2>Бар Café XIII</h2>' +
+          '<div class="col"><h2 class="clamp2">' + esc(BAR ? BAR.title : '') + '</h2>' +
             '<span class="small">' + (BAR && !BAR.open
               ? 'Сейчас закрыт: смена не открыта, заказ не отправится. Меню видно и так.'
               : '«Купить» — заказ на одну позицию со счёта, подадут за стойку. Несколько позиций или другое место — через «в заказ».') + '</span></div>' +
@@ -62,7 +62,7 @@ Object.assign(SCREENS, {
     }
     return (FLASH ? flash() : '') +
       '<div class="card strong"><div class="row top">' +
-        '<div class="col"><h2>Бар Café XIII</h2>' +
+        '<div class="col"><h2 class="clamp2">' + esc(DATA.bar.title) + '</h2>' +
           '<span class="small">' + (DATA.bar.open
             ? 'Открыт до 23:00. Заказ уходит на бар сразу и оплачивается со счёта в клубе.'
             : 'Сейчас закрыт — заказ не отправится.') + '</span></div>' +
@@ -555,12 +555,15 @@ Object.assign(SCREENS, {
   },
 
   barCards: function () {
-    if (LIVE && !mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар или куратор направления.</span></div>';
+    // отказ права — своими словами, без печати: до сервера дело не дошло. Работник назван (шаг 15, `ROLE_NAME.worker`)
+    if (LIVE && !mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар, работник бизнеса, партнёр направления или его куратор.</span></div>';
+    if (CARDS.lost) return '<div class="card quiet"><span class="small">Бизнес не нашёлся: роль работника есть, направления по ней нет.</span></div>';
     if (!CARDS.list) return CARDS.fail
-      ? '<div class="card quiet"><span class="small">' + esc(CARDS.fail) + '</span></div>' +
+      ? '<div class="card quiet"><span class="verbatim">' + esc(CARDS.fail) + '</span></div>' +
         '<button type="button" class="btn ghost" data-action="c-reload">Повторить</button>'
       : '<div class="card quiet"><span class="small">Загружаем карточки…</span></div>';
     var L = CARDS.list;
+    // черновики и возвраты — ВСЕ по бизнесу, без фильтра по автору: «бар — общая кухня» (bar.products, api)
     var parts = [
       ['Ждут утверждения', L.filter(function (c) { return c.state === 'review'; })],
       ['Возвращены', L.filter(cardReturned)],
@@ -573,7 +576,8 @@ Object.assign(SCREENS, {
     // а заведение карточки случается реже (designer-55, 22.10.2026). В Telegram
     // её место — главная кнопка (mainFor), доступная при любой длине списка.
     return (!LIVE && FLASH ? flash() : '') +
-      '<div class="card quiet"><span class="small">Направление «Бар»</span></div>' +
+      // название — словом сервера (`GET /directions`), а не литералом: бизнес работника «Баром» не зовётся (шаг 15)
+      (CARDS.dir ? '<div class="card quiet"><span class="small">Бизнес «' + esc(CARDS.dir.title) + '»</span></div>' : '') +
       parts.filter(function (x) { return x[1].length; }).map(function (x) {
         return '<div class="group" data-cards="' + esc(x[0]) + '"><span class="label">' + esc(x[0]) + ' · ' + x[1].length + '</span>' +
           x[1].map(cardRow).join('') + '</div>';
@@ -583,11 +587,13 @@ Object.assign(SCREENS, {
   },
 
   barCard: function (id) {
-    if (LIVE && !mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар или куратор направления.</span></div>';
+    if (LIVE && !mayCards()) return '<div class="card quiet"><span class="small">Карточки меню заводит бар, работник бизнеса, партнёр направления или его куратор.</span></div>';
     var lock = CARD.busy ? ' disabled' : '';
-    var deny = CARD.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.deny) + '</span></div>' : '';
+    // отказ сервера — печатью (`.verbatim`): клиент его не пересказывает
+    var deny = CARD.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(CARD.deny) + '</span></div>' : '';
     var note = CARD.note ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(CARD.note) + '</span></div>' : '';
-    if (id === 'new') {
+    // ФОРМА — два вида одним телом: заведение (`new`) и правка черновика (шаг 15, `PATCH /bar/products/{id}`)
+    var form = function (act, word) {
       var v = function (k) { return esc(CARD.v[k] || ''); };
       var groups = groupsOf();
       return (!LIVE && FLASH ? flash() : '') +
@@ -615,16 +621,25 @@ Object.assign(SCREENS, {
           '<span class="pill' + (CARD.alcohol ? ' on' : '') + '">' + (CARD.alcohol ? 'да' : 'нет') + '</span></button>' +
         (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
         deny +
-        '<button type="button" class="btn dup-main" data-action="c-save"' + lock + '>' + (CARD.busy ? 'Сохраняем…' : 'Сохранить черновик') + '</button>' +
-        '<span class="small">Поля потом не исправить — только снять карточку и завести заново.</span>' +
+        '<button type="button" class="btn dup-main" data-action="' + act + '"' + lock + '>' + (CARD.busy ? 'Сохраняем…' : word) + '</button>' +
+        // с ручкой правки «поля потом не исправить» стало бы ложью (шаг 15); партнёр полей не правит даже у своего черновика (PATCH 403, шаг 17)
+        (cardPartnerOnly() ? '<span class="small">Поля сохранённого черновика правит тот, кто ведёт карточки бизнеса, — проверьте их до сохранения. Рецепт замените в любой момент.</span>'
+          : '<span class="small">Пока карточка в работе, поля можно исправить. Утверждённую не правит никто — с меню её снимает тот, кто утверждает карточки бизнеса.</span>') +
       '</div>';
-    }
-    if (!CARDS.list) return CARDS.fail ? '<div class="card quiet"><span class="small">' + esc(CARDS.fail) + '</span></div>'
+    };
+    if (id === 'new') return form('c-save', 'Сохранить черновик');
+    if (CARDS.lost) return '<div class="card quiet"><span class="small">Бизнес не нашёлся: роль работника есть, направления по ней нет.</span></div>';
+    if (!CARDS.list) return CARDS.fail ? '<div class="card quiet"><span class="verbatim">' + esc(CARDS.fail) + '</span></div>'
                                        : '<div class="card quiet"><span class="small">Загружаем карточку…</span></div>';
     var c = cardBy(id);
     if (!c) return '<div class="card quiet"><span class="small">Карточки нет в списке направления.</span></div>';
+    // правит ТОЛЬКО черновик: сменилось состояние, пока форма была открыта, — формы больше нет
+    if (CARD.edit === c.id && c.state === 'draft') return form('c-edit-save:' + c.id, 'Сохранить изменения');
     var cur = cardCurator(), has = c.recipes.indexOf(CARD.lang) !== -1;
-    if (has) recipeLoad(c.id, CARD.lang);     // заменяя рецепт, человек видит прежний
+    // работник ведёт карточку, пока она черновик: вне его сервер не отдаёт даже ЧТЕНИЯ рецепта (403) — группы нет вовсе
+    // партнёр: правки полей и «на утверждение» нет (403), рецепт — в любом состоянии (шаг 17, put_recipe)
+    var po = cardPartnerOnly(), wo = cardWorkerOnly() && !po, recipe = po || !wo || c.state === 'draft';
+    if (has && recipe) recipeLoad(c.id, CARD.lang);     // заменяя рецепт, человек видит прежний
     var back = cardReturned(c);
     var STATE_WORDS = { draft: back ? 'Возвращена' : 'Черновик', review: 'Ждёт утверждения', active: 'В меню', hidden: back ? 'Возвращена' : 'Снята' };
     var langs = '<div class="seg">' + CARD_LANGS.map(function (l) {
@@ -634,8 +649,14 @@ Object.assign(SCREENS, {
     var text = CARD.text[CARD.lang] !== undefined ? CARD.text[CARD.lang] : '';
     var waiting = has && CARD.body[CARD.lang] === null;
     var acts = '';
-    if ((c.state === 'draft' || c.state === 'hidden'))
+    // из `hidden` на проверку возвращает только барная сторона: работнику сервер ответит 403 (prava-rabotnika.md)
+    if (!po && (c.state === 'draft' || (c.state === 'hidden' && !wo)))
       acts += '<button type="button" class="btn" data-action="c-review:' + c.id + '"' + lock + '>Отправить на утверждение</button>';
+    // шаг 17: свой черновик партнёр ставит в меню сам; без рецепта — погашена (знание из списка), отказ базы — печатью
+    if (po && c.state === 'draft')
+      acts += (c.recipes.length ? '' : '<span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span>') +
+        '<button type="button" class="btn' + (c.recipes.length ? '" data-action="c-approve:' + c.id + '"' + lock : ' ghost" disabled') + '>В меню</button>';
+    // половина куратора — шаг 16; работнику её режет cardCurator() (права куратора на этом направлении у него нет)
     if (cur && c.state === 'review') {
       acts += c.recipes.length
         ? '<button type="button" class="btn" data-action="c-approve:' + c.id + '"' + lock + '>Утвердить — в меню</button>'
@@ -644,7 +665,11 @@ Object.assign(SCREENS, {
       acts += CARD.back
         ? '<div class="field"><label for="c-reason">Почему возвращаете</label><input id="c-reason" type="text" maxlength="500" value="' + esc(CARD.reason) + '" placeholder="Например: нет фото, цена выше соседних"' + lock + '></div>' +
           '<div class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="c-back-keep"' + lock + '>Не возвращать</button>' +
-          '<button type="button" class="btn quiet" data-action="c-back-send:' + c.id + '"' + lock + '>Вернуть</button></div>'
+          // шаг 16: без замечания «Вернуть» погашена; истории замечаний на сервере нет — прежнее затирается (рецепт 16/barCard)
+          '<button type="button" class="btn quiet" data-action="c-back-send:' + c.id + '"' + (CARD.busy || !CARD.reason.trim() ? ' disabled' : '') + '>Вернуть</button></div>' +
+          // обе подписи в разметке, видна одна: на вводе их переключает cardReasonSync без перерисовки (фокус в поле)
+          '<span class="small" id="c-reason-why"' + (CARD.reason.trim() ? ' hidden' : '') + '>Без замечания не вернуть — автор не узнает, что исправить.</span>' +
+          '<span class="small" id="c-reason-last"' + (CARD.reason.trim() ? '' : ' hidden') + '>Автор увидит только последнее замечание — прежнее затрётся.</span>'
         : '<button type="button" class="btn quiet" data-action="c-back">Вернуть с причиной</button>';
     }
     if (cur && c.state === 'active')
@@ -653,22 +678,32 @@ Object.assign(SCREENS, {
           '<button type="button" class="btn quiet" data-action="c-hide-keep"' + lock + '>Оставить</button>' +
           '<button type="button" class="btn quiet" data-action="c-hide:' + c.id + '"' + lock + '>Точно снять</button></div>'
         : '<button type="button" class="btn quiet" data-action="c-hide-ask">Снять с меню</button>';
-    if (!acts && c.state === 'review') acts = '<span class="small">Ждёт решения куратора направления.</span>';
+    // шаг 18: снятую возвращает в меню тот, кто утверждает (партнёр — set_product_state, bar.py:514); без рецепта — погашена, отказ базы — печатью
+    if (cur && c.state === 'hidden')
+      acts += c.recipes.length
+        ? '<button type="button" class="btn" data-action="c-approve:' + c.id + '"' + lock + '>Вернуть в меню</button>'
+        : '<span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span><button type="button" class="btn ghost" disabled>Вернуть в меню</button>';
+    if (!acts && c.state === 'review') acts = '<span class="small">Ждёт решения того, кто утверждает карточки бизнеса.</span>';
+    // вне черновика у работника — одна строка на состояние: КТО может и чего ждать, а не общее «Действий нет.»
+    if (!acts && wo && c.state === 'active') acts = '<span class="small">В меню. Рецепт ведёт бар или тот, кто её утверждает, с меню снимает тот, кто утверждает карточки бизнеса.</span>';
+    if (!acts && wo && c.state === 'hidden') acts = '<span class="small">Снята с меню. Вернуть её в работу может тот, кто утверждает карточки бизнеса.</span>';
     return (!LIVE && FLASH ? flash() : '') +
-      '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(c.title) + '</h2>' +
+      '<div class="card strong"><div class="row top"><div class="col"><h2 class="clamp2">' + esc(c.title) + '</h2>' +
         '<span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' + (c.mins ? ' · ' + c.mins + ' мин' : '') + (c.alcohol ? ' · алкоголь' : '') + '</span></div>' +
         '<span class="pill' + (c.state === 'active' ? ' on' : back ? ' warm' : '') + '">' + esc(STATE_WORDS[c.state]) + '</span></div>' +
-        (c.about ? '<span class="small">' + esc(c.about) + '</span>' : '') +
+        (c.about ? '<span class="small clamp2">' + esc(c.about) + '</span>' : '') +
         (back ? '<div class="note">' + svg(ICON.info) + '<span>Вернул куратор: ' + esc(c.note) + '</span></div>' : '') +
+        // правка — только у черновика; у прочих двери нет и слов об этом нет: отсутствие двери не объясняют
+        (c.state === 'draft' && !po ? '<button type="button" class="btn ghost" data-action="c-edit:' + c.id + '"' + lock + '>Изменить карточку</button>' : '') +
       '</div>' + note + photoBlock(c) +
-      '<div class="group"><span class="label">Рецепт</span>' + langs +
+      (recipe ? '<div class="group"><span class="label">Рецепт</span>' + langs +
         '<div class="field"><label for="c-recipe">Рецепт (' + CARD.lang.toUpperCase() + ')' + (has ? '' : ' — пока нет') + '</label>' +
           '<textarea id="c-recipe" rows="6"' + (waiting ? ' disabled' : lock) + '>' + esc(text) + '</textarea></div>' +
         (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
         '<span class="small">Рецепт видит только бар, гость — нет.</span>' +
         '<button type="button" class="btn ghost" data-action="c-recipe:' + c.id + '"' + (waiting ? ' disabled' : lock) + '>' +
           (has ? 'Заменить рецепт (' : 'Сохранить рецепт (') + CARD.lang.toUpperCase() + ')</button>' +
-      '</div>' +
+      '</div>' : '') +
       '<div class="group"><span class="label">Решение</span>' + deny + (acts || '<span class="small">Действий нет.</span>') + '</div>';
   },
 });

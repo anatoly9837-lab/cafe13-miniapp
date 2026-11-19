@@ -137,7 +137,7 @@ function stepper(d) {
 function buyBtn(d, wide) {
   var cls = 'btn' + (wide ? '' : ' mini');
   if (BUSY) return '<button type="button" class="' + cls + '" disabled>Отправляем…</button>';
-  if (!BAR || !BAR.open) return '<button type="button" class="' + cls + '" disabled>Бар закрыт</button>';
+  if (!BAR || !BAR.open) return '<button type="button" class="' + cls + '" disabled>Закрыто</button>';
   if (DATA.member.balance < d.price) {
     return '<button type="button" class="' + cls + ' quiet" data-go="topup">Не хватает ' +
       money(d.price - DATA.member.balance) + ' ฿</button>';
@@ -245,7 +245,7 @@ var TITLES = {
   pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои ивенты', thanks: 'Благодарность', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно', joinAbout: 'О клубе',
-  bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
+  drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
@@ -255,7 +255,9 @@ var TITLES = {
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
   masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера', masterRenew: 'Продление',
-  payouts: 'Распределить', payout: 'Распределить', businesses: 'Бизнесы клуба'
+  payouts: 'Распределить', payout: 'Распределить', businesses: 'Бизнесы клуба',
+  partnerApply: 'Заявка в партнёры', partnerReqs: 'Заявки в партнёры', partnerReq: 'Заявка в партнёры',
+  bizWorkers: 'Работники бизнеса'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -298,7 +300,9 @@ function homeOf() {
   // 0.1 «Путь мастера», слово владельца 05.11.2026: «человек без живого членства попадает на просьбу о вступлении и
   // видит только её». Экран входа (BARE): вкладок и выхода нет по построению — и у держателя роли без членства тоже,
   // это названная цена решения (Cafe13KPG#324). В демонстрации — прежние «Услуги»: гостя там показывают
-  if (DATA.role === 'guest') return LIVE ? 'noAccess' : 'guest';
+  // Исключение — РАБОЧАЯ роль `worker` (решение владельца №13, Cafe13KPG#927: «входит по допуску, без членства»):
+  // работник бизнеса без членства идёт на «Услуги», где его дверь «Карточки меню». Прочие роли без членства — как прежде
+  if (DATA.role === 'guest') return !LIVE || grant('worker') ? 'guest' : 'noAccess';
   if (DATA.role === 'staff') return 'staff';
   if (DATA.role === 'bar') return 'barQueue';
   if (DATA.role === 'curator') return 'curator';
@@ -317,7 +321,7 @@ var BACK = {
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
-  payouts: 'manage', payout: 'payouts', businesses: 'manage',
+  payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -407,7 +411,9 @@ function render() {
     title.textContent = 'Café XIII';
     title.className = 'wordmark';
   } else {
-    title.textContent = LIVE && current === 'demo' ? 'Просмотр' : TITLES[current] || 'Café XIII';
+    // шапка меню — название ВЫБРАННОГО бизнеса словом сервера (шаг 19), а не литерал таблицы
+    title.textContent = LIVE && current === 'demo' ? 'Просмотр'
+      : current === 'bar' ? (LIVE ? (BAR && BAR.title) : DATA.bar.title) || 'Café XIII' : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
   var right = document.getElementById('bar-right');
@@ -511,6 +517,8 @@ function demoWork(screen, p) {
   var W = DATA.work;
   if (screen === 'people' && !PEOPLE.list) { PEOPLE.list = fromRoster(W.people); PEOPLE.dirs = fromDirList(W.dirs); }
   if ((screen === 'barCards' || screen === 'barCard') && !CARDS.list) CARDS.list = fromCards(W.cards);
+  // название направления — тем же словарём демо, что «Члены клуба» (W.dirs): экран литерала не пишет (шаг 15)
+  if ((screen === 'barCards' || screen === 'barCard') && !CARDS.dir) CARDS.dir = (fromDirList(W.dirs) || [])[0] || null;
   if (screen === 'barRecipe' && RECIPE.pid !== p)
     RECIPE = { pid: p, gen: RECIPE.gen, me: { state: 'ok', r: fromRecipe(W.recipe.me) }, en: { state: 'ok', r: fromRecipe(W.recipe.en) } };
   if (screen === 'barMoney' && !BOOK.done.length) BOOK.done = W.book.slice();
@@ -523,9 +531,9 @@ function demoWork(screen, p) {
 /* Отправки и перечитывания рабочих экранов. В демонстрации они не уходят:
    сервера нет, а «ничего не случилось» на нажатие — дефект, уже бывший у нас
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
-var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
+var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-save', 'c-edit-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
-                  'tp-send', 'tp-reload', 'td-cancel', 'td-reload'];
+                  'tp-send', 'tp-reload', 'td-cancel', 'td-reload', 'bw-send', 'bw-revoke'];
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
@@ -565,6 +573,18 @@ function go(screen, p) {
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
+  // шаг 13 (рецепт R3–R5): счётчик «Заявок в партнёры» — на каждом входе во «Управление»; очередь — на каждом входе:
+  // решение мог принять другой операционный директор. Своя заявка нужна, чтобы узнать СВОЮ в очереди
+  if ((screen === 'manage' || screen === 'partnerReqs') && current !== screen && mayOps()) { PR.qErr = ''; loadPartnerQueue(); if (screen === 'partnerReqs') loadMinePartner(); }
+  if (screen === 'partnerReq') { PR.qErr = ''; if (current !== 'partnerReq' || param !== p) { PR.ask = 0; PR.note = ''; } if (!PR.q && mayOps()) loadPartnerQueue(); }
+  // форма: остаток и цена — на входе (рецепт R2, правило Cafe13KPG#638)
+  if (screen === 'partnerApply' && current !== 'partnerApply' && LIVE) { PR.err = ''; refreshMe(); loadPartnerPrice(); }
+  if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') PR.mineState = '';
+  // шаг 14 (рецепт 14/bizWorkers, «Перечитать на входе»): свои бизнесы с оплаченностью и работники — на каждом входе;
+  // запомненный бизнес сверяется со свежим списком в loadMyBiz
+  if (screen === 'bizWorkers' && current !== 'bizWorkers' && LIVE) {
+    BW.err = null; BW.rowErr = ''; BW.done = ''; BW.uid = ''; BW.lost = false; BW.dirs = null; BW.list = null; BW.listFail = ''; loadMyBiz(true);
+  }
   // шаг 11: пометка ждущих на «Распределить деньги» — счёт нужен уже на «Управлении»; каждый вход — свежий список
   if ((screen === 'manage' || screen === 'payouts') && current !== screen && mayMasters()) { PAY.err = ''; loadPayouts(); }
   if (screen === 'payout') { PAY.err = ''; if (!PAY.list && mayMasters()) loadPayouts(); }
@@ -594,8 +614,13 @@ function go(screen, p) {
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
   if (screen === 'home' && current !== 'home' && mayRequests() && WIRED.memberRequests) loadRequests();
   // с самой карточки в список возвращаются — это не новый вход, «откуда» не трогать
-  if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard')
-    CARDS.from = current === 'barQueue' ? 'barQueue' : homeOf();
+  // «Услуги» — дверь работника (шаг 15): без неё «назад» увёл бы работника с членством на «Клуб», где двери нет
+  if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard') {
+    CARDS.from = current === 'barQueue' || current === 'guest' ? current : homeOf();
+    // шаг 16: дверь партнёра — в блоке бизнеса на «Клубе»; у барной стороны там своя дверь, и она — бар (предел строкой)
+    CARDS.partner = current === 'home' && !!cardPartnerDir() && !DATA.barSide;
+  }
+  if (screen === 'home' && current !== 'home' && cardPartnerDir()) loadPartnerCards();
   if (screen === 'barCards' && current !== 'barCards' && mayCards()) loadCards();
   if (screen === 'barCard' && (current !== 'barCard' || String(param) !== String(p))) {
     // заметка «черновик сохранён» переживает переход с формы на саму карточку
@@ -610,6 +635,7 @@ function go(screen, p) {
   if (screen === 'tillDay' && LIVE && canTopup()) { TD.ask = -1; TD.deny = null; tillDayLoad(); }
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink' || screen === 'barRecipe') && LIVE && MENU_STATE === '') loadMenu();
+  if (screen === 'guest' && LIVE) loadBiz();
   /* «Записи» строятся из ответа афиши, поэтому грузить её надо и при входе
      сюда: человек попадает на этот экран сразу после записи (`go('bookings')`),
      минуя афишу, и без этой строки `EVENTS` остался бы `null` навсегда —
@@ -713,6 +739,8 @@ function doAction(a) {
 
     if (a === 'buy') { buy(arg); return; }
     if (a === 'retry-menu') { loadMenu(); render(); return; }
+    if (a === 'klub-biz-retry') { loadBiz(); return; }
+    if (a === 'klub-biz') { bizPick(Number(arg)); return; }
     /* Повтор своего заказа (рецепт `barOrder`): прежний отказ стоит до ответа — гасить его раньше
        значило бы на миг сказать «заказа нет». Без направления опросу спросить некого: сперва бар. */
     if (a === 'retry-mine') {
@@ -810,8 +838,11 @@ function doAction(a) {
       if (a === 'c-new') { go('barCard', 'new'); return; }
       if (a === 'c-open') { go('barCard', arg); return; }
       if (a === 'c-save') { cardSave(); return; }
-      if (a === 'c-group-theirs') { cardSave('theirs'); return; }
-      if (a === 'c-group-mine') { cardSave('mine'); return; }
+      // правка черновика (шаг 15): дверь у карточки и сохранение; вопрос «та же группа?» — в форму, которая открыта
+      if (a === 'c-edit') { cardEditStart(Number(arg)); haptic(); render(); return; }
+      if (a === 'c-edit-save') { cardEditSave(Number(arg)); return; }
+      if (a === 'c-group-theirs') { if (CARD.edit) cardEditSave(CARD.edit, 'theirs'); else cardSave('theirs'); return; }
+      if (a === 'c-group-mine') { if (CARD.edit) cardEditSave(CARD.edit, 'mine'); else cardSave('mine'); return; }
       if (a === 'c-recipe') { recipeSave(Number(arg)); return; }
       if (a === 'c-review') { cardState(Number(arg), 'review'); return; }
       if (a === 'c-approve') { cardState(Number(arg), 'active'); return; }
@@ -1103,6 +1134,28 @@ function doAction(a) {
     if (a === 'pay-open') { go('payout', Number(arg)); return; }
     if (a === 'pay-go' && mayMasters()) { sendPayout(Number(arg)); return; }
     if (a === 'biz-retry' && mayOps()) { loadBusinesses(); render(); return; }
+    // шаг 14: работники бизнеса
+    if (a === 'bw-send') { bwAssign(); return; }
+    if (a === 'bw-revoke') { bwGrab(); bwRevokeAsk(Number(arg)); render(); return; }
+    if (a === 'bw-keep') { if (UNDO.key && /^bw:/.test(UNDO.key)) undoStop(); BW.ask = null; bwGrab(); render(); return; }
+    if (a === 'bw-retry') { loadWorkers(); bwGrab(); render(); return; }
+    if (a === 'bw-retry-biz') { loadMyBiz(true); render(); return; }
+    if (a === 'bw-bot') { bwBot(); return; }
+    if (a === 'bw-biz' && !BW.busy && BW.ask === null) {
+      bwGrab(); BW.biz = Number(arg); BW.lost = false; BW.list = null; BW.listFail = ''; BW.err = null; BW.rowErr = ''; BW.done = '';
+      loadWorkers(); render(); return;
+    }
+    // шаг 13: заявка в партнёры
+    if (a === 'pr-apply') { PR.err = ''; go('partnerApply'); return; }
+    if (a === 'pr-send') { sendPartner(); return; }
+    if (a === 'pr-retry-mine') { loadMinePartner(); render(); return; }
+    if (a === 'pr-retry-price') { prGrab(); loadPartnerPrice(); render(); return; }
+    if (a === 'pr-retry-q' && mayOps()) { loadPartnerQueue(); render(); return; }
+    if (a === 'pr-open') { go('partnerReq', arg); return; }
+    if (a === 'pr-yes' && mayOps()) { decidePartner(Number(arg), 'approved'); return; }
+    if (a === 'pr-ask' && mayOps() && !PR.busy) { PR.ask = Number(arg); PR.note = ''; PR.qErr = ''; render(); return; }
+    if (a === 'pr-keep' && !PR.busy) { PR.ask = 0; PR.qErr = ''; render(); return; }
+    if (a === 'pr-no' && mayOps()) { decidePartner(Number(arg), 'rejected'); return; }
     if (a === 'ms-retry-s' && mayMasters()) { loadSlots(); render(); return; }
     if (a === 'ms-retry-places') { loadPlaces(); render(); return; }
     if (a === 'tq-no' && mayTopups()) { if (TOPQ.step === 'no') decideTopup(Number(arg), 'rejected'); return; }
