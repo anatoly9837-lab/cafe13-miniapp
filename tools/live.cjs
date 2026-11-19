@@ -11032,6 +11032,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const n = 'partner-card-resheniya', o = mk();
       const s = await pcOpen(o, [BWDIR(7, true)], PMINE);
       await tapIf(s, n, '#view [data-go="barCards"]', 'дверь'); await s.p.waitForTimeout(500);
+      // заводить партнёру сервер не даёт (403): ни кнопки, ни главной кнопки, ни формы (v162; снимает шаг 17)
+      const nw = await s.p.evaluate(() => ({ list: !!document.querySelector('#view [data-cards]'),
+        btn: !!document.querySelector('#view [data-action="c-new"]'), main: (mainFor() || {}).a || null }));
+      if (!nw.list) bad.push(`${n}: список карточек партнёра не отрисован — «Новую карточку» мерить не на чем`);
+      else if (nw.btn || nw.main === 'c-new') bad.push(`${n}: у партнёра «Новая карточка»: ${JSON.stringify(nw)}`);
+      await s.p.evaluate(() => go('barCard', 'new')); await s.p.waitForTimeout(300);
+      const nf = await s.p.evaluate(() => ({ form: !!document.querySelector('#c-title'), main: (mainFor() || {}).a || null }));
+      if (nf.form || nf.main === 'c-save') bad.push(`${n}: у партнёра форма заведения: ${JSON.stringify(nf)}`);
+      await s.p.evaluate(() => go('barCards')); await s.p.waitForTimeout(300);
       const noEdit = async (id) => {
         const t = await s.view(), lb = await groupLabels(s);
         if (t.includes('Изменить карточку') || lb.includes('Рецепт') || t.includes('Отправить на утверждение')) bad.push(`${n}: у партнёра на ${id} правка, рецепт или «на утверждение»`);
