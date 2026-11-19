@@ -5,7 +5,7 @@ Object.assign(SCREENS, {
   manage: function () {
     // v100: две группы, каждая по своему праву — «Кто в клубе» у главы, «Деньги» у ответственного
     // за пополнения (кадр E46, Cafe13KPG#586). Ни одного права — прежний отказ.
-    if (!mayPeople() && !mayTopups() && !mayMasters() && !(LIVE && msIsMaster())) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (!mayPeople() && !mayTopups() && !mayMasters() && !mayOps() && !(LIVE && msIsMaster())) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
     // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
     // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
@@ -29,14 +29,152 @@ Object.assign(SCREENS, {
       (mayMasters() ? '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
         '<span class="small">' + waitSub(MR.pending, 'Заявки в мастера, ивенты, слоты') + '</span></span>' +
         waitMark(MR.pending) + svg(ICON.chev, 'chev') + '</button>' : '') + own + '</div>' : '';
-    if (!mayPeople()) return money_ + art;
+    // шаг 12 (кадр E46е, Cafe13KPG#877): «Бизнесы» — у операционного директора (и админа). Пометки ждущих нет:
+    // ждать тут нечему до шага 13, его строка «Заявки в партнёры» ляжет в эту же группу
+    var biz = mayOps() ? '<div class="group"><span class="label">Бизнесы</span>' +
+      '<button type="button" class="listitem" data-go="businesses"><span class="grow"><b>Бизнесы клуба</b>' +
+        '<span class="small">Кто партнёр и открыта ли смена</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
+      // шаг 13 (рецепт R3): «Заявки в партнёры» — под «Бизнесами клуба», счётчик ждущих чипом `.count`; не загрузилось —
+      // строка есть, счётчика нет (счётчик не выдумывается)
+      '<button type="button" class="listitem" data-go="partnerReqs"><span class="grow"><b>Заявки в партнёры</b>' +
+        '<span class="small">' + waitSub(PR.pending, 'Кто просит бизнес в клубе') + '</span></span>' +
+        waitMark(PR.pending) + svg(ICON.chev, 'chev') + '</button></div>' : '';
+    if (!mayPeople()) return money_ + art + biz;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
         '<span class="small">' + waitSub(wait, 'Кто просится в клуб') + '</span></span>' +
         waitMark(wait) + svg(ICON.chev, 'chev') + '</button>' +
       '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
         '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
-    '</div>' + money_ + art;
+    '</div>' + money_ + art + biz;
+  },
+
+  // ── шаг 13 (Cafe13KPG#889): рецепт `_docs/recept/ekran/13-zayavka-v-partnyory.md` (cafe13-miniapp#257) ──
+  // R2: форма. Цена и остаток — до нажатия; «спишется» — число сервера, своей арифметики нет
+  partnerApply: function () {
+    if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Заявку в партнёры подаёт член клуба.</span></div></div>';
+    var p = PR.price, bal = msBalance();
+    var err = PR.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(PR.err) + '</span></div>' : '';
+    return '<div class="field"><label for="pr-title">Название бизнеса</label><input id="pr-title" value="' + esc(PR.title) + '">' +
+        '<span class="small">Как его назовут гости</span></div>' +
+      '<div class="field"><label for="pr-about">О бизнесе</label><textarea id="pr-about" rows="3">' + esc(PR.about) + '</textarea>' +
+        '<span class="small">Одной строкой: чем он занимается</span></div>' +
+      '<div class="rows">' +
+        '<div><span class="small">Спишется сейчас</span><b class="num">' + (typeof p === 'number' ? money(p) + ' ฿' : p === null ? 'цену не узнать' : '…') + '</b></div>' +
+        '<div><span class="small">На счёте</span><b class="num">' + money(bal) + ' ฿</b></div></div>' +
+      (p === null ? '<div class="row"><span class="small">Цену не удалось узнать у сервера.</span>' +
+        '<button type="button" class="btn quiet" data-action="pr-retry-price">Повторить</button></div>' : '') +
+      err +
+      '<button type="button" class="btn" data-action="pr-send"' + (PR.busy || typeof p !== 'number' || p > bal ? ' disabled' : '') + '>' +
+        (PR.busy ? 'Отправляем…' : 'Подать заявку') + '</button>' +
+      '<div class="note">' + svg(ICON.info) + '<span>Решение принимает операционный директор. Если он откажет, деньги вернутся на счёт.</span></div>';
+  },
+
+  // R4: очередь. Ждущие сверху — так отдаёт сервер (`list_requests`); решённые остаются со своим словом
+  partnerReqs: function () {
+    if (LIVE && !mayOps()) return '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Сюда нельзя. ' +
+      '<span class="verbatim">Заявки в партнёры решает операционный директор.</span></span></div>';
+    if (!PR.q) return PR.qFail ? '<div class="card quiet"><div class="row"><span class="small">Заявки в партнёры не загрузились: ' + esc(PR.qFail) + '</span>' +
+        '<button type="button" class="btn quiet" data-action="pr-retry-q">Повторить</button></div></div>'
+      : '<div class="card quiet"><span class="small">Загружаем заявки…</span></div>';
+    if (!PR.q.length) return (FLASH ? flash() : '') + '<div class="card quiet"><span class="small">Заявок в партнёры нет.</span></div>';
+    return (FLASH ? flash() : '') + PR.q.map(function (q) {
+      return '<button type="button" class="listitem" data-action="pr-open:' + q.id + '"><span class="grow">' +
+          '<b class="clamp1">' + esc(q.title) + '</b><span class="small clamp1">' + esc((q.who || 'Без имени') + ' · ' + topupDay(q.iso, true)) + '</span></span>' +
+          '<span class="pill' + (q.status === 'pending' ? ' on' : '') + '">' + esc(q.word) + '</span>' + svg(ICON.chev, 'chev') + '</button>';
+    }).join('');
+  },
+
+  // R5: решение. «Оплачено до …» здесь нет: ответ decide даты не несёт (рецепт), дата — на «Клубе» партнёра
+  partnerReq: function (id) {
+    if (LIVE && !mayOps()) return SCREENS.partnerReqs();
+    if (!PR.q) return SCREENS.partnerReqs();
+    var q = PR.q.filter(function (x) { return x.id === Number(id); })[0];
+    if (!q) return '<div class="card quiet"><div class="col"><b>Такой заявки нет</b>' +
+      '<span class="small">Вернитесь к заявкам в партнёры.</span></div></div>';
+    // своя — по номеру заявки в СВОИХ (`/partner/requests/mine`): номер человека в разметку не идёт
+    var own = !!(PR.mine && PR.mine.some(function (x) { return x.id === q.id; }));
+    var busy = PR.busy ? ' disabled' : '';
+    var err = PR.qErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(PR.qErr) + '</span></div>' : '';
+    return (FLASH ? flash() : '') +
+      '<div class="card"><div class="col"><b class="clamp2">' + esc(q.title) + '</b><span class="small">' + esc((q.who || 'Без имени') + ' · ' + topupDay(q.iso, true)) + '</span></div></div>' +
+      // описание — тушью, не подписью: на нём стоит решение (рецепт R5). `<div>`, а не `<p>`: `p` у нас приглушённый
+      // (styles.css:207), тушь и 15 px `div` берёт от body. Переводы строк заявителя сохранены
+      (q.about ? '<div class="card quiet"><div style="white-space:pre-wrap">' + esc(q.about) + '</div></div>' : '') +
+      '<div class="rows"><div><span class="small">Списано</span><b class="num">' + money(q.amount) + ' ฿</b></div></div>' +
+      err +
+      (q.status !== 'pending' ? '<div class="card quiet"><div class="row"><span class="small">Решено ' + esc(topupDay(q.done, true)) + '</span>' +
+          '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div>' + (q.note ? '<span class="said">' + esc(q.note) + '</span>' : '') + '</div>'
+      : own ? '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой операционный директор.</span></div>'
+      : PR.ask === q.id ? '<div class="field"><label for="pr-note">Причина отказа</label>' +
+          '<textarea id="pr-note" rows="4" maxlength="500">' + esc(PR.note) + '</textarea>' +
+          '<span class="small">Что исправить, чтобы согласовали</span></div>' +
+        '<button type="button" class="btn" data-action="pr-no:' + q.id + '"' + (PR.busy || !PR.note.trim() ? ' disabled aria-disabled="true"' : ' aria-disabled="false"') +
+          ' aria-describedby="pr-why">' + (PR.busy ? 'Отправляем…' : 'Отказать') + '</button>' +
+        '<span class="small" id="pr-why"' + (PR.note.trim() ? ' hidden' : '') + '>Сначала причина — без неё заявитель не узнает, что исправить.</span>' +
+        '<button type="button" class="btn quiet" data-action="pr-keep"' + busy + '>Назад</button>'
+      : '<button type="button" class="btn" data-action="pr-yes:' + q.id + '"' + busy + '>' + (PR.busy ? 'Отправляем…' : 'Согласовать') + '</button>' +
+        '<button type="button" class="btn quiet" data-action="pr-ask:' + q.id + '"' + busy + '>Отказать</button>' +
+        '<div class="note">' + svg(ICON.info) + '<span>Согласие создаёт бизнес и начинает оплаченный месяц. Отказ вернёт деньги заявителю.</span></div>');
+  },
+
+  // ── шаг 14 (Cafe13KPG#545): рецепт `_docs/recept/ekran/14/bizWorkers.md`; выбор бизнеса и слова неоплаченного —
+  // письмо designer-55 18.11.2026 (правка рецепта следом). Вход — «Работники» в блоке «Свой бизнес в клубе» на «Клубе»
+  bizWorkers: function () {
+    var dirs = LIVE ? BW.dirs : [{ id: 0, title: 'Кофейня', active: true }];
+    var bizId = LIVE ? BW.biz : 0, list = LIVE ? BW.list : [];
+    var retry = function (words, why, act) {
+      return '<div class="card quiet"><div class="row"><span class="small">' + words + esc(why) + '</span>' +
+        '<button type="button" class="btn quiet" data-action="' + act + '">Повторить</button></div></div>';
+    };
+    if (!dirs) return BW.dirsFail ? retry('Ваши бизнесы не загрузились: ', BW.dirsFail, 'bw-retry-biz')
+      : '<div class="card quiet"><span class="small">Загружаем ваши бизнесы…</span></div>';
+    if (!dirs.length) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Работников назначает партнёр своего бизнеса.</span></div></div>';
+    var b = dirs.filter(function (x) { return x.id === bizId; })[0] || null;
+    var head = '<span class="small">Назначенный работник появится в этом списке. Что ему будет видно в приложении — решают следующие шаги.</span>' +
+      (BW.lost ? '<div class="note">' + svg(ICON.info) + '<span>Прежде выбранный бизнес больше не ваш.</span></div>' : '');
+    // один бизнес — выбора нет; два и больше — переключатель формы «Смотреть как» (js/20), слова — названия сервера
+    var pick = dirs.length === 1 ? '<span class="small">Бизнес „' + esc(dirs[0].title) + '“</span>'
+      : '<div class="group"><span class="label">Ваши бизнесы</span>' + dirs.map(function (x) {
+          return '<button type="button" class="listitem" data-action="bw-biz:' + x.id + '"' + (x.id === bizId ? ' aria-current="true"' : '') + '>' +
+            '<span class="grow"><b class="clamp1">' + esc(x.title) + '</b></span>' +
+            (x.id === bizId ? '<span class="pill on">сейчас</span>' : svg(ICON.chev, 'chev')) + '</button>';
+        }).join('') + '<span class="small">Работника назначают в один бизнес. Выберите, в какой.</span></div>';
+    if (!b) return head + pick;
+    var off = BW.busy || BW.ask !== null ? ' disabled' : '';
+    var rows = !list ? (BW.listFail ? retry('Работники бизнеса не загрузились: ', BW.listFail, 'bw-retry')
+        : '<div class="card quiet"><span class="small">Загружаем работников…</span></div>')
+      : !list.length ? '<div class="note">' + svg(ICON.info) + '<span>Работников пока нет. Назначьте первого — номер он узнает у бота.</span></div>'
+      : list.map(function (w) {
+          var asked = BW.ask === b.id + ':' + w.rid;
+          return '<div class="listitem"><span class="grow"><b class="clamp1">' + esc(w.name) + '</b>' +
+              '<span class="small">' + esc(ROLE_NAME.worker) + '</span></span>' +
+              (w.elsewhere ? '<span class="pill">и в другом бизнесе</span>' : '') +
+              (asked ? '' : '<button type="button" class="btn quiet" data-action="bw-revoke:' + w.rid + '"' + off + '>Снять</button>') + '</div>' +
+            (asked ? '<div class="undo"><span class="small">Снимаем: ' + esc(w.name) + '</span>' +
+              '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="bw-keep">Отменить</button></div>' : '');
+        }).join('');
+    var seal = function (t) { return '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(t) + '</span></div>'; };
+    var err = !BW.err ? '' : BW.err.seal ? seal(BW.err.text)
+      : '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(BW.err.text) + '</span></div>';
+    // неоплаченный (развилка 3): поле и кнопка погашены, запроса нет; слова — клиента (печати до запроса не существует)
+    var shut = b.active ? '' : ' disabled';
+    var bot = tg && typeof tg.openTelegramLink === 'function' ? '<u role="link" tabindex="0" data-action="bw-bot">@userinfobot</u>' : '@userinfobot';
+    return head + pick +
+      '<div class="group"><span class="label">Кто работает</span>' + rows +
+        (BW.rowErr ? seal(BW.rowErr) : '') +
+        (BW.done ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(BW.done) + '</span></div>' : '') + '</div>' +
+      '<div class="group"><span class="label">Назначить работника</span>' +
+        (b.active ? '' : '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Оплаченный месяц бизнеса закончился. ' +
+          'Назначать работников можно после оплаты — уже назначенные работают дальше.</span></div>') +
+        '<div class="field"><label for="bw-uid">Telegram ID</label><input id="bw-uid" inputmode="numeric" autocomplete="off" value="' + esc(BW.uid) + '"' + shut + '>' +
+          '<span class="small">Свой номер человек узнаёт у бота ' + bot + ' — в Telegram, за полминуты. Попросите его прислать номер вам.</span></div>' +
+        err +
+        '<button type="button" class="btn" data-action="bw-send"' + (shut || (BW.busy ? ' disabled' : '')) + '>' + (BW.busy ? 'Назначаем…' : 'Назначить') + '</button>' +
+        '<div class="note">' + svg(ICON.info) + '<span>Имя появится в списке ПОСЛЕ назначения. Ошиблись номером — снимите строку и назначьте снова.</span></div>' +
+      '</div>';
   },
 
   // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g (подтверждение) снят по #695; E56d — причина; E56e — своя
@@ -107,5 +245,27 @@ Object.assign(SCREENS, {
     return rows + check + err +
       '<button type="button" class="btn" data-action="tq-ok:' + q.id + '"' + busy + '>' + (TOPQ.busy ? 'Зачисляем…' : 'Зачислить ' + money(q.sum) + ' ฿') + '</button>' +
       '<button type="button" class="btn quiet" data-action="tq-ask:' + q.id + '"' + busy + '>Отказать</button>';
+  },
+
+  /* ── шаг 12: «Бизнесы клуба» (кадры E75 список, E75b пусто, E75v не загрузилось; Cafe13KPG#877, #881) — данные в
+     06-lyudi.js (`BIZ`). Плашка — НЕ кнопка и без шеврона (решение дизайнера, #881): за ней в шаге 12 нет экрана,
+     а шеврон обещал бы дверь. Пилюля — про СМЕНУ (`is_open`), и это сказано прозой под списком: без неё
+     «закрыт» читался бы как «закрыт навсегда» (`is_active`). Ни одного числа доли: шаг 21. */
+  businesses: function () {
+    if (LIVE && !mayOps()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Бизнесы клуба видит операционный директор.</span></div></div>';
+    if (!BIZ.list) return BIZ.fail ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(BIZ.fail) + '</span></div>' +
+        '<button type="button" class="btn quiet" data-action="biz-retry">Попробовать снова</button>' +
+        '<span class="small">Бизнесы клуба живут на сервере — без ответа показать их нечем.</span>'
+      : '<div class="card quiet"><span class="small">Загружаем бизнесы клуба…</span></div>';
+    if (!BIZ.list.length) return '<div class="note">' + svg(ICON.info) + '<span>Бизнесов в клубе пока нет. ' +
+      'Бизнес появляется, когда клуб договаривается с партнёром.</span></div>';
+    return BIZ.list.map(function (b) {
+      return '<div class="card"><div class="row"><span class="col"><b>' + esc(b.title) + '</b>' +
+          '<span class="small">' + (b.partner ? 'Партнёр: ' + esc(b.who || 'имя не указано') : 'Партнёра нет') + '</span></span>' +
+          (b.open ? '<span class="pill on">открыт</span>' : '<span class="pill">закрыт</span>') + '</div></div>';
+    }).join('') +
+      '<div class="note">' + svg(ICON.info) + '<span>«Открыт» и «закрыт» — про смену на сегодня, а не про закрытие бизнеса: ' +
+      'смену открывает куратор направления или администратор. Условий сделки и долей здесь нет.</span></div>';
   },
 });

@@ -12,7 +12,8 @@
 отрисовке: без Golos Text подпись расходится на 3–6 px.
 
 ⚠ Путь экрана (кадр раньше кода, строка в реестре, снимок,
-ворота) сюда НЕ переписан — он в `_docs/screen-path.md`.
+ворота) сюда НЕ переписан — он в СОСЕДНЕМ репозитории:
+`Cafe13KPG`, файл `_docs/screen-path.md`.
 
 ## `.box` — ящик с пунктиром: место, которое ещё не заполнено
 - токены: `--muted`
@@ -23,20 +24,20 @@
 - базовая геометрия: border: 1px solid var(--line); border-radius: 12px; gap: 10px; padding: 14px 16px
 
 ## `.listitem` — плашка-меню: ведёт на другой экран
-- токены: `--clay`, `--deny-bg`, `--ink`, `--muted`, `--paper`, `--surface`
+- токены: `--clay`, `--deny-bg`, `--ink`, `--muted`, `--paper`, `--sage`, `--surface`
 - базовая геометрия: border: 1px solid var(--muted); border-radius: 12px; font-size: 15px; gap: 12px; padding: 13px 15px
 
 ## `.note` — заметка рядом с главным
 - токены: `--muted`, `--paper`, `--surface`
 - базовая геометрия: border-radius: 12px; gap: 10px; padding: 13px 14px
 
-## `.paper` — лист: длинный текст на всю ширину
+## `.paper` — тетрадь: лист с потолком высоты под iframe, один на экран; что не влезло — обрезается
 - токены: `--card`, `--line`, `--sab`, `--sat`
-- базовая геометрия: border: 1px solid var(--line); border-radius: 12px; min-height: 360px
+- базовая геометрия: border: 1px solid var(--line); border-radius: 12px; height: calc(100vh - 94px - var(--sat) - var(--sab)); min-height: 360px; overflow: hidden
 
 ## `.rows` — ряды «подпись — значение» внутри карточки
 - токены: `--line`, `--paper`, `--surface`
-- базовая геометрия: border: 1px solid var(--line); border-radius: 12px; gap: 1px
+- базовая геометрия: border: 1px solid var(--line); border-radius: 12px; gap: 1px; overflow: hidden
 
 ## `.way` — дорога к действию: подсказка с входом
 - токены: `--card`, `--muted`, `--surface`

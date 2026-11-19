@@ -9,7 +9,7 @@
    коде: id назначает база, и после переноса константа указала бы на чужое
    направление — меню пришло бы пустым и выглядело бы честным «пусто».
    Открыт бар или нет, сервер считает по открытой смене. */
-var BAR = null;            // { id, open } после /directions
+var BAR = null;            // { id, open, title } после /directions
 
 function fromDirections(d) {
   if (!Array.isArray(d)) return undefined;
@@ -19,7 +19,8 @@ function fromDirections(d) {
         typeof x.is_active !== 'boolean' || typeof x.is_open !== 'boolean') return undefined;
   }
   var b = d.filter(function (x) { return x.title === 'Бар' && x.is_active; });
-  return b.length === 1 ? { id: b[0].id, open: b[0].is_open } : null;   // ни одного или два — не угадываем
+  // title — слово сервера для «Бизнес «…»» на карточках меню (шаг 15): экран не пишет название литералом
+  return b.length === 1 ? { id: b[0].id, open: b[0].is_open, title: b[0].title } : null;   // ни одного или два — не угадываем
 }
 
 var MENU_STATE = '';       // '' — не грузили, 'loading', 'ok', иначе текст отказа
@@ -121,7 +122,7 @@ function loadMenu() {
     if (err) {
       DATA.bar.menu = [];
       MENU_STATE = err;
-      if (current === 'bar' || current === 'drink') render();
+      if (current === 'bar' || current === 'drink' || current === 'barRecipe') render();
       return;
     }
     loadBarMenu();

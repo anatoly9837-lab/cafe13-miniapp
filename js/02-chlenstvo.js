@@ -348,15 +348,27 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               bookings: 1, thanks: 1,
               // шаг 11 (Cafe13KPG#857): «Распределить деньги» арт-директора — на ручках cafe13-api#136
               payouts: 1, payout: 1,
+              // шаг 12 (Cafe13KPG#877): «Бизнесы клуба» операционного директора — на `GET /directions` с партнёром (cafe13-api#876)
+              businesses: 1,
+              // шаг 13 (Cafe13KPG#889): заявка в партнёры — на ручках cafe13-api#143; рецепт cafe13-miniapp#257
+              partnerApply: 1, partnerReqs: 1, partnerReq: 1,
+              // шаг 14 (Cafe13KPG#545): работники бизнеса — ручки cafe13-api#146 (в бою 91b26f7); рецепт cafe13-miniapp#276
+              bizWorkers: 1,
+              // шаг 15 (Cafe13KPG#546): карточки меню — оттаяны из FROZEN для работника бизнеса; ручки cafe13-api#147 (d4b6812),
+              // рецепт `_docs/recept/ekran/15/`. Дверь работника — на «Услугах» (`guest`)
+              barCards: 1, barCard: 1,
+              // 0.2, витрина бара (Cafe13KPG#269, рецепты): оттаяна из FROZEN — вкладка «Услуги» (`guest`, носитель
+              // двери в бар, план владельца 0.2.5 в Cafe13KPG#855), меню, позиция, рецепт, заказ, мой заказ
+              guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
    всех»; «не удаляем — делаем временно недоступным». Экраны ниже были в `WIRED` и стоят на данных
    сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
    тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
-var FROZEN = { guest: 1, eventNew: 1,
-               bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1, barQueue: 1, barMoney: 1, barDay: 1,
-               barCards: 1, barCard: 1, staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
+var FROZEN = { eventNew: 1,
+               barQueue: 1, barMoney: 1, barDay: 1,
+               staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
 // куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
 // по слову владельца серым гаснет всё, кроме двух ролей, а не только то, что было включено
@@ -378,5 +390,5 @@ var PROTO = {};
    согласованным слотом (решение координатора): живы «Клуб» с «Продлить», продление и «Вы мастер».
    Форму E54b и «Заявка уже ждёт решения» снимает опись своей фикстурой (`MR.mine = []` / `[pending]`). */
 var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1, masterRenew: 1,
-               payouts: 1, payout: 1 };
+               payouts: 1, payout: 1, businesses: 1 };
 

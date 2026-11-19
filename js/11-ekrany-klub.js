@@ -31,6 +31,12 @@ var SCREENS = {
 
       // шаг 3: «Я мастер» — под карточкой членства (кадр E54); у гостя пусто
       masterOffer() +
+      // шаг 13 (рецепт R1): «Свой бизнес в клубе» — ниже блока мастера. Шаг 14 (рецепт 14/bizWorkers): дверь «Работники»
+      // в согласованном состоянии блока — одна на все бизнесы, выбор бизнеса на самом экране
+      // шаг 16 (рецепт 16/home): дверь очереди согласования — партнёру по владению; счётчик по списку, null — без чипа
+      partnerOffer((WIRED.bizWorkers ? '<button type="button" class="btn quiet" data-go="bizWorkers">Работники</button>' : '') +
+        (cardPartnerDir() ? '<button type="button" class="listitem" data-go="barCards"><span class="grow"><b>Карточки на согласовании</b>' +
+          '<span class="small">' + esc(waitSub(PCARDS.n, 'Что ждёт вашего решения')) + '</span></span>' + waitMark(PCARDS.n) + svg(ICON.chev, 'chev') + '</button>' : '')) +
       rolePanel() +
 
       (LIVE ? myRoles() +
@@ -70,7 +76,14 @@ var SCREENS = {
             '<span class="grow"><b>Бар Café XIII</b><span class="small">Кофе, чай, авторские · заказ из приложения</span></span>' +
             svg(ICON.chev, 'chev') +
           '</button>' +
-        '</div>';
+        '</div>' +
+        // шаг 15 (рецепт 15/barCards): дверь РАБОТНИКА бизнеса — по его праву, а не mayCards(): у барной стороны
+        // двери уже две («Клуб», «Заказы»). «Работа» — то же слово, что на «Клубе»; подпись — без «утверждения»:
+        // утверждает куратор, и чужое слово обещало бы право шага 16
+        (grant('worker') ? '<div class="group"><span class="label">Работа</span>' +
+          '<button type="button" class="listitem" data-go="barCards">' +
+            '<span class="grow"><b>Карточки меню</b><span class="small">Завести позицию и отправить на утверждение</span></span>' +
+            svg(ICON.chev, 'chev') + '</button></div>' : '');
       // «Услуги острова — ещё не подключено» снято: оно обещало раздел, которого
       // у клуба нет (решение владельца, Cafe13KPG#102, со слов координатора).
       // Вернуть, когда у клуба появятся настоящие услуги и ручка под них.
