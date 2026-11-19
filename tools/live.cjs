@@ -11153,6 +11153,47 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       }
       await done(s, n);
     }
+    // ── шаг 18 (Cafe13KPG#549, рецепт `_docs/recept/ekran/18/`): снятую партнёр возвращает в меню; «Действий нет.» больше не врёт
+    // «Снять с меню» у active — регресс, его держит partner-card-resheniya (83)
+    const decide = s => s.p.evaluate(() => { const g = [...document.querySelectorAll('#view .group')].find(e => (e.querySelector('.label') || {}).textContent === 'Решение');
+      return g ? g.textContent : null; });
+    // 10. снятая с рецептом: «Вернуть в меню» шлёт active, и строки «Действий нет.» на экране нет
+    {
+      const n = 'partner-card-vernut-v-menu', o = mk();
+      const s = await pcCards(o);
+      await s.p.evaluate(() => go('barCard', '84')); await s.p.waitForTimeout(400);
+      const g = await decide(s);
+      if (g === null) bad.push(`${n}: нет группы «Решение» — мерить нечего`);
+      else if (g.includes('Действий нет.')) bad.push(`${n}: у снятой партнёр читает «Действий нет.»: ${g}`);
+      if (await tapIf(s, n, '#view [data-action="c-approve:84"]', '«Вернуть в меню»')) await s.p.waitForTimeout(400);
+      if (!o.bodies.some(b => b[0] === 'state' && b[1] === 84 && b[2].state === 'active')) bad.push(`${n}: возврат в меню не ушёл: ${JSON.stringify(o.bodies)}`);
+      await done(s, n);
+    }
+    // 11. снятая без рецепта: «Вернуть в меню» погашена, «Сначала рецепт…», запрос не уходит
+    {
+      const n = 'partner-card-vernut-bez-recepta', o = mk({ list: [WCP(84, 'hidden', 'Штрудель', { recipes: [] })] });
+      const s = await pcCards(o);
+      await s.p.evaluate(() => go('barCard', '84')); await s.p.waitForTimeout(400);
+      const b = await s.p.evaluate(() => { const x = [...document.querySelectorAll('#view button')].find(e => e.textContent === 'Вернуть в меню');
+        return x ? { off: x.disabled, ghost: x.classList.contains('ghost'), act: x.getAttribute('data-action') } : null; });
+      if (!b || !b.off || !b.ghost || b.act) bad.push(`${n}: «Вернуть в меню» без рецепта не погашена: ${JSON.stringify(b)}`);
+      if (!((await decide(s)) || '').includes('Сначала рецепт — без него позиция не попадёт в меню.')) bad.push(`${n}: нет «Сначала рецепт…»`);
+      await s.p.evaluate(() => { const x = [...document.querySelectorAll('#view button')].find(e => e.textContent === 'Вернуть в меню'); if (x) x.click(); });
+      await s.p.waitForTimeout(300);
+      if (o.bodies.some(x => x[0] === 'state')) bad.push(`${n}: погашенная кнопка отправила запрос: ${JSON.stringify(o.bodies)}`);
+      await done(s, n);
+    }
+    // 12. отрицательный контроль права: у работника на снятой кнопки нет, строка прежняя
+    {
+      const n = 'partner-card-vernut-v-menu-ne-rabotniku', o = mk();
+      const { s, ok } = await enter(o, n);
+      if (ok && await openCard(s, n, 84)) {
+        const t = await s.view();
+        if (t.includes('Вернуть в меню')) bad.push(`${n}: у работника «Вернуть в меню»`);
+        if (!t.includes('Снята с меню. Вернуть её в работу может тот, кто утверждает карточки бизнеса.')) bad.push(`${n}: у работника пропала строка снятой`);
+      }
+      await done(s, n);
+    }
   }
 
   // tools/api-keys.json — форма ответов из снимков cafe13-api (DUMP_DIR,
