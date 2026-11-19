@@ -583,8 +583,7 @@ Object.assign(SCREENS, {
           x[1].map(cardRow).join('') + '</div>';
       }).join('') +
       (L.length ? '' : '<div class="card quiet"><span class="small">Карточек пока нет — ни в меню, ни в работе.</span></div>') +
-      // партнёру заводить сервер не даёт (403) — гашение снимает шаг 17 (Cafe13KPG#548)
-      (cardPartnerOnly() ? '' : '<button type="button" class="btn ghost dup-main" data-action="c-new">Новая карточка</button>');
+      '<button type="button" class="btn ghost dup-main" data-action="c-new">Новая карточка</button>';
   },
 
   barCard: function (id) {
@@ -623,11 +622,12 @@ Object.assign(SCREENS, {
         (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
         deny +
         '<button type="button" class="btn dup-main" data-action="' + act + '"' + lock + '>' + (CARD.busy ? 'Сохраняем…' : word) + '</button>' +
-        // с ручкой правки «поля потом не исправить» стало бы ложью (шаг 15)
-        '<span class="small">Пока карточка в работе, поля можно исправить. Утверждённую не правит никто — с меню её снимает куратор.</span>' +
+        // с ручкой правки «поля потом не исправить» стало бы ложью (шаг 15); партнёр полей не правит даже у своего черновика (PATCH 403, шаг 17)
+        (cardPartnerOnly() ? '<span class="small">Поля сохранённого черновика правит тот, кто ведёт карточки бизнеса, — проверьте их до сохранения. Рецепт замените в любой момент.</span>'
+          : '<span class="small">Пока карточка в работе, поля можно исправить. Утверждённую не правит никто — с меню её снимает тот, кто утверждает карточки бизнеса.</span>') +
       '</div>';
     };
-    if (id === 'new' && !cardPartnerOnly()) return form('c-save', 'Сохранить черновик');
+    if (id === 'new') return form('c-save', 'Сохранить черновик');
     if (CARDS.lost) return '<div class="card quiet"><span class="small">Бизнес не нашёлся: роль работника есть, направления по ней нет.</span></div>';
     if (!CARDS.list) return CARDS.fail ? '<div class="card quiet"><span class="verbatim">' + esc(CARDS.fail) + '</span></div>'
                                        : '<div class="card quiet"><span class="small">Загружаем карточку…</span></div>';
@@ -637,8 +637,8 @@ Object.assign(SCREENS, {
     if (CARD.edit === c.id && c.state === 'draft') return form('c-edit-save:' + c.id, 'Сохранить изменения');
     var cur = cardCurator(), has = c.recipes.indexOf(CARD.lang) !== -1;
     // работник ведёт карточку, пока она черновик: вне его сервер не отдаёт даже ЧТЕНИЯ рецепта (403) — группы нет вовсе
-    // шаг 16: партнёр направления только РЕШАЕТ — правки полей, рецепта и «на утверждение» у него нет
-    var po = cardPartnerOnly(), wo = cardWorkerOnly() && !po, recipe = !po && (!wo || c.state === 'draft');
+    // партнёр: правки полей и «на утверждение» нет (403), рецепт — в любом состоянии (шаг 17, put_recipe)
+    var po = cardPartnerOnly(), wo = cardWorkerOnly() && !po, recipe = po || !wo || c.state === 'draft';
     if (has && recipe) recipeLoad(c.id, CARD.lang);     // заменяя рецепт, человек видит прежний
     var back = cardReturned(c);
     var STATE_WORDS = { draft: back ? 'Возвращена' : 'Черновик', review: 'Ждёт утверждения', active: 'В меню', hidden: back ? 'Возвращена' : 'Снята' };
@@ -652,6 +652,10 @@ Object.assign(SCREENS, {
     // из `hidden` на проверку возвращает только барная сторона: работнику сервер ответит 403 (prava-rabotnika.md)
     if (!po && (c.state === 'draft' || (c.state === 'hidden' && !wo)))
       acts += '<button type="button" class="btn" data-action="c-review:' + c.id + '"' + lock + '>Отправить на утверждение</button>';
+    // шаг 17: свой черновик партнёр ставит в меню сам; без рецепта — погашена (знание из списка), отказ базы — печатью
+    if (po && c.state === 'draft')
+      acts += (c.recipes.length ? '' : '<span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span>') +
+        '<button type="button" class="btn' + (c.recipes.length ? '" data-action="c-approve:' + c.id + '"' + lock : ' ghost" disabled') + '>В меню</button>';
     // половина куратора — шаг 16; работнику её режет cardCurator() (права куратора на этом направлении у него нет)
     if (cur && c.state === 'review') {
       acts += c.recipes.length
@@ -676,7 +680,7 @@ Object.assign(SCREENS, {
         : '<button type="button" class="btn quiet" data-action="c-hide-ask">Снять с меню</button>';
     if (!acts && c.state === 'review') acts = '<span class="small">Ждёт решения того, кто утверждает карточки бизнеса.</span>';
     // вне черновика у работника — одна строка на состояние: КТО может и чего ждать, а не общее «Действий нет.»
-    if (!acts && wo && c.state === 'active') acts = '<span class="small">В меню. Рецепт ведёт бар, с меню снимает тот, кто утверждает карточки бизнеса.</span>';
+    if (!acts && wo && c.state === 'active') acts = '<span class="small">В меню. Рецепт ведёт бар или тот, кто её утверждает, с меню снимает тот, кто утверждает карточки бизнеса.</span>';
     if (!acts && wo && c.state === 'hidden') acts = '<span class="small">Снята с меню. Вернуть её в работу может тот, кто утверждает карточки бизнеса.</span>';
     return (!LIVE && FLASH ? flash() : '') +
       '<div class="card strong"><div class="row top"><div class="col"><h2 class="clamp2">' + esc(c.title) + '</h2>' +
