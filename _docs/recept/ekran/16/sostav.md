@@ -64,7 +64,7 @@
 · `DATA.grants` пуст — как и было;
 · `BW.dirs` остаётся `null`: кладут его ровно два места, и ОБА начинаются с
   `if (!LIVE) return` — `loadMyBiz` (`js/06-lyudi.js:1030`) и `loadPartnerDirs`
-  (`js/08-kartochki.js:49`); демо-набор `BW` не трогает ни одной строкой
+  (`js/08-kartochki.js:46`); демо-набор `BW` не трогает ни одной строкой
   (`demoWork`, `js/21-navigaciya.js:514` — кладёт `PEOPLE`, `CARDS`, `RECIPE`,
   `BOOK`, `TP`, `TD`, и всё).
 · Отсюда и ГИБРИД ниже остаётся гибридом после сборки: половина партнёра в
