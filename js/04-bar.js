@@ -172,15 +172,17 @@ var QUEUE_FAIL = '';
 /* Направление очереди — из РОЛИ, а не из выбора бизнеса на «Услугах» (BAR_PICK). Сервер на чужом направлении
    не отказывает, а отдаёт только СВОИ заказы человека (api 41e2e35, снимок формы шага 22: ручка одна на две
    стороны, на ней стоит и `barOrder` покупателя). Работник, заглянувший в меню чужого бизнеса, увидел бы
-   пустую очередь вместо своей — правдоподобный успех. Сперва бар и куратор, затем работник; у админа роли с
-   направлением нет — его очередь по BAR, как было. */
+   пустую очередь вместо своей — правдоподобный успех. Выбор на «Услугах» берётся, только если выбранный
+   бизнес — ЕГО (работник нескольких бизнесов выбирает прежним BAR_PICK, рецепт 22/barQueue); иначе первое
+   направление роли: сперва бар и куратор, затем работник. У админа роли с направлением нет — его очередь по
+   BAR, как было. */
 var QUEUE_DIR = null;
 function queueDir() {
-  var g = DATA.grants || [], by = function (roles) {
-    return g.filter(function (x) { return roles.indexOf(x.role) >= 0 && typeof x.dir === 'number'; })[0];
-  };
-  var r = by(['bar', 'curator']) || by(['worker']);
-  return r ? r.dir : BAR ? BAR.id : null;
+  var dirs = (DATA.grants || []).filter(function (x) { return (x.role === 'bar' || x.role === 'curator') && typeof x.dir === 'number'; })
+    .concat((DATA.grants || []).filter(function (x) { return x.role === 'worker' && typeof x.dir === 'number'; }))
+    .map(function (x) { return x.dir; });
+  if (BAR_PICK !== null && dirs.indexOf(BAR_PICK) >= 0) return BAR_PICK;
+  return dirs.length ? dirs[0] : BAR ? BAR.id : null;
 }
 // отмена возвращает деньги — работнику бизнеса её сервер не даёт (403 «отменяет заказ бар или куратор
 // направления», api 41e2e35): кнопки, которая заведомо откажет, у него нет
@@ -222,7 +224,7 @@ function loadQueue() {
       var q = r.status === 200 ? fromQueue(r.data) : null;
       if (q) { QUEUE = q; QUEUE_FAIL = ''; }
       else {
-        QUEUE_FAIL = r.status === 403 ? 'Очередь видна работникам, бару и куратору направления.'
+        QUEUE_FAIL = r.status === 403 ? 'Очередь видна бару и куратору направления.'
                    : (QUEUE ? 'Не обновилось: ' : '') + failText(r);
       }
       render();
@@ -235,7 +237,8 @@ function loadQueue() {
   var known = BAR;
   loadBar(function (err) {
     if (current !== 'barQueue' || gen !== QUEUE_GEN) return;
-    if (err && !known) { QUEUE_FAIL = err; render(); return; }
+    // работник двух бизнесов без выбора: /directions бизнеса не назовёт, а очередь у него есть — по роли (рецепт 22)
+    if (err && !known && queueDir() === null) { QUEUE_FAIL = err; render(); return; }
     if (err) BAR = known;
     BAR_FAIL = err;
     go_();

@@ -3870,7 +3870,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // иначе на экране один его собственный заказ вместо очереди, правдоподобный успех. В фикстуре есть и чужое
     // направление, и свой заказ человека в нём — пустой выборкой случай не был бы
     {
-      const n = 'rabotnik-chuzhoe';
+      const n = 'rabotnik-chuzhoe-napravlenie';
       const s = await open(true, true, json(200, w22([{ role: 'worker', direction_id: 9 }], true)), null, null, null, route22({ state: ok }));
       await toBar(s, 7);
       if (await s.p.evaluate(() => BAR && BAR.id) !== 7) bad.push(`${n}: НЕ ВЫПОЛНЕНО — выбор бара 7 не встал, случай не различает`);
@@ -3880,6 +3880,25 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         // смена над очередью — бара 7 (BAR), а очередь бизнеса 9: строки смены быть не должно
         if (t.includes('Смена открыта')) bad.push(`${n}: над очередью своего бизнеса — смена выбранного чужого`);
         if (lists(s).some(x => x !== 'direction_id=9')) bad.push(`${n}: очередь спрошена по чужому направлению: ` + JSON.stringify(lists(s)));
+      }
+      await s.ctx.close();
+    }
+    // выбор бизнеса (рецепт 22/barQueue, дополнение к паспорту): работник ДВУХ бизнесов (7 и 9) без выбора — очередь
+    // первого по роли, а не «Не удалось определить ваш бизнес.»; выбрал на «Услугах» второй — очередь второго
+    {
+      const n = 'rabotnik-dva-biznesa';
+      const s = await open(true, true, json(200, w22([{ role: 'worker', direction_id: 7 }, { role: 'worker', direction_id: 9 }], true)),
+        null, null, null, route22({ state: ok }));
+      if (await toTab(s, n)) {
+        const t = await s.view();
+        if (t.includes('Не удалось определить')) bad.push(`${n}: работнику двух бизнесов — «Не удалось определить ваш бизнес.»`);
+        if (lists(s).some(x => x !== 'direction_id=7') || !lists(s).length) bad.push(`${n}: без выбора очередь не первого бизнеса роли: ` + JSON.stringify(lists(s)));
+        const c0 = lists(s).length;
+        await toBar(s, 9);
+        await toTab(s, n);
+        const after = lists(s).slice(c0);
+        if (!after.length || after.some(x => x !== 'direction_id=9')) bad.push(`${n}: выбор бизнеса 9 на «Услугах» не перевёл очередь: ` + JSON.stringify(after));
+        if (!(await s.view()).includes('261018-03')) bad.push(`${n}: очереди выбранного бизнеса на экране нет`);
       }
       await s.ctx.close();
     }
@@ -3974,7 +3993,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   if (part(1)) for (const [name, list, want] of [
-    ['queue-403', json(403, { detail: 'нет' }), 'Очередь видна работникам, бару и куратору направления'],   // слово Q5 рецепта 22
+    ['queue-403', json(403, { detail: 'нет' }), 'Очередь видна бару и куратору'],
     ['queue-bad', json(200, [Object.assign(worker(3, '261018-03', 'new'), { place: undefined })]), 'не разобран']]) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ list }));
     await toQueue(s);
