@@ -3229,7 +3229,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   async function toBar(s, id) {
     await s.p.click('#tabs [data-go="guest"]');
     await s.p.waitForSelector(id ? `[data-action="klub-biz:${id}"]` : '[data-action^="klub-biz:"]', { timeout: 3000 }).catch(() => {});
-    await s.p.click(id ? `[data-action="klub-biz:${id}"]` : '[data-action^="klub-biz:"]');
+    await s.p.click(id ? `[data-action="klub-biz:${id}"]` : '[data-action^="klub-biz:"]', { timeout: 3000 }).catch(() => bad.push(`toBar: строка бизнеса ${id || ''} не нажимается`));
     await s.p.waitForTimeout(150);
   }
 
