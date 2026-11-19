@@ -10796,7 +10796,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const openCard = async (s, n, id) => { const ok = await tapIf(s, n, `#view [data-action="c-open:${id}"]`, `строка карточки ${id}`); await s.p.waitForTimeout(300); return ok; };
     const done = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
     const CURATOR_WORDS = ['Утвердить — в меню', 'Вернуть с причиной', 'Снять с меню', 'Сначала рецепт'];
-    const DECIDE = { review: 'Ждёт решения того, кто утверждает карточки бизнеса.', active: 'В меню. Рецепт ведёт бар, с меню снимает тот, кто утверждает карточки бизнеса.',
+    const DECIDE = { review: 'Ждёт решения того, кто утверждает карточки бизнеса.', active: 'В меню. Рецепт ведёт бар или тот, кто её утверждает, с меню снимает тот, кто утверждает карточки бизнеса.',
                      hidden: 'Снята с меню. Вернуть её в работу может тот, кто утверждает карточки бизнеса.' };
     const groupLabels = s => s.p.evaluate(() => [...document.querySelectorAll('#view .group > .label')].map(e => e.textContent));
 
@@ -10988,7 +10988,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const vals = await s.p.evaluate(() => ['c-title', 'c-group', 'c-price', 'c-mins', 'c-about'].map(i => (document.getElementById(i) || {}).value));
         if (JSON.stringify(vals) !== JSON.stringify(['Круассан', 'Выпечка', '120', '10', 'тёплая'])) bad.push(`${n}: форма правки не из полей карточки: ${JSON.stringify(vals)}`);
         const t = await s.view();
-        if (!t.includes('Пока карточка в работе, поля можно исправить. Утверждённую не правит никто — с меню её снимает куратор.')) bad.push(`${n}: нет подписи «Пока карточка в работе…»`);
+        if (!t.includes('Пока карточка в работе, поля можно исправить. Утверждённую не правит никто — с меню её снимает тот, кто утверждает карточки бизнеса.')) bad.push(`${n}: нет подписи «Пока карточка в работе…»`);
         if (t.includes('потом не исправить')) bad.push(`${n}: осталось обещание «потом не исправить»`);
         const btn = await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="c-edit-save:81"]'); return b ? b.textContent : null; });
         if (btn !== 'Сохранить изменения') bad.push(`${n}: кнопка формы правки «${btn}»`);
@@ -11089,23 +11089,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!door && o.seen.some(c => c.includes('/bar/products'))) bad.push(`${n}: без бизнеса спрошены карточки`);
       await done(s, n);
     }
-    // 4. три решения партнёра; возврат без замечания не уходит; правки и рецепта у партнёра нет
+    // 4. три решения партнёра; возврат без замечания не уходит; правки полей и «на утверждение» у партнёра нет (рецепт с шага 17 — есть)
     {
       const n = 'partner-card-resheniya', o = mk();
       const s = await pcOpen(o, [BWDIR(7, true)], PMINE);
       await tapIf(s, n, '#view [data-go="barCards"]', 'дверь'); await s.p.waitForTimeout(500);
-      // заводить партнёру сервер не даёт (403): ни кнопки, ни главной кнопки, ни формы (v162; снимает шаг 17)
-      const nw = await s.p.evaluate(() => ({ list: !!document.querySelector('#view [data-cards]'),
-        btn: !!document.querySelector('#view [data-action="c-new"]'), main: (mainFor() || {}).a || null }));
-      if (!nw.list) bad.push(`${n}: список карточек партнёра не отрисован — «Новую карточку» мерить не на чем`);
-      else if (nw.btn || nw.main === 'c-new') bad.push(`${n}: у партнёра «Новая карточка»: ${JSON.stringify(nw)}`);
-      await s.p.evaluate(() => go('barCard', 'new')); await s.p.waitForTimeout(300);
-      const nf = await s.p.evaluate(() => ({ form: !!document.querySelector('#c-title'), main: (mainFor() || {}).a || null }));
-      if (nf.form || nf.main === 'c-save') bad.push(`${n}: у партнёра форма заведения: ${JSON.stringify(nf)}`);
-      await s.p.evaluate(() => go('barCards')); await s.p.waitForTimeout(300);
       const noEdit = async (id) => {
         const t = await s.view(), lb = await groupLabels(s);
-        if (t.includes('Изменить карточку') || lb.includes('Рецепт') || t.includes('Отправить на утверждение')) bad.push(`${n}: у партнёра на ${id} правка, рецепт или «на утверждение»`);
+        if (t.includes('Изменить карточку') || t.includes('Отправить на утверждение')) bad.push(`${n}: у партнёра на ${id} правка или «на утверждение»`);
       };
       if (await openCard(s, n, 82)) {
         await noEdit(82);
@@ -11132,7 +11123,137 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       }
       await s.p.evaluate(() => go('barCard', '81')); await s.p.waitForTimeout(300);
       await noEdit(81);
-      if (o.seen.some(c => /\/recipe/.test(c) && c.startsWith('POST'))) bad.push(`${n}: партнёр записал рецепт`);
+      await done(s, n);
+    }
+    // ── шаг 17 (Cafe13KPG#548, рецепт `_docs/recept/ekran/17/`, api de73c3a): партнёр заводит сам, рецепт в любом состоянии,
+    // свой черновик — «В меню» без согласования; правки полей и «на утверждение» нет (403)
+    const pcCards = async (o) => { const s = await pcOpen(o, [BWDIR(7, true)], PMINE);
+      await tapIf(s, 'partner-card', '#view [data-go="barCards"]', 'дверь'); await s.p.waitForTimeout(500); return s; };
+    // 5. заводит сам: кнопка и главная кнопка есть, подпись о пределе правки ДО сохранения, черновик — в своё направление
+    {
+      // 90 — номер, который заглушка отдаёт заведённому; в списке он есть, чтобы перечитанный список нашёл карточку
+      const n = 'partner-card-zavodit-sam', o = mk({ list: FOUR().concat([WCP(90, 'draft', 'Флэт уайт', { recipes: [] })]) });
+      const s = await pcCards(o);
+      const nw = await s.p.evaluate(() => ({ btn: !!document.querySelector('#view [data-action="c-new"]'), main: (mainFor() || {}).a || null }));
+      if (!nw.btn || nw.main !== 'c-new') bad.push(`${n}: нет «Новая карточка» или главной кнопки: ${JSON.stringify(nw)}`);
+      if (await tapIf(s, n, '#view [data-action="c-new"]', '«Новая карточка»')) {
+        const t = await s.view();
+        if (!t.includes('Поля сохранённого черновика правит тот, кто ведёт карточки бизнеса, — проверьте их до сохранения. Рецепт замените в любой момент.')) bad.push(`${n}: нет подписи о пределе правки`);
+        if (t.includes('поля можно исправить')) bad.push(`${n}: партнёру обещана правка полей`);
+        await s.p.fill('#c-title', 'Флэт уайт'); await s.p.fill('#c-group', 'Кофе'); await s.p.fill('#c-price', '140');
+        if (await tapIf(s, n, '#view [data-action="c-save"]', '«Сохранить черновик»')) {
+          await s.p.waitForTimeout(400);
+          const c = o.bodies.filter(b => b[0] === 'create');
+          if (c.length !== 1 || c[0][2].direction_id !== 7) bad.push(`${n}: черновик не в своё направление 7: ${JSON.stringify(c)}`);
+          if (!(await s.view()).includes('Черновик сохранён. Теперь рецепт — без него карточку не поставить в меню.')) bad.push(`${n}: нет «Черновик сохранён…»`);
+        }
+      }
+      await done(s, n);
+    }
+    // 6. свой черновик с рецептом: группа «Рецепт», рецепт пишется, «В меню» шлёт active; 7. правки полей и «на утверждение» нет
+    {
+      const n = 'partner-card-recept-i-v-menu', o = mk();
+      const s = await pcCards(o);
+      if (await openCard(s, n, 81)) {
+        const t = await s.view(), lb = await groupLabels(s);
+        if (!lb.includes('Рецепт')) bad.push(`${n}: у своего черновика нет группы «Рецепт»`);
+        if (t.includes('Изменить карточку') || t.includes('Отправить на утверждение')) bad.push(`partner-card-net-pravki-poley: у партнёра на черновике правка или «на утверждение»`);
+        if (lb.includes('Рецепт')) {
+          await s.p.waitForFunction(() => { const e = document.getElementById('c-recipe'); return e && !e.disabled; }, null, { timeout: 3000 }).catch(() => {});
+          await s.p.fill('#c-recipe', 'эспрессо, молоко', { timeout: 3000 }).catch(() => bad.push(`${n}: поле рецепта не заполнить`));
+          if (await tapIf(s, n, '#view [data-action="c-recipe:81"]', '«Заменить рецепт»')) await s.p.waitForTimeout(400);
+          if (!o.seen.some(c => c === 'POST /bar/products/81/recipe')) bad.push(`${n}: рецепт не ушёл: ${o.seen.filter(c => c.includes('recipe')).join(', ')}`);
+        }
+        if (await tapIf(s, n, '#view [data-action="c-approve:81"]', '«В меню»')) await s.p.waitForTimeout(400);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 81 && b[2].state === 'active')) bad.push(`${n}: «В меню» не ушло: ${JSON.stringify(o.bodies)}`);
+      }
+      await done(s, n);
+    }
+    // 7б. отрицательный контроль закрытого перечня: у работника на его черновике обе двери остались
+    {
+      const n = 'partner-card-net-pravki-poley', o = mk();
+      const { s, ok } = await enter(o, n);
+      if (ok && await openCard(s, n, 81)) {
+        const t = await s.view();
+        if (!t.includes('Изменить карточку') || !t.includes('Отправить на утверждение')) bad.push(`${n}: у работника на черновике пропала правка или «на утверждение»`);
+      }
+      await done(s, n);
+    }
+    // 8. черновик без рецепта: «В меню» погашена, «Сначала рецепт…», запрос не уходит; отказ базы на устаревшем списке — печатью
+    {
+      const n = 'partner-card-v-menu-bez-recepta';
+      const o = mk({ list: [WCP(81, 'draft', 'Круассан', { recipes: [] }), WCP(85, 'draft', 'Эклер', { recipes: ['ru'] })],
+        state: () => json(409, { detail: 'карточка 85 не может работать без рецепта: сначала рецепт, потом меню' }) });
+      const s = await pcCards(o);
+      if (await openCard(s, n, 81)) {
+        const b = await s.p.evaluate(() => { const x = [...document.querySelectorAll('#view button')].find(e => e.textContent === 'В меню');
+          return x ? { off: x.disabled, ghost: x.classList.contains('ghost'), act: x.getAttribute('data-action') } : null; });
+        if (!b || !b.off || !b.ghost || b.act) bad.push(`${n}: «В меню» без рецепта не погашена: ${JSON.stringify(b)}`);
+        if (!(await s.view()).includes('Сначала рецепт — без него позиция не попадёт в меню.')) bad.push(`${n}: нет «Сначала рецепт…»`);
+        await s.p.evaluate(() => { const x = [...document.querySelectorAll('#view button')].find(e => e.textContent === 'В меню'); if (x) x.click(); });
+        await s.p.waitForTimeout(300);
+        if (o.bodies.some(x => x[0] === 'state')) bad.push(`${n}: погашенная «В меню» отправила запрос: ${JSON.stringify(o.bodies)}`);
+      }
+      await s.p.evaluate(() => go('barCard', '85')); await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="c-approve:85"]', '«В меню» у 85')) {
+        await s.p.waitForTimeout(400);
+        const v = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny .verbatim')].map(e => e.textContent));
+        // печать сервера — денай-текстом клиента (denyText: заглавная и точка), своих слов нет
+        if (!v.includes('Карточка 85 не может работать без рецепта: сначала рецепт, потом меню.')) bad.push(`${n}: отказ базы не печатью: ${JSON.stringify(v)}`);
+      }
+      await done(s, n);
+    }
+    // 9. рецепт в ЛЮБОМ состоянии (put_recipe, bar.py:387): группа у review, active, hidden; у active — «Снять с меню»
+    {
+      const n = 'partner-card-recept-u-rabotayushchey', o = mk();
+      const s = await pcCards(o);
+      for (const id of [82, 83, 84]) {
+        await s.p.evaluate(x => go('barCard', String(x)), id); await s.p.waitForTimeout(400);
+        if (!(await groupLabels(s)).includes('Рецепт')) bad.push(`${n}: у ${id} нет группы «Рецепт»`);
+        if (!o.seen.some(c => c.startsWith(`GET /bar/products/${id}/recipe`))) bad.push(`${n}: рецепт ${id} не прочитан`);
+        if (id === 83 && !(await s.view()).includes('Снять с меню')) bad.push(`${n}: у active нет «Снять с меню»`);
+      }
+      await done(s, n);
+    }
+    // ── шаг 18 (Cafe13KPG#549, рецепт `_docs/recept/ekran/18/`): снятую партнёр возвращает в меню; «Действий нет.» больше не врёт
+    // «Снять с меню» у active — регресс, его держит partner-card-resheniya (83)
+    const decide = s => s.p.evaluate(() => { const g = [...document.querySelectorAll('#view .group')].find(e => (e.querySelector('.label') || {}).textContent === 'Решение');
+      return g ? g.textContent : null; });
+    // 10. снятая с рецептом: «Вернуть в меню» шлёт active, и строки «Действий нет.» на экране нет
+    {
+      const n = 'partner-card-vernut-v-menu', o = mk();
+      const s = await pcCards(o);
+      await s.p.evaluate(() => go('barCard', '84')); await s.p.waitForTimeout(400);
+      const g = await decide(s);
+      if (g === null) bad.push(`${n}: нет группы «Решение» — мерить нечего`);
+      else if (g.includes('Действий нет.')) bad.push(`${n}: у снятой партнёр читает «Действий нет.»: ${g}`);
+      if (await tapIf(s, n, '#view [data-action="c-approve:84"]', '«Вернуть в меню»')) await s.p.waitForTimeout(400);
+      if (!o.bodies.some(b => b[0] === 'state' && b[1] === 84 && b[2].state === 'active')) bad.push(`${n}: возврат в меню не ушёл: ${JSON.stringify(o.bodies)}`);
+      await done(s, n);
+    }
+    // 11. снятая без рецепта: «Вернуть в меню» погашена, «Сначала рецепт…», запрос не уходит
+    {
+      const n = 'partner-card-vernut-bez-recepta', o = mk({ list: [WCP(84, 'hidden', 'Штрудель', { recipes: [] })] });
+      const s = await pcCards(o);
+      await s.p.evaluate(() => go('barCard', '84')); await s.p.waitForTimeout(400);
+      const b = await s.p.evaluate(() => { const x = [...document.querySelectorAll('#view button')].find(e => e.textContent === 'Вернуть в меню');
+        return x ? { off: x.disabled, ghost: x.classList.contains('ghost'), act: x.getAttribute('data-action') } : null; });
+      if (!b || !b.off || !b.ghost || b.act) bad.push(`${n}: «Вернуть в меню» без рецепта не погашена: ${JSON.stringify(b)}`);
+      if (!((await decide(s)) || '').includes('Сначала рецепт — без него позиция не попадёт в меню.')) bad.push(`${n}: нет «Сначала рецепт…»`);
+      await s.p.evaluate(() => { const x = [...document.querySelectorAll('#view button')].find(e => e.textContent === 'Вернуть в меню'); if (x) x.click(); });
+      await s.p.waitForTimeout(300);
+      if (o.bodies.some(x => x[0] === 'state')) bad.push(`${n}: погашенная кнопка отправила запрос: ${JSON.stringify(o.bodies)}`);
+      await done(s, n);
+    }
+    // 12. отрицательный контроль права: у работника на снятой кнопки нет, строка прежняя
+    {
+      const n = 'partner-card-vernut-v-menu-ne-rabotniku', o = mk();
+      const { s, ok } = await enter(o, n);
+      if (ok && await openCard(s, n, 84)) {
+        const t = await s.view();
+        if (t.includes('Вернуть в меню')) bad.push(`${n}: у работника «Вернуть в меню»`);
+        if (!t.includes('Снята с меню. Вернуть её в работу может тот, кто утверждает карточки бизнеса.')) bad.push(`${n}: у работника пропала строка снятой`);
+      }
       await done(s, n);
     }
   }
