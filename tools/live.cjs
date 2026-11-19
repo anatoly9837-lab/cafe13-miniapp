@@ -3822,8 +3822,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const lists = s => s.calls.filter(c => c.method === 'GET' && c.url.includes('/bar/orders')).map(c => c.url.replace(/^.*\?/, ''));
     const toTab = async (s, n) => {
       if (!(await s.p.$('#tabs [data-go="barQueue"]'))) { bad.push(`${n}: у работника бизнеса нет вкладки «Заказы»`); return false; }
-      await s.p.click('#tabs [data-go="barQueue"]'); await s.p.waitForTimeout(400);
-      if (await s.p.evaluate(() => current) !== 'barQueue') { bad.push(`${n}: вкладка «Заказы» открыла не очередь`); return false; }
+      // таймаут короткий: закрытый экран (FROZEN) гасит вкладку, и клик ждал бы 30 с, обрывая батарею вместо приговора
+      await s.p.click('#tabs [data-go="barQueue"]', { timeout: 3000 }).catch(() => {}); await s.p.waitForTimeout(400);
+      if (await s.p.evaluate(() => current) !== 'barQueue') { bad.push(`${n}: вкладка «Заказы» не открыла очередь`); return false; }
       return true;
     };
     // ветвь 1 + контроль 4 + отмена: работник БЕЗ членства (решение владельца №13 — входит по допуску) видит очередь
