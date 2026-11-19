@@ -27,8 +27,7 @@ function fromDirections(d) {
   var all = dirsOf(d);
   if (!all) return undefined;
   var act = all.filter(function (x) { return x.is_active; });
-  // шаг 22: и работник бизнеса — иначе при двух активных бизнесах его «Заказы» вставали на «не удалось определить»
-  var mine = act.filter(function (x) { return grant('bar', x.id) || grant('curator', x.id) || grant('worker', x.id); });
+  var mine = act.filter(function (x) { return grant('bar', x.id) || grant('curator', x.id); });
   var b = BAR_PICK !== null ? act.filter(function (x) { return x.id === BAR_PICK; })
         : mine.length ? mine : act;
   // title — слово сервера: шапка меню и «Бизнес «…»» на карточках не пишут название литералом
