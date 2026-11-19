@@ -342,7 +342,8 @@ Object.assign(SCREENS, {
       var q = QUEUE || [];
       var cnt = function (st) { return q.filter(function (o) { return o.state === st; }).length; };
       return (FLASH ? flash() : '') +
-        (BAR ? shiftBlock() : '<div class="card strong"><h2>Заказы на баре</h2></div>') +
+        // смена — того бизнеса, чья очередь на экране: BAR бывает выбранным на «Услугах» чужим (шаг 22, queueDir)
+        (BAR && BAR.id === queueDir() ? shiftBlock() : '<div class="card strong"><h2>Заказы на баре</h2></div>') +
         (canBook() ? '<div class="row" style="gap:8px"><button type="button" class="btn ghost" data-go="barMoney">Доход и расход</button>' +
                      '<button type="button" class="btn ghost" data-go="barDay">Отчёт за день</button></div>' : '') +
         // Вход в карточки — здесь, а не только в «Клубе»: «Клуб» приходит вкладкой лишь
@@ -382,7 +383,8 @@ Object.assign(SCREENS, {
         DATA.bar.orders.map(queueCard).join('') +
       '</div>' +
       '<div class="note">' + svg(ICON.bell) +
-        '<span>Каждый новый заказ бот присылает в чат бара — составом и кнопкой «Принял», чтобы не держать приложение открытым. Звук включается в настройках этого чата, а не в приложении. В демонстрации заказы живут только в этой вкладке.</span>' +
+        // шаг 22, слово Q6 рецепта 22/barQueue: письмо уходит каждому работнику и может не дойти (Telegram отказывает молча)
+        '<span>Новые заказы появляются на этом экране сами. Бот, если Telegram ему позволяет, ещё и пишет о них работникам направления. Принять, отметить готовым и выданным — кнопками здесь.</span>' +
       '</div>';
   },
 

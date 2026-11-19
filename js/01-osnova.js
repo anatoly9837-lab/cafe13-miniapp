@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v165 · 0.2 «Путь бизнеса» · 19.11.2026';
+var VERSION = 'v168 · 0.2 «Путь бизнеса» · 19.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -342,7 +342,10 @@ function fromMe(d) {
     request: req,
     role: d.membership_active ? ms.level : 'guest',
     roles: d.roles.map(function (r) { return r && r.role; }).filter(Boolean),
-    barSide: d.roles.some(function (r) { return r && (r.role === 'admin' || r.role === 'bar' || r.role === 'curator'); }),
+    // шаг 22 (Cafe13KPG#553, снимок формы api 41e2e35): работник бизнеса — сторона очереди СВОЕГО направления;
+    // без direction_id роли worker не бывает, и без него вкладке «Заказы» нечего открыть
+    barSide: d.roles.some(function (r) { return r && (r.role === 'admin' || r.role === 'bar' || r.role === 'curator' ||
+                                                     r.role === 'worker' && typeof r.direction_id === 'number'); }),
     // роль с направлением: куратор бара — не куратор вообще
     grants: d.roles.filter(function (r) { return r && r.role; })
       .map(function (r) { return { role: r.role, dir: r.direction_id }; }),

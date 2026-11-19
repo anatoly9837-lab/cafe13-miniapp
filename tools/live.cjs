@@ -212,10 +212,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
      Таблица сверяется с вызовами по тексту файла (сторож вверху): раздел без строки — КРАСНОЕ, строка без
      раздела — КРАСНОЕ «проснулся», и в этом отказе давность видна ровно тогда, когда раздел возвращают. */
   const ASLEEP = {
-    'очередь на баре': ['2026-10-28', 'fcd2a09'], 'смена': ['2026-10-28', 'fcd2a09'],
+    // шаг 22 (Cafe13KPG#553): «очередь на баре», «смена» и «вход в очередь по роли» проснулись вместе с `barQueue`
     'касса': ['2026-10-28', 'fcd2a09'], 'доход и расход бара': ['2026-10-28', 'fcd2a09'],
     'отчёт за день': ['2026-10-28', 'fcd2a09'], 'завести мероприятие': ['2026-10-28', 'fcd2a09'],
-    'вход в очередь по роли, а не по уровню членства': ['2026-10-28', 'fcd2a09'],
     'пополнение из бара (бармен без права кассы)': ['2026-10-28', 'c72c2f3'],
     'запись в тестовом режиме через «Доход и расход» бара': ['2026-10-28', 'c72c2f3'],
     'отказ по праву на замороженных рабочих экранах': ['2026-10-28', '2c4cadd'],
@@ -3720,7 +3719,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Поздний ответ прежнего захода не ложится на свежую очередь (Cafe13KPG#214):
   // гард у ответа /bar/orders и гард у колбэка loadBar — каждый своим случаем.
   // Первый ответ медленный (задержка — от запроса), уход и возврат дают второй.
-  if (part(1)) if (thawed('очередь на баре')) for (const [name, step, stale, look, why] of [
+  if (part(1)) for (const [name, step, stale, look, why] of [
     ['queue-late', 'list', json(200, [worker(9, '261018-09', 'new', { first_name: 'qzx-очередь-qzx' })]), 'qzx',
       'на экране очереди заказы прежнего захода'],
     ['queue-late-bar', 'dirs', json(503, {}), '503',
@@ -3748,7 +3747,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // (pollMine выходит на !BAR до перевооружения таймера). Путь — работник бара
   // заказывает сам: второй заход в очередь уходит с медленным /directions,
   // человек идёт в меню и покупает; отказ приходит уже на экран заказа.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     let dn = 0, ordered = false, landedAfterOrder = null, polls = 0;
     const slow = () => new Promise(r => setTimeout(() => { landedAfterOrder = ordered; r(json(503, {})); }, 2500));
     const s = await open(true, true, json(200, BARMAN), null, null, null, bar({
@@ -3772,7 +3771,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.p.waitForTimeout(250);
   }
   const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
     await s.p.route('https://t.me/**', r => r.fulfill({ contentType: 'image/png', body: PNG }));
     if (!(await s.view()).includes('Заказы на баре')) bad.push('queue: нет входа на главной у роли bar');
@@ -3796,8 +3795,115 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (s.errs.length) bad.push('queue: ошибки страницы ' + s.errs.join('; '));
     await s.ctx.close();
   }
+  // ── шаг 22 (Cafe13KPG#553, ТЗ, поправки о канале письма и о первом контроле; снимок формы api 41e2e35 —
+  // всё в комментариях карточки): работник бизнеса (`worker`, шаг 14) ведёт очередь СВОЕГО направления. Два активных бизнеса — 7 и 9:
+  // без них выбор направления не различался бы (единственный активный берётся и без роли). Ветви клиента — 1 и 2;
+  // ветвь 3 (письмо) и пятый контроль (строка отказа в журнале) — случаи СЕРВЕРА, клиент там ничего не рисует.
+  if (part(2)) {
+    const TEA = { id: 9, title: 'Чайная у моря', is_active: true, is_open: true };
+    // строка очереди глазами работника — по снимку формы: ключа `sum` нет, в items нет `price`
+    const W_ROWS = [worker(3, '261018-03', 'new'), worker(2, '261018-02', 'making'), worker(4, '261018-04', 'ready')];
+    // СВОЙ заказ человека в баре 7 — сервер отдаёт его на чужом направлении вместо очереди (поправка о первом контроле)
+    const OWN7 = Object.assign(worker(8, '261018-08', 'new'), { member_id: OWNER.member.tg_user_id, sum: '70.00' });
+    const w22 = (roles, member) => {
+      const me = clone(OWNER); me.roles = roles;
+      if (!member) { me.membership_active = false; me.membership = null; me.memberships = []; }
+      return me;
+    };
+    const route22 = o => q => {
+      const u = q.url();
+      if (u.endsWith('/directions')) return DIR(true, [TEA]);
+      if (u.includes('/bar/menu')) return json(200, MENU);
+      if (q.method() === 'POST' && /\/bar\/orders\/\d+\/state$/.test(u)) return o.state(q);
+      if (u.includes('/bar/orders')) return json(200, /direction_id=9\b/.test(u) ? W_ROWS : [OWN7]);
+      return undefined;
+    };
+    const ok = q => json(200, { id: 3, number: '261018-03', state: JSON.parse(q.postData()).state });
+    const lists = s => s.calls.filter(c => c.method === 'GET' && c.url.includes('/bar/orders')).map(c => c.url.replace(/^.*\?/, ''));
+    const toTab = async (s, n) => {
+      if (!(await s.p.$('#tabs [data-go="barQueue"]'))) { bad.push(`${n}: у работника бизнеса нет вкладки «Заказы»`); return false; }
+      await s.p.click('#tabs [data-go="barQueue"]'); await s.p.waitForTimeout(400);
+      if (await s.p.evaluate(() => current) !== 'barQueue') { bad.push(`${n}: вкладка «Заказы» открыла не очередь`); return false; }
+      return true;
+    };
+    // ветвь 1 + контроль 4 + отмена: работник БЕЗ членства (решение владельца №13 — входит по допуску) видит очередь
+    // своего бизнеса 9 — состав, место, состояние — без сумм и без «Отменить»; бар бизнеса 9 — с «Отменить» (положительная
+    // половина: без неё запрет зелёный и тогда, когда кнопку убрали у всех)
+    // бар без членства стоит на noAccess (слово владельца 05.11.2026) — поэтому бар с членством
+    for (const [n, roles, member, cancel] of [['rabotnik-ochered', [{ role: 'worker', direction_id: 9 }], false, false],
+                                              ['rabotnik-bar-otmena', [{ role: 'bar', direction_id: 9 }], true, true]]) {
+      const s = await open(true, true, json(200, w22(roles, member)), null, null, null, route22({ state: ok }));
+      if (await toTab(s, n)) {
+        const t = await s.view();
+        for (const w of ['261018-03', '261018-02', '261018-04', 'Эспрессо', 'к столу', 'Принять', 'Готово', 'Выдан'])
+          if (!t.includes(w)) bad.push(`${n}: нет «${w}»: ` + t.slice(0, 160));
+        if (/฿/.test(t)) bad.push(`${n}: на экране очереди есть сумма: ` + (t.match(/.{0,20}฿/) || [''])[0]);
+        if (/NaN|undefined|null/.test(t)) bad.push(`${n}: мусор на экране`);
+        if (t.includes('Доход и расход') || t.includes('Отчёт за день')) bad.push(`${n}: вход в замороженные «Доход и расход» / «День»`);
+        if (t.includes('Отменить') !== cancel) bad.push(`${n}: «Отменить» ${cancel ? 'нет у бара' : 'есть у работника — сервер ему отмену не даёт (403)'}`);
+        const l = lists(s);
+        if (!l.length || l.some(x => x !== 'direction_id=9')) bad.push(`${n}: очередь спрошена не по направлению роли: ` + JSON.stringify(l));
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ` + s.errs.join('; '));
+      await s.ctx.close();
+    }
+    // ветвь 2: «Принять» → «Готово» → «Выдан» уходят своими состояниями (сервер подтверждает каждое)
+    {
+      const n = 'rabotnik-sostoyanie';
+      const s = await open(true, true, json(200, w22([{ role: 'worker', direction_id: 9 }], true)), null, null, null, route22({ state: ok }));
+      if (await toTab(s, n)) {
+        for (const a of ['q-making:3', 'q-ready:2', 'q-served:4']) {
+          if (!(await s.p.$(`[data-action="${a}"]`))) { bad.push(`${n}: нет кнопки ${a}`); continue; }
+          await s.p.click(`[data-action="${a}"]`); await s.p.waitForTimeout(300);
+        }
+        const got = statePosts(s).map(c => c.url.replace(/^.*\/orders\//, '') + ' ' + c.body);
+        const want = ['3/state {"state":"making"}', '2/state {"state":"ready"}', '4/state {"state":"served"}'];
+        if (JSON.stringify(got) !== JSON.stringify(want)) bad.push(`${n}: ушло ${JSON.stringify(got)}, ждали ${JSON.stringify(want)}`);
+        if ((await s.view()).includes('Не изменилось')) bad.push(`${n}: на подтверждённом переходе отказ`);
+      }
+      await s.ctx.close();
+    }
+    // контроль 1 (поправка о первом контроле): сервер на чужом направлении отдаёт СВОИ заказы, а не 403. Работник бизнеса 9
+    // заходит в меню бара 7 (BAR_PICK) и идёт в «Заказы»: очередь обязана спроситься по РОЛИ (9), а не по выбору (7) —
+    // иначе на экране один его собственный заказ вместо очереди, правдоподобный успех. В фикстуре есть и чужое
+    // направление, и свой заказ человека в нём — пустой выборкой случай не был бы
+    {
+      const n = 'rabotnik-chuzhoe';
+      const s = await open(true, true, json(200, w22([{ role: 'worker', direction_id: 9 }], true)), null, null, null, route22({ state: ok }));
+      await toBar(s, 7);
+      if (await s.p.evaluate(() => BAR && BAR.id) !== 7) bad.push(`${n}: НЕ ВЫПОЛНЕНО — выбор бара 7 не встал, случай не различает`);
+      else if (await toTab(s, n)) {
+        const t = await s.view();
+        if (t.includes('261018-08') || !t.includes('261018-03')) bad.push(`${n}: очередь взята по выбору на «Услугах», а не по роли: ` + t.slice(0, 160));
+        // смена над очередью — бара 7 (BAR), а очередь бизнеса 9: строки смены быть не должно
+        if (t.includes('Смена открыта')) bad.push(`${n}: над очередью своего бизнеса — смена выбранного чужого`);
+        if (lists(s).some(x => x !== 'direction_id=9')) bad.push(`${n}: очередь спрошена по чужому направлению: ` + JSON.stringify(lists(s)));
+      }
+      await s.ctx.close();
+    }
+    // контроль 2: заказ чужого направления — сервер 403, отказ печатается его словами
+    {
+      const n = 'rabotnik-chuzhoy-zakaz-403';
+      const s = await open(true, true, json(200, w22([{ role: 'worker', direction_id: 9 }], true)), null, null, null,
+        route22({ state: () => json(403, { detail: 'это делает бар или куратор направления' }) }));
+      if (await toTab(s, n)) {
+        await s.p.click('[data-action="q-making:3"]'); await s.p.waitForTimeout(400);
+        const t = await s.view();
+        if (!t.includes('Не изменилось') || !t.includes('Это делает бар или куратор направления.')) bad.push(`${n}: отказа словами сервера нет: ` + t.slice(0, 160));
+      }
+      await s.ctx.close();
+    }
+    // контроль 3: член клуба без рабочей роли — ни вкладки, ни строки «Заказы»
+    {
+      const n = 'chlen-bez-roli';
+      const s = await open(true, true, json(200, w22([], true)), null, null, null, route22({ state: ok }));
+      if (await s.p.$('[data-go="barQueue"]')) bad.push(`${n}: у члена клуба без роли есть вход в «Заказы»`);
+      if (!(await s.p.$('#tabs [data-go="home"]'))) bad.push(`${n}: НЕ ВЫПОЛНЕНО — член клуба не дошёл до «Клуба», вкладок нет`);
+      await s.ctx.close();
+    }
+  }
   // Фото не загрузилось — сказано явно, а не пустой кружок.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
     await s.p.route('https://t.me/**', r => r.fulfill({ status: 404, body: '' }));
     await toQueue(s);
@@ -3806,7 +3912,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // Строка без member_id — отказ целиком.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const nomid = worker(3, '261018-03', 'new'); delete nomid.member_id;
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ list: json(200, [nomid]) }));
     await toQueue(s);
@@ -3815,7 +3921,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Отмена — в два нажатия; первое ничего не отправляет.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
     await toQueue(s);
     await s.p.click('[data-action="q-ask:3"]');
@@ -3831,7 +3937,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // Двойное нажатие — одна смена состояния.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const slow = () => new Promise(res => setTimeout(() => res(json(200, { id: 3, state: 'making' })), 500));
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ state: slow }));
     await toQueue(s);
@@ -3841,7 +3947,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // Сервер отказал — причина как есть, не «готово».
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null,
       queue({ state: json(409, { detail: 'на счёте гостя не хватает — он пополняет у хостес' }) }));
     await toQueue(s);
@@ -3851,7 +3957,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // Куратор/админ: суммы, если пришли, видны построчно.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const withSum = QUEUE.map(r => Object.assign({}, r, { sum: '140.00' }));
     const s = await open(true, true, json(200, OWNER), null, null, null, queue({ list: json(200, withSum) }));
     await toQueue(s);
@@ -3859,13 +3965,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // Без роли бара — входа нет; сервер 403 — сказано почему; битая строка — отказ целиком.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const plain = clone(OWNER); plain.roles = [];
     const s = await open(true, true, json(200, plain), null, null, null, queue());
     if ((await s.view()).includes('Заказы на баре')) bad.push('queue-norole: вход есть у человека без роли');
     await s.ctx.close();
   }
-  if (part(1)) if (thawed('очередь на баре')) for (const [name, list, want] of [
+  if (part(1)) for (const [name, list, want] of [
     ['queue-403', json(403, { detail: 'нет' }), 'Очередь видна бару и куратору'],
     ['queue-bad', json(200, [Object.assign(worker(3, '261018-03', 'new'), { place: undefined })]), 'не разобран']]) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue({ list }));
@@ -3877,7 +3983,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Отменённый бар заказ: деньги вернулись — экран говорит это и показывает свежий баланс.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     let mes = 0;
     const s = await open(true, true, () => { mes += 1; return json(200, OWNER); },
       null, null, null, bar({ list: json(200, [row('cancelled')]) }));
@@ -3891,7 +3997,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Бар закрыт (смена не открыта): меню видно, заказ не уходит, причина названа.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(false) }));
     await toBar(s);
     const t = await s.view();
@@ -3905,7 +4011,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   // Экран думал «открыт», а смену успели закрыть: сервер отказал — причина как есть,
   // направления перезапрошены, и экран становится «закрыт».
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     let open = true;
     const s = await open_(bar({ dirs: () => DIR(open),
       order: () => { open = false; return json(409, { detail: 'бар закрыт: смена не открыта, заказ принять некому' }); } }));
@@ -3920,7 +4026,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
 
   // Бизнес не выбран и не определяется ролью (шаг 19: по названию больше не угадываем) / ответ битый — отказ, а не пустое меню.
   // Вход go('bar') мимо строки «Услуг» — так входит персонал без выбора.
-  if (part(1)) if (thawed('очередь на баре')) for (const [name, dirs, want] of [
+  if (part(1)) for (const [name, dirs, want] of [
     ['dirs-none', DIR(true, [{ id: 3, title: 'Кухня', is_active: true, is_open: true }]), 'Не удалось определить ваш бизнес'],
     ['dirs-two', DIR(true, [{ id: 8, title: 'Бар', is_active: true, is_open: true }]), 'Не удалось определить ваш бизнес'],
     ['dirs-inactive', json(200, [{ id: 7, title: 'Бар', is_active: false, is_open: true }]), 'Не удалось определить ваш бизнес'],
@@ -3937,7 +4043,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
 
   // Корзина: несколько позиций и место — как выбрал гость; оплата только со счёта
   // (cafe13-api#13: наличные на баре сервер отклоняет), выбора «наличными» нет.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-action="cart-add:11"]');
@@ -3956,7 +4062,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Карточка напитка: главная кнопка — «Купить», при нехватке её нет.
-  if (part(1)) if (thawed('очередь на баре')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar());
     await toBar(s);
     await s.p.click('[data-drink="11"]');
@@ -3970,7 +4076,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Сети нет — сохранённый пропуск этого человека виден на экране сбоя.
-  if (part(1)) if (thawed('очередь на баре')) for (const [name, me, saved, show] of [
+  if (part(1)) for (const [name, me, saved, show] of [
     ['offline-pass', 'abort', SAVED, true],
     ['offline-other-user', 'abort', Object.assign({}, SAVED, { uid: 2 }), false],
     ['server-500-saved', json(500, {}), SAVED, false],
@@ -4023,7 +4129,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const shiftPosts = s => s.calls.filter(c => c.method === 'POST' && c.url.includes('/shifts/'));
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   // Админ открывает смену на себя; двойное нажатие — один запрос.
-  if (part(1)) if (thawed('смена')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
       (() => { const f = shift(); return r => r.method() === 'POST' && r.url().includes('/shifts/open')
         ? sleep(400).then(() => f(r)) : f(r); })());
@@ -4049,7 +4155,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   //    прежний BAR); перечитанная смена всё равно должна лечь.
   //  shift-stale-empty: новее — успех и затем отказ меню (BAR пуст); поздний
   //    успех перечитывания обязан заполнить BAR, иначе колбэк смены читает BAR.open у null.
-  if (part(1)) if (thawed('смена')) for (const [name, fail, why] of [
+  if (part(1)) for (const [name, fail, why] of [
     ['shift-stale-ok', [3], 'перечитанная смена потеряна — на экране не «Смена открыта»'],
     ['shift-stale-empty', [4], 'поздний успех не заполнил пустой BAR'],
   ]) {
@@ -4072,7 +4178,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // Бармен: открыть не может (это куратор), закрыть — в два нажатия.
-  if (part(1)) if (thawed('смена')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, shift({ open: true }));
     await toQueue(s);
     const has = sel => s.p.$(sel).then(Boolean);
@@ -4100,7 +4206,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
   }
   // Куратор ДРУГОГО направления — не куратор бара: ни открыть, ни закрыть.
-  if (part(1)) if (thawed('смена')) {
+  if (part(1)) {
     const other = clone(OWNER); other.roles = [{ role: 'curator', direction_id: 8 }, { role: 'bar', direction_id: 8 }];
     const s = await open(true, true, json(200, other), null, null, null, shift());
     await toQueue(s);
@@ -4110,7 +4216,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // Сервер отказал — его причина на экране, бар остаётся закрытым.
-  if (part(1)) if (thawed('смена')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null,
       shift({ openReply: 403, detail: 'нужна роль curator в направлении 7' }));
     await toQueue(s);
@@ -4122,7 +4228,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // «Принято», а бар по-прежнему закрыт — верим перечитанному, а не ответу.
-  if (part(1)) if (thawed('смена')) {
+  if (part(1)) {
     const s = await open(true, true, json(200, OWNER), null, null, null, shift({ flips: false }));
     await toQueue(s);
     await s.p.click('[data-action="shift-open"]');
@@ -4133,7 +4239,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   // Смену открыли с другого телефона — экран узнаёт при опросе; сбой
   // опроса не стирает известное состояние, а помечает его.
-  if (part(1)) if (thawed('смена')) {
+  if (part(1)) {
     const f = shift({ dirs: (n, st) => { if (n === 2) st.open = true; if (n >= 3) return 'abort'; } });
     const s = await open(true, true, json(200, BARMAN), null, null, null, f);
     await toQueue(s);
@@ -5349,7 +5455,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── вход в очередь по роли, а не по уровню членства ──
   // Бармен без членства и бармен с членством — обе ветки уровня; оба
   // обязаны дойти до очереди за нажатия, без знания адресов.
-  if (part(1)) if (thawed('вход в очередь по роли, а не по уровню членства')) for (const [name, member] of [['barman-guest', false], ['barman-member', true]]) {
+  if (part(1)) for (const [name, member] of [['barman-guest', false], ['barman-member', true]]) {
     const who = clone(OWNER); who.roles = [{ role: 'bar', direction_id: 7 }];
     if (!member) { who.membership_active = false; who.membership = null; who.memberships = []; }
     const s = await open(true, true, json(200, who), null, null, null, queue());
@@ -10212,9 +10318,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // Бармен без членства: «Клуб» вкладкой не приходит, вход в карточки — на «Заказах»
     // под сменой и над счётчиками (кадр E41, Cafe13KPG#396), и «назад» ведёт обратно
     // в «Заказы», а не на услуги гостя (Cafe13KPG#403).
-    // ⚠ Шаг 15 оттаял карточки, но НЕ «Заказы»: `barQueue` в FROZEN, а человек без членства стоит на `noAccess`
-    // (homeOf, слово владельца 05.11.2026) — дверь этого случая спит вместе с очередью и вернётся с ней
-    if (thawed('очередь на баре')) {
+    // Шаг 15 оттаял карточки, «Заказы» — шаг 22 (Cafe13KPG#553); случай спал вместе с очередью и проснулся с ней.
+    // ⚠ Человек без членства и без роли `worker` стоит на `noAccess` (homeOf, слово владельца 05.11.2026)
+    {
       const BARMAN_NOMEMBER = clone(WORKER); BARMAN_NOMEMBER.membership_active = false; BARMAN_NOMEMBER.membership = null; BARMAN_NOMEMBER.memberships = [];
       const s = await cardsCase(BARMAN_NOMEMBER, {});
       const n = 'cards-queue';

@@ -27,7 +27,8 @@ function fromDirections(d) {
   var all = dirsOf(d);
   if (!all) return undefined;
   var act = all.filter(function (x) { return x.is_active; });
-  var mine = act.filter(function (x) { return grant('bar', x.id) || grant('curator', x.id); });
+  // шаг 22: и работник бизнеса — иначе при двух активных бизнесах его «Заказы» вставали на «не удалось определить»
+  var mine = act.filter(function (x) { return grant('bar', x.id) || grant('curator', x.id) || grant('worker', x.id); });
   var b = BAR_PICK !== null ? act.filter(function (x) { return x.id === BAR_PICK; })
         : mine.length ? mine : act;
   // title — слово сервера: шапка меню и «Бизнес «…»» на карточках не пишут название литералом
@@ -168,6 +169,22 @@ function loadMenu() {
    сервер, а не экран: по роли на клиенте не гадаем. */
 var QUEUE = null;          // строки очереди или null, пока не пришли
 var QUEUE_FAIL = '';
+/* Направление очереди — из РОЛИ, а не из выбора бизнеса на «Услугах» (BAR_PICK). Сервер на чужом направлении
+   не отказывает, а отдаёт только СВОИ заказы человека (api 41e2e35, снимок формы шага 22: ручка одна на две
+   стороны, на ней стоит и `barOrder` покупателя). Работник, заглянувший в меню чужого бизнеса, увидел бы
+   пустую очередь вместо своей — правдоподобный успех. Сперва бар и куратор, затем работник; у админа роли с
+   направлением нет — его очередь по BAR, как было. */
+var QUEUE_DIR = null;
+function queueDir() {
+  var g = DATA.grants || [], by = function (roles) {
+    return g.filter(function (x) { return roles.indexOf(x.role) >= 0 && typeof x.dir === 'number'; })[0];
+  };
+  var r = by(['bar', 'curator']) || by(['worker']);
+  return r ? r.dir : BAR ? BAR.id : null;
+}
+// отмена возвращает деньги — работнику бизнеса её сервер не даёт (403 «отменяет заказ бар или куратор
+// направления», api 41e2e35): кнопки, которая заведомо откажет, у него нет
+function queueBoss() { return grant('admin') || grant('bar', QUEUE_DIR) || grant('curator', QUEUE_DIR); }
 var QUEUE_GEN = 0, QUEUE_POLL = null;
 var STATE_BUSY = {};       // id заказа → нажатие в пути
 var CANCEL_ASK = null;     // id заказа, у которого спросили «точно отменить?»
@@ -193,12 +210,16 @@ function loadQueue() {
   if (!LIVE || current !== 'barQueue') return;
   var gen = ++QUEUE_GEN;
   var go_ = function () {
-    api('GET', '/bar/orders?direction_id=' + BAR.id).then(function (r) {
+    var dir = queueDir();
+    // другое направление — прежний список не его
+    if (dir !== QUEUE_DIR) { QUEUE = null; QUEUE_DIR = dir; }
+    if (dir === null) { QUEUE_FAIL = 'Не удалось определить ваш бизнес.'; render(); return; }
+    api('GET', '/bar/orders?direction_id=' + dir).then(function (r) {
       if (current !== 'barQueue' || gen !== QUEUE_GEN) return;
       var q = r.status === 200 ? fromQueue(r.data) : null;
       if (q) { QUEUE = q; QUEUE_FAIL = ''; }
       else {
-        QUEUE_FAIL = r.status === 403 ? 'Очередь видна бару и куратору направления.'
+        QUEUE_FAIL = r.status === 403 ? 'Очередь видна работникам, бару и куратору направления.'
                    : (QUEUE ? 'Не обновилось: ' : '') + failText(r);
       }
       render();
