@@ -71,11 +71,18 @@ var SCREENS = {
 
   guest: function () {
     if (LIVE) {
-      return '<div class="group"><span class="label">Бар клуба</span>' +
-          '<button type="button" class="listitem accent" data-go="bar">' +
-            '<span class="grow"><b>Бар Café XIII</b><span class="small">Кофе, чай, авторские · заказ из приложения</span></span>' +
-            svg(ICON.chev, 'chev') +
-          '</button>' +
+      // шаг 19 (рецепт 19/guest.md): строка на каждый АКТИВНЫЙ бизнес, порядок серверный; метка — только «закрыт»;
+      // подписи нет — описания сервер не отдаёт; без accent — главного действия среди N строк нет
+      return '<div class="group"><span class="label">Бизнесы клуба</span>' +
+          (KLUB_BIZ.list === null
+            ? (KLUB_BIZ.fail ? '<div class="card strong"><h2>Бизнесы не загрузились</h2><p class="verbatim">' + esc(KLUB_BIZ.fail) + '</p>' +
+                '<button type="button" class="btn" data-action="klub-biz-retry">Повторить</button></div>' : '')
+            : !KLUB_BIZ.list.length ? '<div class="card quiet"><span class="small">Пока ни одного бизнеса.</span></div>'
+            : KLUB_BIZ.list.map(function (b) {
+                return '<button type="button" class="listitem" data-action="klub-biz:' + b.id + '">' +
+                  '<span class="grow"><b class="clamp2">' + esc(b.title) + '</b></span>' +
+                  (b.is_open ? '' : '<span class="pill">закрыт</span>') + svg(ICON.chev, 'chev') + '</button>';
+              }).join('')) +
         '</div>' +
         // шаг 15 (рецепт 15/barCards): дверь РАБОТНИКА бизнеса — по его праву, а не mayCards(): у барной стороны
         // двери уже две («Клуб», «Заказы»). «Работа» — то же слово, что на «Клубе»; подпись — без «утверждения»:
@@ -89,14 +96,11 @@ var SCREENS = {
       // Вернуть, когда у клуба появятся настоящие услуги и ручка под них.
     }
     return '' +
-      '<div class="group"><span class="label">Бар клуба</span>' +
-        '<button type="button" class="listitem accent" data-go="bar">' +
-          '<span class="grow"><b>Бар Café XIII</b>' +
-          '<span class="small">' + (DATA.bar.open
-            ? 'Кофе, чай, авторские · заказ из приложения'
-            : 'Сейчас закрыт') + '</span></span>' +
-          '<span class="pill' + (DATA.bar.open ? ' on' : '') + '">' +
-            (DATA.bar.open ? 'открыт' : 'закрыт') + '</span>' +
+      // демо — ОДИН бизнес (слово владельца 21.10.2026: выдуманных позиций нет), название из DATA.bar.title
+      '<div class="group"><span class="label">Бизнесы клуба</span>' +
+        '<button type="button" class="listitem" data-go="bar">' +
+          '<span class="grow"><b class="clamp2">' + esc(DATA.bar.title) + '</b></span>' +
+          (DATA.bar.open ? '' : '<span class="pill">закрыт</span>') + svg(ICON.chev, 'chev') +
         '</button>' +
       '</div>' +
       '<div class="group"><span class="label">Услуги острова</span>' +
