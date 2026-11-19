@@ -613,8 +613,12 @@ function go(screen, p) {
   if (screen === 'home' && current !== 'home' && mayRequests() && WIRED.memberRequests) loadRequests();
   // с самой карточки в список возвращаются — это не новый вход, «откуда» не трогать
   // «Услуги» — дверь работника (шаг 15): без неё «назад» увёл бы работника с членством на «Клуб», где двери нет
-  if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard')
+  if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard') {
     CARDS.from = current === 'barQueue' || current === 'guest' ? current : homeOf();
+    // шаг 16: дверь партнёра — в блоке бизнеса на «Клубе»; у барной стороны там своя дверь, и она — бар (предел строкой)
+    CARDS.partner = current === 'home' && !!cardPartnerDir() && !DATA.barSide;
+  }
+  if (screen === 'home' && current !== 'home' && cardPartnerDir()) loadPartnerCards();
   if (screen === 'barCards' && current !== 'barCards' && mayCards()) loadCards();
   if (screen === 'barCard' && (current !== 'barCard' || String(param) !== String(p))) {
     // заметка «черновик сохранён» переживает переход с формы на саму карточку

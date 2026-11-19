@@ -17,7 +17,7 @@
 var CARD_STATES = ['draft', 'review', 'active', 'hidden'];
 var CARD_LANGS = [['ru', 'RU'], ['en', 'EN'], ['th', 'TH']];
 var CARD_FIELDS = ['c-title', 'c-group', 'c-price', 'c-mins', 'c-about'];
-var CARDS = { list: null, fail: '', gen: 0, from: '', dir: null, lost: false };   // dir — { id, title } направления карточек
+var CARDS = { list: null, fail: '', gen: 0, from: '', dir: null, lost: false, partner: false };   // partner — вошёл дверью партнёра (шаг 16)   // dir — { id, title } направления карточек
 var CARD = { v: {}, alcohol: false, lang: 'ru', text: {}, body: {}, err: '', deny: '', note: '',
              busy: false, back: false, reason: '', hideAsk: false, groupAsk: '', edit: 0 };   // edit — номер черновика в правке
 
@@ -25,7 +25,45 @@ function cardReset() {
   CARD.v = {}; CARD.alcohol = false; CARD.lang = 'ru'; CARD.text = {}; CARD.body = {}; CARD.err = '';
   CARD.deny = ''; CARD.note = ''; CARD.back = false; CARD.reason = ''; CARD.hideAsk = false; CARD.groupAsk = ''; CARD.edit = 0;
 }
-function mayCards() { return LIVE && (grant('admin') || grant('bar') || grant('curator') || grant('worker')); }
+function mayCards() { return LIVE && (grant('admin') || grant('bar') || grant('curator') || grant('worker') || !!cardPartnerDir()); }
+// шаг 16 (Cafe13KPG#547): партнёр — по ВЛАДЕНИЮ направлением (`GET /partner/directions`), не по роли. Первый бизнес:
+// переключателя в 0.2 нет, как у работника
+function cardPartnerDir() { var d = (BW.dirs || [])[0]; return d ? { id: d.id, title: d.title } : null; }
+function cardPartner() { return !!CARDS.dir && (BW.dirs || []).some(function (d) { return d.id === CARDS.dir.id; }); }
+// только партнёр ЭТОГО направления: не бар, не куратор и не работник его — решает, но карточку не ведёт
+function cardPartnerOnly() { var w = cardWorkerDir(); return LIVE && cardPartner() && !cardBarSide() && !(w && CARDS.dir && w.dir === CARDS.dir.id); }
+// замечание возврата: «Вернуть» и подпись — на ВВОДЕ, без перерисовки (как prNoteSync), иначе набор терял бы фокус
+function cardReasonSync() {
+  var f = document.getElementById('c-reason'); if (!f) return;
+  CARD.reason = f.value;
+  var empty = !CARD.reason.trim(), b = document.querySelector('#view [data-action^="c-back-send:"]');
+  if (b) b.disabled = empty || CARD.busy;
+  var w = document.getElementById('c-reason-why'), l = document.getElementById('c-reason-last');
+  if (w) w.hidden = !empty; if (l) l.hidden = empty;
+}
+document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'c-reason') cardReasonSync(); });
+// свои направления для двери на «Клубе» — только список: выбор бизнеса и работники — дело экрана шага 14
+function loadPartnerDirs() {
+  if (!LIVE) return;
+  api('GET', '/partner/directions').then(function (r) {
+    var l = r.status === 200 ? fromMyBiz(r.data) : null;
+    if (!l) return;
+    if (!BW.dirs) BW.dirs = l;
+    if (current === 'home') { loadPartnerCards(); render(); }
+  });
+}
+// счётчик двери «Карточки на согласовании»: по СПИСКУ (`review`), null — не посчитано, а не ноль
+var PCARDS = { n: null, gen: 0 };
+function loadPartnerCards() {
+  var d = cardPartnerDir(); if (!LIVE || !d) return;
+  var gen = ++PCARDS.gen;
+  api('GET', '/bar/products?direction_id=' + d.id + '&state=review').then(function (r) {
+    if (gen !== PCARDS.gen) return;
+    var l = r.status === 200 ? fromCards(r.data) : null;
+    PCARDS.n = l ? l.filter(function (c) { return c.state === 'review'; }).length : null;
+    if (current === 'home') render();
+  });
+}
 // роль работника с направлением — первая: переключателя бизнесов в 0.2 нет (слово владельца)
 function cardWorkerDir() {
   return (DATA.grants || []).filter(function (g) { return g.role === 'worker' && typeof g.dir === 'number'; })[0] || null;
@@ -34,7 +72,7 @@ function cardWorkerDir() {
 function cardsByRole() {
   return !!cardWorkerDir() && (CARDS.from === 'guest' || !(grant('admin') || grant('bar') || grant('curator')));
 }
-function cardCurator() { return !!CARDS.dir && (grant('admin') || grant('curator', CARDS.dir.id)); }
+function cardCurator() { return !!CARDS.dir && (grant('admin') || grant('curator', CARDS.dir.id) || cardPartner()); }
 // барная сторона ЭТОГО направления; без неё зритель — работник: ведёт карточку, пока она черновик
 function cardBarSide() { return !!CARDS.dir && (grant('admin') || grant('bar', CARDS.dir.id) || grant('curator', CARDS.dir.id)); }
 function cardWorkerOnly() { return LIVE && !cardBarSide(); }
@@ -70,6 +108,8 @@ function loadCards() {
       show();
     });
   };
+  // партнёр — направление и название из `GET /partner/directions`: слово сервера, не литерал
+  if (CARDS.partner && cardPartnerDir()) { go2(cardPartnerDir()); return; }
   if (cardsByRole()) {
     var w = cardWorkerDir();
     // название бизнеса — словом сервера: `GET /directions` открыта любому допущенному
