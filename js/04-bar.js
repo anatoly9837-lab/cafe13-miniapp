@@ -5,22 +5,54 @@
    гостю, которому не хватает, кнопка ведёт к пополнению, а меню он видит
    целиком. Сумму считает сервер, клиент шлёт только позиции. */
 
-/* Направление «Бар» берётся по названию из GET /directions, а не числом в
-   коде: id назначает база, и после переноса константа указала бы на чужое
-   направление — меню пришло бы пустым и выглядело бы честным «пусто».
-   Открыт бар или нет, сервер считает по открытой смене. */
+/* Бизнес выбирается НОМЕРОМ (шаг 19, рецепт 19/guest.md): член клуба — строкой
+   «Бизнесы клуба» на «Услугах» (BAR_PICK); без выбора — персонал по направлению
+   своей роли bar/curator, иначе единственный активный. По названию не выбирается:
+   название — совпадение строки, а право привязано к направлению.
+   Открыт бизнес или нет, сервер считает по открытой смене. */
 var BAR = null;            // { id, open, title } после /directions
+var BAR_PICK = null;       // direction_id строки, в которую нажал член клуба
+var KLUB_BIZ = { list: null, fail: '', gen: 0 };   // активные бизнесы для блока на «Услугах»
 
-function fromDirections(d) {
+function dirsOf(d) {
   if (!Array.isArray(d)) return undefined;
   for (var i = 0; i < d.length; i++) {
     var x = d[i];
     if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' ||
         typeof x.is_active !== 'boolean' || typeof x.is_open !== 'boolean') return undefined;
   }
-  var b = d.filter(function (x) { return x.title === 'Бар' && x.is_active; });
-  // title — слово сервера для «Бизнес «…»» на карточках меню (шаг 15): экран не пишет название литералом
+  return d;
+}
+function fromDirections(d) {
+  var all = dirsOf(d);
+  if (!all) return undefined;
+  var act = all.filter(function (x) { return x.is_active; });
+  var mine = act.filter(function (x) { return grant('bar', x.id) || grant('curator', x.id); });
+  var b = BAR_PICK !== null ? act.filter(function (x) { return x.id === BAR_PICK; })
+        : mine.length ? mine : act;
+  // title — слово сервера: шапка меню и «Бизнес «…»» на карточках не пишут название литералом
   return b.length === 1 ? { id: b[0].id, open: b[0].is_open, title: b[0].title } : null;   // ни одного или два — не угадываем
+}
+/* Список «Бизнесы клуба» — перечитывается при каждом входе на «Услуги»: смену
+   открывают и закрывают на баре, старое is_open обещало бы заказ. Порядок — серверный. */
+function loadBiz() {
+  var gen = ++KLUB_BIZ.gen;
+  api('GET', '/directions').then(function (r) {
+    if (gen !== KLUB_BIZ.gen) return;
+    var all = r.status === 200 ? dirsOf(r.data) : undefined;
+    if (all) { KLUB_BIZ.list = all.filter(function (x) { return x.is_active; }); KLUB_BIZ.fail = ''; }
+    else { KLUB_BIZ.list = null; KLUB_BIZ.fail = r.status === 200 ? failText(r) : denyText(r); }
+    if (current === 'guest') render();
+  });
+}
+function bizPick(id) {
+  var x = (KLUB_BIZ.list || []).filter(function (b) { return b.id === id; })[0];
+  if (!x) return;
+  // корзина — позиции ОДНОГО бизнеса: при смене выбора она не переезжает в чужое меню
+  if (BAR_PICK !== id) { CART = {}; MENU_STATE = ''; DATA.bar.menu = []; }
+  BAR_PICK = id;
+  BAR = { id: x.id, open: x.is_open, title: x.title };
+  go('bar');
 }
 
 var MENU_STATE = '';       // '' — не грузили, 'loading', 'ok', иначе текст отказа
@@ -112,7 +144,7 @@ function loadBar(done) {
     if (b) { if (seq > BAR_OK || !BAR) { BAR = b; BAR_OK = Math.max(BAR_OK, seq); } }
     else if (seq > BAR_SEEN) BAR = null;
     BAR_SEEN = Math.max(BAR_SEEN, seq);
-    done(b ? '' : b === null ? 'На сервере не нашлось направления «Бар».' : failText(r));
+    done(b ? '' : b === null ? 'Не удалось определить ваш бизнес.' : failText(r));
   });
 }
 

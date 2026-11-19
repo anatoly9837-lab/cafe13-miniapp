@@ -137,7 +137,7 @@ function stepper(d) {
 function buyBtn(d, wide) {
   var cls = 'btn' + (wide ? '' : ' mini');
   if (BUSY) return '<button type="button" class="' + cls + '" disabled>Отправляем…</button>';
-  if (!BAR || !BAR.open) return '<button type="button" class="' + cls + '" disabled>Бар закрыт</button>';
+  if (!BAR || !BAR.open) return '<button type="button" class="' + cls + '" disabled>Закрыто</button>';
   if (DATA.member.balance < d.price) {
     return '<button type="button" class="' + cls + ' quiet" data-go="topup">Не хватает ' +
       money(d.price - DATA.member.balance) + ' ฿</button>';
@@ -245,7 +245,7 @@ var TITLES = {
   pass: 'Пропуск', membership: 'Членство', memberRequests: 'Заявки на членство', events: 'Афиша',
   event: 'Мероприятие', bookings: 'Мои ивенты', thanks: 'Благодарность', staff: 'Касса', demo: 'Демо-режим',
   consentFull: 'Подробно', joinAbout: 'О клубе',
-  bar: 'Бар', drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
+  drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
@@ -411,7 +411,9 @@ function render() {
     title.textContent = 'Café XIII';
     title.className = 'wordmark';
   } else {
-    title.textContent = LIVE && current === 'demo' ? 'Просмотр' : TITLES[current] || 'Café XIII';
+    // шапка меню — название ВЫБРАННОГО бизнеса словом сервера (шаг 19), а не литерал таблицы
+    title.textContent = LIVE && current === 'demo' ? 'Просмотр'
+      : current === 'bar' ? (LIVE ? (BAR && BAR.title) : DATA.bar.title) || 'Café XIII' : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
   var right = document.getElementById('bar-right');
@@ -633,6 +635,7 @@ function go(screen, p) {
   if (screen === 'tillDay' && LIVE && canTopup()) { TD.ask = -1; TD.deny = null; tillDayLoad(); }
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink' || screen === 'barRecipe') && LIVE && MENU_STATE === '') loadMenu();
+  if (screen === 'guest' && LIVE) loadBiz();
   /* «Записи» строятся из ответа афиши, поэтому грузить её надо и при входе
      сюда: человек попадает на этот экран сразу после записи (`go('bookings')`),
      минуя афишу, и без этой строки `EVENTS` остался бы `null` навсегда —
@@ -736,6 +739,8 @@ function doAction(a) {
 
     if (a === 'buy') { buy(arg); return; }
     if (a === 'retry-menu') { loadMenu(); render(); return; }
+    if (a === 'klub-biz-retry') { loadBiz(); return; }
+    if (a === 'klub-biz') { bizPick(Number(arg)); return; }
     /* Повтор своего заказа (рецепт `barOrder`): прежний отказ стоит до ответа — гасить его раньше
        значило бы на миг сказать «заказа нет». Без направления опросу спросить некого: сперва бар. */
     if (a === 'retry-mine') {
