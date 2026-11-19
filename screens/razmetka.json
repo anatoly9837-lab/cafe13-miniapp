@@ -1,13 +1,13 @@
 {
- "снято": "2026-11-19T04:40:47.068Z",
+ "снято": "2026-11-19T06:20:03.899Z",
  "слепки_страницы": {
-  "index.html": "6332fc4ba3e8058e49fdbe6c7e9b76c07d8c0cc3a7be86f66368c08ce5e94d6e",
+  "index.html": "95d6583e69f66a6aaeff1401d1547b64e9328d906f663ca8b07a0aa5b576966b",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/01-osnova.js": "e3cc2cddfb0319c9ccb0d1ed900269a9539d1a995ac85de0e9508e60394664c4",
+  "js/01-osnova.js": "56de488985af5201843570f7d4e2ac19493af42788eaa002f83312f78267a324",
   "js/02-chlenstvo.js": "3ed44390574b058f14e920b011f872d2af7b660c8553a403dac4fcab92560a51",
   "js/03-propusk.js": "1b1eca66d0571cb8c1c962f7477b67991198fde538a67d89bc0326d3f30b8cff",
   "js/04-bar.js": "458fdc0bb121a156eb54d533722765a247f87908c981157d4cc9675b0dd863ae",
@@ -22,13 +22,13 @@
   "js/13-ekrany-kassa.js": "f3d292f80d376b9e69a84fa67f8f08fd7c9df93c07b8690cd9026d7b65915227",
   "js/14-ekrany-meropriyatiya.js": "07b49b5749980deb755f8482f4a371f0a91322a41a1d669e0929e998fbcfcfb6",
   "js/15-ekrany-partner-soglasie.js": "f6ec7b568c6dc8f7bdc8e272f3ec2830ab379b065e5263bc17f6da37403a5815",
-  "js/16-ekrany-bar.js": "63c78e7e9e0b8cae8945daf7e437920ca6a7df1dcd6c74eb0efa6a3c87d237e6",
+  "js/16-ekrany-bar.js": "624d0abd94ea1c413f54cd0aaa166d6f4c1edee364c297d1f82b24dcee8e6fb3",
   "js/17-ekrany-upravlenie.js": "f28dfb1af5b8b1a26fb0e678c9d38aa1bca1824f2b2d2024e47922372e4c9a3c",
   "js/18-ekrany-mastera.js": "e69d3b051fdce093b432604cf2d65c553c95dbaac8e554377b45b13e6ef29f6a",
   "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
   "js/20-ekrany-sluzhebnye.js": "24947f703becc1f33b67b10fb8b00e6c65c6589e7ec31e4909a3d48aa8ff2f4a",
   "js/21-navigaciya.js": "d9157a2c72cbc35ec67fa093fb7898ae980d57827978f0db210ae007e8b26209",
-  "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
+  "js/22-zapusk.js": "770b910e3180fff8932360c3bb831b663a6e1096de2b25c76af8f8fbc70042d0"
  },
  "шрифты": {
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": {
@@ -52,7 +52,7 @@
    "слепок": "jkgjnakkehdemeac"
   }
  },
- "свод_слепков": "8cc216029b69523dee164fe5e59b4d7e7e7fdc77bfd4eaa8e38fc8ad48396472",
+ "свод_слепков": "d4c5259af44d55f1cf16d1222f01a4f19ba2dcb584f312066b4ab1d5639075bb",
  "область": "вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает",
  "предел": "ОДИН снятый вид каждого экрана. Состояния рецепта (отказ, пусто, отправка, вспышка) опись не снимает, и класс, живущий только в них, сверке «не измерен», а не зелёный",
  "экраны": {
