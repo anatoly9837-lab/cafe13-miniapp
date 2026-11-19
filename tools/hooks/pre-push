@@ -41,7 +41,10 @@ command -v git >/dev/null || skip 'нет git'
 dead=0
 while read -r lref lsha rref rsha; do
     [ -n "${rref:-}" ] || continue
-    case "$lsha" in 0000000000000000000000000000000000000000) continue;; esac  # удаление ветки
+    # Удаление ветки: git даёт нулевой локальный sha. Проверяется СВОЙСТВОМ
+    # («есть ли хоть один не-ноль»), а не литералом из 40 нулей: литерал
+    # роняет шаг 7 ворот (ids-clean видит 40 цифр не из разрешённого списка).
+    case "$lsha" in *[!0]*) ;; *) continue;; esac
     br=${rref#refs/heads/}
     [ -n "$br" ] || continue
 
