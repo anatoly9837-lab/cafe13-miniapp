@@ -55,13 +55,20 @@ while read -r lref lsha rref rsha; do
         rc=$?
     else
         # Без прибора — тот же вопрос прямо у GitHub: ПОСЛЕДНИЙ PR этой ветки.
+        # ⚠ Код возврата gh снимается ОТДЕЛЬНОЙ строкой и читается ПЕРВЫМ:
+        # без этого сеть, токен или лимит API давали rc=0 и push в мёртвую
+        # ветку проходил МОЛЧА — правдоподобный успех вместо явного отказа.
         out=$(gh pr list --head "$br" --state all --limit 1 \
                  --json number,state -q '.[0] | "\(.number) \(.state)"' 2>&1)
-        rc=0
-        case "$out" in
-            *MERGED*|*CLOSED*) rc=1;;
-            *) rc=0;;
-        esac
+        gh_rc=$?
+        if [ "$gh_rc" -ne 0 ]; then
+            rc=2
+        else
+            case "$out" in
+                *MERGED*|*CLOSED*) rc=1;;
+                *) rc=0;;        # пустой вывод = у ветки нет PR, это «жива»
+            esac
+        fi
     fi
 
     case "$rc" in
