@@ -583,7 +583,8 @@ Object.assign(SCREENS, {
           x[1].map(cardRow).join('') + '</div>';
       }).join('') +
       (L.length ? '' : '<div class="card quiet"><span class="small">Карточек пока нет — ни в меню, ни в работе.</span></div>') +
-      '<button type="button" class="btn ghost dup-main" data-action="c-new">Новая карточка</button>';
+      // партнёру заводить сервер не даёт (403) — гашение снимает шаг 17 (Cafe13KPG#548)
+      (cardPartnerOnly() ? '' : '<button type="button" class="btn ghost dup-main" data-action="c-new">Новая карточка</button>');
   },
 
   barCard: function (id) {
@@ -626,7 +627,7 @@ Object.assign(SCREENS, {
         '<span class="small">Пока карточка в работе, поля можно исправить. Утверждённую не правит никто — с меню её снимает куратор.</span>' +
       '</div>';
     };
-    if (id === 'new') return form('c-save', 'Сохранить черновик');
+    if (id === 'new' && !cardPartnerOnly()) return form('c-save', 'Сохранить черновик');
     if (CARDS.lost) return '<div class="card quiet"><span class="small">Бизнес не нашёлся: роль работника есть, направления по ней нет.</span></div>';
     if (!CARDS.list) return CARDS.fail ? '<div class="card quiet"><span class="verbatim">' + esc(CARDS.fail) + '</span></div>'
                                        : '<div class="card quiet"><span class="small">Загружаем карточку…</span></div>';
