@@ -11599,7 +11599,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const c = await card(s, 'Бар');
       if (!c || JSON.stringify(c.quote) !== '["доли ещё не назначены"]') bad.push(`${n}: в группе нет цитаты шага 20: ${c && JSON.stringify(c.quote)}`);
       else {
-        if (!c.group.includes('Пока доли не назначены, бизнес не продаёт: покупку сервер отклоняет.')) bad.push(`${n}: нет следствия S4`);
+        if (!c.group.includes('Пока доли не назначены, продажи идут, но деньги месяца не делятся: долю клуба и партнёра посчитать нельзя.')) bad.push(`${n}: нет следствия S4`);
+        if (/не продаёт|отклоняет/.test(c.group)) bad.push(`${n}: прежнее ложное S4 о запрете продаж`);
         if (JSON.stringify(c.btns.map(b => b[0])) !== '["Назначить доли"]') bad.push(`${n}: кнопки ${JSON.stringify(c.btns)}, ждали «Назначить доли»`);
         if (/%/.test(c.group)) bad.push(`${n}: у неназначенных процент: «${c.group}»`);
       }

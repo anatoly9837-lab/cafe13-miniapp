@@ -365,7 +365,7 @@ Object.assign(SCREENS, {
       }
       var act = DOLI.busy ? ' disabled' : '';
       if (b.shares === false) return head + '<p class="verbatim">' + esc(say['null']) + '</p>' +
-        '<span class="small">Пока доли не назначены, бизнес не продаёт: покупку сервер отклоняет.</span>' +
+        '<span class="small">Пока доли не назначены, продажи идут, но деньги месяца не делятся: долю клуба и партнёра посчитать нельзя.</span>' +
         '<button type="button" class="btn" data-action="doli-open:' + b.id + '"' + act + '>Назначить доли</button></div>';
       return head + '<div class="rows"><div><span>Клубу · <span class="num">' + pct(b.shares.club) + '</span> %</span></div>' +
           '<div><span>Партнёру · <span class="num">' + pct(b.shares.partner) + '</span> %</span></div></div>' +
