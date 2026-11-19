@@ -248,7 +248,7 @@ ABSENT = [
     'loading': 'все', 'noSign': 'все', 'noAccess': 'все', 'apiDown': 'все', 'joinAbout': 'все',
 
     # выведено обходом: вкладка человека или дверь на отрисованном экране
-    'home': 'дверь', 'pass': 'дверь', 'guest': 'дверь', 'bar': 'дверь',
+    'home': 'дверь', 'pass': 'дверь', 'guest': 'дверь',
     'bookings': 'дверь', 'barQueue': 'дверь', 'staff': 'дверь',
     'tillDay': 'дверь', 'barCards': 'дверь', 'barMoney': 'дверь',
     'events': 'дверь', 'eventNew': 'дверь', 'organizer': 'дверь',
@@ -260,6 +260,9 @@ ABSENT = [
     'topupQueue': 'дверь', 'topupReq': ['право:mayTopups', 'за:topupQueue'],
 
     # за экраном, но последний шаг — не кнопка на пустом стенде
+    # шаг 19 (рецепт 19/guest.md): вход в меню — СТРОКА бизнеса из `GET /directions` на «Услугах», а не
+    # кнопка `data-go`; обход без сервера строк не видит — так же, как строки афиши у `event`
+    'bar': 'за:guest',
     'drink': 'за:bar', 'barCart': 'за:bar', 'barOrder': 'за:barCart',
     'event': 'за:events',
     'barCard': ['право:mayCards', 'за:barCards'],

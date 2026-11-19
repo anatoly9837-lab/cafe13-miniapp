@@ -3147,7 +3147,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open(true, true, json(200, OWNER), null, null, null);
     await s.p.click('#tabs [data-go="guest"]'); await s.p.waitForTimeout(150);
     const t = await s.view();
-    if (!t.includes('Бар Café XIII')) bad.push('guest-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — член клуба не на экране вкладки «Услуги»');
+    if (!t.includes('Бизнесы клуба')) bad.push('guest-services: ПРОВЕРКА НЕ ВЫПОЛНЕНА — член клуба не на экране вкладки «Услуги»');
     else if (t.includes('Услуги острова')) bad.push('guest-services: гостю обещан раздел «Услуги острова», которого у клуба нет');
     await s.ctx.close();
   }
@@ -3225,10 +3225,71 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   const open_ = extra => open(true, true, json(200, OWNER), null, null, null, extra);
   const posts = s => s.calls.filter(c => c.method === 'POST' && c.url.includes('/bar/orders'));
-  async function toBar(s) {
+  // шаг 19: в меню — строкой бизнеса на «Услугах» (список грузится при входе на вкладку)
+  async function toBar(s, id) {
     await s.p.click('#tabs [data-go="guest"]');
-    await s.p.click('[data-go="bar"]');
+    await s.p.waitForSelector(id ? `[data-action="klub-biz:${id}"]` : '[data-action^="klub-biz:"]', { timeout: 3000 }).catch(() => {});
+    await s.p.click(id ? `[data-action="klub-biz:${id}"]` : '[data-action^="klub-biz:"]', { timeout: 3000 }).catch(() => bad.push(`toBar: строка бизнеса ${id || ''} не нажимается`));
     await s.p.waitForTimeout(150);
+  }
+
+  // ── шаг 19 (Cafe13KPG#550, рецепт `_docs/recept/ekran/19/`): блок «Бизнесы клуба» на «Услугах», меню называет выбранный
+  if (part(1)) {
+    const TEA = { id: 9, title: 'Чайная у моря', is_active: true, is_open: true };
+    const rows = s => s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="klub-biz:"]')].map(b => ({
+      id: b.getAttribute('data-action'), t: (b.querySelector('b') || {}).textContent, accent: b.classList.contains('accent'),
+      pill: b.querySelector('.pill') ? b.querySelector('.pill').textContent : null, off: b.disabled })));
+    const head = s => s.p.evaluate(() => ({ h2: (document.querySelector('#view .card.strong h2') || {}).textContent, title: document.getElementById('title').textContent }));
+    const toGuest = async s => { await s.p.click('#tabs [data-go="guest"]'); await s.p.waitForTimeout(400); };
+    // ветвь 1: два активных — две строки, вторая ведёт в меню ВТОРОГО; заголовок меню называет выбранный
+    {
+      const n = 'biz-dva-aktivnyh';
+      const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(true, [TEA]) }));
+      await toGuest(s);
+      const r = await rows(s);
+      if (r.length !== 2 || r[0].t !== 'Бар' || r[1].t !== 'Чайная у моря') bad.push(`${n}: строки ${JSON.stringify(r)}`);
+      await toBar(s, 9); await s.p.waitForTimeout(300);
+      const m = s.calls.filter(c => c.url.includes('/bar/menu'));
+      if (m.length !== 1 || !m[0].url.endsWith('/bar/menu?direction_id=9')) bad.push(`${n}: меню не второго бизнеса: ${JSON.stringify(m.map(c => c.url))}`);
+      const h = await head(s);
+      if (h.h2 !== 'Чайная у моря' || h.title !== 'Чайная у моря') bad.push(`biz-zagolovok-nazyvaet-biznes: заголовок не выбранного: ${JSON.stringify(h)}`);
+      await s.ctx.close();
+    }
+    // ветвь 2: один активный — одна строка, без accent и без метки, тот же путь
+    {
+      const n = 'biz-odin-aktivnyy';
+      const s = await open(true, true, json(200, OWNER), null, null, null, bar());
+      await toGuest(s);
+      const r = await rows(s);
+      if (r.length !== 1 || r[0].accent || r[0].pill !== null || r[0].t !== 'Бар') bad.push(`${n}: строка ${JSON.stringify(r)}`);
+      await toBar(s, 7); await s.p.waitForTimeout(300);
+      if (!s.calls.some(c => c.url.endsWith('/bar/menu?direction_id=7'))) bad.push(`${n}: меню бизнеса 7 не спрошено`);
+      await s.ctx.close();
+    }
+    // ветвь 3: смена закрыта — строка ЖИВАЯ с «закрыт», меню открывается, кнопка «Закрыто», заказ не уходит
+    {
+      const n = 'biz-smena-zakryta';
+      const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(false) }));
+      await toGuest(s);
+      const r = await rows(s);
+      if (r.length !== 1 || r[0].pill !== 'закрыт' || r[0].off) bad.push(`${n}: строка ${JSON.stringify(r)}`);
+      await toBar(s, 7); await s.p.waitForTimeout(300);
+      const t = await s.view();
+      if (!t.includes('Эспрессо')) bad.push(`${n}: меню закрытого не открылось`);
+      if (!t.includes('Закрыто') || t.includes('Бар закрыт')) bad.push(`${n}: кнопка покупки не «Закрыто»`);
+      if (await s.p.evaluate(() => !!document.querySelector('[data-action^="buy:"]'))) bad.push(`${n}: есть «Купить» при закрытой смене`);
+      await s.ctx.close();
+    }
+    // ветвь 4: единственный не активен — строки нет, «пусто»
+    {
+      const n = 'biz-ne-aktiven-i-pusto';
+      const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: json(200, [{ id: 7, title: 'Бар', is_active: false, is_open: true }]) }));
+      await toGuest(s);
+      const r = await rows(s);
+      if (r.length) bad.push(`${n}: неактивный бизнес в списке: ${JSON.stringify(r)}`);
+      if (!(await s.view()).includes('Пока ни одного бизнеса.')) bad.push(`${n}: нет «Пока ни одного бизнеса.»`);
+      await s.ctx.close();
+    }
   }
 
   if (part(1)) {
@@ -3795,7 +3856,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs: DIR(false) }));
     await toBar(s);
     const t = await s.view();
-    ['Эспрессо', 'закрыт', 'Бар закрыт'].forEach(x => { if (!t.includes(x)) bad.push(`bar-closed: нет «${x}»`); });
+    ['Эспрессо', 'закрыт', 'Закрыто'].forEach(x => { if (!t.includes(x)) bad.push(`bar-closed: нет «${x}»`); });
     if (await s.p.evaluate(() => !!document.querySelector('[data-action^="buy:"]'))) bad.push('bar-closed: есть кнопка «Купить»');
     await s.p.evaluate(() => doAction('buy:11'));
     await s.p.waitForTimeout(150);
@@ -3818,15 +3879,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
 
-  // Направление не найдено / найдено дважды / ответ битый — отказ, а не пустое меню.
+  // Бизнес не выбран и не определяется ролью (шаг 19: по названию больше не угадываем) / ответ битый — отказ, а не пустое меню.
+  // Вход go('bar') мимо строки «Услуг» — так входит персонал без выбора.
   if (part(1)) if (thawed('очередь на баре')) for (const [name, dirs, want] of [
-    ['dirs-none', json(200, [{ id: 3, title: 'Кухня', is_active: true, is_open: true }]), 'не нашлось направления'],
-    ['dirs-two', DIR(true, [{ id: 8, title: 'Бар', is_active: true, is_open: true }]), 'не нашлось направления'],
-    ['dirs-inactive', json(200, [{ id: 7, title: 'Бар', is_active: false, is_open: true }]), 'не нашлось направления'],
+    ['dirs-none', DIR(true, [{ id: 3, title: 'Кухня', is_active: true, is_open: true }]), 'Не удалось определить ваш бизнес'],
+    ['dirs-two', DIR(true, [{ id: 8, title: 'Бар', is_active: true, is_open: true }]), 'Не удалось определить ваш бизнес'],
+    ['dirs-inactive', json(200, [{ id: 7, title: 'Бар', is_active: false, is_open: true }]), 'Не удалось определить ваш бизнес'],
     ['dirs-bad', json(200, [{ id: 7, title: 'Бар' }]), 'не разобран'],
     ['dirs-500', json(500, {}), 'кодом 500']]) {
     const s = await open(true, true, json(200, OWNER), null, null, null, bar({ dirs }));
-    await toBar(s);
+    await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(300);
     const t = await s.view();
     if (!t.includes(want)) bad.push(`${name}: нет «${want}»`);
     if (s.calls.some(c => c.url.includes('/bar/menu'))) bad.push(`${name}: меню запрошено по угаданному направлению`);

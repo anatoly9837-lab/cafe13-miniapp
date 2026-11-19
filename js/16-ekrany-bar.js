@@ -39,14 +39,14 @@ Object.assign(SCREENS, {
         ? '<div class="card strong"><h2>Меню не загрузилось</h2><p>' + esc(MENU_STATE) + '</p>' +
             '<button type="button" class="btn" data-action="retry-menu">Повторить</button></div>'
         : !DATA.bar.menu.length
-        ? '<div class="card quiet"><span class="small">В меню пока ни одной позиции — его заводит куратор бара.</span></div>'
+        ? '<div class="card quiet"><span class="small">В меню пока ни одной позиции.</span></div>'
         : DATA.bar.menu.map(function (g) {
             return '<div class="group"><span class="label">' + esc(g.group) + '</span>' +
               g.items.map(barRow).join('') + '</div>';
           }).join('');
       return (FLASH ? flash() : '') +
         '<div class="card strong"><div class="row top">' +
-          '<div class="col"><h2>Бар Café XIII</h2>' +
+          '<div class="col"><h2 class="clamp2">' + esc(BAR ? BAR.title : '') + '</h2>' +
             '<span class="small">' + (BAR && !BAR.open
               ? 'Сейчас закрыт: смена не открыта, заказ не отправится. Меню видно и так.'
               : '«Купить» — заказ на одну позицию со счёта, подадут за стойку. Несколько позиций или другое место — через «в заказ».') + '</span></div>' +
@@ -62,7 +62,7 @@ Object.assign(SCREENS, {
     }
     return (FLASH ? flash() : '') +
       '<div class="card strong"><div class="row top">' +
-        '<div class="col"><h2>Бар Café XIII</h2>' +
+        '<div class="col"><h2 class="clamp2">' + esc(DATA.bar.title) + '</h2>' +
           '<span class="small">' + (DATA.bar.open
             ? 'Открыт до 23:00. Заказ уходит на бар сразу и оплачивается со счёта в клубе.'
             : 'Сейчас закрыт — заказ не отправится.') + '</span></div>' +
