@@ -4046,6 +4046,27 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     {
+      // смена бизнеса: свой заказ, купленный в баре 7, не переезжает в дверь меню бизнеса 9, где своих заказов нет
+      // (сброс DATA.bar.mine в bizPick; без него дверь B показывала заказ из A — возврат arhitector-b7 на ревью)
+      const n = 'dver-drugogo-biznesa';
+      const TEA = { id: 9, title: 'Чайная у моря', is_active: true, is_open: true };
+      const base = bar({ dirs: DIR(true, [TEA]) });
+      const s = await open(true, true, json(200, M23), null, null, null, q => {
+        const u = q.url();
+        if (q.method() === 'GET' && u.includes('/bar/orders')) return json(200, /direction_id=7\b/.test(u) ? [row('new')] : []);
+        return base(q);
+      });
+      await toBar(s, 7);
+      await s.p.click('[data-action="buy:11"]', { timeout: 3000 }).catch(() => bad.push(`${n}: в баре 7 нет «Купить»`));
+      await s.p.waitForTimeout(300);
+      if (await s.p.evaluate(() => !DATA.bar.mine)) bad.push(`${n}: НЕ ВЫПОЛНЕНО — заказ в баре 7 не встал`);
+      await toBar(s, 9); await s.p.waitForTimeout(300);
+      const d = await door(s);
+      if (await s.p.evaluate(() => BAR && BAR.id) !== 9) bad.push(`${n}: НЕ ВЫПОЛНЕНО — выбор бизнеса 9 не встал`);
+      else if ((d || '').includes('261018-01') || !/^Мой заказ ?заказов нет$/.test(d || '')) bad.push(`${n}: дверь меню бизнеса 9 «${d}» — заказ бара 7 или не «заказов нет»`);
+      await s.ctx.close();
+    }
+    {
       // контроль 5: без заказов в окне — на меню «заказов нет», на экране заказа R3 и «Открыть меню»; не ошибка
       const n = 'dver-bez-zakazov';
       const s = await open23({ list: json(200, [FOREIGN]) });
