@@ -26,7 +26,7 @@ Object.assign(SCREENS, {
     if (!MR.q) return MR.qFail ? '<div class="card strong"><h2>Заявки не загрузились</h2><p>' + esc(MR.qFail) + '</p>' +
         '<button type="button" class="btn" data-action="ms-retry-q">Попробовать снова</button></div>'
       : '<div class="card quiet"><span class="small">Загружаем заявки…</span></div>';
-    var sub = function (q) { return msWhen(q) + (q.extra ? ', +' + q.extra + ' ' + msHours(q.extra) : '') + ' · «' + q.title + '» · ' + money(q.amount) + ' ฿'; };
+    var sub = function (q) { return msWhen(q) + (q.at ? '' : ', каждую неделю') + ' · «' + q.title + '» · ' + money(q.amount) + ' ฿'; };
     var row = function (q, box) {
       return '<span class="' + box + '"><b>' + esc(q.who) + '</b><span class="small">' + esc(topupDay(q.iso, true)) + '</span></span>' +
         '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span>';
@@ -34,7 +34,7 @@ Object.assign(SCREENS, {
     var wait = MR.q.filter(function (q) { return q.status === 'pending'; });
     var past = MR.q.filter(function (q) { return q.status !== 'pending'; });
     if (!wait.length && !past.length) return (FLASH ? flash() : '') + '<div class="card quiet"><div class="col"><b>Заявок нет</b>' +
-      '<span class="small">Здесь появятся заявки членов клуба на статус мастера.</span></div></div>';
+      '<span class="small">Здесь появятся букинги членов клуба: один ивент на дату и время.</span></div></div>';
     return (FLASH ? flash() : '') +
       (wait.length ? '<div class="group"><span class="label">Ждут решения</span>' + wait.map(function (q) {
         return '<button type="button" class="listitem" data-action="ms-open:' + q.id + '">' + row(q, 'grow') + svg(ICON.chev, 'chev') + '</button>' +
@@ -58,10 +58,9 @@ Object.assign(SCREENS, {
     var busy = MR.busy ? ' disabled' : '';
     var err = MR.qErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MR.qErr) + '</span></div>' : '';
     return (FLASH ? flash() : '') +
-      '<div class="card"><div class="col"><b>' + esc(q.who) + '</b><span class="small">Заявка в мастера · ' + esc(topupDay(q.iso, true)) + '</span></div></div>' +
+      '<div class="card"><div class="col"><b>' + esc(q.who) + '</b><span class="small">Букинг · ' + esc(topupDay(q.iso, true)) + '</span></div></div>' +
       '<div class="rows">' +
-        '<div><span class="small">День и слот</span><b>' + esc(msWhen(q)) + '</b></div>' +
-        '<div><span class="small">Часы сверх двух</span><b>' + esc(q.extra ? '+' + q.extra + ' ' + msHours(q.extra) : 'нет') + '</b></div>' +
+        '<div><span class="small">' + (q.at ? 'Дата и время' : 'День и слот') + '</span><b>' + esc(msWhen(q) + (q.at ? '' : ', каждую неделю')) + '</b></div>' +
         '<div><span class="small">Место и мест</span><b>' + esc(q.place + ' · ' + q.seats) + '</b></div>' +
         '<div><span class="small">Списано</span><b class="num">' + money(q.amount) + ' ฿</b></div></div>' +
       '<div class="card quiet"><div class="col"><b>' + esc(q.title) + '</b>' + (q.about ? '<span class="small">' + esc(q.about) + '</span>' : '') + '</div></div>' +
@@ -78,7 +77,7 @@ Object.assign(SCREENS, {
         '<span class="small" id="ms-why"' + (MR.note.trim() ? ' hidden' : '') + '>Сначала причина — без неё мастер не узнает, что исправить.</span>' +
         '<button type="button" class="btn quiet" data-action="ms-keep"' + busy + '>Назад</button>'
       : '<button type="button" class="btn" data-action="ms-yes:' + q.id + '"' + busy + '>' + (MR.busy ? 'Отправляем…' : 'Согласовать') + '</button>' +
-        '<span class="small">Ивент сразу встанет в афишу. Выключить его можно в «Ивентах».</span>' +
+        '<span class="small">Ивент встанет в афишу на эту дату. Выключить его можно в «Ивентах».</span>' +
         // кадр E55ж (Cafe13KPG#726): короткий вход «Отказать», а возврат денег назван в точке выбора подписью;
         // «…и вернуть деньги» стоит на кнопке ОТПРАВКИ — там, где возврат случается
         '<button type="button" class="btn quiet" data-action="ms-ask:' + q.id + '"' + busy + '>Отказать</button>' +
@@ -117,7 +116,7 @@ Object.assign(SCREENS, {
           }).join('') + '</div>');
   },
 
-  // E55e. Единица — СЛОТ (снимок master-slots), выключенный не прячется: иначе включить его негде
+  // E55e. Единица — букинг (снимок master-slots; прошедшие сервер отсеивает), выключенный не прячется: иначе включить его негде
   masterEvents: function () {
     if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!MR.slots) return MR.sFail ? '<div class="card strong"><h2>Ивенты не загрузились</h2><p>' + esc(MR.sFail) + '</p>' +
@@ -126,17 +125,17 @@ Object.assign(SCREENS, {
     var busy = MR.busy ? ' disabled' : '';
     var err = MR.sErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MR.sErr) + '</span></div>' : '';
     if (!MR.slots.length) return (FLASH ? flash() : '') + err + '<div class="card quiet"><div class="col"><b>Ивентов мастеров нет</b>' +
-      '<span class="small">Они появятся, когда вы согласуете заявку в мастера.</span></div></div>';
+      '<span class="small">Они появятся, когда вы согласуете букинг мастера.</span></div></div>';
     return (FLASH ? flash() : '') + err + '<div class="group"><span class="label">Ивенты мастеров</span>' + MR.slots.map(function (e) {
       return '<div class="card"><div class="row"><button type="button" class="col tap" data-action="ms-ev:' + e.id + '"><b>' + esc(e.title) + '</b>' +
-        '<span class="small">' + esc(msWhen(e) + ' · ' + e.who + (e.on ? '' : ' · выключено, в афише не видно')) + '</span></button>' +
+        '<span class="small">' + esc(msWhen(e) + (e.at ? '' : ', каждую неделю') + ' · ' + e.who + (e.on ? '' : ' · выключено, в афише не видно')) + '</span></button>' +
         '<button type="button" class="btn mini' + (e.on ? '' : ' quiet') + '" data-action="' + (e.on ? 'ms-hide:' : 'ms-show:') + e.id + '"' + busy + '>' +
           (e.on ? 'Выключить' : 'Включить') + '</button>' +
       '</div></div>';
     }).join('') + '</div>';
   },
 
-  // экран слота: только то, что отдаёт сервер (снимок master-slots). «Коротко для афиши» у слота сервер НЕ отдаёт
+  // экран букинга: только то, что отдаёт сервер (снимок master-slots). «Коротко для афиши» сервер НЕ отдаёт
   masterEvent: function (id) {
     if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!MR.slots) return SCREENS.masterEvents();
@@ -148,136 +147,74 @@ Object.assign(SCREENS, {
       (MR.sErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MR.sErr) + '</span></div>' : '') +
       '<div class="card"><div class="col"><b>' + esc(e.title) + '</b></div></div>' +
       '<div class="rows">' +
-        '<div><span class="small">День и время</span><b>' + esc(msWhen(e)) + '</b></div>' +
+        '<div><span class="small">' + (e.at ? 'Дата и время' : 'День и время') + '</span><b>' + esc(msWhen(e) + (e.at ? '' : ', каждую неделю')) + '</b></div>' +
         '<div><span class="small">Место</span><b>' + esc(e.place) + '</b></div>' +
         '<div><span class="small">Ведёт</span><b>' + esc(e.who) + '</b></div>' +
         '<div><span class="small">В афише</span><b>' + (e.on ? 'видно' : 'выключено, не видно') + '</b></div>' +
-        '<div><span class="small">Недель впереди</span><b class="num">' + (e.weeksOn + e.weeksOff) + '</b></div></div>' +
+        // недели — только у прежнего недельного слота; у букинга ивент один
+        (e.at ? '' : '<div><span class="small">Недель впереди</span><b class="num">' + (e.weeksOn + e.weeksOff) + '</b></div>') + '</div>' +
       (e.live ? '' : '<div class="note">' + svg(ICON.info) + '<span>Членство мастера сейчас не действует.</span></div>') +
       '<button type="button" class="btn' + (e.on ? '' : ' quiet') + '" data-action="' + (e.on ? 'ms-hide:' : 'ms-show:') + e.id + '"' + busy + '>' +
         (e.on ? 'Выключить' : 'Включить') + '</button>';
   },
 
-  /* E54b + E54i одним экраном (в живом прокрутка есть). Время — из списка, занятость проверит сервер (вариант «б»);
-     место — из `GET /places` (только `active`), число мест — поле: оба требует схема (`events.seats NOT NULL`,
-     место у недели обязательно), а не перечень владельца */
+  /* E54b + E54i одним экраном: БУКИНГ — один ивент на дату и время (Cafe13KPG#985). Время — из списка, занятость
+     выбранной даты — с сервера ДО отправки; место фиксировано, число мест — поле (`events.seats NOT NULL`). Ждущий
+     прежний букинг подаче не мешает: «сколько угодно — каждый по 100 ฿» (слово владельца 20.11.2026) */
   masterApply: function () {
     if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
-      '<span class="small">Мастером становится член клуба.</span></div></div>';
-    if (msIsMaster()) return '<div class="card"><div class="col"><b>Вы мастер</b>' +
-      '<span class="small">Новая заявка не нужна: слот продлевается оплатой.</span></div></div>';
-    var last = MR.mine && MR.mine[0];
-    if (last && last.status === 'pending') return '<div class="card quiet"><div class="col"><b>Заявка уже ждёт решения</b>' +
-      '<span class="small">Вторую не подать, пока арт-директор не ответил на первую.</span></div></div>';
-    var h = 2 + MSF.extra, bal = msBalance(), p = MR.price[h], pNext = MR.price[h + 1], base = MR.price[2];
-    var top = h >= MS_MAX_H, more = !top && typeof pNext === 'number' && pNext <= bal;
-    var chips = function (act, list, on) {
-      return '<div class="chips">' + list.map(function (x) {
-        return '<button type="button" class="chip' + (x[0] === on ? ' on' : '') + '" data-action="' + act + ':' + x[0] + '" aria-pressed="' + (x[0] === on) + '">' + esc(x[1]) + '</button>';
-      }).join('') + '</div>';
-    };
+      '<span class="small">Букает ивент член клуба.</span></div></div>';
+    if (!MSF.date) MSF.date = msTomorrow();
+    var h = 2 + MSF.extra, bal = msBalance(), p = MR.price[h];
+    var top = h >= MS_MAX_H, dateOk = msYmd(MSF.date) && MSF.date >= msToday();
     var place = EV_PLACES ? (msPlace() ? '<b>' + esc(MS_PLACE) + '</b>' : '<span class="small">Места «' + esc(MS_PLACE) + '» нет среди открытых мест клуба</span>')
       : EV_PLACES_STATE === 'loading' || !EV_PLACES_STATE ? '<span class="small">Загружаем место…</span>'
       : '<div class="row"><span class="small">' + esc(EV_PLACES_STATE) + '</span><button type="button" class="btn quiet" data-action="ms-retry-places">Повторить</button></div>';
-    if (msPlace()) loadBusy();
-    var B = MSB.data, clash = B && B.fits === false;
-    var why = MR.busy ? '' : typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
+    if (msPlace() && dateOk) loadBusy();
+    // занятость — только той даты, что выбрана сейчас: ответ о прежней дате не показывается
+    var B = dateOk && MSB.key.indexOf('|' + MSF.date + '|') > 0 ? MSB.data : null, clash = B && B.fits === false;
+    var why = MR.busy ? '' : !dateOk ? 'Выберите дату — сегодня или позже.'
+      : typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
       : p > bal ? 'Не хватает ' + money(p - bal) + ' ฿ на счёте.' : EV_PLACES && !msPlace() ? 'Места «' + MS_PLACE + '» нет.' : !EV_PLACES ? 'Загружаем место…'
       : clash ? 'Выбранное время пересекается с занятым — выберите другое.' : '';
-    // занятость: даты месяца, занятое в каждую, и пересечение выбранного времени — ДО отправки
-    var busy = !msPlace() ? '' : !B ? (MSB.fail ? '<div class="row"><span class="small">Занятость не загрузилась: ' + esc(MSB.fail) +
+    var busy = !msPlace() || !dateOk ? '' : !B ? (MSB.fail ? '<div class="row"><span class="small">Занятость не загрузилась: ' + esc(MSB.fail) +
           ' Отправить можно — пересечение проверит сервер.</span><button type="button" class="btn quiet" data-action="msf-busy-retry">Повторить</button></div>'
         : '<span class="small">Смотрим занятость…</span>')
-      : !B.dates.length ? '<span class="small">В этом месяце недель для слота не осталось.</span>'
-      : '<div class="rows">' + B.dates.map(function (x) {
-          var used = x.busy.length ? x.busy.map(function (b) { return b.from + '–' + b.to + ' «' + b.title + '»'; }).join(', ') : 'свободно';
-          return '<div><span class="small">' + esc(x.day) + '</span><b' + (x.conflict ? ' style="color:var(--clay-ink)"' : '') + '>' +
-            esc(x.conflict ? 'пересекается: ' + x.conflict.starts_label.split(' ').pop() + '–' + x.conflict.ends_label + ' «' + x.conflict.title + '»' : used) + '</b></div>';
-        }).join('') + '</div>' +
-        '<span class="small">' + (B.fits ? 'Выбранное время свободно на всех ' + B.dates.length + ' датах месяца.' : 'Красным — даты, где выбранное время занято.') + '</span>';
+      : '<div class="rows">' + (B.busy.length ? B.busy.map(function (b) {
+          return '<div><span class="small">' + esc(b.from + '–' + b.to) + '</span><b>' + esc('«' + b.title + '»') + '</b></div>';
+        }).join('') : '<div><span class="small">' + esc(msDate(MSF.date)) + '</span><b>свободно</b></div>') + '</div>' +
+        (B.conflict ? '<span class="small" style="color:var(--clay-ink)">' + esc('Пересекается: ' + B.conflict.starts_label.split(' ').pop() + '–' + B.conflict.ends_label + ' «' + B.conflict.title + '»') + '</span>'
+          : B.fits ? '<span class="small">' + esc(msSpan(msDate(MSF.date), MSF.time, h)) + ' — свободно.</span>' : '');
     return (FLASH ? flash() : '') + '<div class="mf">' +
-      '<div class="field"><label>День недели</label>' + chips('msf-day', MS_DAY.map(function (d, i) { return [i + 1, d]; }), MSF.day) + '</div>' +
+      '<div class="field"><label for="msf-date">Дата</label><input id="msf-date" type="date" min="' + msToday() + '" value="' + esc(MSF.date) + '"></div>' +
       '<div class="field"><label for="msf-time">Начало</label><select id="msf-time">' + MS_TIMES.map(function (t) {
           return '<option value="' + t + '"' + (t === MSF.time ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div>' +
       '<div class="field"><label>Продолжительность</label><div class="counter">' +
         '<button type="button" class="round" data-action="msf-minus"' + (MSF.extra ? '' : ' disabled') + ' aria-label="Меньше">−</button>' +
         '<b class="num">' + h + ' ' + msHours(h) + '</b>' +
-        '<button type="button" class="round" data-action="msf-plus"' + (more ? '' : ' disabled') + ' aria-label="Больше">+</button></div>' +
-        // «+» гаснет там, где следующий час не покрыт остатком или упёрся в потолок сервера, и причина — рядом
-        '<span class="small">' + (top ? 'Больше ' + MS_MAX_H + ' часов в слоте сервер не примет'
-          : more ? msSpan(MS_DAY[MSF.day - 1], MSF.time, h) + (typeof pNext === 'number' && typeof p === 'number' ? ' · ещё час — ' + money(pNext - p) + ' ฿' : '')
-          : typeof pNext === 'number' ? 'Ещё час — ' + money(pNext) + ' ฿, на счёте ' + money(bal) + ' ฿' : 'Узнаём цену…') + '</span></div>' +
+        '<button type="button" class="round" data-action="msf-plus"' + (top ? ' disabled' : '') + ' aria-label="Больше">+</button></div>' +
+        (top ? '<span class="small">Больше ' + MS_MAX_H + ' часов сервер не примет</span>' : '') + '</div>' +
       '<div class="field"><label>Место</label>' + place + '</div>' +
-      (busy ? '<div class="field"><label>Занято в этот день недели</label>' + busy + '</div>' : '') +
+      (busy ? '<div class="field"><label>Занято в этот день</label>' + busy + '</div>' : '') +
       '<div class="field"><label for="msf-seats">Мест</label>' +
         '<input id="msf-seats" inputmode="numeric" style="width:92px" value="' + esc(MSF.seats) + '">' +
         '<span class="small">0 — без ограничения</span></div>' +
       '<div class="field"><label for="msf-title">Название ивента</label><input id="msf-title" maxlength="200" value="' + esc(MSF.title) + '"></div>' +
       '<div class="field"><label for="msf-about">Коротко для афиши</label><textarea id="msf-about" rows="3" maxlength="' + MS_ABOUT + '">' + esc(MSF.about) + '</textarea></div>' +
       '<div class="rows">' +
-        '<div><span class="small">Статус мастера · 2 часа</span><b class="num">' + (typeof base === 'number' ? money(base) + ' ฿' : '…') + '</b></div>' +
-        (MSF.extra ? '<div><span class="small">Ещё ' + MSF.extra + ' ' + msHours(MSF.extra) + '</span><b class="num">' +
-          (typeof p === 'number' && typeof base === 'number' ? money(p - base) + ' ฿' : '…') + '</b></div>' : '') +
-        '<div><span class="small">Спишется</span><b class="num">' + (typeof p === 'number' ? money(p) + ' ฿' : '…') + '</b></div></div>' +
+        '<div><span class="small">Спишется · ' + h + ' ' + msHours(h) + '</span><b class="num">' + (typeof p === 'number' ? money(p) + ' ฿' : '…') + '</b></div></div>' +
+      '<span class="small">Если арт-директор откажет, деньги вернутся на счёт.</span>' +
       (MSF.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MSF.err) + '</span></div>' : '') +
-      '<button type="button" class="btn" data-action="ms-send"' + (why || MR.busy ? ' disabled' : '') + '>' + (MR.busy ? 'Отправляем…' : 'Отправить заявку') + '</button>' +
+      '<button type="button" class="btn" data-action="ms-send"' + (why || MR.busy ? ' disabled' : '') + '>' + (MR.busy ? 'Отправляем…' : 'Отправить букинг') + '</button>' +
       (why ? '<span class="small">' + esc(why) + '</span>' : '') +
     '</div>';
-  },
-
-  // E59 / E59b: продление. Окно отмены — общая полоса `.undo`, как у снятия уровня
-  masterRenew: function () {
-    if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
-      '<span class="small">Продлевает мастер — член клуба.</span></div></div>';
-    if (!MR.mine) return MR.mineState && MR.mineState !== 'loading' && MR.mineState !== 'ok'
-      ? '<div class="card quiet"><div class="row"><span class="small">Заявки не загрузились: ' + esc(MR.mineState) + '</span>' +
-        '<button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>'
-      : '<div class="card quiet"><span class="small">Загружаем…</span></div>';
-    var own = msOwnSlot();
-    if (!own) return '<div class="card quiet"><div class="col"><b>Продлевать нечего</b>' +
-      '<span class="small">Продление — у согласованного слота мастера.</span></div></div>';
-    loadRenewPreview();
-    var P = RNW.prev, waiting = UNDO.key && /^renew:/.test(UNDO.key);
-    var busy = RNW.busy || waiting ? ' disabled' : '';
-    var top = '<div class="card"><div class="col"><b>Статус мастера</b>' +
-        '<span class="small">' + (own.paidTill ? 'Оплачено до ' + esc(msTill(own.paidTill)) : 'Оплаченных месяцев нет') + '</span>' +
-        '<span class="small">' + esc(MS_DAY[own.weekday - 1] + ', ' + own.start + ' · ' + own.hours + ' ' + msHours(own.hours) + ' · ' + own.place) + '</span>' +
-      '</div></div>' +
-      '<div class="field"><label>Месяцев</label><div class="counter">' +
-        '<button type="button" class="round" data-action="rnw-minus"' + (RNW.months > 1 && !busy ? '' : ' disabled') + ' aria-label="Меньше">−</button>' +
-        '<b class="num">' + RNW.months + '</b>' +
-        '<button type="button" class="round" data-action="rnw-plus"' + (RNW.months < RNW_MAX && !busy ? '' : ' disabled') + ' aria-label="Больше">+</button></div>' +
-        '<span class="small">Подряд, не больше ' + RNW_MAX + ' — это предел ввода</span></div>' +
-      (P ? '<div class="rows"><div><span class="small">Спишется</span><b class="num">' + money(P.charged) + ' ฿</b></div>' +
-             // окно, а не месяцы (Cafe13KPG#894): с какого дня пойдёт продление и до какого будет оплачено
-             '<div><span class="small">Начало</span><b>' + esc(msTill(P.from)) + '</b></div>' +
-             '<div><span class="small">Оплачено будет до</span><b>' + esc(msTill(P.till)) + '</b></div></div>'
-        // «Посчитать снова», а не «Повторить» (Cafe13KPG#685): повторяется запрос ЦЕНЫ, в слоте ничего не повторяется
-        : RNW.prevFail ? '<div class="row"><span class="small">' + esc(rnwSameRefusal() ? 'Цена не пересчитана' : RNW.prevFail) + '</span><button type="button" class="btn quiet" data-action="rnw-retry">Посчитать снова</button></div>'
-        : '<span class="small">Считаем у сервера…</span>');
-    var err = RNW.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(RNW.err) + '</span></div>' : '';
-    // E59b: окно ДО отправки; пока идёт отсчёт, запрос не ушёл
-    if (waiting) return (FLASH ? flash() : '') + top + err +
-      '<div class="undo"><span class="small">Продлеваем на ' + RNW.months + ' ' + msMonths(RNW.months) + '</span>' +
-        '<span class="sec">' + undoLeft() + '</span><button type="button" data-action="rnw-keep">Отменить</button></div>' +
-      '<span class="small">Пока идёт отсчёт, деньги не списаны: запрос ещё не ушёл.</span>';
-    // почему «Продлить» не нажимается — строкой у самой кнопки (Cafe13KPG#685), связана с ней aria-describedby.
-    // Два приговора не склеиваются: недостача — плашкой отказа, как и была; «цены нет» — подписью, как «почему»
-    // у «Отправить заявку», а слова отказа остаются дословно в строке предпросмотра и здесь не повторяются
-    var why = P ? (P.enough ? '' : '<div class="deny" role="alert" id="rnw-why">' + svg(ICON.info) + '<span>Не хватает ' + money(P.short) + ' ฿ на счёте.</span></div>')
-      : RNW.prevFail ? '<span class="small" id="rnw-why">' + (RNW.prevCode >= 400 && RNW.prevCode < 500 ? 'Цена не посчитана: сервер отказал.' : 'Цена не посчитана.') + '</span>' : '';
-    if (RNW.busy) why = '';
-    return (FLASH ? flash() : '') + top + err +
-      '<button type="button" class="btn" data-action="rnw-go"' + (!P || !P.enough || busy ? ' disabled' : '') + (why ? ' aria-describedby="rnw-why"' : '') + '>' + (RNW.busy ? 'Продлеваем…' : 'Продлить') + '</button>' +
-      why +
-      '<div class="note">' + svg(ICON.info) + '<span>Оплаченный месяц не возвращается. Неоплаченный слот уходит другому мастеру.</span></div>';
   },
 
   // E55d: мастера и их слоты (снимок master-slots), «слота нет» — `masters_without_slot`. Экрана за строкой нет
   masterList: function () {
     if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!MR.slots) return SCREENS.masterEvents();
-    var rows = MR.slots.map(function (e) { return [e.who, msWhen(e) + ' · «' + e.title + '»']; })
+    var rows = MR.slots.map(function (e) { return [e.who, msWhen(e) + (e.at ? '' : ', каждую неделю') + ' · «' + e.title + '»']; })
       .concat(MR.without.map(function (w) { return [w, 'слота нет']; }));
     if (!rows.length) return '<div class="card quiet"><div class="col"><b>Мастеров нет</b>' +
       '<span class="small">Мастер появляется, когда вы согласуете его заявку.</span></div></div>';

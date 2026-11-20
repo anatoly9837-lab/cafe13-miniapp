@@ -862,9 +862,7 @@ function refreshMe() {
     // форма мастера держит набранное в полях — забрать его ДО перерисовки, иначе текст пропадёт
     if (current === 'masterApply') msfGrab();
     // экраны, где остаток считает что-то кроме шапки, — целиком; остальные — только шапка (остаток в ней)
-    // остаток сменился — «хватит ли» на продление спросить у сервера заново (предпросмотр — снимок, не обещание)
-    if (current === 'masterRenew') RNW.key = '';
-    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, masterRenew: 1, event: 1, withdraw: 1 }[current]) render();
+    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, event: 1, withdraw: 1 }[current]) render();
     else { var right = document.getElementById('bar-right'); if (right) right.innerHTML = barRight(); }
   });
 }
@@ -877,7 +875,7 @@ function refreshMe() {
 var BACK_AT = 0;
 // приложение ушло в фон в окне с политикой 'cancel' — не отправлять: таймер в фоне мог бы сработать
 document.addEventListener('visibilitychange', function () {
-  if (document.visibilityState === 'hidden' && UNDO.key && UNDO.leave === 'cancel') { undoStop(); if (current === 'masterRenew') render(); }
+  if (document.visibilityState === 'hidden' && UNDO.key && UNDO.leave === 'cancel') undoStop();
 });
 function onReturn() {
   if (!LIVE || noEntry() || document.visibilityState === 'hidden') return;

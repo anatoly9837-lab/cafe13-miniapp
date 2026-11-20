@@ -1,49 +1,52 @@
-/* ── шаг 3: мастера (кадры E54*, E55*) — на ручках сервера (cafe13-api, бой `bbf09f8`).
-   Форма ответа — по СНИМКАМ `tools/api-keys.json` (cafe13-api#96 `2e262b4`), а не по модели запроса.
-   Слова владельца 29.10.2026: «Я мастер… списывает с его баланса 2600 бат и отправляет арт директору
-   заявку… За каждый дополнительный час… 1300»; «Про деньги - они списываются в момент заявки. Если не
-   достаточно - заявку подать нельзя»; «арт директор не может начать / он может только согласовать». */
-var MS_DAY = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];   // weekday сервера: 1 — понедельник (ISO)
+/* ── шаг 3: мастера (кадры E54*, E55*) — на ручках сервера (cafe13-api).
+   Форма ответа — по СНИМКАМ `tools/api-keys.json`, а не по модели запроса.
+   Модель — БУКИНГ (слово владельца 20.11.2026, ТЗ Cafe13KPG#985, редакция 2): «Он букает только один ивент теперь.
+   На следующую неделю надо букать следующий»; «Сколько угодно — каждый по 100 ฿». Букинг — ОДИН ивент на дату и
+   время, 100 ฿ при подаче при любом числе часов, отказ арт-директора возвращает деньги. Повторения по неделям,
+   подписки и продления нет. Сумму называет сервер (`/master/price`), клиент её не обещает. Прежнее (29.10.2026:
+   2 600 ฿ в месяц, +1 300 ฿ за час) отменено этим словом. Слова 29.10, что остаются: «Про деньги - они списываются
+   в момент заявки. Если не достаточно - заявку подать нельзя»; «арт директор не может начать / он может только согласовать». */
+var MS_DAY = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];   // weekday сервера: 1 — понедельник (ISO); у букинга он производный от даты
 /* Старт — ЛЮБОЙ с шагом 30 минут, продолжительность — отдельным полем (слово владельца 29.10.2026: «время
    должгно быть произвольное с интервалом в 30 минут. Нужен старт мероприятия и продолжительность, по умолчанию
-   продолжительность 2 часа, + для добавки еще одного за 1300 бат»). Отказ сервера при пересечении остаётся
+   продолжительность 2 часа»; подтверждено 20.11.2026). Отказ сервера при пересечении остаётся
    ПОСЛЕДНЕЙ защитой и печатается буквой: между показом занятости и отправкой время мог занять другой. */
 var MS_TIMES = [];
 for (var msi = 0; msi < 48; msi++) MS_TIMES.push((msi < 20 ? '0' : '') + Math.floor(msi / 2) + ':' + (msi % 2 ? '30' : '00'));
 // место ФИКСИРОВАНО — «Зал» (слово владельца через координатора, 29.10.2026); его номер — из `GET /places` по имени
 var MS_PLACE = 'Зал';
 function msPlace() { return EV_PLACES ? EV_PLACES.filter(function (x) { return x.name === MS_PLACE; })[0] || null : null; }
-/* Занятость дня — ОДНОЙ ручкой на все даты месяца (`GET /master/slot-busy`, снимки master-slot-busy*,
-   cafe13-api#100 `da239b1`): даты — ровно те, что сервер выпишет при согласии, клиент их не считает.
-   Слово владельца: «когда выбран день должны появиться занятые слоты… сервер должен показать это сразу еще
-   перед тем как пользователь начал выбирать время». Частичного ответа нет: пришло — показ, не пришло —
-   «не загрузилась», и отказ сервера при пересечении остаётся ПОСЛЕДНЕЙ защитой. */
+/* Занятость ОДНОЙ даты (`GET /master/slot-busy?place_id&date&start_local&hours`, Cafe13KPG#985): что занято в
+   выбранный день и пересекается ли с ним выбранное время. Слово владельца: «когда выбран день должны появиться
+   занятые слоты… сервер должен показать это сразу еще перед тем как пользователь начал выбирать время». Частичного
+   ответа нет: пришло — показ, не пришло — «не загрузилась», и отказ сервера при пересечении остаётся ПОСЛЕДНЕЙ защитой.
+   Ответ о ДРУГОЙ дате, чем спрошена, — не ответ: показать занятость не того дня хуже, чем «не загрузилась». */
 var MSB = { key: '', gen: 0, data: null, fail: '' };
-function fromBusy(d) {
-  if (!d || !Array.isArray(d.dates) || typeof d.month !== 'string') return null;
+function fromBusy(d, date) {
+  if (!d || d.date !== date || !Array.isArray(d.busy)) return null;
   var bad = false;
-  var dates = d.dates.map(function (x) {
-    if (!x || typeof x.date !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(x.date) || !Array.isArray(x.busy)) { bad = true; return null; }
-    var busy = x.busy.map(function (b) {
-      var a = b && new Date(b.starts_at), z = b && new Date(b.ends_at);
-      if (!b || typeof b.title !== 'string' || isNaN(a) || isNaN(z)) { bad = true; return null; }
-      return { title: b.title, from: bkk(a).hm, to: bkk(z).hm };
-    });
-    var c = x.conflict;
-    if (c !== undefined && c !== null && (typeof c.title !== 'string' || typeof c.starts_label !== 'string' || typeof c.ends_label !== 'string')) bad = true;
-    return { day: x.date.slice(8, 10) + '.' + x.date.slice(5, 7), busy: busy, conflict: c || null };
+  var busy = d.busy.map(function (b) {
+    var a = b && new Date(b.starts_at), z = b && new Date(b.ends_at);
+    if (!b || typeof b.title !== 'string' || isNaN(a) || isNaN(z)) { bad = true; return null; }
+    return { title: b.title, from: bkk(a).hm, to: bkk(z).hm };
   });
+  var c = d.conflict;
+  if (c !== undefined && c !== null && (typeof c.title !== 'string' || typeof c.starts_label !== 'string' || typeof c.ends_label !== 'string')) bad = true;
   if (bad || (d.fits !== undefined && typeof d.fits !== 'boolean')) return null;
-  return { dates: dates, fits: typeof d.fits === 'boolean' ? d.fits : null };
+  return { busy: busy, conflict: c || null, fits: typeof d.fits === 'boolean' ? d.fits : null };
 }
+// сегодня по часам клуба — нижняя граница даты; по умолчанию форма открывается на завтра
+function msToday() { return bkk(new Date()).ymd; }
+function msTomorrow() { return bkk(new Date(Date.now() + 86400000)).ymd; }
+function msYmd(v) { return typeof v === 'string' && /^\d{4}-\d\d-\d\d$/.test(v) && !isNaN(Date.parse(v + 'T12:00:00Z')); }
 function loadBusy() {
-  var pl = msPlace(); if (!pl || !LIVE) return;
-  var key = pl.id + '|' + MSF.day + '|' + MSF.time + '|' + (2 + MSF.extra);
+  var pl = msPlace(); if (!pl || !LIVE || !msYmd(MSF.date)) return;
+  var date = MSF.date, key = pl.id + '|' + date + '|' + MSF.time + '|' + (2 + MSF.extra);
   if (key === MSB.key && (MSB.data || MSB.fail)) return;
   var gen = ++MSB.gen; MSB.key = key; MSB.data = null; MSB.fail = '';
-  api('GET', '/master/slot-busy?place_id=' + pl.id + '&weekday=' + MSF.day + '&start_local=' + encodeURIComponent(MSF.time) + '&hours=' + (2 + MSF.extra)).then(function (r) {
-    if (gen !== MSB.gen) return;    // поздний ответ под прежний день или время молчит
-    var d = r.status === 200 ? fromBusy(r.data) : null;
+  api('GET', '/master/slot-busy?place_id=' + pl.id + '&date=' + date + '&start_local=' + encodeURIComponent(MSF.time) + '&hours=' + (2 + MSF.extra)).then(function (r) {
+    if (gen !== MSB.gen) return;    // поздний ответ под прежнюю дату или время молчит
+    var d = r.status === 200 ? fromBusy(r.data, date) : null;
     if (d) MSB.data = d; else MSB.fail = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r);
     if (current === 'masterApply') { msfGrab(); render(); }
   });
@@ -53,6 +56,7 @@ function msfGrab() {
   if (!document.getElementById('msf-title')) return;
   MSF.title = val('msf-title'); MSF.about = val('msf-about'); MSF.seats = val('msf-seats');
   if (document.getElementById('msf-time')) MSF.time = document.getElementById('msf-time').value;
+  if (document.getElementById('msf-date')) MSF.date = document.getElementById('msf-date').value;
 }
 // потолки — сервера (`NewMasterRequest`, master.py:75; снимок master-request-201-max: hours 12, about 2000)
 var MS_MAX_H = 12, MS_ABOUT = 2000, MS_SEATS = 500;
@@ -60,20 +64,20 @@ function msName(p) {
   return [p.first_name, p.last_name].filter(Boolean).join(' ') || (p.username ? '@' + p.username : 'Без имени');
 }
 function msHours(n) { return n % 10 === 1 && n % 100 !== 11 ? 'час' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'часа' : 'часов'; }
-/* Момент сервера — ISO с поясом («2027-02-15T07:30:00+00:00»). Дата без часа и без пояса — не момент: конец
-   окна по ней не назвать. */
+/* Момент сервера — ISO с поясом («2027-02-15T07:30:00+00:00»). Дата без часа и без пояса — не момент. */
 function msMoment(v) {
   return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:?\d\d)$/.test(v) && !isNaN(Date.parse(v));
 }
-/* Конец окна словами: «15 февраля» — день момента по часам клуба, год — только если не нынешний. «До» здесь
-   правда буквой: окно `[15.01 14:30, 15.02 14:30)` даёт 15 февраля, ровно слова владельца («заплатили 15 января —
-   15 февраля закончилось»). У окна, перенесённого миграцией из календаря (конец — 1-е 00:00), выйдет «до 1 марта»:
-   28 февраля оплачено целиком, 1 марта — уже нет. */
-function msTill(iso) {
-  var x = bkk(new Date(iso)).ymd.split('-');
-  return Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1] + (x[0] !== bkk(new Date()).ymd.slice(0, 4) ? ' ' + x[0] : '');
+// дата словами: «Чт, 26 ноября» — день недели и число по часам клуба, год — только если не нынешний
+function msDate(ymd) {
+  var x = ymd.split('-'), dow = (new Date(Date.UTC(Number(x[0]), Number(x[1]) - 1, Number(x[2]), 12)).getUTCDay() + 6) % 7;
+  return MS_DAY[dow] + ', ' + Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1] + (x[0] !== msToday().slice(0, 4) ? ' ' + x[0] : '');
 }
-function msWhen(r) { return msSpan(MS_DAY[r.weekday - 1], r.start, r.hours); }
+/* Букинг — датой (`starts_at`); у прежних недельных заявок (до Cafe13KPG#985) `starts_at` null — у них день
+   недели, как было: такие слоты кончаются сами, новых не выписывается */
+function msWhen(r) { return r.at ? msSpan(msDate(bkk(new Date(r.at)).ymd), bkk(new Date(r.at)).hm, r.hours) : msSpan(MS_DAY[r.weekday - 1], r.start, r.hours); }
+// прошёл ли букинг: прежняя недельная заявка датой не кончается — она не «прошла»
+function msPast(r) { return !!r.at && Date.parse(r.at) < Date.now(); }
 /* Заявка: снимки master-request-201, master-requests-mine-*, master-requests-queue. Сумма — СТРОКОЙ
    («3900.00»). Номера человека в ответе нет вовсе — и в разметку класть нечего. Битая строка — null. */
 function fromMasterReq(x, queue) {
@@ -88,11 +92,10 @@ function fromMasterReq(x, queue) {
             start: x.start_local, hours: x.hours, extra: x.hours_extra, amount: amount, status: x.status,
             word: x.status_ru, note: typeof x.decision_note === 'string' ? x.decision_note : '',
             iso: x.created_at, done: typeof x.decided_at === 'string' ? x.decided_at : null };
-  // `paid_till` — конец последнего оплаченного окна, МОМЕНТ (api#141, М.1); null — окон нет. Месяц — от даты
-  // оплаты (слово владельца 06.11.2026, Cafe13KPG#894): окно `[оплата, оплата + месяц)`. Поля НЕТ — отказ строки,
-  // а не «не оплачено»: отсутствие значения иначе пришло бы правдоподобным значением. `paid_until` не читается
-  if (!('paid_till' in x) || x.paid_till !== null && !msMoment(x.paid_till)) return null;
-  r.paidTill = x.paid_till;
+  // `starts_at` — начало букинга, МОМЕНТ (Cafe13KPG#985); null — прежняя недельная заявка. Поля НЕТ — отказ строки:
+  // иначе букинг без даты пришёл бы правдоподобной «недельной». `paid_till` (история периодов) не читается
+  if (!('starts_at' in x) || x.starts_at !== null && !msMoment(x.starts_at)) return null;
+  r.at = x.starts_at;
   if (queue) { if (typeof x.first_name !== 'string') return null; r.who = msName(x); }
   return r;
 }
@@ -103,7 +106,7 @@ function fromMasterList(d, queue) {
   if (out.some(function (x) { return !x; })) return null;
   return { list: out.sort(function (a, b) { return a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : 0; }), pending: queue ? d.pending : null };
 }
-// слот: снимок master-slots. Единица экрана «Ивенты мастеров» — СЛОТ (state published|hidden), не неделя
+// снимок master-slots: строка — букинг (у прежних недельных — слот), прошедшие сервер отсеивает (Cafe13KPG#985)
 function fromSlots(d) {
   if (!d || !Array.isArray(d.slots) || !Array.isArray(d.masters_without_slot)) return null;
   var slots = [], bad = false;
@@ -111,9 +114,10 @@ function fromSlots(d) {
     if (!x || typeof x.request_id !== 'number' || typeof x.title !== 'string' || !(x.weekday >= 1 && x.weekday <= 7) ||
         typeof x.start_local !== 'string' || !/^\d\d:\d\d$/.test(x.start_local) || typeof x.hours !== 'number' ||
         typeof x.place_name !== 'string' || typeof x.first_name !== 'string' || typeof x.weeks_on !== 'number' ||
-        typeof x.weeks_off !== 'number' || typeof x.membership_live !== 'boolean' || !{ published: 1, hidden: 1 }[x.state]) { bad = true; return; }
+        typeof x.weeks_off !== 'number' || typeof x.membership_live !== 'boolean' || !{ published: 1, hidden: 1 }[x.state] ||
+        !('starts_at' in x) || x.starts_at !== null && !msMoment(x.starts_at)) { bad = true; return; }
     slots.push({ id: x.request_id, title: x.title, weekday: x.weekday, start: x.start_local, hours: x.hours, place: x.place_name,
-                 who: msName(x), on: x.state === 'published', weeksOn: x.weeks_on, weeksOff: x.weeks_off, live: x.membership_live });
+                 who: msName(x), on: x.state === 'published', weeksOn: x.weeks_on, weeksOff: x.weeks_off, live: x.membership_live, at: x.starts_at });
   });
   var without = d.masters_without_slot.map(function (x) { return x && typeof x.first_name === 'string' ? msName(x) : null; });
   if (bad || without.some(function (x) { return !x; })) return null;
@@ -135,17 +139,20 @@ function msNoteSync() {
 document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'ms-note') msNoteSync(); });
 // мест по умолчанию 0 = «не ограничено» (слово владельца); ⚠ схема сервера ноль пока не принимает (seats ≥ 1)
 // `from` — номер заявки, чьими полями форма уже заполнена (#697): подстановка одна на форму
-var MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '', from: 0 };
-/* Повторная заявка открывается полями последней ОТПРАВЛЕННОЙ (слово владельца 31.10.2026, Cafe13KPG#697):
-   `MR.mine` отсортирован по created_at, первая — последняя при любом решении. Цена не подставляется — её даёт
-   сервер по часам. Подставляется ОДИН раз и только в нетронутую форму: набранное человеком не перетирается.
-   Часы — как были, даже если денег теперь не хватает: урезать выбор молча нельзя, «Не хватает» видно и отправку гасит */
+// дата пустая до входа в форму: «завтра» считается часами клуба (bkk), а их помощник грузится позже этого файла
+function msfBlank() { return { date: '', time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '', from: 0 }; }
+var MSF = msfBlank();
+/* Новый букинг открывается полями последнего ОТПРАВЛЕННОГО (слово владельца 31.10.2026, Cafe13KPG#697; букинг —
+   «на следующую неделю надо букать следующий», #985): название, аннотация, места, время и часы. ДАТА не
+   подставляется — прошлая уже занята или прошла. `MR.mine` отсортирован по created_at, первая — последняя при
+   любом решении. Подставляется ОДИН раз и только в нетронутую форму: набранное человеком не перетирается */
 function msfPrefill() {
   var last = MR.mine && MR.mine[0];
-  if (!last || last.status === 'pending' || MSF.from) return;
+  if (!last || MSF.from) return;
   if (current === 'masterApply') msfGrab();
-  if (MSF.day !== 4 || MSF.time !== '18:00' || MSF.extra || MSF.seats !== '0' || MSF.title || MSF.about) return;
-  MSF = { day: last.weekday, time: MS_TIMES.indexOf(last.start) >= 0 ? last.start : MSF.time,
+  var b = msfBlank();
+  if (MSF.time !== b.time || MSF.extra || MSF.seats !== '0' || MSF.title || MSF.about) return;
+  MSF = { date: MSF.date, time: MS_TIMES.indexOf(last.start) >= 0 ? last.start : MSF.time,
           extra: Math.max(0, Math.min(last.hours, MS_MAX_H) - 2), seats: String(last.seats),
           title: last.title, about: last.about, err: '', from: last.id };
 }
@@ -158,7 +165,7 @@ function loadMineMaster() {
     MR.mine = d ? d.list : null; MR.mineState = d ? 'ok' : failText(r);
     // набранное — в MSF до перерисовки: без этого ответ, пришедший посреди набора, стирал текст полей
     if (current === 'masterApply') msfGrab();
-    if (d) { msfPrefill(); loadPrice(2 + MSF.extra); loadPrice(3 + MSF.extra); }
+    if (d) { msfPrefill(); loadPrice(2 + MSF.extra); }
     if ({ home: 1, masterApply: 1, masterReqs: 1, masterReq: 1 }[current]) render();
   });
 }
@@ -190,8 +197,9 @@ function loadSlots() {
     if ({ masterEvents: 1, masterEvent: 1, masterList: 1 }[current]) render();
   });
 }
-/* Цена — у сервера (`GET /master/price?hours=N`, снимок master-price: amount строкой «3900»), а не
-   константой: клиент не обещает суммы, которой сервер не спишет */
+/* Цена — у сервера (`GET /master/price?hours=N`, снимок master-price: amount строкой «100»), а не
+   константой: клиент не обещает суммы, которой сервер не спишет. Сегодня она от часов не зависит (#985), но
+   спрашивается под выбранные часы: если сервер начнёт брать за час, форма скажет правду без правки клиента */
 function loadPrice(h) {
   if (!LIVE) return;
   if (MR.price[h] !== undefined || MR.priceAsk[h] || h > MS_MAX_H) return;
@@ -208,16 +216,19 @@ function loadPrice(h) {
 function msDemoFill() {
   if (LIVE || MR.demo) return;
   MR.demo = true;
+  // даты — от «сегодня» витрины: букинг на прошлую дату в списке «впереди» был бы враньём кадра
+  var day = function (n, hm) { return bkk(new Date(Date.now() + n * 86400000)).ymd + 'T' + hm + ':00+07:00'; };
   var own = { id: 901, title: 'Звуковая практика', about: 'Чаши, гонг, голос.', seats: 0, place: 'Зал', weekday: 4, start: '18:30',
-              hours: 2, extra: 0, amount: 2600, status: 'approved', word: 'одобрена', note: '', iso: '2026-10-20T10:00:00+07:00',
-              done: '2026-10-21T10:00:00+07:00', paidTill: '2026-12-06T07:30:00+00:00' };
-  MR.mine = [own]; MR.mineState = 'ok';
+              hours: 2, extra: 0, amount: 100, status: 'approved', word: 'одобрена', note: '', iso: '2026-10-20T10:00:00+07:00',
+              done: '2026-10-21T10:00:00+07:00', at: day(3, '18:30') };
+  MR.mine = [Object.assign({}, own, { id: 904, status: 'pending', word: 'ждёт решения', done: null, iso: day(0, '09:00'), at: day(10, '18:30') }), own];
+  MR.mineState = 'ok';
   MR.q = [Object.assign({}, own, { id: 902, title: 'Утренняя растяжка', weekday: 2, start: '08:00', status: 'pending', word: 'ждёт решения',
-                                   done: null, paidTill: null, iso: '2026-10-29T09:00:00+07:00', who: '[член клуба]' }),
+                                   done: null, iso: '2026-10-29T09:00:00+07:00', who: '[член клуба]', at: day(5, '08:00') }),
           Object.assign({}, own, { who: '[мастер]' })];
   MR.pending = 1;
-  MR.slots = [{ id: 901, title: 'Звуковая практика', weekday: 4, start: '18:30', hours: 2, place: 'Зал', who: '[мастер]', on: true, weeksOn: 4, weeksOff: 0, live: true },
-              { id: 903, title: 'Йога на закате', weekday: 6, start: '17:00', hours: 2, place: 'Зал', who: '[второй мастер]', on: false, weeksOn: 0, weeksOff: 4, live: true }];
+  MR.slots = [{ id: 901, title: 'Звуковая практика', weekday: 4, start: '18:30', hours: 2, place: 'Зал', who: '[мастер]', on: true, weeksOn: 1, weeksOff: 0, live: true, at: own.at },
+              { id: 903, title: 'Йога на закате', weekday: 6, start: '17:00', hours: 2, place: 'Зал', who: '[второй мастер]', on: false, weeksOn: 0, weeksOff: 1, live: true, at: day(6, '17:00') }];
   MR.without = ['[мастер без слота]'];
   // шаг 11: плашки «Распределить деньги» — числа кадра E69 (ждёт и ушедшее), в той же форме, что даёт fromPayouts
   PAY.list = [{ id: 911, title: 'Керамика по вечерам', starts: '2026-11-06T18:30:00+07:00', guests: 12, may: true, at: null,
@@ -228,16 +239,9 @@ function msDemoFill() {
   // шаг 12: «Бизнесы клуба» кадра E75 — бар с партнёром и закрытый без партнёра (обе подписи плашки)
   BIZ.list = [{ id: 1, title: 'Бар', open: true, partner: true, who: '[партнёр]' },
               { id: 2, title: 'Кофейня', open: false, partner: false, who: null }];
-  MR.price = { 2: 2600, 3: 3900, 4: 5200, 5: 6500 };
+  MR.price = {}; for (var h = 2; h <= MS_MAX_H; h++) MR.price[h] = 100;
   if (!EV_PLACES) { EV_PLACES = [{ id: 1, name: 'Зал', capacity: null }]; EV_PLACES_STATE = 'ok'; MR.demoPlaces = true; }
-  MSB.data = { dates: [{ day: '05.11', busy: [], conflict: null }, { day: '12.11', busy: [{ title: 'Чайная церемония', from: '16:00', to: '17:30' }], conflict: null },
-                       { day: '19.11', busy: [], conflict: null }, { day: '26.11', busy: [], conflict: null }], fits: true };
-}
-// предпросмотр продления в витрине: те же поля, что у `fromPreview`; цена примерная, как и всё под плашкой
-function msDemoPreview(own, months) {
-  var end = new Date(own.paidTill); end.setUTCMonth(end.getUTCMonth() + months);
-  var charged = 2600 * months, bal = msBalance();
-  return { charged: charged, from: own.paidTill, till: end.toISOString(), enough: charged <= bal, short: Math.max(0, charged - bal), n: months };
+  MSB.data = { busy: [{ title: 'Чайная церемония', from: '16:00', to: '17:30' }], conflict: null, fits: true };
 }
 // вход состоялся — демо уходит целиком, иначе живой экран взял бы примерное за ответ сервера
 function msDemoClear() {
@@ -245,7 +249,7 @@ function msDemoClear() {
   MR.demo = false; MR.mine = null; MR.mineState = ''; MR.q = null; MR.pending = null; MR.slots = null; MR.without = null;
   PAY.list = null; PAY.pending = null; PAY.err = '';
   BIZ.list = null; BIZ.fail = '';
-  MR.price = {}; MR.priceAsk = {}; RNW.prev = null; RNW.key = ''; MSB.data = null; MSB.key = '';
+  MR.price = {}; MR.priceAsk = {}; MSB.data = null; MSB.key = '';
   if (MR.demoPlaces) { MR.demoPlaces = false; EV_PLACES = null; EV_PLACES_STATE = ''; }
 }
 function msBalance() { return DATA.member && typeof DATA.member.balance === 'number' ? DATA.member.balance : 0; }
@@ -253,98 +257,39 @@ function msIsMaster() {
   var lv = ((DATA.member && DATA.member.memberships) || []).map(function (m) { return m && m.level; });
   return lv.indexOf('organizer') !== -1 || !!(MR.mine && MR.mine.some(function (r) { return r.status === 'approved'; }));
 }
-/* ── продление статуса мастера (кадры E59, E59b; Cafe13KPG#632 `953a1af`) — на ручках api#99/#102.
-   Слово владельца: подписка, продление оплатой без новой заявки. Месяц — от даты оплаты (06.11.2026, Cafe13KPG#894;
-   прежнее «календарный» 29.10 им отменено): предпросмотр показывает окно — начало и конец, а не названия месяцев. ЦЕНУ СЧИТАЕТ СЕРВЕР:
-   «Спишется», «Оплачено будет до» и «Не хватает» — из `GET …/periods/preview?months=N` (снимок
-   master-renew-preview*), клиентской арифметики на экране нет (решение координатора: иначе
-   «правдоподобное вместо известного» там, где сервер обрежет план или откажет членством).
-   ⚠ Кнопка тратит деньги, а ВОЗВРАТА НЕТ: защита — окно отмены ДО отправки, та же функция, что у
-   снятия уровня (`undoStart`, E47y). Окно задерживает ОТПРАВКУ, отменить на сервере нечего. */
-var RNW = { months: 1, prev: null, prevFail: '', prevCode: 0, gen: 0, key: '', busy: false, err: '', errCode: 0 };
-function msOwnSlot() { return MR.mine ? MR.mine.filter(function (r) { return r.status === 'approved'; })[0] || null : null; }
-function msMonths(n) { return n % 10 === 1 && n % 100 !== 11 ? 'месяц' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'месяца' : 'месяцев'; }
-var RNW_MAX = 12;   // предел ВВОДА сервера («защита от опечатки, а не правило клуба»)
 function moneyOf(v) { return typeof v === 'number' ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : NaN; }
-function loadRenewPreview() {
-  var own = msOwnSlot(); if (!own) return;
-  var key = own.id + '|' + RNW.months;
-  if (key === RNW.key && (RNW.prev || RNW.prevFail)) return;
-  if (!LIVE) { RNW.key = key; RNW.prev = msDemoPreview(own, RNW.months); return; }
-  var gen = ++RNW.gen; RNW.key = key; RNW.prev = null; RNW.prevFail = ''; RNW.prevCode = 0;
-  api('GET', '/master/requests/' + own.id + '/periods/preview?months=' + RNW.months).then(function (r) {
-    if (gen !== RNW.gen) return;
-    var d = r.data, charged = d && moneyOf(d.charged), short = d && moneyOf(d.short);
-    // окна `periods` — цепочкой от первого; без `paid_till` или с пустым/битым окном предпросмотр не разобран
-    var per = d && Array.isArray(d.periods) && d.periods.length ? d.periods : null;
-    var ok = r.status === 200 && d && isFinite(charged) && isFinite(short) && typeof d.enough === 'boolean' &&
-      msMoment(d.paid_till) && !!per && per.every(function (w) { return w && msMoment(w.starts_at) && msMoment(w.ends_at); });
-    if (ok) RNW.prev = { charged: charged, from: per[0].starts_at, till: d.paid_till, enough: d.enough, short: short, n: per.length };
-    else { RNW.prevFail = r.status >= 400 && r.status < 500 ? denyText(r) : failText(r); RNW.prevCode = r.status; }
-    if (current === 'masterRenew') render();
-  });
-}
-function renewSend(key) {
-  if (UNDO.key !== null && UNDO.key !== key) return;
-  undoStop();
-  var m = /^renew:(\d+):(\d+)$/.exec(String(key)); if (!m) return;
-  if (!LIVE) { if (current === 'masterRenew') render(); return; }
-  RNW.busy = true; RNW.err = ''; RNW.errCode = 0; if (current === 'masterRenew') render();
-  api('POST', '/master/requests/' + m[1] + '/periods', { months: Number(m[2]) }).then(function (r) {
-    RNW.busy = false;
-    var got = r.status === 201 ? fromMasterReq(r.data, false) : null, charged = r.data && moneyOf(r.data.charged);
-    // деньги могли уйти и при неразобранном ответе — своя заявка и остаток перечитываются ВСЕГДА
-    loadMineMaster(); refreshMe(); RNW.key = '';
-    if (got && got.paidTill) {
-      FLASH = { text: 'Продлено', note: 'Оплачено до ' + msTill(got.paidTill) + (isFinite(charged) ? '. Списано ' + money(charged) + ' ฿.' : '.') };
-      RNW.months = 1;
-    } else { RNW.err = denyText(r); RNW.errCode = r.status; }
-    if (current === 'masterRenew') render();
-  });
-}
-/* E59v, Cafe13KPG#667: один отказ — одно сообщение. После отказа отправки предпросмотр перечитывается (цена
-   могла измениться — НЕ гасить) и получает тот же отказ: общий `_renew_plan`. Тогда строка предпросмотра
-   говорит не отказ второй раз, а то, ради чего в ней «Повторить», — «Цена не пересчитана». Тот же — это
-   тот же код и текст отправки НАЧИНАЕТСЯ с текста предпросмотра: к отправке сервер дописывает «Деньги не
-   списаны, месяц не продлён» (api#103), к предпросмотру нарочно нет. Другой отказ (сеть, иной код, иные
-   слова) — второй отказ, а не копия, и печатается целиком. */
-function rnwSameRefusal() {
-  return !!RNW.err && !!RNW.prevFail && RNW.errCode === RNW.prevCode && RNW.prevCode >= 400 && RNW.prevCode < 500 &&
-    RNW.err.indexOf(RNW.prevFail.replace(/\.$/, '')) === 0;
-}
 
+/* «Клуб» члена: свои букинги СПИСКОМ и вход к новому (Cafe13KPG#985: «сколько угодно — каждый по 100 ฿»). В списке —
+   ждущие, впереди по дате и прежние недельные согласованные; прошедшие и решённые давно не копятся. Отказанный
+   букинг стоит, пока не прошла его дата: в нём причина и «деньги вернулись» */
+function msShown(r) { return r.status === 'pending' || (r.at ? !msPast(r) : r.status === 'approved'); }
 function masterOffer() {
   if (!LIVE || DATA.role === 'guest') return '';
   if (MR.mineState === '') loadMineMaster();
-  loadPrice(2); loadPrice(3);
+  loadPrice(2);
   if (MR.mineState === 'loading' && !MR.mine) return '';
-  if (MR.mineState !== 'ok' && !MR.mine) return '<div class="card quiet"><div class="row"><span class="small">Заявки в мастера не загрузились: ' +
+  if (MR.mineState !== 'ok' && !MR.mine) return '<div class="card quiet"><div class="row"><span class="small">Букинги не загрузились: ' +
       esc(MR.mineState) + '</span><button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>';
-  // блок «Вы мастер» снят (E68, Cafe13KPG#682): условие слота живёт на «Продлении» числами, а дверь
-  // туда — «Продлить» под ролями (masterRenewDoor)
-  if (msIsMaster()) return '';
-  var last = MR.mine[0];
-  if (last && last.status === 'pending') return '<div class="card quiet"><div class="row"><div class="col"><b>Заявка в мастера</b>' +
-      '<span class="small">' + esc(topupDay(last.iso, true)) + '</span></div><span class="st wait">' + esc(last.word) + '</span></div>' +
-      '<span class="small">' + esc('Списано ' + money(last.amount) + ' ฿. ' + msWhen(last) + (last.extra ? ', +' + last.extra + ' ' + msHours(last.extra) : '') + '.') + '</span></div>' +
-    '<div class="note">' + svg(ICON.info) + '<span>Решение принимает арт-директор. Если он откажет, деньги вернутся на счёт.</span></div>';
-  var again = last && last.status === 'rejected' ? '<div class="card quiet"><div class="row"><div class="col"><b>Заявка в мастера</b>' +
-      '<span class="small">' + esc(topupDay(last.done || last.iso, false)) + '</span></div><span class="st no">' + esc(last.word) + '</span></div>' +
-      '<span class="small">' + esc((last.note ? cap(last.note) + '. ' : '') + money(last.amount) + ' ฿ вернулись на счёт.') + '</span></div>' : '';
-  if (again) return again + '<button type="button" class="btn" data-action="ms-apply">Подать заново</button>';
+  var list = MR.mine.filter(msShown).sort(function (a, b) {
+    var x = a.at || a.iso, y = b.at || b.iso; return x < y ? -1 : x > y ? 1 : 0;
+  });
+  var rows = list.length ? '<div class="group"><span class="label">Ваши букинги</span>' + list.map(function (r) {
+    var st = r.status === 'pending' ? 'wait' : r.status === 'approved' ? 'ok' : 'no';
+    var sub = msWhen(r) + (r.at ? '' : ', каждую неделю') + ' · «' + r.title + '»';
+    var tail = r.status === 'rejected' ? (r.note ? cap(r.note) + '. ' : '') + money(r.amount) + ' ฿ вернулись на счёт.'
+      : r.status === 'pending' ? 'Списано ' + money(r.amount) + ' ฿. Решает арт-директор; если откажет, деньги вернутся.' : '';
+    return '<div class="card quiet"><div class="row"><div class="col"><b>' + esc(sub) + '</b>' +
+        (tail ? '<span class="small">' + esc(tail) + '</span>' : '') + '</div>' +
+      '<span class="st ' + st + '">' + esc(r.word) + '</span></div></div>';
+  }).join('') + '</div>' : '';
   var p = MR.price[2], bal = msBalance(), short = typeof p === 'number' && bal < p;
   // E54g: кнопка недоступна, причина — рядом, до нажатия. Цены ещё нет — тоже недоступна: сумму называет сервер
-  return '<div class="card"><div class="col"><b>Стать мастером</b>' +
-      // «свой ивент», а не «своё ивент» кадра: род после переименования (вопрос дизайнеру)
-      '<span class="small">Свой слот в расписании клуба и свой ивент в афише.</span></div>' +
+  return rows + '<div class="card"><div class="col"><b>Забукать ивент</b>' +
+      '<span class="small">Один ивент на дату и время в «' + esc(MS_PLACE) + '». Согласует арт-директор — ивент встанет в афишу.</span></div>' +
       '<span class="small">' + (typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
         : short ? 'Не хватает ' + money(p - bal) + ' ฿: нужно ' + money(p) + ' ฿, на счёте ' + money(bal) + ' ฿'
-        /* ВРЕМЕННАЯ строка из фактов владельца 29.10.2026 (через координатора), слова ждут кадра дизайнера:
-           2 600 ฿ — за календарный МЕСЯЦ («Не правильно - на месяц»), продление оплатой без новой заявки,
-           неоплаченный слот отдаётся. «Один раз» и «пока есть членство» — сняты: первое ложно, второе — не период */
-        : money(p) + ' ฿ в месяц · ивент на 2 часа каждую неделю' + (typeof MR.price[3] === 'number' ? ', ещё час — ' + money(MR.price[3] - p) + ' ฿' : '')) + '</span>' +
-      (typeof p === 'number' && !short ? '<span class="small">Месяц календарный. Продлевается оплатой, без новой заявки; неоплаченный слот отдаётся.</span>' : '') +
-      '<button type="button" class="btn" data-action="ms-apply"' + (typeof p !== 'number' || short ? ' disabled' : '') + '>Я мастер</button></div>' +
+        : money(p) + ' ฿ за букинг · спишется при подаче, вернётся при отказе') + '</span>' +
+      '<button type="button" class="btn" data-action="ms-apply"' + (typeof p !== 'number' || short ? ' disabled' : '') + '>Забукать</button></div>' +
     (short ? '<div class="note">' + svg(ICON.info) + '<span>Пополнить счёт можно на вкладке «Клуб» — кошельком в шапке.</span></div>' : '');
 }
 function sendMaster() {
@@ -353,20 +298,21 @@ function sendMaster() {
   // пределы — сервера (NewMasterRequest): название 1–200, мест 1–500, аннотация до 2000
   MSF.err = !MSF.title ? 'Без названия ивент в афишу не ставится.'
     : !(seats >= 0 && seats <= MS_SEATS && Math.floor(seats) === seats) ? 'Число мест — целое, от 0 до ' + MS_SEATS + '; 0 — без ограничения.'
+    : !msYmd(MSF.date) || MSF.date < msToday() ? 'Выберите дату — сегодня или позже.'
     : !msPlace() ? 'Места «' + MS_PLACE + '» нет среди открытых мест клуба.' : typeof p !== 'number' ? 'Цена ещё не пришла от сервера.'
     : p > msBalance() ? 'Не хватает денег на счёте.' : '';
   if (MSF.err) { render(); return; }
   if (!LIVE) return;   // витрина: нажатие ничего не отправляет (плашка прототипа это говорит)
   MR.busy = true; render();
   api('POST', '/master/request', { title: MSF.title, about: MSF.about, seats: seats, place_id: msPlace().id,
-    weekday: MSF.day, start_local: MSF.time, hours: h }).then(function (r) {
+    starts_on: MSF.date, start_local: MSF.time, hours: h }).then(function (r) {
     MR.busy = false;
     var got = r.status === 201 ? fromMasterReq(r.data, false) : null;
     // деньги могли уйти и при неразобранном ответе — свою заявку и остаток перечитываем ВСЕГДА
     loadMineMaster(); refreshMe();
     if (got) {
-      MSF = { day: 4, time: '18:00', extra: 0, seats: '0', title: '', about: '', err: '', from: 0 };
-      FLASH = { text: 'Заявка отправлена', note: 'Списано ' + money(got.amount) + ' ฿. Решение примет арт-директор; если он откажет, деньги вернутся на счёт.' };
+      MSF = msfBlank();
+      FLASH = { text: 'Букинг отправлен', note: msWhen(got) + '. Списано ' + money(got.amount) + ' ฿. Решение примет арт-директор; если он откажет, деньги вернутся на счёт.' };
       go('home'); return;
     }
     MSF.err = denyText(r);
@@ -381,7 +327,7 @@ function decideMaster(id, decision) {
     MR.busy = false;
     if (r.status === 200 && r.data && r.data.status === decision) {
       FLASH = { text: decision === 'approved' ? 'Согласовано' : 'Отказано',
-                note: decision === 'approved' ? 'Ивент встал в афишу: недель ' + (Array.isArray(r.data.events) ? r.data.events.length : '—') + '.'
+                note: decision === 'approved' ? 'Ивент встал в афишу.'
                                               : 'Деньги вернулись на счёт заявителя.' };
       MR.ask = 0; MR.note = '';
       loadMasterQueue(); loadSlots(); go('masterReqs'); return;
@@ -397,7 +343,7 @@ function slotToggle(id, show) {
   api('POST', '/master/slots/' + id + '/' + (show ? 'show' : 'hide'), {}).then(function (r) {
     MR.busy = false;
     if (r.status === 200 && r.data && r.data.state === (show ? 'published' : 'hidden')) {
-      FLASH = { text: show ? 'Включено' : 'Выключено', note: (show ? 'В афише снова видно недель: ' : 'Из афиши убрано недель: ') + (typeof r.data.weeks === 'number' ? r.data.weeks : '—') + '.' };
+      FLASH = { text: show ? 'Включено' : 'Выключено', note: show ? 'Ивент снова виден в афише.' : 'Ивент убран из афиши.' };
       loadSlots();
     } else MR.sErr = denyText(r);
     if ({ masterEvents: 1, masterEvent: 1 }[current]) render();
