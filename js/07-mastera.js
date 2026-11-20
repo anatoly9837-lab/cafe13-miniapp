@@ -228,6 +228,17 @@ function msDemoFill() {
   // шаг 12: «Бизнесы клуба» кадра E75 — бар с партнёром и закрытый без партнёра (обе подписи плашки)
   BIZ.list = [{ id: 1, title: 'Бар', open: true, partner: true, who: '[партнёр]' },
               { id: 2, title: 'Кофейня', open: false, partner: false, who: null }];
+  // «Заявки в партнёры» (шаг 13) — сырой ответ `GET /partner/requests` в форме снимка `partner-requests-ops-director`,
+  // пропущенный через тот же разборщик: набор не может обещать полей, которых живой разбор не даёт
+  var prq = function (id, title, status, word, extra) {
+    return Object.assign({ id: id, title: title, about: 'Одной строкой: чем он занимается.', amount: '2600.00', status: status, status_ru: word,
+      created_at: '2026-11-18T03:00:00+00:00', decided_at: status === 'pending' ? null : '2026-11-19T05:00:00+00:00', decision_note: '',
+      direction_id: status === 'approved' ? 2 : null, paid_till: status === 'approved' ? '2026-12-19T05:00:00+00:00' : null,
+      active: status === 'approved', member_id: id, first_name: '[член клуба]', last_name: '', username: null }, extra || {});
+  };
+  var prd = fromPartnerList({ pending: 1, requests: [prq(921, 'Чайная', 'pending', 'ждёт решения', { created_at: '2026-11-19T09:00:00+00:00' }),
+    prq(922, 'Кофейня', 'approved', 'согласовано'), prq(923, 'Ремонт велосипедов', 'rejected', 'отклонено', { decision_note: 'Такой бизнес в клубе уже есть.' })] }, true);
+  if (prd) { PR.q = prd.list; PR.pending = prd.pending; }
   MR.price = { 2: 2600, 3: 3900, 4: 5200, 5: 6500 };
   if (!EV_PLACES) { EV_PLACES = [{ id: 1, name: 'Зал', capacity: null }]; EV_PLACES_STATE = 'ok'; MR.demoPlaces = true; }
   MSB.data = { dates: [{ day: '05.11', busy: [], conflict: null }, { day: '12.11', busy: [{ title: 'Чайная церемония', from: '16:00', to: '17:30' }], conflict: null },
@@ -245,6 +256,7 @@ function msDemoClear() {
   MR.demo = false; MR.mine = null; MR.mineState = ''; MR.q = null; MR.pending = null; MR.slots = null; MR.without = null;
   PAY.list = null; PAY.pending = null; PAY.err = '';
   BIZ.list = null; BIZ.fail = '';
+  PR.q = null; PR.pending = null; PR.qFail = '';
   MR.price = {}; MR.priceAsk = {}; RNW.prev = null; RNW.key = ''; MSB.data = null; MSB.key = '';
   if (MR.demoPlaces) { MR.demoPlaces = false; EV_PLACES = null; EV_PLACES_STATE = ''; }
 }

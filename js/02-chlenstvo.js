@@ -397,5 +397,5 @@ var PROTO = {};
    согласованным слотом (решение координатора): живы «Клуб» с «Продлить», продление и «Вы мастер».
    Форму E54b и «Заявка уже ждёт решения» снимает опись своей фикстурой (`MR.mine = []` / `[pending]`). */
 var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1, masterRenew: 1,
-               payouts: 1, payout: 1, businesses: 1 };
+               payouts: 1, payout: 1, businesses: 1, partnerReqs: 1, partnerReq: 1 };
 
