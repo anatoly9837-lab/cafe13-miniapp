@@ -1,6 +1,35 @@
+// дата без «г.»: слово стоит посреди фразы и кончается точкой (T7, T8 — «до <дата>.»)
+function tillDay_(x) { return String(x || '').replace(/\s*г\.$/, ''); }
+// T4 — цена вида числом сервера; T7 — у живого членства того же вида. Сумму в поле НЕ подставляем:
+// касса пишет принятое, сервер сверяет с ценой — подставь клиент цену, сверка не различала бы ничего.
+function tillTierWords(w) {
+  var t = tierOf(TP.level);
+  return (t ? '<span class="small">Цена вида: <b class="num">' + money(t.price) + '</b> ฿</span>' : '') +
+    (w.level === TP.level && !w.lifelong && w.until ? '<span class="small">Продлит членство: сейчас до ' + esc(tillDay_(w.until)) + '.</span>' : '');
+}
+// итог T8/T9 (+T10 новичку): вид, срок и доля — из ответа сервера
+function tillPaid(w, d) {
+  return '<div class="card strong"><div class="col"><b>Взнос принят. ' + esc(LEVEL[d.level]) + ' до ' + esc(tillDay_(d.until)) + '. ' +
+        (d.toAccount > 0 ? 'На счёт: <span class="num">' + money(d.toAccount) + '</span> ฿.' : 'На счёт ничего не зачислено — вся сумма клубу.') + '</b>' +
+        (d.fresh ? '<span class="small">Допуск в приложение выдан.</span>' : '') +
+        '<span class="small">' + esc(d.text) + '. ' + esc(d.note) + '</span></div></div>' +
+    tillCard(w) +
+    (w.balance === null && !w.arrival ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Остаток не перечитан — обновите карточку</span></div>' +
+       '<button type="button" class="btn quiet" data-action="tp-reload"' + (TP.busy ? ' disabled' : '') + '>' + (TP.busy ? 'Перечитываем…' : 'Перечитать карточку') + '</button>' : '') +
+    '<button type="button" class="btn" data-action="tp-next">Следующий человек</button>' +
+    '<div class="note">' + svg(ICON.info) + '<span>Отменить строку членства отсюда нельзя: «правки членства в приложении пока нет — нужен администратор клуба».</span></div>';
+}
+
 Object.assign(SCREENS, {
 
-  tillMembership: function () { return tillForm('membership'); },
+  /* Взнос за членство (шаг 24, рецепт `_docs/recept/ekran/24/tillMembership.md`). Слова T4, T7–T10 живут
+     здесь, а не в общей форме: признаки рецепта меряют ОБЛАСТЬ этого экрана. Доля на счёт — ТОЛЬКО из ответа
+     `POST /till` (возврат архитектора, вариант «а»): ручка видов доли не отдаёт, и клиент её не предсказывает. */
+  tillMembership: function () {
+    var d = TP.done, w = TP.who;
+    if (w && d && d.kind === 'membership' && !d.unsure) return tillPaid(w, d);
+    return tillForm('membership', w ? tillTierWords(w) : '');
+  },
   tillTopup: function () { return tillForm('topup'); },
 
   organizer: function () {
