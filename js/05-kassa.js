@@ -805,7 +805,7 @@ function refreshMe() {
     // экраны, где остаток считает что-то кроме шапки, — целиком; остальные — только шапка (остаток в ней)
     // остаток сменился — «хватит ли» на продление спросить у сервера заново (предпросмотр — снимок, не обещание)
     if (current === 'masterRenew') RNW.key = '';
-    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, masterRenew: 1, event: 1 }[current]) render();
+    if ({ bar: 1, topup: 1, barOrder: 1, barCart: 1, drink: 1, home: 1, masterApply: 1, masterRenew: 1, event: 1, withdraw: 1 }[current]) render();
     else { var right = document.getElementById('bar-right'); if (right) right.innerHTML = barRight(); }
   });
 }
