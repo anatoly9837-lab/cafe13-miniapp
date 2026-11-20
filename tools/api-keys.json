@@ -2676,6 +2676,21 @@
    "decision_note": null,
    "id": null,
    "ledger_id": null,
+   "payout_id": null,
+   "self_decided": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 200
+ },
+ "withdraw-decide-business": {
+  "request": "POST /withdraw/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "decision_note": null,
+   "id": null,
+   "ledger_id": null,
+   "payout_id": null,
    "self_decided": null,
    "status": null,
    "status_ru": null
@@ -2688,13 +2703,16 @@
    "balance": null,
    "requests": [
     {
+     "account": null,
      "amount": null,
      "book": null,
      "created_at": null,
      "decided_at": null,
      "decision_note": null,
+     "direction_id": null,
      "id": null,
      "ledger_id": null,
+     "payout_id": null,
      "role": null,
      "status": null,
      "status_ru": null
@@ -2709,6 +2727,7 @@
    "pending": null,
    "requests": [
     {
+     "account": null,
      "amount": null,
      "balance": null,
      "book": null,
@@ -2716,11 +2735,14 @@
      "decided_at": null,
      "decided_by": null,
      "decision_note": null,
+     "direction_id": null,
+     "direction_title": null,
      "first_name": null,
      "id": null,
      "last_name": null,
      "ledger_id": null,
      "member_id": null,
+     "payout_id": null,
      "role": null,
      "self_decided": null,
      "status": null,
@@ -2741,9 +2763,26 @@
  "withdraw-request": {
   "request": "POST /withdraw/request",
   "shape": {
+   "account": null,
    "amount": null,
    "book": null,
    "created_at": null,
+   "direction_id": null,
+   "id": null,
+   "role": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 201
+ },
+ "withdraw-request-business": {
+  "request": "POST /withdraw/request",
+  "shape": {
+   "account": null,
+   "amount": null,
+   "book": null,
+   "created_at": null,
+   "direction_id": null,
    "id": null,
    "role": null,
    "status": null,
@@ -2754,9 +2793,11 @@
  "withdraw-request-cancelled-later": {
   "request": "POST /withdraw/request",
   "shape": {
+   "account": null,
    "amount": null,
    "book": null,
    "created_at": null,
+   "direction_id": null,
    "id": null,
    "role": null,
    "status": null,

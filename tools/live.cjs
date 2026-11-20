@@ -4088,17 +4088,23 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── шаг 25 (Cafe13KPG#556: ТЗ, снимок формы api 18bfcff; рецепт `_docs/recept/ekran/25/`, поправка #355): мастер просит вывод
   // со своего счёта («Управление» → «Деньги» → «Вывести деньги»), держатель `admin` решает в «Запросах на вывод». Контроли 2–4
   // ТЗ (остаток под замком, 403, без задвоения) решает СЕРВЕР; клиент обязан донести его слово и не задвоить нажатие.
-  // заглушки шага 25 — по снимку api 0887c96 (cafe13-api#161): их же сверяет страж формы (STUBS, `withdraw-*` в api-keys.json)
+  // заглушки шага 25 — по снимку api 0887c96 (cafe13-api#161): их же сверяет страж формы (STUBS, `withdraw-*` в api-keys.json).
+  // Шаг 26 (снимок api bdff63e, Cafe13KPG#557): + `account`, `direction_id`, `payout_id`, в очереди `direction_title`;
+  // у строк шага 25 счёт `personal`, бизнеса нет
   const WD_RU = { pending: 'ждёт решения', approved: 'одобрено', rejected: 'отказано', cancelled: 'отменено' };
   const WD_REQ = (id, st, x) => Object.assign({ id, role: 'master', book: 'ledger', amount: '500.00', status: st,
     created_at: '2026-11-20T05:00:00+00:00', decided_at: st === 'pending' ? null : '2026-11-20T06:00:00+00:00',
-    decision_note: null, ledger_id: st === 'approved' ? 77 : null, status_ru: WD_RU[st] }, x || {});
+    decision_note: null, ledger_id: st === 'approved' ? 77 : null, status_ru: WD_RU[st],
+    account: 'personal', direction_id: null, payout_id: null }, x || {});
   // `self_decided` — только в очереди и в ответе решения: истинен у решённого тем же, кто подал; у ждущего всегда false
   const WD_QROW = (id, x) => Object.assign(WD_REQ(id, 'pending'), { member_id: 2, first_name: 'Мастер', last_name: 'Тестовый',
-    username: null, decided_by: null, self_decided: false, balance: '3170.00' }, x || {});
-  const WD_POSTED = id => ({ id, role: 'master', book: 'ledger', amount: '500.00', status: 'pending', created_at: '2026-11-20T05:00:00+00:00', status_ru: WD_RU.pending });
+    username: null, decided_by: null, self_decided: false, balance: '3170.00', direction_title: null }, x || {});
+  const WD_POSTED = (id, x) => Object.assign({ id, role: 'master', book: 'ledger', amount: '500.00', status: 'pending', created_at: '2026-11-20T05:00:00+00:00',
+    status_ru: WD_RU.pending, account: 'personal', direction_id: null }, x || {});
+  // шаг 26: запрос из кошелька бизнеса — книга клуба, деньги при одобрении уходят в `payout_id`, а не в `ledger_id`
+  const WD_BIZ = dir => ({ role: 'partner', book: 'club_ledger', account: 'business', direction_id: dir });
   const WD_DECIDED = (id, st, x) => Object.assign({ id, status: st, decided_at: '2026-11-20T06:00:00+00:00', decision_note: null,
-    ledger_id: st === 'approved' ? 77 : null, self_decided: false, status_ru: WD_RU[st] }, x || {});
+    ledger_id: st === 'approved' ? 77 : null, payout_id: null, self_decided: false, status_ru: WD_RU[st] }, x || {});
   const WD_CANCELLED = id => ({ id, status: 'cancelled', decided_at: '2026-11-20T06:00:00+00:00', status_ru: WD_RU.cancelled });
   if (part(2)) {
     const MST = clone(OWNER); MST.roles = [{ role: 'master', direction_id: null }];
@@ -4277,8 +4283,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     {
       // шаг 26 (состав: «Счёт» правится этим PR): запрос из кошелька бизнеса — «Счёт: бизнес „Кофейня“», причину увидит партнёр
       const n = 'vyvod-ochered-biznes';
-      const s = await wopen(OWNER, { queue: () => json(200, { requests: [qrow(12, { account: 'business', direction_id: 7, direction_title: 'Кофейня',
-        book: 'club_ledger', role: 'partner', first_name: 'Партнёр', last_name: 'Тестовый' })], pending: 1 }) });
+      const s = await wopen(OWNER, { queue: () => json(200, { requests: [qrow(12, Object.assign(WD_BIZ(7), { direction_title: 'Кофейня',
+        first_name: 'Партнёр', last_name: 'Тестовый' }))], pending: 1 }) });
       await go25(s, n, 'withdrawQueue');
       const t = await s.view();
       if (!t.includes('Счёт: бизнес „Кофейня“')) bad.push(`${n}: нет «Счёт: бизнес „Кофейня“»`);
@@ -11972,13 +11978,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // в bizMoney. Запрос — `account: business` + `direction_id` ВЫБРАННОГО бизнеса; список — общий `/withdraw/requests/mine`,
     // в блок идут только строки этого бизнеса. «Не больше остатка» и «свой бизнес» решает сервер; клиент несёт его слово.
     {
-      const RU = { pending: 'ждёт решения', approved: 'одобрено', rejected: 'отказано', cancelled: 'отменено' };
-      const brq = (id, st, dir, x) => Object.assign({ id, role: 'partner', book: dir === null ? 'ledger' : 'club_ledger',
-        account: dir === null ? 'personal' : 'business', direction_id: dir, payout_id: st === 'approved' && dir !== null ? 55 : null,
-        amount: '500.00', status: st, created_at: '2026-11-20T05:00:00+00:00', decided_at: st === 'pending' ? null : '2026-11-20T06:00:00+00:00',
-        decision_note: null, ledger_id: null, status_ru: RU[st] }, x || {});
-      const made = (id, dir) => json(201, { id, role: 'partner', book: 'club_ledger', account: 'business', direction_id: dir,
-        amount: '500.00', status: 'pending', created_at: '2026-11-20T05:00:00+00:00', status_ru: RU.pending });
+      const RU = WD_RU;
+      // строки «моих» — общие заглушки шага 25 (их сверяет страж формы); dir = null — личный запрос
+      const brq = (id, st, dir, x) => dir === null ? WD_REQ(id, st, x)
+        : WD_REQ(id, st, Object.assign(WD_BIZ(dir), { ledger_id: null, payout_id: st === 'approved' ? 55 : null }, x || {}));
+      const made = (id, dir) => json(201, WD_POSTED(id, WD_BIZ(dir)));
       const B2 = 'Вывести можно остаток этого бизнеса — его долю за закрытые месяцы. Запрос решает администратор клуба; приложение записывает запрос и решение, как клуб передаст деньги — не решает.';
       const wdv = s => s.p.evaluate(() => { const b = document.querySelector('#view [data-bwd]'); return b ? b.textContent : null; });
       const deny = s => s.p.$eval('#view [data-bwd] .deny .verbatim', e => e.textContent).catch(() => null);
@@ -12481,7 +12485,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // шаг 25 (Cafe13KPG#556): заглушки случаев `vyvod-*` против снимка api 0887c96 (cafe13-api#161)
     'withdraw-request': WD_POSTED(9), 'withdraw-mine': { requests: [WD_REQ(9, 'approved')], balance: '2670.00' },
     'withdraw-cancel': WD_CANCELLED(9), 'withdraw-queue-admin': { requests: [WD_QROW(9)], pending: 1 },
-    'withdraw-decide-approved': WD_DECIDED(9, 'approved')
+    'withdraw-decide-approved': WD_DECIDED(9, 'approved'),
+    'withdraw-request-business': WD_POSTED(12, WD_BIZ(7)), 'withdraw-decide-business': WD_DECIDED(12, 'approved', { ledger_id: null, payout_id: 55 })
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
