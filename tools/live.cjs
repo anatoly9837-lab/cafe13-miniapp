@@ -4585,18 +4585,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     { code: 'partner', name: 'Бизнес-партнёр', about: '', price_thb: '5000.00', period_months: 1 }] };
   const ARRIVAL = { id: 31, tg_user_id: NEWP, first_name: 'Уличный', last_name: 'Гость', username: 'ulica', created_at: '2026-10-24T07:05:00+00:00' };
   const split = x => { const a = Math.min(SHARE[x.level] || 0, Number(x.amount)); return { to_account: a.toFixed(2), to_club: (Number(x.amount) - a).toFixed(2) }; };
+  // ответ POST /till на тело запроса; тот же ответ сверяется со снимком `till-membership-arrival` (STUBS)
+  function tillRow(x) {
+    const row = { id: 95, at: '2026-10-24T10:00:00+00:00', kind: x.kind, amount: Number(x.amount).toFixed(2), method: x.method,
+                  member_id: x.arrival_id ? NEWP : x.member_id, note: '' };
+    if (x.kind === 'membership') {
+      const sp = split(x);
+      Object.assign(row, { amount: sp.to_club }, sp, { membership: { id: 7, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS } });
+      if (x.arrival_id) row.arrival_id = x.arrival_id;
+    }
+    return row;
+  }
+  const ARRIVED = { id: 31, created_at: '2026-10-24T07:05:00+00:00' };   // ответ POST /till/arrive (снимок `till-arrive`)
   function cash(o) {
     o = Object.assign({ find: () => json(200, PERSON), after: null, refind: null,
       arrivals: () => json(200, { arrivals: [] }), tiers: () => json(200, TILL_TIERS),
-      post: q => { const x = JSON.parse(q.postData());
-        const row = { id: 95, at: '2026-10-24T10:00:00+00:00', kind: x.kind, amount: Number(x.amount).toFixed(2), method: x.method,
-                      member_id: x.arrival_id ? NEWP : x.member_id, note: '' };
-        if (x.kind === 'membership') {
-          const sp = split(x);
-          Object.assign(row, { amount: sp.to_club }, sp, { membership: { id: 7, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS } });
-          if (x.arrival_id) row.arrival_id = x.arrival_id;
-        }
-        return json(201, row); } }, o);
+      post: q => json(201, tillRow(JSON.parse(q.postData()))) }, o);
     const st = { posted: false };
     return r => {
       const u = r.url();
@@ -5314,7 +5318,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const u = q.url();
       if (/\/join\/requisites\//.test(u)) return json(404, { detail: 'x' });
       if (u.endsWith('/join')) return json(200, J);
-      if (u.endsWith('/till/arrive')) return json(201, { id: 31, created_at: '2026-10-24T07:05:00+00:00' });
+      if (u.endsWith('/till/arrive')) return json(201, ARRIVED);
       return undefined;
     });
     await s.p.waitForTimeout(250);
@@ -12342,6 +12346,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'menu-guest': MENU, 'order-create': ORDER, 'orders-guest': [row('new')], 'orders-worker': QUEUE,
     'order-state-worker': { id: 3, number: '261018-03', state: 'making' },
     'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW,
+    // шаг 24 (Cafe13KPG#555): заглушки cash() против снимков cafe13-api#160 (голова 259b5a7)
+    'till-arrive': ARRIVED, 'till-arrivals': { arrivals: [ARRIVAL] },
+    'till-membership-arrival': tillRow({ kind: 'membership', amount: '3600', method: 'cash', arrival_id: ARRIVAL.id, level: 'member', months: 1 }),
     'events-afisha': AFISHA, 'places': PLACE_ROWS,
     // шаг 12 (Cafe13KPG#878): плашки «Бизнесов клуба» — та же BIZ, что у случаев ops-*
     'directions-ops-director': OPS_BIZ,
