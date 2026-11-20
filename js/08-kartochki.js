@@ -48,7 +48,8 @@ function loadPartnerDirs() {
   api('GET', '/partner/directions').then(function (r) {
     var l = r.status === 200 ? fromMyBiz(r.data) : null;
     if (!l) return;
-    if (!BW.dirs) BW.dirs = l;
+    // шаг 20: свежий список ЗАМЕНЯЕТ прежний — в нём остаток счёта, и на «Клубе» он не должен замёрзнуть
+    BW.dirs = l;
     if (current === 'home') { loadPartnerCards(); render(); }
   });
 }

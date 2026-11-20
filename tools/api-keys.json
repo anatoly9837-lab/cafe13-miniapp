@@ -205,7 +205,9 @@
     "partner_first_name": null,
     "partner_id": null,
     "partner_last_name": null,
-    "title": null
+    "title": null,
+    "wallet": null,
+    "wallet_through": null
    }
   ],
   "status": 200
@@ -2628,6 +2630,8 @@
      "id": null,
      "paid_till": null,
      "title": null,
+     "wallet": null,
+     "wallet_through": null,
      "workers": null
     }
    ]

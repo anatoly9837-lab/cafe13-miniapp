@@ -36,7 +36,18 @@ var SCREENS = {
       // шаг 16 (рецепт 16/home): дверь очереди согласования — партнёру по владению; счётчик по списку, null — без чипа
       partnerOffer((WIRED.bizWorkers ? '<button type="button" class="btn quiet" data-go="bizWorkers">Работники</button>' : '') +
         (cardPartnerDir() ? '<button type="button" class="listitem" data-go="barCards"><span class="grow"><b>Карточки на согласовании</b>' +
-          '<span class="small">' + esc(waitSub(PCARDS.n, 'Что ждёт вашего решения')) + '</span></span>' + waitMark(PCARDS.n) + svg(ICON.chev, 'chev') + '</button>' : '')) +
+          '<span class="small">' + esc(waitSub(PCARDS.n, 'Что ждёт вашего решения')) + '</span></span>' + waitMark(PCARDS.n) + svg(ICON.chev, 'chev') + '</button>' : '') +
+        // шаг 20 (рецепт 20/home): третья дверь — чтение, никого не ждёт, поэтому ниже очереди; суммы на двери нет
+        ('<button type="button" class="listitem" data-go="bizMoney"><span class="grow"><b>Деньги бизнеса</b>' +
+          '<span class="small">Чистая, ваша доля и доля клуба — за месяц</span></span>' + svg(ICON.chev, 'chev') + '</button>'),
+        // остаток — СТРОКОЙ в карточке своего бизнеса (слово владельца «в карточке бизнеса»); договор — 20/ostatok.md
+        function (biz) {
+          var d = (BW.dirs || []).filter(function (x) { return x.id === biz; })[0];
+          if (!d) return '';
+          return walletRow('На счёте', d.wallet, { 'null': 'доли ещё не назначены', wait: 'доля будет зачислена по закрытию месяца',
+              zero: 'по закрытым месяцам зачислять было нечего' }) +
+            (d.wallet === undefined ? '<span class="small">Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».</span>' : '');
+        }) +
       rolePanel() +
 
       (LIVE ? myRoles() +
