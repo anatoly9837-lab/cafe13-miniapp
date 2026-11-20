@@ -563,3 +563,125 @@ function sendPayout(id) {
     if (current === 'payout') render();
   });
 }
+
+/* ── шаг 25: вывод денег мастера (ТЗ Cafe13KPG#556, рецепт `_docs/recept/ekran/25/`, снимок формы api 18bfcff) ──
+   Мастер просит вывести сумму со СВОЕГО счёта (один на доли за события, долю взноса и пополнения — слово
+   владельца 20.11.2026: выводится весь остаток), держатель `admin` одобряет или отказывает. Шаг записывает факт,
+   а не выплачивает. Остаток с суммой клиент НЕ сравнивает: «не в минус» проверяет сервер — на запросе и, под замком,
+   на одобрении (остаток мог упасть между ними). Остаток после решения — только перечитанный `/me`. */
+var WD = { list: null, fail: '', gen: 0, busy: false, err: '', amount: '', who: -1 };
+var WQ = { list: null, pending: null, fail: '', gen: 0, busy: 0, err: {}, note: {}, done: '', who: -1 };
+// слова состояний — рецепта (W6–W9), а не `status_ru`: «одобрен — списано со счёта» говорит, что стало с деньгами
+var WD_WORD = { pending: 'ждёт решения', approved: 'одобрен — списано со счёта', rejected: 'отказан', cancelled: 'отменён' };
+var WD_PILL = { pending: ' gold', approved: ' on', rejected: '', cancelled: '' };
+// право подать — роль `master` в `roles` (сервер: `has_role("master")`, роль выдаёт согласование мастера); решать — `admin`
+function mayWithdraw() { return LIVE && grant('master'); }
+function mayWithdrawQueue() { return LIVE && grant('admin'); }
+// «Счёт: …» (Q6): сегодня сервер знает одну книгу — личный счёт (`ledger`); шаги 26–30 добавят книги ролей
+var WD_BOOK = { ledger: 'личный' };
+function wdServerWord(r) { var d = detailOf(r); return d || failText(r); }
+
+/* Одна битая строка — отказ целиком: список с пропавшим запросом выглядел бы полным. */
+function fromWithdrawMine(d) {
+  if (!d || !Array.isArray(d.requests)) return null;
+  var out = [];
+  for (var i = 0; i < d.requests.length; i++) {
+    var q = d.requests[i];
+    if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount))) return null;
+    out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount),
+               iso: typeof q.created_at === 'string' ? q.created_at : '',
+               answer: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' });
+  }
+  return out;
+}
+function loadWithdraw() {
+  if (!mayWithdraw()) return;
+  var gen = ++WD.gen, who = WHO;
+  if (WD.who !== WHO) { WD.list = null; WD.amount = ''; WD.err = ''; WD.who = WHO; }
+  WD.fail = '';
+  api('GET', '/withdraw/requests/mine').then(function (r) {
+    if (gen !== WD.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromWithdrawMine(r.data) : null;
+    if (got) WD.list = got;
+    else { WD.list = null; WD.fail = r.status === 200 ? failText(r) : wdServerWord(r); }
+    if (current === 'withdraw') render();
+  });
+}
+function sendWithdraw() {
+  if (WD.busy || !mayWithdraw() || !WD.list) return;
+  WD.busy = true; WD.err = ''; render();
+  var who = WHO;
+  // сумма уходит как набрана (запятая — точкой): проверку остатка и формы делает сервер, его слово — на экран
+  api('POST', '/withdraw/request', { amount: WD.amount.trim().replace(',', '.') }).then(function (r) {
+    WD.busy = false;
+    if (who !== WHO) return;
+    if (r.status === 201 && r.data && typeof r.data.id === 'number') { haptic('ok'); WD.amount = ''; loadWithdraw(); }
+    else { haptic('warn'); WD.err = wdServerWord(r); }
+    if (current === 'withdraw') render();
+  });
+}
+function cancelWithdraw(id) {
+  if (WD.busy || !mayWithdraw()) return;
+  WD.busy = true; WD.err = ''; render();
+  var who = WHO;
+  api('POST', '/withdraw/requests/' + id + '/cancel', {}).then(function (r) {
+    WD.busy = false;
+    if (who !== WHO) return;
+    if (r.status === 200) haptic('ok'); else { haptic('warn'); WD.err = wdServerWord(r); }
+    loadWithdraw();                                   // запрос мог решить admin, пока мастер жал «Отменить»
+    if (current === 'withdraw') render();
+  });
+}
+
+function fromWithdrawQueue(d) {
+  if (!d || !Array.isArray(d.requests) || typeof d.pending !== 'number') return null;
+  var me = tgUid(), out = [];
+  for (var i = 0; i < d.requests.length; i++) {
+    var q = d.requests[i];
+    if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount)) || typeof q.member_id !== 'number') return null;
+    out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount), mine: me !== null && q.member_id === me,
+               name: [q.first_name, q.last_name].filter(Boolean).join(' ') || 'Без имени',
+               book: typeof q.book === 'string' ? q.book : '',
+               iso: typeof q.created_at === 'string' ? q.created_at : '' });
+  }
+  return { list: out, pending: d.pending };
+}
+function loadWithdrawQueue() {
+  if (!mayWithdrawQueue()) return;
+  var gen = ++WQ.gen, who = WHO;
+  if (WQ.who !== WHO) { WQ.list = null; WQ.pending = null; WQ.err = {}; WQ.note = {}; WQ.done = ''; WQ.who = WHO; }
+  WQ.fail = '';
+  api('GET', '/withdraw/requests').then(function (r) {
+    if (gen !== WQ.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromWithdrawQueue(r.data) : null;
+    if (got) { WQ.list = got.list; WQ.pending = got.pending; }
+    else { WQ.list = null; WQ.pending = null; WQ.fail = r.status === 200 ? failText(r) : wdServerWord(r); }
+    if (current === 'withdrawQueue' || current === 'manage') render();
+  });
+}
+function decideWithdraw(id, decision) {
+  var q = (WQ.list || []).filter(function (x) { return x.id === id; })[0];
+  if (WQ.busy || !q || q.status !== 'pending' || !mayWithdrawQueue()) return;
+  WQ.busy = id; WQ.err[id] = ''; WQ.done = ''; render();
+  var who = WHO;
+  api('POST', '/withdraw/requests/' + id + '/decide',
+      { decision: decision, note: decision === 'rejected' ? (WQ.note[id] || '').trim() : '' }).then(function (r) {
+    WQ.busy = 0;                                      // гасится ДО гарда: иначе ответ после смены человека запер бы экран
+    if (who !== WHO) return;
+    if (r.status === 200 && r.data && r.data.status === decision) {
+      haptic('ok');
+      delete WQ.note[id];
+      // сумма — запроса из ответа сервера (очередь); ответ решения её не повторяет
+      WQ.done = decision === 'approved' ? 'Одобрено: ' + money(q.sum) + ' ฿ списано со счёта.' : '';
+      if (q.mine) refreshMe();                        // свой запрос (Q7): списано с СВОЕГО счёта — остаток в шапке перечитать
+    } else { haptic('warn'); WQ.err[id] = wdServerWord(r); }
+    loadWithdrawQueue();                              // решил другой или остаток упал — очередь перечитать
+    if (current === 'withdrawQueue') render();
+  });
+}
+document.addEventListener('input', function (ev) {
+  var t = ev.target;
+  if (!t) return;
+  if (t.id === 'wd-amount') WD.amount = t.value;
+  else if (/^wq-note-\d+$/.test(t.id)) WQ.note[Number(t.id.slice(8))] = t.value;
+});

@@ -251,7 +251,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
@@ -290,7 +290,8 @@ function tabList() {
   // видеть раздел управление»). Именно мастеру, а не всем с `mayOwnEvents()`: партнёру, куратору и организатору
   // вкладку никто не давал, у них свой вход «Управление своими» на афише
   // шаг 12: и у операционного директора — его «Бизнесы» живут там (Cafe13KPG#877)
-  if ((mayPeople() || mayTopups() || mayMasters() || mayOps() || LIVE && msIsMaster()) && !t.some(function (x) { return x[0] === 'manage'; }))
+  // шаг 25: и у держателя роли `master` — его «Вывести деньги» живёт в группе «Деньги» (рецепт 25, поправка #355)
+  if ((mayPeople() || mayTopups() || mayMasters() || mayOps() || LIVE && msIsMaster() || mayWithdraw()) && !t.some(function (x) { return x[0] === 'manage'; }))
     t.push(['manage', 'Управление', ICON.people]);
   return t;
 }
@@ -320,7 +321,7 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -572,6 +573,9 @@ function go(screen, p) {
   if (screen === 'people' && current !== 'people') { PEOPLE.back = null; peopleReset(); PEOPLE.card = null; if (mayPeople()) loadRoster(); }
   if (screen === 'manage' && current !== 'manage' && mayPeople()) loadJoinQueue();
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
+  // шаг 25: свои запросы на вывод и очередь решений — на каждом входе (admin решает без мастера, мастер отменяет без admin)
+  if (screen === 'withdraw' && current !== 'withdraw') { WD.err = ''; loadWithdraw(); }
+  if ((screen === 'manage' || screen === 'withdrawQueue') && current !== screen && mayWithdrawQueue()) { WQ.done = ''; WQ.err = {}; loadWithdrawQueue(); }
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
   // шаг 13 (рецепт R3–R5): счётчик «Заявок в партнёры» — на каждом входе во «Управление»; очередь — на каждом входе:
@@ -599,7 +603,7 @@ function go(screen, p) {
   if (screen === 'masterRenew' && current !== 'masterRenew' && LIVE) { RNW.err = ''; RNW.key = ''; if (MR.mineState === '' || !MR.mine) loadMineMaster(); }
   // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
   // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
-  if ({ home: 1, topup: 1, masterApply: 1, masterRenew: 1 }[screen] && current !== screen && current !== 'loading' && LIVE && !noEntry()) refreshMe();
+  if ({ home: 1, topup: 1, masterApply: 1, masterRenew: 1, withdraw: 1 }[screen] && current !== screen && current !== 'loading' && LIVE && !noEntry()) refreshMe();
   // шаг 3: каждый вход — свежие данные сервера
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { MR.mineState = ''; }
   if ((screen === 'masters' || screen === 'masterReqs') && current !== screen && mayMasters()) { MR.qErr = ''; loadMasterQueue(); loadMineMaster(); }
@@ -1101,6 +1105,13 @@ function doAction(a) {
     if (a === 'j-keep') { JOINQ.ok = 0; JOINQ.no = 0; JOINQ.note = ''; render(); return; }
     if (a === 'j-no' && mayPeople() && JOINQ.no === Number(arg)) { decideJoin(Number(arg), 'rejected'); return; }
     if (a === 'j-retry' && mayPeople()) { loadJoinQueue(); render(); return; }
+    // шаг 25: вывод денег
+    if (a === 'wd-send') { sendWithdraw(); return; }
+    if (a === 'wd-cancel') { cancelWithdraw(Number(arg)); return; }
+    if (a === 'wd-retry') { loadWithdraw(); render(); return; }
+    if (a === 'wq-ok') { decideWithdraw(Number(arg), 'approved'); return; }
+    if (a === 'wq-no') { decideWithdraw(Number(arg), 'rejected'); return; }
+    if (a === 'wq-retry') { loadWithdrawQueue(); render(); return; }
     if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
     if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
     if (a === 'tq-shot' && mayTopups()) { delete TOPQ.shot[Number(arg)]; topupShot(Number(arg)); render(); return; }
