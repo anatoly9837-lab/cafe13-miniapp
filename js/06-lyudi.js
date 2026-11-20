@@ -1175,7 +1175,7 @@ function loadMonth() {
    список идут с `direction_id` выбранного (`BW.biz`), иначе у партнёра с двумя бизнесами не узнать кошелёк.
    С остатком сумму клиент НЕ сравнивает — это делает сервер. Состояние держится ПО БИЗНЕСУ: смена выбора
    сбрасывает список и отказ, чтобы чужие строки не легли под другой бизнес.
-   Ручки — проект формы сервера (Cafe13KPG#557, коммент 7038864080): список — общий `/withdraw/requests/mine`,
+   Ручки — проект формы сервера (проект формы сервера в Cafe13KPG#557): список — общий `/withdraw/requests/mine`,
    строки бизнеса — `account: 'business'` с `direction_id`; подача — `{amount, account, direction_id}`. */
 var BWD = { biz: null, list: null, fail: '', gen: 0, busy: false, err: '', amount: '' };
 function loadBizWd() {

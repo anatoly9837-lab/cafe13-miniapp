@@ -591,7 +591,7 @@ function mayWithdraw() { return LIVE && grant('master'); }
 function mayWithdrawQueue() { return LIVE && grant('admin'); }
 // «Счёт: …» (Q6): личный счёт — по книге (`ledger`); кошелёк бизнеса (шаг 26) — по `account` и названию бизнеса
 var WD_BOOK = { ledger: 'личный' };
-/* Шаг 26 (форма Cafe13KPG#557, коммент 7038864080): какой счёт — ключ `account`; без него строка шага 25 = личный.
+/* Шаг 26 (проект формы сервера в Cafe13KPG#557): какой счёт — ключ `account`; без него строка шага 25 = личный.
    `direction_id` есть только у `business`. Один список «моих» запросов делится по счёту на экране: на «Вывести
    деньги» — только личный, в bizMoney — только кошелёк выбранного бизнеса. */
 function wdAccount(q) { return typeof q.account === 'string' ? q.account : 'personal'; }

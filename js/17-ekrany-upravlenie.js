@@ -240,6 +240,7 @@ Object.assign(SCREENS, {
                     (q.status === 'pending' ? '<button type="button" class="btn ghost" data-action="bm-wd-cancel:' + q.id + '"' + wbusy + '>Отменить запрос</button>' : '') +
                   '</div><span class="pill' + WD_PILL[q.status] + '">' + WD_WORD[q.status] + '</span></div>';
               }).join('') + '</div>');
+      wd = '<div data-bwd style="display:contents">' + wd + '</div>';   // метка блока для случаев: отчёт месяца сверяют без него
     }
     var body;
     if (!m) {
