@@ -60,8 +60,8 @@
 | `bar` | `drink` | — | 9393 | 1 | 13 |
 | `bar` | `sostav` | — | 20326 | 5 | 0 |
 | `bar` | `sverka-semi` | — | 8867 | 2 | 0 |
-| `master` | `home` | — | 5099 | 8 | 8 |
-| `master` | `masterApply` | — | 9487 | 9 | 19 |
+| `master` | `home` | — | 5425 | 8 | 8 |
+| `master` | `masterApply` | — | 9403 | 9 | 19 |
 | `master` | `sostav` | — | 4131 | 4 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
