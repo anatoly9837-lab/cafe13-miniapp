@@ -4266,12 +4266,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   // ── шаги 27, 29, 30 (Cafe13KPG#557: ТЗ, форма — ПРОЕКТ `backend-uvedomleniya-4e` до снимка; рецепт `_docs/recept/ekran/27/roleAccount.md`):
   // держатель роли со счётом в книге клуба видит остаток СВОЕЙ роли и просит вывод; решает admin в «Запросах на вывод» (шаг 25)
+  // заглушки счёта роли — по снимку api bdff63e (Cafe13KPG#557): их же сверяет страж формы (STUBS, `withdraw-accounts-role`, `withdraw-mine-club`)
+  const RA_ACCROW = (account, balance, pending) => ({ account, book: 'club_ledger', direction_id: null, direction_title: null, balance, pending: pending || null });
+  const RA_REQ = (id, account, st) => ({ id, role: account, book: 'club_ledger', account, direction_id: null, payout_id: null, amount: '400.00', status: st,
+    created_at: '2026-11-20T05:00:00+00:00', decided_at: null, decision_note: null, ledger_id: null, status_ru: WD_RU[st] });
   if (part(2)) {
-    const RU = { pending: 'ждёт решения', approved: 'одобрено', rejected: 'отказано', cancelled: 'отменено' };
+    const RU = WD_RU;
     const role = roles => { const m = clone(OWNER); m.roles = roles.map(r => ({ role: r, direction_id: null })); return m; };
-    const acc = (account, balance, pending) => ({ account, book: 'club_ledger', direction_id: null, direction_title: null, balance, pending: pending || null });
-    const mreq = (id, account, st) => ({ id, role: account, book: 'club_ledger', account, direction_id: null, payout_id: null, amount: '400.00', status: st,
-      created_at: '2026-11-20T05:00:00+00:00', decided_at: null, decision_note: null, ledger_id: null, status_ru: RU[st] });
+    const acc = RA_ACCROW, mreq = RA_REQ;
     const rroute = o => q => {
       const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, ''), m = q.method();
       if (m === 'GET' && u === '/withdraw/accounts') return o.accounts();
@@ -12411,7 +12413,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // шаг 25 (Cafe13KPG#556): заглушки случаев `vyvod-*` против снимка api 0887c96 (cafe13-api#161)
     'withdraw-request': WD_POSTED(9), 'withdraw-mine': { requests: [WD_REQ(9, 'approved')], balance: '2670.00' },
     'withdraw-cancel': WD_CANCELLED(9), 'withdraw-queue-admin': { requests: [WD_QROW(9)], pending: 1 },
-    'withdraw-decide-approved': WD_DECIDED(9, 'approved')
+    'withdraw-decide-approved': WD_DECIDED(9, 'approved'),
+    // шаги 27/29/30 (Cafe13KPG#557): заглушки случаев `vyvod-rol-*` против снимка api bdff63e
+    'withdraw-accounts-role': { accounts: [RA_ACCROW('art_director', '1200.00')] },
+    'withdraw-mine-club': { requests: [RA_REQ(40, 'club', 'pending')], balance: '3170.00' }
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }

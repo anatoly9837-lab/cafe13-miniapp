@@ -2770,5 +2770,45 @@
    "detail": null
   },
   "status": 409
+ },
+ "withdraw-accounts-role": {
+  "request": "GET /withdraw/accounts",
+  "shape": {
+   "accounts": [
+    {
+     "account": null,
+     "balance": null,
+     "book": null,
+     "direction_id": null,
+     "direction_title": null,
+     "pending": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "withdraw-mine-club": {
+  "request": "GET /withdraw/requests/mine",
+  "shape": {
+   "balance": null,
+   "requests": [
+    {
+     "account": null,
+     "amount": null,
+     "book": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "direction_id": null,
+     "id": null,
+     "ledger_id": null,
+     "payout_id": null,
+     "role": null,
+     "status": null,
+     "status_ru": null
+    }
+   ]
+  },
+  "status": 200
  }
 }
