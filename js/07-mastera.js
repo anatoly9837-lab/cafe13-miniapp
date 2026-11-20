@@ -589,8 +589,13 @@ var WD_PILL = { pending: ' gold', approved: ' on', rejected: '', cancelled: '' }
 // право подать — роль `master` в `roles` (сервер: `has_role("master")`, роль выдаёт согласование мастера); решать — `admin`
 function mayWithdraw() { return LIVE && grant('master'); }
 function mayWithdrawQueue() { return LIVE && grant('admin'); }
-// «Счёт: …» (Q6): сегодня сервер знает одну книгу — личный счёт (`ledger`); шаги 26–30 добавят книги ролей
+// «Счёт: …» (Q6): личный счёт — по книге (`ledger`); кошелёк бизнеса (шаг 26) — по `account` и названию бизнеса
 var WD_BOOK = { ledger: 'личный' };
+/* Шаг 26 (форма Cafe13KPG#557, коммент 7038864080): какой счёт — ключ `account`; без него строка шага 25 = личный.
+   `direction_id` есть только у `business`. Один список «моих» запросов делится по счёту на экране: на «Вывести
+   деньги» — только личный, в bizMoney — только кошелёк выбранного бизнеса. */
+function wdAccount(q) { return typeof q.account === 'string' ? q.account : 'personal'; }
+function wdDir(q) { return typeof q.direction_id === 'number' ? q.direction_id : null; }
 function wdServerWord(r) { var d = detailOf(r); return d || failText(r); }
 
 /* Одна битая строка — отказ целиком: список с пропавшим запросом выглядел бы полным. */
@@ -600,7 +605,7 @@ function fromWithdrawMine(d) {
   for (var i = 0; i < d.requests.length; i++) {
     var q = d.requests[i];
     if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount))) return null;
-    out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount),
+    out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount), account: wdAccount(q), dir: wdDir(q),
                iso: typeof q.created_at === 'string' ? q.created_at : '',
                answer: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' });
   }
@@ -614,7 +619,7 @@ function loadWithdraw() {
   api('GET', '/withdraw/requests/mine').then(function (r) {
     if (gen !== WD.gen || who !== WHO) return;
     var got = r.status === 200 ? fromWithdrawMine(r.data) : null;
-    if (got) WD.list = got;
+    if (got) WD.list = got.filter(function (q) { return q.account === 'personal'; });
     else { WD.list = null; WD.fail = r.status === 200 ? failText(r) : wdServerWord(r); }
     if (current === 'withdraw') render();
   });
@@ -653,7 +658,8 @@ function fromWithdrawQueue(d) {
     if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount)) || typeof q.member_id !== 'number') return null;
     out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount), mine: me !== null && q.member_id === me,
                name: [q.first_name, q.last_name].filter(Boolean).join(' ') || 'Без имени',
-               book: typeof q.book === 'string' ? q.book : '',
+               book: typeof q.book === 'string' ? q.book : '', account: wdAccount(q),
+               dirTitle: typeof q.direction_title === 'string' ? q.direction_title : '',
                iso: typeof q.created_at === 'string' ? q.created_at : '' });
   }
   return { list: out, pending: d.pending };

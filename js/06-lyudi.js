@@ -1094,7 +1094,7 @@ function loadMyBiz(withList, money) {
       var had = BW.biz !== null, still = l.some(function (x) { return x.id === BW.biz; });
       if (had && !still) { BW.lost = true; BW.biz = null; BW.list = null; }
       if (BW.biz === null && l.length === 1) { BW.biz = l[0].id; withList = true; }
-      if (money) { if (BW.biz !== null) loadMonth(); }
+      if (money) { if (BW.biz !== null) { loadMonth(); loadBizWd(); } }
       else if (withList && BW.biz !== null) loadWorkers();
     }
     if (current === 'bizWorkers') { bwGrab(); render(); }
@@ -1170,6 +1170,53 @@ function loadMonth() {
     if (current === 'bizMoney') render();
   });
 }
+/* ── шаг 26: блок «Вывод» в bizMoney (ТЗ Cafe13KPG#557, рецепт `_docs/recept/ekran/26/`) ──
+   Механика — шага 25 (слова и разбор строк общие: WD_WORD, WD_PILL, fromWithdrawMine), своё — бизнес: запрос и
+   список идут с `direction_id` выбранного (`BW.biz`), иначе у партнёра с двумя бизнесами не узнать кошелёк.
+   С остатком сумму клиент НЕ сравнивает — это делает сервер. Состояние держится ПО БИЗНЕСУ: смена выбора
+   сбрасывает список и отказ, чтобы чужие строки не легли под другой бизнес.
+   Ручки — проект формы сервера (Cafe13KPG#557, коммент 7038864080): список — общий `/withdraw/requests/mine`,
+   строки бизнеса — `account: 'business'` с `direction_id`; подача — `{amount, account, direction_id}`. */
+var BWD = { biz: null, list: null, fail: '', gen: 0, busy: false, err: '', amount: '' };
+function loadBizWd() {
+  if (!LIVE || BW.biz === null) return;
+  var biz = BW.biz, gen = ++BWD.gen;
+  if (BWD.biz !== biz) { BWD.list = null; BWD.err = ''; BWD.amount = ''; BWD.biz = biz; }
+  BWD.fail = '';
+  api('GET', '/withdraw/requests/mine').then(function (r) {
+    if (gen !== BWD.gen || biz !== BW.biz) return;
+    var got = r.status === 200 ? fromWithdrawMine(r.data) : null;
+    if (got) BWD.list = got.filter(function (q) { return q.account === 'business' && q.dir === biz; });
+    else { BWD.list = null; BWD.fail = r.status === 200 ? failText(r) : wdServerWord(r); }
+    if (current === 'bizMoney') render();
+  });
+}
+function sendBizWd() {
+  if (BWD.busy || !LIVE || BW.biz === null || BWD.biz !== BW.biz || !BWD.list) return;
+  var biz = BW.biz;
+  BWD.busy = true; BWD.err = ''; render();
+  // сумма уходит как набрана (запятая — точкой); «не больше остатка» и «свой ли бизнес» решает сервер
+  api('POST', '/withdraw/request', { amount: BWD.amount.trim().replace(',', '.'), account: 'business', direction_id: biz }).then(function (r) {
+    BWD.busy = false;
+    if (biz !== BWD.biz) return;
+    if (r.status === 201 && r.data && typeof r.data.id === 'number') { haptic('ok'); BWD.amount = ''; loadMyBiz(false, true); }
+    else { haptic('warn'); BWD.err = wdServerWord(r); }
+    if (current === 'bizMoney') render();
+  });
+}
+function cancelBizWd(id) {
+  if (BWD.busy || !LIVE || BW.biz === null) return;
+  var biz = BW.biz;
+  BWD.busy = true; BWD.err = ''; render();
+  api('POST', '/withdraw/requests/' + id + '/cancel', {}).then(function (r) {
+    BWD.busy = false;
+    if (biz !== BWD.biz) return;
+    if (r.status === 200) haptic('ok'); else { haptic('warn'); BWD.err = wdServerWord(r); }
+    loadMyBiz(false, true);                           // остаток и список: запрос мог решить admin, пока партнёр жал «Отменить»
+    if (current === 'bizMoney') render();
+  });
+}
+document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'bm-wd-amount') BWD.amount = ev.target.value; });
 function loadWorkers() {
   if (!LIVE || BW.biz === null) return;
   var biz = BW.biz, gen = ++BW.listGen; BW.listFail = '';

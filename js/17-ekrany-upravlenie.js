@@ -216,6 +216,31 @@ Object.assign(SCREENS, {
         (w && w.through ? '<span class="small">Зачислено по ' + esc(bmMonth(Date.parse(w.through) - 1).toLowerCase()) + '</span>' +
           '<span class="small">Счёт ведётся с месяца, когда появился в клубе: за прежние месяцы доли на него не зачислялись.</span>' : '') +
         '<span class="small">Бизнес „' + esc(b.title) + '“ · месяц по Пхангану</span></div></div>';
+    /* шаг 26 (рецепт 26/bizMoney): блок «Вывод» ПОД шапкой — следует выбранному бизнесу. Доли не назначены или поля
+       остатка нет — блока нет: выводить нечего. Без списка запросов формы нет: партнёр подал бы второй вслепую. */
+    var wd = '';
+    if (k !== 'null' && k !== 'dash') {
+      var wl = LIVE ? (BWD.biz === bizId ? BWD.list : null) : [], wbusy = BWD.busy ? ' disabled' : '';
+      var b2 = '<span class="small">Вывести можно остаток этого бизнеса — его долю за закрытые месяцы. Запрос решает администратор клуба; ' +
+        'приложение записывает запрос и решение, как клуб передаст деньги — не решает.</span>';
+      wd = !wl ? quiet('<div class="col"><b>Вывод</b>' + b2 + '</div>') + (BWD.fail
+          ? quiet('<div class="col"><b>Запросы не загрузились.</b><span class="verbatim">' + esc(BWD.fail) + '</span></div>' +
+              '<button type="button" class="btn" data-action="bm-wd-retry">Повторить</button>')
+          : quiet('<span class="small">Загружаем запросы…</span>'))
+        : '<div class="card"><div class="col"><b>Вывод</b>' + b2 + '</div>' +
+            '<div class="field"><label for="bm-wd-amount">Сколько вывести, ฿</label>' +
+              '<input id="bm-wd-amount" inputmode="decimal" autocomplete="off" value="' + esc(BWD.amount) + '"></div>' +
+            '<button type="button" class="btn" data-action="bm-wd-send"' + wbusy + '>Попросить вывод</button></div>' +
+          (BWD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(BWD.err) + '</span></div>' : '') +
+          (!wl.length ? quiet('<span class="small">Запросов на вывод ещё не было.</span>')
+            : '<div class="rows">' + wl.map(function (q) {
+                return '<div><div class="col"><b class="num">' + money(q.sum) + ' ฿</b>' +
+                    '<span class="small">' + esc(askedWhen(q.iso, true)) + '</span>' +
+                    (q.status === 'rejected' && q.answer ? '<span class="small">' + esc(q.answer) + '</span>' : '') +
+                    (q.status === 'pending' ? '<button type="button" class="btn ghost" data-action="bm-wd-cancel:' + q.id + '"' + wbusy + '>Отменить запрос</button>' : '') +
+                  '</div><span class="pill' + WD_PILL[q.status] + '">' + WD_WORD[q.status] + '</span></div>';
+              }).join('') + '</div>');
+    }
     var body;
     if (!m) {
       body = MM.code === 409 ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(MM.fail) + '</span></div>' +
@@ -246,10 +271,9 @@ Object.assign(SCREENS, {
           '<div><span class="small">Вложения за месяц</span><b class="num">' + esc(bmSum(m.invest)) + '</b></div></div>' +
           '<span class="small">В чистую прибыль и в доли не входят — возвращаются из вашей доли.</span></div>' : '');
     }
-    return head + pick + body +
+    return head + wd + pick + body +
       '<button type="button" class="btn quiet" data-action="bm-refresh">Обновить</button>' +
-      '<div class="note">' + svg(ICON.info) + '<span>Вывод со счёта в приложении пока не делается. ' +
-        'Ошибочную строку отменяет администратор клуба — отменённое в отчёт не входит.</span></div>';
+      '<div class="note">' + svg(ICON.info) + '<span>Ошибочную строку отменяет администратор клуба — отменённое в отчёт не входит.</span></div>';
   },
 
   /* шаг 25 (рецепт 25/withdrawQueue, поправка #355): очередь решений у держателя `admin`. Экран один — решение в карточке.
@@ -270,12 +294,12 @@ Object.assign(SCREENS, {
       var busy = WQ.busy ? ' disabled' : '';
       return '<div class="card"><div class="row"><div class="col"><b class="clamp1">' + esc(q.name) + '</b>' +
           '<span class="small">' + esc(askedWhen(q.iso, true)) + '</span>' +
-          '<span class="small">Счёт: ' + esc(WD_BOOK[q.book] || q.book) + '</span></div>' +
+          '<span class="small">Счёт: ' + esc(q.account === 'business' ? 'бизнес „' + q.dirTitle + '“' : WD_BOOK[q.book] || q.book) + '</span></div>' +
           '<b class="num">' + money(q.sum) + ' ฿</b></div>' +
         (WQ.err[q.id] ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(WQ.err[q.id]) + '</span></div>' : '') +
         (q.mine ? '<span class="small">Это ваш собственный запрос: просите и решаете вы сами. В записи останутся оба имени — ваше дважды.</span>' : '') +
         '<button type="button" class="btn" data-action="wq-ok:' + q.id + '"' + busy + '>Одобрить</button>' +
-        '<div class="field"><label for="wq-note-' + q.id + '">Причина — её увидит мастер</label>' +
+        '<div class="field"><label for="wq-note-' + q.id + '">' + (q.account === 'business' ? 'Причина — её увидит партнёр' : 'Причина — её увидит мастер') + '</label>' +
           '<input id="wq-note-' + q.id + '" autocomplete="off" maxlength="500" value="' + esc(WQ.note[q.id] || '') + '"></div>' +
         '<button type="button" class="btn ghost" data-action="wq-no:' + q.id + '"' + busy + '>Отказать</button></div>';
     }).join('');
