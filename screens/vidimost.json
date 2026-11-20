@@ -1,5 +1,5 @@
 {
- "снято": "2026-11-20T06:12:27.774Z",
+ "снято": "2026-11-20T12:34:46.673Z",
  "слепки_страницы": {
   "index.html": "dc16312bbd1fcfd1d910c0814bd9a4495d9eeee82ae2826c2dbe07edf71bb250",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
@@ -267,7 +267,7 @@
      "сбои": {},
      "длины": {
       "barQueue": 78,
-      "home": 318,
+      "home": 346,
       "guest": 13,
       "events": 247,
       "barCards": 19,
@@ -339,7 +339,7 @@
      "сбои": {},
      "длины": {
       "barQueue": 78,
-      "home": 318,
+      "home": 346,
       "guest": 13,
       "events": 247,
       "barCards": 19,
