@@ -339,6 +339,8 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               topupQueue: 1, topupReq: 1,
               // шаг 25: вывод денег мастера и очередь решений admin (ручки /withdraw/*, api 18bfcff, миграция 036)
               withdraw: 1, withdrawQueue: 1,
+              // шаги 27/29/30: счёт роли (форма — проект в Cafe13KPG#557, миграция 037)
+              roleAccount: 1,
               // шаг 3 (v109): мастера на ручках сервера — бой `bbf09f8`, миграция 020 накачена
               masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1, masterRenew: 1,
               // шаг 4 (слово владельца 30.10.2026, Cafe13KPG#670): афиша доступна всем — из FROZEN обратно сюда

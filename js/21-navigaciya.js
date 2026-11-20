@@ -28,7 +28,12 @@ function myRoles() {
     DATA.roles.map(function (r) { return ROLE_NAME[r] || r; })
       .filter(function (n, i, all) { return all.indexOf(n) === i; })
       .map(function (n) { return '<span class="pill">' + esc(n) + '</span>'; }).join('') +
-  '</div></div>' + door + '</div>';
+  '</div></div>' +
+    // шаги 27/29/30 (R1, умолчание архитектора: «Ваши роли» есть у всех троих, «Управления» у Нок нет) — строка на счёт роли
+    raAccounts().map(function (acc) {
+      return '<button type="button" class="listitem" data-go="roleAccount" data-action="ra-open:' + acc + '"><span class="grow"><b>' +
+        esc(RA_WORD[acc]) + '</b></span>' + svg(ICON.chev, 'chev') + '</button>';
+    }).join('') + door + '</div>';
 }
 
 /* У каждой роли свои действия. Пересечений нет: организатор не заводит
@@ -251,7 +256,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
@@ -321,7 +326,7 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -415,7 +420,9 @@ function render() {
   } else {
     // шапка меню — название ВЫБРАННОГО бизнеса словом сервера (шаг 19), а не литерал таблицы
     title.textContent = LIVE && current === 'demo' ? 'Просмотр'
-      : current === 'bar' ? (LIVE ? (BAR && BAR.title) : DATA.bar.title) || 'Café XIII' : TITLES[current] || 'Café XIII';
+      : current === 'bar' ? (LIVE ? (BAR && BAR.title) : DATA.bar.title) || 'Café XIII'
+      // заголовок счёта роли — то же слово, что строка R1 (рецепт 27/roleAccount)
+      : current === 'roleAccount' && RA_WORD[param] ? RA_WORD[param] : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
   var right = document.getElementById('bar-right');
@@ -575,6 +582,10 @@ function go(screen, p) {
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
   // шаг 25: свои запросы на вывод и очередь решений — на каждом входе (admin решает без мастера, мастер отменяет без admin)
   if (screen === 'withdraw' && current !== 'withdraw') { WD.err = ''; loadWithdraw(); }
+  if (screen === 'roleAccount' && (current !== 'roleAccount' || param !== p)) {
+    if (RA.acc !== p) { RA.accs = null; RA.mine = null; RA.amount = ''; }
+    RA.acc = p; RA.err = ''; loadRoleAccount();
+  }
   if ((screen === 'manage' || screen === 'withdrawQueue') && current !== screen && mayWithdrawQueue()) { WQ.done = ''; WQ.err = {}; loadWithdrawQueue(); }
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
@@ -1111,6 +1122,10 @@ function doAction(a) {
     if (a === 'wd-retry') { loadWithdraw(); render(); return; }
     if (a === 'wq-ok') { decideWithdraw(Number(arg), 'approved'); return; }
     if (a === 'wq-no') { decideWithdraw(Number(arg), 'rejected'); return; }
+    if (a === 'ra-open') { go('roleAccount', arg); return; }
+    if (a === 'ra-send') { sendRoleWithdraw(); return; }
+    if (a === 'ra-cancel') { cancelRoleWithdraw(Number(arg)); return; }
+    if (a === 'ra-retry') { loadRoleAccount(); render(); return; }
     if (a === 'wq-retry') { loadWithdrawQueue(); render(); return; }
     if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
     if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
