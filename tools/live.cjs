@@ -4089,6 +4089,185 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
   }
+  // ── шаг 25 (Cafe13KPG#556: ТЗ, снимок формы api 18bfcff; рецепт `_docs/recept/ekran/25/`, поправка #355): мастер просит вывод
+  // со своего счёта («Управление» → «Деньги» → «Вывести деньги»), держатель `admin` решает в «Запросах на вывод». Контроли 2–4
+  // ТЗ (остаток под замком, 403, без задвоения) решает СЕРВЕР; клиент обязан донести его слово и не задвоить нажатие.
+  // заглушки шага 25 — по снимку api 0887c96 (cafe13-api#161): их же сверяет страж формы (STUBS, `withdraw-*` в api-keys.json)
+  const WD_RU = { pending: 'ждёт решения', approved: 'одобрено', rejected: 'отказано', cancelled: 'отменено' };
+  const WD_REQ = (id, st, x) => Object.assign({ id, role: 'master', book: 'ledger', amount: '500.00', status: st,
+    created_at: '2026-11-20T05:00:00+00:00', decided_at: st === 'pending' ? null : '2026-11-20T06:00:00+00:00',
+    decision_note: null, ledger_id: st === 'approved' ? 77 : null, status_ru: WD_RU[st] }, x || {});
+  // `self_decided` — только в очереди и в ответе решения: истинен у решённого тем же, кто подал; у ждущего всегда false
+  const WD_QROW = (id, x) => Object.assign(WD_REQ(id, 'pending'), { member_id: 2, first_name: 'Мастер', last_name: 'Тестовый',
+    username: null, decided_by: null, self_decided: false, balance: '3170.00' }, x || {});
+  const WD_POSTED = id => ({ id, role: 'master', book: 'ledger', amount: '500.00', status: 'pending', created_at: '2026-11-20T05:00:00+00:00', status_ru: WD_RU.pending });
+  const WD_DECIDED = (id, st, x) => Object.assign({ id, status: st, decided_at: '2026-11-20T06:00:00+00:00', decision_note: null,
+    ledger_id: st === 'approved' ? 77 : null, self_decided: false, status_ru: WD_RU[st] }, x || {});
+  const WD_CANCELLED = id => ({ id, status: 'cancelled', decided_at: '2026-11-20T06:00:00+00:00', status_ru: WD_RU.cancelled });
+  if (part(2)) {
+    const MST = clone(OWNER); MST.roles = [{ role: 'master', direction_id: null }];
+    const RU = WD_RU, wreq = WD_REQ, qrow = WD_QROW;
+    const wroute = o => q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, ''), m = q.method();
+      if (u === '/me' && o.me) return o.me();
+      if (m === 'GET' && u === '/withdraw/requests/mine' && o.mine) return o.mine();
+      if (m === 'POST' && u === '/withdraw/request') return o.req(q);
+      if (m === 'POST' && /^\/withdraw\/requests\/\d+\/cancel$/.test(u)) return o.cancel(q);
+      if (m === 'GET' && u === '/withdraw/requests' && o.queue) return o.queue();
+      if (m === 'POST' && /^\/withdraw\/requests\/\d+\/decide$/.test(u)) return o.decide(q);
+      return undefined;
+    };
+    const wopen = (me, o) => open(true, true, json(200, me), null, null, null, wroute(o));
+    const sent = (s, re) => s.calls.filter(c => c.method === 'POST' && re.test(c.url));
+    const go25 = async (s, n, door) => {
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет вкладки «Управление»`));
+      await s.p.waitForTimeout(300);
+      await s.p.click(`#view [data-go="${door}"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери ${door}`));
+      await s.p.waitForTimeout(400);
+    };
+    const W2 = 'Вывести можно весь остаток счёта. В него входят доли за ваши события, доля вашего членского взноса и пополнения — счёт у них один.';
+    const W3 = 'Запрос решает администратор клуба. Приложение записывает запрос и решение; как клуб передаст деньги, оно не решает.';
+    const Q2 = 'Одобрение списывает сумму со счёта человека. Деньги клуб передаёт сам — приложение их не переводит.';
+    {
+      // ветвь 1 + контроль 5: на пустом экране W2 и W3, поле пустое; запрос уходит суммой как набрана, строка «ждёт решения»
+      const n = 'vyvod-zapros';
+      let list = [];
+      const s = await wopen(MST, { mine: () => json(200, { requests: list, balance: '3170.00' }),
+        req: () => { list = [wreq(9, 'pending')]; return json(201, WD_POSTED(9)); } });
+      await go25(s, n, 'withdraw');
+      let t = await s.view();
+      if (!t.includes(W2)) bad.push(`vyvod-sostav-summy: нет слов о составе суммы (W2)`);
+      if (!t.includes(W3)) bad.push(`${n}: нет W3`);
+      if (!t.includes('Запросов на вывод ещё не было.')) bad.push(`${n}: нет пустого «Запросов на вывод ещё не было.»`);
+      if (!t.includes('3 170')) bad.push(`${n}: остаток не с /me`);
+      if ((await s.p.$eval('#wd-amount', e => e.value).catch(() => null)) !== '') bad.push(`${n}: поле суммы не пустое (подставлен остаток?)`);
+      if (/переведём|на карту/.test(t)) bad.push(`${n}: экран обещает способ выплаты`);
+      await s.p.fill('#wd-amount', '500');
+      await s.p.click('[data-action="wd-send"]');
+      await s.p.waitForTimeout(500);
+      const rq = sent(s, /\/withdraw\/request$/);
+      if (rq.length !== 1 || rq[0].body !== '{"amount":"500"}') bad.push(`${n}: запрос ушёл не так: ${JSON.stringify(rq.map(c => c.body))}`);
+      t = await s.view();
+      if (!t.includes('ждёт решения') || !(await s.p.$('[data-action="wd-cancel:9"]'))) bad.push(`${n}: после запроса нет строки «ждёт решения» с «Отменить запрос»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // контроль 1: сумма больше остатка — запрос УХОДИТ (клиент с остатком не сравнивает), отказ словами сервера, сумма цела
+      const n = 'vyvod-bolshe-ostatka';
+      const D = 'на счёте 3170 ฿ — вывести 5000 ฿ нельзя';
+      const s = await wopen(MST, { mine: () => json(200, { requests: [], balance: '3170.00' }), req: () => json(409, { detail: D }) });
+      await go25(s, n, 'withdraw');
+      await s.p.fill('#wd-amount', '5000');
+      await s.p.click('[data-action="wd-send"]');
+      await s.p.waitForTimeout(400);
+      if (sent(s, /\/withdraw\/request$/).length !== 1) bad.push(`${n}: запрос больше остатка не ушёл на сервер — клиентская заслонка`);
+      const v = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (v !== D) bad.push(`${n}: отказ «${v}», ждали словами сервера «${D}»`);
+      if ((await s.p.$eval('#wd-amount', e => e.value).catch(() => null)) !== '5000') bad.push(`${n}: введённая сумма не сохранилась`);
+      await s.ctx.close();
+    }
+    {
+      // ветвь 3: решённые — W7 и W8 с причиной; остаток перечитан на входе (после одобрения меньше на сумму)
+      const n = 'vyvod-sostoyanie';
+      let meN = 0;
+      const s = await wopen(MST, { me: () => { meN++; const m = clone(MST); m.balance = meN === 1 ? 3170 : 2670; return json(200, m); },
+        mine: () => json(200, { requests: [wreq(9, 'approved'), wreq(8, 'rejected', { decision_note: 'Нет подтверждения' })], balance: '2670.00' }) });
+      await go25(s, n, 'withdraw');
+      const t = await s.view();
+      ['одобрен — списано со счёта', 'отказан', 'Нет подтверждения'].forEach(x => { if (!t.includes(x)) bad.push(`${n}: нет «${x}»`); });
+      if (await s.p.$('[data-action^="wd-cancel:"]')) bad.push(`${n}: у решённого запроса «Отменить запрос»`);
+      if (!t.includes('2 670')) bad.push(`${n}: остаток не перечитан на входе (/me ${meN})`);
+      await s.ctx.close();
+    }
+    {
+      // умолчание ТЗ: свой ждущий запрос мастер отменяет — POST cancel, строка остаётся с «отменён»
+      const n = 'vyvod-otmena';
+      let st = 'pending';
+      const s = await wopen(MST, { mine: () => json(200, { requests: [wreq(9, st)], balance: '3170.00' }),
+        cancel: () => { st = 'cancelled'; return json(200, WD_CANCELLED(9)); } });
+      await go25(s, n, 'withdraw');
+      await s.p.click('[data-action="wd-cancel:9"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Отменить запрос»`));
+      await s.p.waitForTimeout(400);
+      if (sent(s, /\/withdraw\/requests\/9\/cancel$/).length !== 1) bad.push(`${n}: отмена не ушла на сервер`);
+      if (!(await s.view()).includes('отменён')) bad.push(`${n}: после отмены нет «отменён»`);
+      await s.ctx.close();
+    }
+    {
+      // контроль 3, клиентская половина: не-admin двери Q1 не видит и очередь не спрашивает
+      const n = 'vyvod-ne-admin';
+      const s = await wopen(MST, { mine: () => json(200, { requests: [], balance: '3170.00' }), queue: () => json(403, { detail: 'нужна роль admin' }) });
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(300);
+      if (await s.p.$('#view [data-go="withdrawQueue"]')) bad.push(`${n}: у мастера без admin строка «Запросы на вывод»`);
+      await s.p.evaluate(() => go('withdrawQueue')); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes('Сюда нельзя')) bad.push(`${n}: экран очереди открылся не-admin`);
+      if (s.calls.some(c => c.method === 'GET' && c.url.endsWith('/withdraw/requests'))) bad.push(`${n}: не-admin спросил очередь`);
+      await s.ctx.close();
+    }
+    for (const [n, decision, note] of [['vyvod-reshenie', 'approved', ''], ['vyvod-reshenie-otkaz', 'rejected', 'Нет подтверждения']]) {
+      // ветвь 2: admin видит Q1 с числом ждущих, Q2, карточку со «Счёт: личный»; одобряет — Q5, отказывает — с причиной
+      let list = [qrow(9)];
+      const s = await wopen(OWNER, { queue: () => json(200, { requests: list, pending: list.length }),
+        decide: q => { list = []; const b = JSON.parse(q.postData()); return json(200, WD_DECIDED(9, b.decision, { decision_note: b.note || null })); } });
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(400);
+      const q1 = await s.p.$eval('#view [data-go="withdrawQueue"]', e => e.textContent).catch(() => null);
+      if (q1 !== 'Запросы на вывод1') bad.push(`${n}: строка Q1 «${q1}», ждали «Запросы на вывод» и 1`);
+      await s.p.click('#view [data-go="withdrawQueue"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(400);
+      let t = await s.view();
+      [Q2, 'Мастер Тестовый', '500 ฿', 'Счёт: личный'].forEach(x => { if (!t.includes(x)) bad.push(`${n}: нет «${x}»`); });
+      if (t.includes('Это ваш собственный запрос')) bad.push(`${n}: Q7 у чужого запроса`);
+      if (note) await s.p.fill('#wq-note-9', note);
+      await s.p.click(`[data-action="${decision === 'approved' ? 'wq-ok' : 'wq-no'}:9"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: нет кнопки решения`));
+      await s.p.waitForTimeout(500);
+      const d = sent(s, /\/withdraw\/requests\/9\/decide$/);
+      if (d.length !== 1 || d[0].body !== JSON.stringify({ decision, note })) bad.push(`${n}: решение ушло не так: ${JSON.stringify(d.map(c => c.body))}`);
+      t = await s.view();
+      if (decision === 'approved' && !t.includes('Одобрено: 500 ฿ списано со счёта.')) bad.push(`${n}: нет Q5 «Одобрено: 500 ฿ списано со счёта.»`);
+      if (!t.includes('Запросов на вывод нет.')) bad.push(`${n}: очередь не перечитана после решения`);
+      await s.ctx.close();
+    }
+    {
+      // контроль 2: остаток упал между подачей и одобрением — отказ НА ОДОБРЕНИИ словами сервера, карточка остаётся, Q5 нет
+      const n = 'vyvod-ostatok-upal';
+      const D = 'на счёте 300 ฿ — остаток изменился после подачи';
+      const s = await wopen(OWNER, { queue: () => json(200, { requests: [qrow(9, { balance: '300.00' })], pending: 1 }), decide: () => json(409, { detail: D }) });
+      await go25(s, n, 'withdrawQueue');
+      await s.p.click('[data-action="wq-ok:9"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Одобрить»`));
+      await s.p.waitForTimeout(500);
+      const v = await s.p.$eval('#view .card .deny .verbatim', e => e.textContent).catch(() => null);
+      if (v !== D) bad.push(`${n}: отказ «${v}», ждали словами сервера «${D}»`);
+      const t = await s.view();
+      if (t.includes('Одобрено:') || !t.includes('Мастер Тестовый')) bad.push(`${n}: после отказа карточка ушла или нарисовано «Одобрено»`);
+      await s.ctx.close();
+    }
+    {
+      // контроль 4, клиентская половина: два нажатия «Одобрить», пока ответ в пути, — одно решение
+      const n = 'vyvod-dvazhdy';
+      const slow = () => new Promise(r => setTimeout(() => r(json(200, WD_DECIDED(9, 'approved'))), 500));
+      const s = await wopen(OWNER, { queue: () => json(200, { requests: [qrow(9)], pending: 1 }), decide: slow });
+      await go25(s, n, 'withdrawQueue');
+      await s.p.evaluate(() => { doAction('wq-ok:9'); doAction('wq-ok:9'); });
+      await s.p.waitForTimeout(800);
+      if (sent(s, /\/decide$/).length !== 1) bad.push(`${n}: ${sent(s, /\/decide$/).length} решений за два нажатия`);
+      await s.ctx.close();
+    }
+    {
+      // свой запрос (просящий = решающий, умолчание координатора к шагу 30): Q7 в карточке, одобрить можно; остаток в шапке перечитан
+      const n = 'vyvod-sam-sebe';
+      const s = await wopen(OWNER, { queue: () => json(200, { requests: [qrow(9, { member_id: OWNER.member.tg_user_id, first_name: 'Тест', last_name: '' })], pending: 1 }),
+        decide: () => json(200, WD_DECIDED(9, 'approved', { self_decided: true })) });
+      await go25(s, n, 'withdrawQueue');
+      if (!(await s.view()).includes('Это ваш собственный запрос: просите и решаете вы сами. В записи останутся оба имени — ваше дважды.')) bad.push(`${n}: нет Q7`);
+      const me0 = s.calls.filter(c => c.url.endsWith('/me')).length;
+      await s.p.click('[data-action="wq-ok:9"]', { timeout: 3000 }).catch(() => bad.push(`${n}: своему запросу нет «Одобрить»`));
+      await s.p.waitForTimeout(500);
+      if (s.calls.filter(c => c.url.endsWith('/me')).length <= me0) bad.push(`${n}: после одобрения своего запроса остаток не перечитан`);
+      await s.ctx.close();
+    }
+  }
   // Фото не загрузилось — сказано явно, а не пустой кружок.
   if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
@@ -12373,7 +12552,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // М.2 (Cafe13KPG#894): заглушки masterApi/rnwApi против снимков cafe13-miniapp#255
     'master-request-201': mreq(901, 'pending'), 'master-price': { hours: 2, hours_included: 2, amount: String(PRICE(2)) },
     'master-requests-mine-approved': { requests: [mreq(901, 'approved', { paid_till: '2026-11-30T07:30:00+00:00' })] },
-    'master-renew-preview': MPREVIEW(1), 'master-renew-201': MRENEWED()
+    'master-renew-preview': MPREVIEW(1), 'master-renew-201': MRENEWED(),
+    // шаг 25 (Cafe13KPG#556): заглушки случаев `vyvod-*` против снимка api 0887c96 (cafe13-api#161)
+    'withdraw-request': WD_POSTED(9), 'withdraw-mine': { requests: [WD_REQ(9, 'approved')], balance: '2670.00' },
+    'withdraw-cancel': WD_CANCELLED(9), 'withdraw-queue-admin': { requests: [WD_QROW(9)], pending: 1 },
+    'withdraw-decide-approved': WD_DECIDED(9, 'approved')
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }

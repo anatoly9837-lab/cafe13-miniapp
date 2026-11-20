@@ -5,7 +5,7 @@ Object.assign(SCREENS, {
   manage: function () {
     // v100: две группы, каждая по своему праву — «Кто в клубе» у главы, «Деньги» у ответственного
     // за пополнения (кадр E46, Cafe13KPG#586). Ни одного права — прежний отказ.
-    if (!mayPeople() && !mayTopups() && !mayMasters() && !mayOps() && !(LIVE && msIsMaster())) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (!mayPeople() && !mayTopups() && !mayMasters() && !mayOps() && !(LIVE && msIsMaster()) && !mayWithdraw()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
     // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
     // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
@@ -13,13 +13,18 @@ Object.assign(SCREENS, {
     // шаг 11 (кадр E46д, Cafe13KPG#857): группа «Деньги» — у того, кто вправе хоть одну её строку; каждая строка —
     // под СВОИМ правом. Распределяет арт-директор, а пополнения решает ответственный за них: группа на одном
     // `mayTopups()` прятала вход от того, кому он. Вторая группа с тем же заголовком читалась бы вторым разделом
-    var money_ = mayTopups() || mayMasters() ? '<div class="group"><span class="label">Деньги</span>' +
+    var money_ = mayTopups() || mayMasters() || mayWithdrawQueue() || mayWithdraw() ? '<div class="group"><span class="label">Деньги</span>' +
       (mayTopups() ? '<button type="button" class="listitem" data-go="topupQueue"><span class="grow"><b>Заявки на пополнение</b>' +
         '<span class="small">' + waitSub(TOPQ.pending, 'Кто просит пополнить счёт') + '</span></span>' +
         waitMark(TOPQ.pending) + svg(ICON.chev, 'chev') + '</button>' : '') +
       (mayMasters() ? '<button type="button" class="listitem" data-go="payouts"><span class="grow"><b>Распределить деньги</b>' +
         '<span class="small">' + waitSub(PAY.pending, 'Доли с прошедших мероприятий') + '</span></span>' +
-        waitMark(PAY.pending) + svg(ICON.chev, 'chev') + '</button>' : '') + '</div>' : '';
+        waitMark(PAY.pending) + svg(ICON.chev, 'chev') + '</button>' : '') +
+      // шаг 25: Q1 — очередь выводов у держателя `admin`, число ждущих — сервера; W1 — дверь мастера к своему выводу
+      (mayWithdrawQueue() ? '<button type="button" class="listitem" data-go="withdrawQueue"><span class="grow"><b>Запросы на вывод</b></span>' +
+        waitMark(WQ.pending) + svg(ICON.chev, 'chev') + '</button>' : '') +
+      (mayWithdraw() ? '<button type="button" class="listitem" data-go="withdraw"><span class="grow"><b>Вывести деньги</b></span>' +
+        svg(ICON.chev, 'chev') + '</button>' : '') + '</div>' : '';
     // шаг 3: дверь «Слоты и мастера» — группой, как «Деньги» (слово владельца: «во вкладке управление — управление этими ивентами»)
     // «Ивенты», а не «Мероприятия» — слово владельца 29.10.2026 по прототипу: «Не мероприятия а ивенты»
     // шаг 4: «Свои ивенты» — в той же группе, у всякого, кто ведёт свои (мастер, организатор, работник)
@@ -245,6 +250,35 @@ Object.assign(SCREENS, {
       '<button type="button" class="btn quiet" data-action="bm-refresh">Обновить</button>' +
       '<div class="note">' + svg(ICON.info) + '<span>Вывод со счёта в приложении пока не делается. ' +
         'Ошибочную строку отменяет администратор клуба — отменённое в отчёт не входит.</span></div>';
+  },
+
+  /* шаг 25 (рецепт 25/withdrawQueue, поправка #355): очередь решений у держателя `admin`. Экран один — решение в карточке.
+     Q2 стоит ВСЕГДА: «Одобрить» без него читалось бы как перевод денег, которого приложение не делает. «Не в минус»
+     решает сервер на одобрении; отказ — в карточке словами сервера, карточка остаётся. */
+  withdrawQueue: function () {
+    if (!mayWithdrawQueue()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Запросы на вывод решает администратор клуба.</span></div></div>';
+    var q2 = '<div class="card quiet"><span class="small">Одобрение списывает сумму со счёта человека. Деньги клуб передаёт сам — приложение их не переводит.</span></div>';
+    var done = WQ.done ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(WQ.done) + '</span></div>' : '';
+    if (!WQ.list) return done + q2 + (WQ.fail
+      ? '<div class="card quiet"><div class="col"><b>Запросы не загрузились.</b><span class="verbatim">' + esc(WQ.fail) + '</span></div>' +
+        '<button type="button" class="btn" data-action="wq-retry">Повторить</button></div>'
+      : '<div class="card quiet"><span class="small">Загружаем запросы…</span></div>');
+    var wait = WQ.list.filter(function (q) { return q.status === 'pending'; });
+    if (!wait.length) return done + q2 + '<div class="card quiet"><span class="small">Запросов на вывод нет.</span></div>';
+    return done + q2 + wait.map(function (q) {
+      var busy = WQ.busy ? ' disabled' : '';
+      return '<div class="card"><div class="row"><div class="col"><b class="clamp1">' + esc(q.name) + '</b>' +
+          '<span class="small">' + esc(askedWhen(q.iso, true)) + '</span>' +
+          '<span class="small">Счёт: ' + esc(WD_BOOK[q.book] || q.book) + '</span></div>' +
+          '<b class="num">' + money(q.sum) + ' ฿</b></div>' +
+        (WQ.err[q.id] ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(WQ.err[q.id]) + '</span></div>' : '') +
+        (q.mine ? '<span class="small">Это ваш собственный запрос: просите и решаете вы сами. В записи останутся оба имени — ваше дважды.</span>' : '') +
+        '<button type="button" class="btn" data-action="wq-ok:' + q.id + '"' + busy + '>Одобрить</button>' +
+        '<div class="field"><label for="wq-note-' + q.id + '">Причина — её увидит мастер</label>' +
+          '<input id="wq-note-' + q.id + '" autocomplete="off" maxlength="500" value="' + esc(WQ.note[q.id] || '') + '"></div>' +
+        '<button type="button" class="btn ghost" data-action="wq-no:' + q.id + '"' + busy + '>Отказать</button></div>';
+    }).join('');
   },
 
   // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g (подтверждение) снят по #695; E56d — причина; E56e — своя

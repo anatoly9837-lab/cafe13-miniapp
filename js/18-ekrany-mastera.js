@@ -85,6 +85,38 @@ Object.assign(SCREENS, {
         '<span class="small">Деньги вернутся мастеру на счёт.</span>');
   },
 
+  /* шаг 25 (рецепт 25/withdraw): запрос мастера на вывод. Остаток — `/me` (перечитан на входе), список — свои запросы.
+     W2 стоит ВСЕГДА (контроль 5 ТЗ): на одном счёте и доля взноса, и выводится весь остаток (слово владельца 20.11.2026).
+     Поле суммы пустое, без подстановки остатка; с остатком сумму клиент не сравнивает — это делает сервер. */
+  withdraw: function () {
+    if (!mayWithdraw()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Вывод денег просит мастер.</span></div></div>';
+    var w2 = '<div class="card quiet"><span class="small">Вывести можно весь остаток счёта. В него входят доли за ваши события, ' +
+      'доля вашего членского взноса и пополнения — счёт у них один.</span></div>';
+    var bal = '<div class="row"><span class="small">На счёте:</span><b class="num">' + money(DATA.member.balance) + ' ฿</b></div>';
+    // без списка своих запросов форма не показывается: мастер подал бы второй вслепую (рецепт, «не загрузилось»)
+    if (!WD.list) return '<div class="card">' + bal + '</div>' + w2 + (WD.fail
+      ? '<div class="card quiet"><div class="col"><b>Запросы не загрузились.</b><span class="verbatim">' + esc(WD.fail) + '</span></div>' +
+        '<button type="button" class="btn" data-action="wd-retry">Повторить</button></div>'
+      : '<div class="card quiet"><span class="small">Загружаем запросы…</span></div>');
+    var busy = WD.busy ? ' disabled' : '';
+    return '<div class="card">' + bal +
+        '<div class="field"><label for="wd-amount">Сколько вывести, ฿</label>' +
+          '<input id="wd-amount" inputmode="decimal" autocomplete="off" value="' + esc(WD.amount) + '"></div>' +
+        '<button type="button" class="btn" data-action="wd-send"' + busy + '>Попросить вывод</button></div>' +
+      w2 +
+      '<span class="small">Запрос решает администратор клуба. Приложение записывает запрос и решение; как клуб передаст деньги, оно не решает.</span>' +
+      (WD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(WD.err) + '</span></div>' : '') +
+      (!WD.list.length ? '<div class="card quiet"><span class="small">Запросов на вывод ещё не было.</span></div>'
+        : '<div class="rows">' + WD.list.map(function (q) {
+            return '<div><div class="col"><b class="num">' + money(q.sum) + ' ฿</b>' +
+                '<span class="small">' + esc(askedWhen(q.iso, true)) + '</span>' +
+                (q.status === 'rejected' && q.answer ? '<span class="small">' + esc(q.answer) + '</span>' : '') +
+                (q.status === 'pending' ? '<button type="button" class="btn ghost" data-action="wd-cancel:' + q.id + '"' + busy + '>Отменить запрос</button>' : '') +
+              '</div><span class="pill' + WD_PILL[q.status] + '">' + WD_WORD[q.status] + '</span></div>';
+          }).join('') + '</div>');
+  },
+
   // E55e. Единица — СЛОТ (снимок master-slots), выключенный не прячется: иначе включить его негде
   masterEvents: function () {
     if (LIVE && !mayMasters()) return SCREENS.masters();

@@ -2704,5 +2704,117 @@
    "title": null
   },
   "status": 200
+ },
+ "withdraw-cancel": {
+  "request": "POST /withdraw/requests/N/cancel",
+  "shape": {
+   "decided_at": null,
+   "id": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 200
+ },
+ "withdraw-decide-approved": {
+  "request": "POST /withdraw/requests/N/decide",
+  "shape": {
+   "decided_at": null,
+   "decision_note": null,
+   "id": null,
+   "ledger_id": null,
+   "self_decided": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 200
+ },
+ "withdraw-mine": {
+  "request": "GET /withdraw/requests/mine",
+  "shape": {
+   "balance": null,
+   "requests": [
+    {
+     "amount": null,
+     "book": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "id": null,
+     "ledger_id": null,
+     "role": null,
+     "status": null,
+     "status_ru": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "withdraw-queue-admin": {
+  "request": "GET /withdraw/requests",
+  "shape": {
+   "pending": null,
+   "requests": [
+    {
+     "amount": null,
+     "balance": null,
+     "book": null,
+     "created_at": null,
+     "decided_at": null,
+     "decided_by": null,
+     "decision_note": null,
+     "first_name": null,
+     "id": null,
+     "last_name": null,
+     "ledger_id": null,
+     "member_id": null,
+     "role": null,
+     "self_decided": null,
+     "status": null,
+     "status_ru": null,
+     "username": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "withdraw-queue-denied-master": {
+  "request": "GET /withdraw/requests",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "withdraw-request": {
+  "request": "POST /withdraw/request",
+  "shape": {
+   "amount": null,
+   "book": null,
+   "created_at": null,
+   "id": null,
+   "role": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 201
+ },
+ "withdraw-request-cancelled-later": {
+  "request": "POST /withdraw/request",
+  "shape": {
+   "amount": null,
+   "book": null,
+   "created_at": null,
+   "id": null,
+   "role": null,
+   "status": null,
+   "status_ru": null
+  },
+  "status": 201
+ },
+ "withdraw-request-over-balance-409": {
+  "request": "POST /withdraw/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
  }
 }
