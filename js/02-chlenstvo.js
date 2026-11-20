@@ -39,7 +39,7 @@ function loadTiers() {
     var list = r.status === 200 ? fromTiers(r.data) : null;
     if (list) TIERS.list = list;
     else { TIERS.list = null; TIERS.fail = r.status === 403 ? denyText(r) : failText(r); }
-    if (current === 'membership' || current === 'memberRequests') render();
+    if (current === 'membership' || current === 'memberRequests' || current === 'tillMembership') render();
   });
 }
 
@@ -308,6 +308,21 @@ function loadAbout() {
   });
 }
 
+/* «Я у кассы» (шаг 24, api `84fbeef`): человек с улицы платит на месте, чека у него нет, а просьба без чека
+   не подаётся (правило владельца, 016). Нажатие даёт кассе его номер — и НИЧЕГО больше: ни допуска, ни
+   членства. Подпись без допуска, как у /join; повтор возвращает ту же запись. */
+var ARRIVE = { busy: false, done: false, err: '' };
+function sendArrive() {
+  if (ARRIVE.busy) return;
+  ARRIVE.busy = true; ARRIVE.err = ''; render();
+  api('POST', '/till/arrive', {}).then(function (r) {
+    ARRIVE.busy = false;
+    if ((r.status === 201 || r.status === 200) && r.data && Number.isInteger(r.data.id)) ARRIVE.done = true;
+    else ARRIVE.err = denyText(r);
+    if (current === 'noAccess') render();
+  });
+}
+
 function sendJoin() {
   if (JOIN.busy || !JOIN.file) return;
   var said = document.getElementById('join-said');
@@ -369,15 +384,19 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               // 0.2, витрина бара (Cafe13KPG#269, рецепты): оттаяна из FROZEN — вкладка «Услуги» (`guest`, носитель
               // двери в бар, план владельца 0.2.5 в Cafe13KPG#855), меню, позиция, рецепт, заказ, мой заказ
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1,
+              // шаг 24 (Cafe13KPG#555): путь взноса за членство на кассе — вкладка, карточка человека, форма взноса
+              staff: 1, tillPerson: 1, tillMembership: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
    всех»; «не удаляем — делаем временно недоступным». Экраны ниже были в `WIRED` и стоят на данных
    сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
    тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
+// Шаг 24 (`Cafe13KPG#555`): сняты staff, tillPerson, tillMembership — РОВНО путь взноса за членство;
+// пополнение и день кассы остаются (рецепт 24, «размораживается ровно то, через что идёт взнос»).
 var FROZEN = { eventNew: 1,
                barMoney: 1, barDay: 1,
-               staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
+               tillTopup: 1, tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
 // куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
 // по слову владельца серым гаснет всё, кроме двух ролей, а не только то, что было включено

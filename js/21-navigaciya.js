@@ -554,6 +554,9 @@ function go(screen, p) {
   if (noEntry() && !BARE[screen]) return;      // вход не состоялся — только экраны входа
   if (screen === 'noAccess' && current !== 'noAccess') { JOIN.err = ''; JOIN.fileErr = ''; loadJoin(); }
   if (screen === 'joinAbout' && current !== 'joinAbout') loadAbout();
+  // шаг 24: пришедшие к кассе — при каждом входе (список суточный, оплаченный из него уходит)
+  if (screen === 'staff' && LIVE && canTopup()) loadArrivals();
+  if (screen === 'tillMembership' && LIVE && !TIERS.list) loadTiers();
   if (screen === 'topup' && current !== 'topup') {
     TUP.online = false; TUP.hist = false; TUP.err = ''; TUP.fileErr = '';
     if (LIVE && !(TEST.on && TEST.as)) loadTopups();
@@ -813,7 +816,9 @@ function doAction(a) {
     if (a === 'q-making' || a === 'q-ready' || a === 'q-served') { setState(Number(arg), a.slice(2)); return; }
     if (a === 'tp-find') { tillFind(val('tp-code')); return; }
     if (a === 'tp-next') { tillReset(); TP.code = ''; go('staff'); return; }
-    if (a === 'tp-open') { TP.done = null; tillOpen(arg); return; }
+    if (a === 'tp-arr') { tillArrival(Number(arg)); return; }
+    if (a === 'tp-arr-reload') { loadArrivals(); render(); return; }
+    if (a === 'tp-open') { if (arg === 'topup' && (closed('tillTopup') || (TP.who && TP.who.arrival))) return; TP.done = null; tillOpen(arg); return; }
     if (a === 'tp-level' && LEVEL[arg] && !TP.busy) { TP.level = arg; render(); return; }
     if (a === 'tp-method' && PAY_HOW[arg] && !TP.busy && (arg !== 'account' || TP.kind === 'membership')) { TP.method = arg; render(); return; }
     if (a === 'tp-send') { tillSend(); return; }
@@ -823,7 +828,7 @@ function doAction(a) {
     if (a === 'td-reload') { tillDayLoad(); render(); return; }
     if (a === 'tp-reload' && TP.who && !TP.busy) {
       TP.busy = true; render();
-      tillLookup(TP.who.code, function (rec, r) {
+      tillLookup(TP.who, function (rec, r) {
         TP.busy = false;
         if (rec) { TP.who = rec; if (TP.done) TP.done.reread = true; }
         else FLASH = { text: 'Карточка не перечиталась', note: said(r) };
@@ -1099,6 +1104,7 @@ function doAction(a) {
     // тетрадь клуба — браузером по токену на час: заголовка подписи браузер не шлёт
     // тетрадь — внутри приложения, со стрелкой назад на экран просьбы (слово владельца 28.10)
     if (a === 'join-about') { go('joinAbout'); return; }
+    if (a === 'join-arrive') { sendArrive(); return; }
     if (a === 'about-retry') { loadAbout(); render(); return; }
     if (a === 'retry-pass') { loadPass(); render(); return; }
     if (a === 'mr-send' && LIVE) { sendRequest(arg); return; }

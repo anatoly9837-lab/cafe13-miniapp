@@ -6,8 +6,11 @@
    member_id из by-pass — это tg_user_id человека. Он живёт только здесь,
    в памяти, на время одной операции: не в разметку, не в data-атрибуты,
    не во флэш и не в хранилище. Репозиторий публичный — tools/ids-clean.cjs.
-   Цен членства на сервере нет: сумму называет касса, подсказки нет, пока
-   владелец не назовёт прейскурант. Срок — тоже касса, 1…24 по серверу. */
+   Цена вида приходит с сервера (`/membership-tiers`, с 018), и сервер сверяет с ней
+   взнос (шаг 24, `Cafe13KPG#555`): сумму всё равно вводит касса — то, что ПРИНЯЛА,
+   иначе сверке нечего различать. Срок — тоже касса, 1…24 по серверу.
+   Человек с улицы (шаг 24) — не по коду, а из списка «я у кассы»: у него есть только
+   номер прихода (`arrival`), member_id появляется в ответе на взнос. */
 var TP = { code: '', who: null, gen: 0, busy: false, deny: '', kind: '',
            level: 'member', months: '', amount: '', method: 'cash', err: '', done: null };
 
@@ -43,12 +46,53 @@ function said(r) {
 /* Найти по коду. Ответ, вернувшийся после «следующего человека» или смены
    человека в тестовом режиме, молчит: иначе карточка прежнего встала бы
    под новым кодом. done(rec | null, r) — для перечитывания после приёма. */
-function tillLookup(code, done) {
-  var gen = TP.gen;
-  api('GET', '/till/by-pass/' + encodeURIComponent(code.trim())).then(function (r) {
+function tillLookup(who, done) {
+  var gen = TP.gen, code = who.code || '';
+  // пришедший с улицы до взноса — ни кода, ни номера: перечитывать нечего
+  if (!code && typeof who.id !== 'number') { done(null, { status: 0 }); return; }
+  api('GET', code ? '/till/by-pass/' + encodeURIComponent(code.trim()) : '/till/by-member/' + who.id).then(function (r) {
     if (gen !== TP.gen) return;
-    done(r.status === 200 ? fromTillPerson(r.data, code) : null, r);
+    var rec = r.status === 200 ? fromTillPerson(r.data, code) : null;
+    if (rec && who.at) rec.at = who.at;
+    done(rec, r);
   });
+}
+
+/* ── касса: пришли к кассе (шаг 24, api `84fbeef`, миграция 035) ──────
+   GET /till/arrivals — нажавшие «Я у кассы» за сутки, ещё без взноса. tg_user_id
+   в ответе есть, из разбора он не выходит: в взнос идёт номер ПРИХОДА, человека
+   по нему сервер находит сам. Просьб о вступлении здесь нет — их решает глава клуба. */
+var ARR = { list: null, fail: '', gen: 0 };
+function fromArrivals(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.arrivals)) return null;
+  var out = [];
+  for (var i = 0; i < d.arrivals.length; i++) {
+    var a = d.arrivals[i], at = a && typeof a.created_at === 'string' ? new Date(a.created_at) : null;
+    if (!a || typeof a !== 'object' || !Number.isInteger(a.id) || typeof a.first_name !== 'string' || !at || isNaN(at)) return null;
+    out.push({ id: a.id,
+               name: [a.first_name, typeof a.last_name === 'string' ? a.last_name : ''].filter(Boolean).join(' ') || 'Без имени',
+               time: at.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false }) });
+  }
+  return out;
+}
+function loadArrivals() {
+  var gen = ++ARR.gen;
+  ARR.fail = '';
+  api('GET', '/till/arrivals').then(function (r) {
+    if (gen !== ARR.gen) return;
+    var l = r.status === 200 ? fromArrivals(r.data) : null;
+    ARR.list = l;
+    if (!l) ARR.fail = r.status === 200 ? 'Ответ сервера не разобран.' : said(r);
+    if (current === 'staff') render();
+  });
+}
+// выбранный пришедший — сразу к взносу: пополнять ему нечего, счёта у него ещё нет
+function tillArrival(id) {
+  var a = (ARR.list || []).filter(function (x) { return x.id === id; })[0];
+  if (!a || TP.busy) return;
+  tillReset();
+  TP.who = { id: null, arrival: a.id, name: a.name, code: '', at: a.time, level: '', until: null, lifelong: false, balance: null };
+  tillOpen('membership');
 }
 
 function tillFind(code) {
@@ -57,7 +101,7 @@ function tillFind(code) {
   if (!TP.code) return;
   tillReset(); TP.busy = true;
   render();
-  tillLookup(TP.code, function (rec, r) {
+  tillLookup({ code: TP.code }, function (rec, r) {
     TP.busy = false;
     if (rec) { TP.who = rec; haptic('ok'); go('tillPerson'); return; }
     TP.deny = r.status === 200 ? 'Ответ сервера не разобран.' : said(r);
@@ -92,12 +136,15 @@ var PAY_HOW = { cash: 'наличными', card: 'картой', account: 'со
    кассы и карточки (TD_KIND, LEVEL), второй словарь разошёлся бы молча. */
 function tillOdd(d, sent) {
   if (!d || typeof d !== 'object') return null;
-  if (d.member_id != null && d.member_id !== sent.who) return { person: true };
+  if (sent.arrival ? d.arrival_id != null && d.arrival_id !== sent.arrival
+                   : d.member_id != null && d.member_id !== sent.who) return { person: true };
   var ms = d.membership;
+  // у взноса `amount` — доля клуба (строка книги), принесено = to_club + to_account (api `84fbeef`)
+  var got = sent.kind === 'membership' && d.kind === 'membership' ? num(d.to_club) + num(d.to_account) : num(d.amount);
   var pair = d.kind !== sent.kind
       ? (TD_KIND[d.kind] ? ['kind', TD_KIND[sent.kind], TD_KIND[d.kind]] : null)
-    : num(d.amount) !== sent.amt
-      ? (isFinite(num(d.amount)) ? ['amount', money(sent.amt) + ' ฿', money(num(d.amount)) + ' ฿'] : null)
+    : Math.abs(got - sent.amt) >= 0.005
+      ? (isFinite(got) ? ['amount', money(sent.amt) + ' ฿', money(got) + ' ฿'] : null)
     : sent.kind === 'membership' && ms && typeof ms === 'object' && ms.level !== sent.level
       ? (LEVEL[ms.level] ? ['level', LEVEL[sent.level], LEVEL[ms.level]] : null)
     : null;
@@ -105,14 +152,15 @@ function tillOdd(d, sent) {
 }
 
 function tillSend() {
-  if (TP.busy || !TP.who) return;
+  if (TP.busy || !TP.who || (TP.who.arrival && TP.kind !== 'membership')) return;
   var who = TP.who, kind = TP.kind, level = TP.level, method = TP.method, amt = topupAmount(TP.amount);
   var months = /^\d{1,2}$/.test(TP.months.trim()) ? Number(TP.months.trim()) : 0;
   TP.err = kind === 'membership' && (months < 1 || months > 24) ? 'Срок — целое число месяцев, от 1 до 24.'
          : amt === null ? 'Сумма — число больше нуля, например 500.' : '';
   TP.deny = '';
   if (TP.err) { render(); return; }
-  var body = { kind: kind, amount: amt, method: method, member_id: who.id };
+  var body = who.arrival ? { kind: kind, amount: amt, method: method, arrival_id: who.arrival }
+                         : { kind: kind, amount: amt, method: method, member_id: who.id };
   if (kind === 'membership') { body.level = level; body.months = months; }
   else if (method === 'account') return;            // у пополнения этой кнопки нет
   TP.busy = true;
@@ -120,18 +168,23 @@ function tillSend() {
   var gen = TP.gen;
   api('POST', '/till', body).then(function (r) {
     if (gen !== TP.gen) return;
-    var d = r.data, ms = d && d.membership;
-    var ok = r.status === 201 && !!d && d.kind === kind && num(d.amount) === amt && d.member_id === who.id &&
-             (kind !== 'membership' || !!ms && ms.level === level && !!ruDate(ms.ends_at));
+    var d = r.data, ms = d && d.membership, mem = kind === 'membership';
+    // взнос делится (шаг 24): `amount` — доля клуба, на счёт — `to_account`; сверяем их сумму с принесённым
+    var full = mem ? num(d && d.to_club) + num(d && d.to_account) : num(d && d.amount);
+    var mine = who.arrival ? !!d && d.arrival_id === who.arrival && typeof d.member_id === 'number' : !!d && d.member_id === who.id;
+    var ok = r.status === 201 && !!d && d.kind === kind && Math.abs(full - amt) < 0.005 && mine &&
+             (!mem || num(d.to_account) >= 0 && num(d.amount) === num(d.to_club) &&
+                      !!ms && ms.level === level && !!ruDate(ms.ends_at));
     if (r.status !== 0 && r.status !== 201) {
       TP.busy = false; TP.deny = said(r); haptic('warn'); render(); return;
     }
     // Принято или неизвестно — карточка перечитывается в обоих случаях:
     // остаток после оплаты со счёта иначе остался бы прежним, то есть ложным.
-    tillLookup(who.code, function (rec) {
+    // пришедший: перечитать можно только по номеру из ПРИНЯТОГО ответа — в чужом он мог быть не тем
+    tillLookup(who.arrival ? (ok ? { id: d.member_id, at: who.at } : {}) : who, function (rec) {
       TP.busy = false;
       if (ok) {
-        var now = rec || Object.assign({}, who, { balance: null });
+        var now = rec || Object.assign({}, who, { arrival: null, id: who.arrival ? d.member_id : who.id, balance: null });
         if (kind === 'membership') {
           now.level = ms.level; now.until = ruDate(ms.ends_at); now.lifelong = false;
         }
@@ -163,6 +216,8 @@ function tillSend() {
                       : 'Строка ушла в книгу клуба. Исправить задним числом нельзя. Ошиблись — к администратору клуба.',
                     warn: grew ? '' : 'Остаток изменился не на эту сумму: было ' + money(who.balance) +
                                       ' ฿. Не вносите снова — сверьте с администратором клуба.' };
+        // итог взноса (T8–T10 рецепта 24) — числа ответа; клиент долю не считает
+        if (mem) Object.assign(TP.done, { level: ms.level, until: ruDate(ms.ends_at), toAccount: num(d.to_account), fresh: !!who.arrival });
         haptic(grew ? 'ok' : 'warn');
       } else {
         // прежний остаток не показывается как нынешний: его могли уже списать
@@ -173,11 +228,13 @@ function tillSend() {
            «неизвестно» звало бы ко второму приёму: второе членство ДОБАВЛЯЕТ
            период, второе пополнение — деньги. Причину непрохождения ok при 201
            (тело не разобрано / не совпало) делит tillOdd (#351, E34k/E34l). */
-        var odd = r.status === 201 ? tillOdd(d, { who: who.id, kind: kind, amt: amt, level: level }) : null;
+        var odd = r.status === 201 ? tillOdd(d, { who: who.id, arrival: who.arrival, kind: kind, amt: amt, level: level }) : null;
         var ms0 = who.level ? (who.lifelong ? 'членство пожизненно' : 'членство до ' + who.until) : 'членства нет';
+        // у пришедшего счёта до взноса нет — «остаток 0» был бы догадкой
+        var bal0 = who.arrival ? ', у кассы с ' + who.at : ', остаток ' + money(who.balance) + ' ฿';
         TP.done = odd && odd.person
           ? { kind: '', unsure: true, sent: true, reread: !!rec, person: true, text: 'Проведено, а человек в ответе не тот',
-              before: 'Перед приёмом: ' + ms0 + ', остаток ' + money(who.balance) + ' ฿',
+              before: 'Перед приёмом: ' + ms0 + bal0,
               note: 'Сервер ответил «принято» — строка в книге клуба уже есть. Но человек в ответе не тот, кого вы открыли, ' +
                     'и чья это строка — по ответу не сказать. Второй раз не принимайте: повтор дал бы вторую строку.' }
           : odd
@@ -185,20 +242,22 @@ function tillSend() {
               note: 'Сервер ответил «принято» — строка в книге клуба уже есть. Второй раз не принимайте: повтор дал бы в книге вторую строку.' }
           : r.status === 201
           ? { kind: '', unsure: true, sent: true, reread: !!rec, text: 'Деньги проведены',
-              before: 'Перед приёмом: ' + ms0 + ', остаток ' + money(who.balance) + ' ฿',
+              before: 'Перед приёмом: ' + ms0 + bal0,
               note: 'Сервер ответил «принято» — строка в книге клуба уже есть. Что в ней записано, по ответу подтвердить нечем: ' +
                     'ни сумму, ни срок. Второй раз не принимайте: повтор дал бы в книге вторую строку.' }
           : { kind: '', unsure: true, sent: false, reread: !!rec, text: 'Неизвестно, принято ли',
-              before: 'Перед приёмом: ' + ms0 + ', остаток ' + money(who.balance) + ' ฿',
+              before: 'Перед приёмом: ' + ms0 + bal0,
               note: 'Ответ сервера не дошёл.' };
         haptic('warn');
       }
-      go('tillPerson');
+      // принятый взнос остаётся на своём экране: итог T8–T10 — часть формы (рецепт 24)
+      if (ok && mem && current === 'tillMembership') render(); else go('tillPerson');
     });
   });
 }
 
-function tillForm(kind) {
+// extra — слова своего экрана под выбором вида (цена вида и продление — у tillMembership)
+function tillForm(kind, extra) {
   var w = TP.who;
   if (!w || TP.kind !== kind) return '<div class="card quiet"><span class="small">Человек не выбран.</span></div>' +
     '<button type="button" class="btn" data-go="staff">К скану пропуска</button>';
@@ -208,21 +267,21 @@ function tillForm(kind) {
       return '<button type="button" data-action="' + act + ':' + x[0] + '"' + (on === x[0] ? ' aria-pressed="true"' : '') + lock + '>' + x[1] + '</button>';
     }).join('');
   };
-  var ways = [['cash', 'Наличные'], ['card', 'Карта']].concat(mem ? [['account', 'Со счёта']] : []);
+  var ways = [['cash', 'Наличные'], ['card', 'Карта']].concat(mem && !w.arrival ? [['account', 'Со счёта']] : []);   // у пришедшего счёта ещё нет
   return (!LIVE && FLASH ? flash() : '') +
     '<div class="card quiet"><div class="row"><div class="col"><span class="small">Кому</span><b>' + esc(w.name) + '</b></div>' +
-      '<span class="small num">' + esc(w.code) + '</span></div></div>' +
+      '<span class="small num">' + esc(w.code || 'у кассы с ' + w.at) + '</span></div></div>' +
     (mem ? '<div class="group"><span class="label">Вид членства</span><div class="seg wrap">' +
-             seg('tp-level', [['member', LEVEL.member], ['organizer', LEVEL.organizer], ['partner', LEVEL.partner]], TP.level) + '</div></div>' +
+             seg('tp-level', [['member', LEVEL.member], ['organizer', LEVEL.organizer], ['partner', LEVEL.partner]], TP.level) + '</div>' + (extra || '') + '</div>' +
            '<div class="group"><span class="label">Срок</span><div class="field"><label for="tp-months">Месяцев</label>' +
              '<input id="tp-months" type="text" inputmode="numeric" autocomplete="off" value="' + esc(TP.months) + '"' + lock + '></div>' +
              '<span class="small">От 1 до 24.</span></div>' : '') +
     '<div class="field"><label for="tp-amount">Сумма, ฿</label>' +
       '<input id="tp-amount" type="text" inputmode="decimal" autocomplete="off" value="' + esc(TP.amount) + '"' + lock + '>' +
-      '<span class="small">' + (mem ? 'Цену называет касса: прейскуранта на сервере нет.' : 'Сумму называет человек у стойки.') + '</span></div>' +
+      (mem ? '' : '<span class="small">Сумму называет человек у стойки.</span>') + '</div>' +
     '<div class="group"><span class="label">Чем платят</span><div class="seg">' + seg('tp-method', ways, TP.method) + '</div></div>' +
     (TP.err ? '<span class="small" style="color:var(--clay)">' + esc(TP.err) + '</span>' : '') +
-    (TP.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TP.deny) + '</span></div>' : '') +
+    (TP.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(TP.deny) + '</span></div>' : '') +
     '<button type="button" class="btn" data-action="tp-send"' + lock + '>' + (TP.busy ? 'Вносим…' : 'Внести') + '</button>' +
     (mem ? '' : '<div class="note">' + svg(ICON.info) + '<span>Перевести со счёта на счёт нельзя — только наличные или карта.</span></div>');
 }
@@ -230,11 +289,11 @@ function tillForm(kind) {
 function tillCard(w) {
   var ms = w.level ? (w.lifelong ? 'Пожизненно' : 'до ' + w.until) : 'нет';
   return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(w.name) + '</h2>' +
-      '<span class="small num">Пропуск ' + esc(w.code) + '</span></div>' +
+      '<span class="small num">' + (w.code ? 'Пропуск ' + esc(w.code) : 'У кассы с ' + esc(w.at || '—')) + '</span></div>' +
       '<span class="pill' + (w.level ? ' on' : '') + '">' + esc(w.level ? LEVEL[w.level] : 'Членства нет') + '</span></div>' +
     '<div class="rows"><div><span class="small">Членство</span><b class="num">' + esc(ms) + '</b></div>' +
-      '<div><span class="small">На счёте</span><b class="num">' +
-        (w.balance === null ? 'не перечитан' : money(w.balance) + ' ฿') + '</b></div></div></div>';
+      (w.arrival ? '' : '<div><span class="small">На счёте</span><b class="num">' +
+        (w.balance === null ? 'не перечитан' : money(w.balance) + ' ฿') + '</b></div>') + '</div></div>';
 }
 
 /* ── касса: день (кадры E36/E36b/E36v, Cafe13KPG#340) ──────

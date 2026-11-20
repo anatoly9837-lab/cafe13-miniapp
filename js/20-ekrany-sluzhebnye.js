@@ -1,3 +1,16 @@
+// Человек уже в клубе и платит на кассе (шаг 24): чек ему не нужен, его находит кассир по нажатию
+function arriveBlock() {
+  if (ARRIVE.done) return '<div class="group"><span class="label">На кассе клуба</span>' +
+      '<div class="card quiet"><div class="col"><b style="font-size:13px">Кассир видит вас в своём списке</b>' +
+      '<span class="small">Допуск в приложение — вместе с оплатой, не раньше. Заплатили — войдите.</span></div></div>' +
+      '<button type="button" class="btn" data-action="retry">Войти в клуб</button></div>';
+  return '<div class="group"><span class="label">На кассе клуба</span>' +
+    '<span class="small">Вы в клубе и платите на месте? Нажмите — кассир найдёт вас в своём списке, чек не нужен.</span>' +
+    (ARRIVE.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(ARRIVE.err) + '</span></div>' : '') +
+    '<button type="button" class="btn ghost" data-action="join-arrive"' + (ARRIVE.busy ? ' disabled' : '') + '>' +
+      (ARRIVE.busy ? '…' : 'Я у кассы') + '</button></div>';
+}
+
 Object.assign(SCREENS, {
 
   /* Состояния входа. Каждое — свой экран со своей причиной: пустой кабинет
@@ -56,7 +69,7 @@ Object.assign(SCREENS, {
     // E44, E44b, E44v: просьбы нет — форма
     var m = JOIN_PAY[JOIN.pay], img = JOIN.img[JOIN.pay], f = JOIN.file, gone = img === 'fail';
     return '<div class="card strong">' + head +
-        '<button type="button" class="btn quiet" data-action="join-about">О клубе</button></div>' +
+        '<button type="button" class="btn quiet" data-action="join-about">О клубе</button></div>' + arriveBlock() +
       '<div class="group"><span class="label">Чем платить</span><div class="seg">' +
         Object.keys(JOIN_PAY).map(function (k) {
           return '<button type="button" data-action="join-pay:' + k + '" aria-pressed="' + (JOIN.pay === k) + '">' + JOIN_PAY[k].name + '</button>';
