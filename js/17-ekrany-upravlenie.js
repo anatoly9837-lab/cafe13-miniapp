@@ -320,7 +320,7 @@ Object.assign(SCREENS, {
   /* ── шаг 12: «Бизнесы клуба» (кадры E75 список, E75b пусто, E75v не загрузилось; Cafe13KPG#877, #881) — данные в
      06-lyudi.js (`BIZ`). Плашка — НЕ кнопка и без шеврона (решение дизайнера, #881): за ней в шаге 12 нет экрана,
      а шеврон обещал бы дверь. Пилюля — про СМЕНУ (`is_open`), и это сказано прозой под списком: без неё
-     «закрыт» читался бы как «закрыт навсегда» (`is_active`). Ни одного числа доли: шаг 21. */
+     «закрыт» читался бы как «закрыт навсегда» (`is_active`). Доли — группой в карточке (шаг 21). */
   businesses: function () {
     if (LIVE && !mayOps()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Бизнесы клуба видит операционный директор.</span></div></div>';
@@ -338,10 +338,38 @@ Object.assign(SCREENS, {
       return '<div class="card"><div class="row"><span class="col"><b>' + esc(b.title) + '</b>' +
           '<span class="small">' + (b.partner ? 'Партнёр: ' + esc(b.who || 'имя не указано') : 'Партнёра нет') + '</span></span>' +
           (b.open ? '<span class="pill on">открыт</span>' : '<span class="pill">закрыт</span>') + '</div>' +
-          walletRow('На счёте', b.wallet, say, !b.partner) + '</div>';
+          walletRow('На счёте', b.wallet, say, !b.partner) + doli(b) + '</div>';
     }).join('') +
       (dash ? '<span class="small">Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».</span>' : '') +
       '<div class="note">' + svg(ICON.info) + '<span>«Открыт» и «закрыт» — про смену на сегодня, а не про закрытие бизнеса: ' +
-      'смену открывает куратор направления или администратор. Условий сделки и долей здесь нет.</span></div>';
+      'смену открывает куратор направления или администратор.</span></div>';
+    /* шаг 21 (рецепт 21/businesses): группа долей — четыре состояния. Слова «не назначены» и «нет партнёра» —
+       ЦИТАТЫ шага 20 (тот же `say`), своих шаг не вводит. Умолчания в полях нет: оба числа руками. */
+    function doli(b) {
+      var head = '<div class="group"><span class="label">Доли</span>';
+      // отказ сервера на записи (партнёр ушёл между списком и нажатием) стоит и здесь: перечитанный список уже без партнёра
+      var deny = DOLI.id === b.id && DOLI.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(DOLI.err) + '</span></div>' : '';
+      if (!b.partner) return head + '<p class="verbatim">' + esc(say.nopartner) + '</p>' + deny + '</div>';
+      if (b.shares === undefined) return head + '<span class="small">—</span>' +
+        '<span class="small">Сервер пока не отдаёт долей — у ручки нет поля.</span></div>';
+      if (DOLI.id === b.id) {
+        var lock = DOLI.busy ? ' disabled' : '';
+        return head +
+          '<div class="field"><label for="doli-club">Клубу, %</label><input id="doli-club" class="num" inputmode="numeric" autocomplete="off" value="' + esc(DOLI.club) + '"' + lock + '></div>' +
+          '<div class="field"><label for="doli-partner">Партнёру, %</label><input id="doli-partner" class="num" inputmode="numeric" autocomplete="off" value="' + esc(DOLI.partner) + '"' + lock + '></div>' +
+          '<span class="small">Сумма обязана быть 100. Новые доли действуют вперёд: уже записанные деньги не пересчитываются.</span>' +
+          deny +
+          '<button type="button" class="btn" id="doli-save" data-action="doli-save"' + (DOLI.busy || !doliReady() ? ' disabled' : '') + '>' +
+            (DOLI.busy ? 'Сохраняем…' : 'Сохранить доли') + '</button>' +
+          '<button type="button" class="btn quiet" data-action="doli-keep"' + lock + '>Назад</button></div>';
+      }
+      var act = DOLI.busy ? ' disabled' : '';
+      if (b.shares === false) return head + '<p class="verbatim">' + esc(say['null']) + '</p>' +
+        '<span class="small">Пока доли не назначены, продажи идут, но деньги месяца не делятся: долю клуба и партнёра посчитать нельзя.</span>' +
+        '<button type="button" class="btn" data-action="doli-open:' + b.id + '"' + act + '>Назначить доли</button></div>';
+      return head + '<div class="rows"><div><span>Клубу · <span class="num">' + pct(b.shares.club) + '</span> %</span></div>' +
+          '<div><span>Партнёру · <span class="num">' + pct(b.shares.partner) + '</span> %</span></div></div>' +
+        '<button type="button" class="btn quiet" data-action="doli-open:' + b.id + '"' + act + '>Изменить доли</button></div>';
+    }
   },
 });
