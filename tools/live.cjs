@@ -2442,8 +2442,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // афиша (`events`) разморожена словом владельца 30.10.2026 «сделать доступным для всех» (Cafe13KPG#670)
     // вкладка «Услуги» (`guest`) оттаяна с витриной бара (0.2, Cafe13KPG#269): она носитель двери в бар
     // «Заказы» (`barQueue`) оттаяны шагом 22 (Cafe13KPG#553): работник бизнеса ведёт очередь
-    const n = 'freeze', KEEP = ['home', 'manage', 'events', 'guest', 'barQueue'];
-    const s = await open(true, true, json(200, OWNER));
+    // «Касса» (`staff`) оттаяна шагом 24 (Cafe13KPG#555): путь взноса за членство
+    // серая вкладка после шага 24 у владельца не осталась ни одна — облик серой меряется на «Моё дело» (`partner`
+    // вне WIRED и PROTO): владельцу добавлено членство партнёра, иначе проверки облика ниже остались бы без предмета
+    const n = 'freeze', KEEP = ['home', 'manage', 'events', 'guest', 'barQueue', 'staff'];
+    const FZ = clone(OWNER); FZ.memberships.push({ level: 'partner', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true });
+    const s = await open(true, true, json(200, FZ));
     const tabs = await s.p.$$eval('#tabs button', b => b.map(x => [x.getAttribute('data-go'), x.disabled]));
     if (tabs.length < 4) bad.push(`${n}: вкладок ${tabs.length} — фикстура не та, проверять нечего`);
     tabs.forEach(([g, off]) => {
@@ -12983,7 +12987,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       ['barRecipe', 'flat', 'Рецепта на английском нет — показан на русском', 'Рецепт — рабочая запись бара'],
       ['barMoney', null, 'Записано сейчас', 'вносит куратор'],
       ['tillPerson', null, 'Что принимаем', 'Человек не выбран'],
-      ['tillMembership', null, 'Цену называет касса', 'Человек не выбран'],
+      // шаг 24: подпись «Цену называет касса» снята — цена вида с сервера (T4); признак — заголовок группы вида
+      ['tillMembership', null, 'Вид членства', 'Человек не выбран'],
       ['tillTopup', null, 'Сумму называет человек у стойки', 'Человек не выбран'],
       ['tillDay', null, 'Строки за сегодня', 'Касса — для работников']
     ];
