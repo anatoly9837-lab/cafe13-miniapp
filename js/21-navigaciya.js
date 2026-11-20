@@ -179,7 +179,8 @@ function liveCard(o) {
   var face = o.photo
     ? '<img class="avatar" src="' + esc(o.photo) + '" alt="" referrerpolicy="no-referrer">'
     : '<span class="avatar" title="фото нет">' + esc(o.who.slice(0, 1).toUpperCase()) + '</span>';
-  var canCancel = o.state === 'new' || o.state === 'making';
+  // шаг 22: работнику бизнеса отмены нет — она возвращает деньги (queueBoss, 04-bar.js)
+  var canCancel = (o.state === 'new' || o.state === 'making') && queueBoss();
   return '<div class="card' + (o.state === 'new' ? ' strong accent' : '') + '">' +
     '<div class="row top">' + face +
       '<div class="col grow"><b>' + esc(o.id) + ' · ' + esc(o.where) + '</b>' +

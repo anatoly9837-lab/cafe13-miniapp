@@ -359,6 +359,9 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               // шаг 15 (Cafe13KPG#546): карточки меню — оттаяны из FROZEN для работника бизнеса; ручки cafe13-api#147 (d4b6812),
               // рецепт `_docs/recept/ekran/15/`. Дверь работника — на «Услугах» (`guest`)
               barCards: 1, barCard: 1,
+              // шаг 22 (Cafe13KPG#553): «Заказы» — оттаяны из FROZEN; работник бизнеса ведёт очередь своего
+              // направления, ручки cafe13-api#158 (41e2e35). «Доход и расход» и «День» остаются в FROZEN (ТЗ)
+              barQueue: 1,
               // 0.2, витрина бара (Cafe13KPG#269, рецепты): оттаяна из FROZEN — вкладка «Услуги» (`guest`, носитель
               // двери в бар, план владельца 0.2.5 в Cafe13KPG#855), меню, позиция, рецепт, заказ, мой заказ
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1,
@@ -369,7 +372,7 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
    сервера; вернуть экран — перенести строку обратно в `WIRED`. Код, кадры и серверные ручки не
    тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
 var FROZEN = { eventNew: 1,
-               barQueue: 1, barMoney: 1, barDay: 1,
+               barMoney: 1, barDay: 1,
                staff: 1, tillPerson: 1, tillMembership: 1, tillTopup: 1, tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
 // куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
