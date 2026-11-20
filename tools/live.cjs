@@ -1325,6 +1325,30 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // `fits` false БЕЗ пересечения — время уже прошло (снимок api d75c445, сегодня в 00:00): кнопка погашена, но
+    // «пересекается с занятым» не говорится — пересекаться не с чем
+    {
+      const n = 'slot-vremya-proshlo';
+      const o = { mine: () => [], posted: [] };
+      const api = masterApi(o);
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (!u.startsWith('/master/slot-busy')) return api(q);
+        return json(200, mbusy((u.match(/date=([\d-]+)/) || [])[1], false, []));
+      });
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
+        await s.p.waitForTimeout(300);
+        await s.p.fill('#msf-title', 'Проба мастера');
+        await s.p.fill('#msf-date', MDAY(0)); await s.p.dispatchEvent('#msf-date', 'change'); await s.p.waitForTimeout(400);
+        const f = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]'); return { off: b ? b.disabled : null, text: document.getElementById('view').textContent }; });
+        if (f.off !== true) bad.push(`${n}: при fits false «Отправить букинг» нажимается`);
+        if (f.text.includes('ересекается')) bad.push(`${n}: без пересечения сказано «пересекается»`);
+        if (!f.text.includes('Это время уже прошло — выберите другое.')) bad.push(`${n}: причина погашенной кнопки не «Это время уже прошло»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
     // ответ занятости о ДРУГОЙ дате — не ответ: «не загрузилась», чужой день как свободный не показан
     {
       const n = 'slot-busy-chuzhaya-data';
@@ -12389,7 +12413,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'master-request-201': mreq(901, 'pending'), 'master-price': { hours: 2, hours_included: 2, amount: String(PRICE(2)) },
     'master-requests-mine-approved': { requests: [mreq(901, 'approved')] },
     'master-slots': { slots: [mslot(901)], masters_without_slot: [] },
-    'master-slot-busy': mbusy(MDAY(1), true, [{ title: 'Чужой вечер', starts_at: MAT(1, '16:00'), ends_at: MAT(1, '17:30') }]),
+    // клиент спрашивает занятость ВСЕГДА со временем — сверка со снимком `-time` (в нём conflict, fits, starts_at);
+    // conflict непустой: снимок пишет его объектом, и null здесь сверять было бы не с чем
+    'master-slot-busy-time': mbusy(MDAY(1), false, [{ title: 'Чужой вечер', starts_at: MAT(1, '16:00'), ends_at: MAT(1, '19:30') }],
+      { title: 'Чужой вечер', starts_label: MDAY(1).slice(8) + '.' + MDAY(1).slice(5, 7) + ' 16:00', ends_label: '19:30' }),
     // шаг 25 (Cafe13KPG#556): заглушки случаев `vyvod-*` против снимка api 0887c96 (cafe13-api#161)
     'withdraw-request': WD_POSTED(9), 'withdraw-mine': { requests: [WD_REQ(9, 'approved')], balance: '2670.00' },
     'withdraw-cancel': WD_CANCELLED(9), 'withdraw-queue-admin': { requests: [WD_QROW(9)], pending: 1 },

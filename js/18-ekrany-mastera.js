@@ -176,7 +176,8 @@ Object.assign(SCREENS, {
     var why = MR.busy ? '' : !dateOk ? 'Выберите дату — сегодня или позже.'
       : typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
       : p > bal ? 'Не хватает ' + money(p - bal) + ' ฿ на счёте.' : EV_PLACES && !msPlace() ? 'Места «' + MS_PLACE + '» нет.' : !EV_PLACES ? 'Загружаем место…'
-      : clash ? 'Выбранное время пересекается с занятым — выберите другое.' : '';
+      // `fits` false без пересечения — время уже прошло (снимок api d75c445): «пересекается» тогда было бы неправдой
+      : clash ? (B.conflict ? 'Выбранное время пересекается с занятым — выберите другое.' : 'Это время уже прошло — выберите другое.') : '';
     var busy = !msPlace() || !dateOk ? '' : !B ? (MSB.fail ? '<div class="row"><span class="small">Занятость не загрузилась: ' + esc(MSB.fail) +
           ' Отправить можно — пересечение проверит сервер.</span><button type="button" class="btn quiet" data-action="msf-busy-retry">Повторить</button></div>'
         : '<span class="small">Смотрим занятость…</span>')
