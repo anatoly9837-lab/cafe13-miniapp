@@ -1,39 +1,43 @@
 {
- "снято": "2026-11-19T09:58:18.610Z",
+ "снято": "2026-11-20T05:49:26.459Z",
  "слепки_страницы": {
-  "index.html": "e9301a5c793ced9f0d884638140376f0f3028e2a585fef7ff3007d8124f487e3",
+  "index.html": "dc16312bbd1fcfd1d910c0814bd9a4495d9eeee82ae2826c2dbe07edf71bb250",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/01-osnova.js": "a4639079374066ee77cc7f5adaaee1e9de793c7bb70a623c2a08eb89155eda8e",
-  "js/02-chlenstvo.js": "3ed44390574b058f14e920b011f872d2af7b660c8553a403dac4fcab92560a51",
+  "js/01-osnova.js": "529020f8dd4b1fb1e340a8d8deb00e26b50e455f13157079f14d13f8d3d426c9",
+  "js/02-chlenstvo.js": "4442794611802054f447a1ca1213849b73e2a622ec9c4539d1a921d65c4030ca",
   "js/03-propusk.js": "1b1eca66d0571cb8c1c962f7477b67991198fde538a67d89bc0326d3f30b8cff",
-  "js/04-bar.js": "67c2e07ffc4518ab29c91af38c0377090df14f8c81f134cd8da59c91423aca50",
-  "js/05-kassa.js": "97f3967417e068a75a09feab3c26cc3918beb35597689888af9e9a5214c69f3e",
-  "js/06-lyudi.js": "30d8d1ecf82bdc35be42ede3e0655dbf9d3179399b98598f6d5858f6e7ca9013",
+  "js/04-bar.js": "305f2bc3ae4cdf0a6f5fe9936888433af9861f015fbff8ca708ac411f72313da",
+  "js/05-kassa.js": "9b566fb3729d355537b855ea7a306115b99fe884b923dd974ddc9d2bdfeb59c4",
+  "js/06-lyudi.js": "b0c85121976119b3d3613b1d5ed2801b28911629aadc258af402c0fcf02917e8",
   "js/07-mastera.js": "cb82da60e4453e18661b1d33879018cf3bc3c026856f42aa5257b2c618f4a49f",
-  "js/08-kartochki.js": "2f6ef2fa6ce13c64586846594fa06a87c673f76eb762728ab3a23534bbd3f907",
+  "js/08-kartochki.js": "6de1be85dea847262e16af4619282c8286f03800bbffa6d7be99138911eac3d9",
   "js/09-afisha.js": "588d991f0100c923877407bc5273b8b08d2f2a6f5824612520f1369e531e12a4",
   "js/10-utility.js": "089f9695e558301b8b1298e14fc0ae8ae06fe660662ad93286cf0d7558058228",
-  "js/11-ekrany-klub.js": "cafeb6def7d8433eaf81da86082d06f84ffd65dc5059872646a17772fc6ae791",
+  "js/11-ekrany-klub.js": "5f078489f2e3bffab7f0ff64fa27a23ca45ac9b7aff14f15b2e83f87cbe307bc",
   "js/12-ekrany-afisha.js": "025aeecffc85b0ad2b4f25d57c13ea0c00cdc3dbd961e25e58c0139e1785a5e9",
   "js/13-ekrany-kassa.js": "f3d292f80d376b9e69a84fa67f8f08fd7c9df93c07b8690cd9026d7b65915227",
   "js/14-ekrany-meropriyatiya.js": "07b49b5749980deb755f8482f4a371f0a91322a41a1d669e0929e998fbcfcfb6",
   "js/15-ekrany-partner-soglasie.js": "f6ec7b568c6dc8f7bdc8e272f3ec2830ab379b065e5263bc17f6da37403a5815",
-  "js/16-ekrany-bar.js": "5ab732f28c828bd2b8b3dc562001ad6f3370eb4080899aca2a02f5f27ac2cd83",
-  "js/17-ekrany-upravlenie.js": "f28dfb1af5b8b1a26fb0e678c9d38aa1bca1824f2b2d2024e47922372e4c9a3c",
+  "js/16-ekrany-bar.js": "f75df9f588f8ee94cd4003d7f3e21f222d44eb1498b5a1d83235921544be829e",
+  "js/17-ekrany-upravlenie.js": "0ccd152d4f1ce154e20d3ca9cec95bdb0da1f93738574d9c076a2371734cf43c",
   "js/18-ekrany-mastera.js": "e69d3b051fdce093b432604cf2d65c553c95dbaac8e554377b45b13e6ef29f6a",
   "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
   "js/20-ekrany-sluzhebnye.js": "24947f703becc1f33b67b10fb8b00e6c65c6589e7ec31e4909a3d48aa8ff2f4a",
-  "js/21-navigaciya.js": "b445e47c9f2499aa405c853645d83a37ba31e4851e489fe3b5021a8e45a0beeb",
+  "js/21-navigaciya.js": "43b7d6cb5b3d00b519f8cd13874d31b584997ca74a93be09c50d5124e243779f",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
  },
  "шрифты": {
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": {
    "байт": 7282,
    "слепок": "npjeeaclikihppnd"
+  },
+  "https://fonts.gstatic.com/s/prata/v22/6xKhdSpbNNCT-sWPCm4.woff2": {
+   "байт": 19224,
+   "слепок": "blifkimhjehajheh"
   },
   "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExd8hLxR.woff2": {
    "байт": 22032,
@@ -46,13 +50,9 @@
   "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExN8hA.woff2": {
    "байт": 37916,
    "слепок": "jkgjnakkehdemeac"
-  },
-  "https://fonts.gstatic.com/s/prata/v22/6xKhdSpbNNCT-sWPCm4.woff2": {
-   "байт": 19224,
-   "слепок": "blifkimhjehajheh"
   }
  },
- "свод_слепков": "c84e6220ba42c7cd2de7a6a61b405acd242038b6f74b92ebf25561787c664d5d",
+ "свод_слепков": "baf7189ec92b6c80dc2f01cf03039b92f7604a991c3c0476ff8d3c3ac5a40e80",
  "область": "вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает",
  "предел": "ОДИН снятый вид каждого экрана. Состояния рецепта (отказ, пусто, отправка, вспышка) опись не снимает, и класс, живущий только в них, сверке «не измерен», а не зелёный",
  "экраны": {
