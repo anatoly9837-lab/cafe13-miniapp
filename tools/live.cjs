@@ -4257,6 +4257,99 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
   }
+  // ── шаги 27, 29, 30 (Cafe13KPG#557: ТЗ, форма — ПРОЕКТ `backend-uvedomleniya-4e` до снимка; рецепт `_docs/recept/ekran/27/roleAccount.md`):
+  // держатель роли со счётом в книге клуба видит остаток СВОЕЙ роли и просит вывод; решает admin в «Запросах на вывод» (шаг 25)
+  if (part(2)) {
+    const RU = { pending: 'ждёт решения', approved: 'одобрено', rejected: 'отказано', cancelled: 'отменено' };
+    const role = roles => { const m = clone(OWNER); m.roles = roles.map(r => ({ role: r, direction_id: null })); return m; };
+    const acc = (account, balance, pending) => ({ account, book: 'club_ledger', direction_id: null, direction_title: null, balance, pending: pending || null });
+    const mreq = (id, account, st) => ({ id, role: account, book: 'club_ledger', account, direction_id: null, payout_id: null, amount: '400.00', status: st,
+      created_at: '2026-11-20T05:00:00+00:00', decided_at: null, decision_note: null, ledger_id: null, status_ru: RU[st] });
+    const rroute = o => q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, ''), m = q.method();
+      if (m === 'GET' && u === '/withdraw/accounts') return o.accounts();
+      if (m === 'GET' && u === '/withdraw/requests/mine') return o.mine();
+      if (m === 'POST' && u === '/withdraw/request') return o.req(q);
+      return undefined;
+    };
+    const ropen = (me, o) => open(true, true, json(200, me), null, null, null, rroute(o));
+    const doors = s => s.p.$$eval('#view [data-go="roleAccount"]', b => b.map(x => x.getAttribute('data-action') + '=' + x.textContent.trim()));
+    const R2 = 'Это счёт роли, а не ваш личный: вывести из него может любой, кто держит эту роль. Запрос решает администратор клуба; приложение записывает запрос и решение, как клуб передаст деньги — не решает.';
+    {
+      // R1: по строке на счёт роли, у Нок — тоже; плашка Нок — словом, а не кодом
+      const n = 'vyvod-rol-dver';
+      const s = await ropen(role(['space_manager', 'art_director']), { accounts: () => json(200, { accounts: [] }), mine: () => json(200, { requests: [], balance: '0.00' }) });
+      const d = await doors(s);
+      if (JSON.stringify(d) !== JSON.stringify(['ra-open:space_manager=Счёт управляющей пространством', 'ra-open:art_director=Счёт арт-директора']))
+        bad.push(`${n}: строки R1 ${JSON.stringify(d)}`);
+      const t = await s.view();
+      if (!t.includes('Управляющая пространством') || /\bspace_manager\b/.test(t)) bad.push(`${n}: плашка Нок кодом, а не словом`);
+      await s.ctx.close();
+      const s2 = await ropen(role(['head', 'god_mentor']), { accounts: () => json(200, { accounts: [] }), mine: () => json(200, { requests: [], balance: '0.00' }) });
+      const d2 = await doors(s2);
+      if (JSON.stringify(d2) !== JSON.stringify(['ra-open:club=Счёт клуба'])) bad.push(`${n}: у владельца строки R1 ${JSON.stringify(d2)}`);
+      await s2.ctx.close();
+      const s3 = await ropen(role(['master']), { accounts: () => json(200, { accounts: [] }), mine: () => json(200, { requests: [], balance: '0.00' }) });
+      if ((await doors(s3)).length) bad.push(`${n}: у мастера без роли со счётом строка R1`);
+      await s3.ctx.close();
+    }
+    {
+      // ветвь 4: остаток счёта СВОЕЙ роли, R2, запрос уходит со счётом; после — перечитано, строка «ждёт решения» с «вы»;
+      // чужой ждущий запрос того же счёта — без «Отменить запрос»
+      const n = 'vyvod-rol-zapros';
+      let mine = [], posted = null;
+      const s = await ropen(role(['art_director']), {
+        accounts: () => json(200, { accounts: [acc('art_director', '1200.00', posted ? null : { id: 31, amount: '100.00', created_at: '2026-11-20T04:00:00+00:00' })] }),
+        mine: () => json(200, { requests: mine, balance: '3170.00' }),
+        req: q => { posted = q.postData(); mine = [mreq(40, 'art_director', 'pending')]; return json(201, Object.assign(mreq(40, 'art_director', 'pending'), {})); } });
+      await s.p.click('#view [data-go="roleAccount"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет строки R1`));
+      await s.p.waitForTimeout(400);
+      let t = await s.view();
+      ['Счёт арт-директора', '1 200', R2].forEach(x => { if (!t.includes(x)) bad.push(`${n}: нет «${x}»`); });
+      if ((await s.p.$eval('#title', e => e.textContent).catch(() => null)) !== 'Счёт арт-директора') bad.push(`${n}: заголовок не слово R1`);
+      if (!t.includes('другой держатель роли') || await s.p.$('[data-action="ra-cancel:31"]')) bad.push(`${n}: чужой ждущий запрос не назван или с «Отменить запрос»`);
+      if ((await s.p.$eval('#ra-amount', e => e.value).catch(() => null)) !== '') bad.push(`${n}: поле суммы не пустое`);
+      await s.p.fill('#ra-amount', '400');
+      await s.p.click('[data-action="ra-send"]');
+      await s.p.waitForTimeout(500);
+      if (posted !== '{"amount":"400","account":"art_director"}') bad.push(`${n}: запрос ушёл не так: ${posted}`);
+      t = await s.view();
+      if (!t.includes('ждёт решения') || !(await s.p.$('[data-action="ra-cancel:40"]'))) bad.push(`${n}: свой ждущий без «ждёт решения» или «Отменить запрос»`);
+      await s.ctx.close();
+    }
+    {
+      // контроль 6: просит из счёта не своей роли — 403 словами сервера, сумма цела
+      const n = 'vyvod-chuzhaya-rol';
+      const D = 'вывести со счёта club может только держатель head';
+      const s = await ropen(role(['art_director']), { accounts: () => json(200, { accounts: [acc('art_director', '1200.00')] }),
+        mine: () => json(200, { requests: [], balance: '3170.00' }), req: () => json(403, { detail: D }) });
+      await s.p.click('#view [data-go="roleAccount"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(400);
+      await s.p.fill('#ra-amount', '400');
+      await s.p.click('[data-action="ra-send"]');
+      await s.p.waitForTimeout(400);
+      const v = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (v !== D) bad.push(`${n}: отказ «${v}», ждали словами сервера «${D}»`);
+      if ((await s.p.$eval('#ra-amount', e => e.value).catch(() => null)) !== '400') bad.push(`${n}: сумма не сохранилась`);
+      // экран чужого счёта без роли — «Сюда нельзя», запросов нет
+      await s.p.evaluate(() => go('roleAccount', 'club')); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes('Сюда нельзя')) bad.push(`${n}: экран счёта клуба открылся арт-директору`);
+      await s.ctx.close();
+    }
+    {
+      // не загрузилось — «Счёт не загрузился.» и «Повторить», формы нет; личный список шага 25 не берёт запросы счёта роли
+      const n = 'vyvod-rol-otkaz';
+      const s = await ropen(role(['art_director', 'master']), { accounts: () => json(500, {}),
+        mine: () => json(200, { requests: [mreq(40, 'art_director', 'pending')], balance: '3170.00' }) });
+      await s.p.click('#view [data-go="roleAccount"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      if (!t.includes('Счёт не загрузился.') || !(await s.p.$('[data-action="ra-retry"]')) || await s.p.$('#ra-amount')) bad.push(`${n}: отказ не «Счёт не загрузился.» с «Повторить» или форма на месте`);
+      await s.p.evaluate(() => go('withdraw')); await s.p.waitForTimeout(400);
+      if ((await s.view()).includes('400 ฿')) bad.push(`${n}: запрос со счёта роли попал в личные запросы мастера`);
+      await s.ctx.close();
+    }
+  }
   // Фото не загрузилось — сказано явно, а не пустой кружок.
   if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
