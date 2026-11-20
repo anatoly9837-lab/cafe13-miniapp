@@ -644,6 +644,9 @@ function go(screen, p) {
   if (screen === 'tillDay' && LIVE && canTopup()) { TD.ask = -1; TD.deny = null; tillDayLoad(); }
   if (screen === 'pass' && LIVE && !PASS && !PASS_FAIL) loadPass();
   if ((screen === 'bar' || screen === 'drink' || screen === 'barRecipe') && LIVE && MENU_STATE === '') loadMenu();
+  // дверь «Мой заказ» (шаг 23): меню уже загружено — своё состояние спрашивается отдельно; грузится — его спросит loadMenu
+  if (screen === 'bar' && LIVE && MENU_STATE !== 'loading') loadMineDoor();
+  if (screen !== 'barOrder') RCV.deny = '';
   if (screen === 'guest' && LIVE) loadBiz();
   /* «Записи» строятся из ответа афиши, поэтому грузить её надо и при входе
      сюда: человек попадает на этот экран сразу после записи (`go('bookings')`),
@@ -760,6 +763,7 @@ function doAction(a) {
       });
       return;
     }
+    if (a === 'order-received' && LIVE) { confirmReceived(); return; }
     if (a === 'send-order' && LIVE) {
       var live = cartList();
       if (!live.length) { FLASH = { text: 'Заказ пуст', note: 'Добавьте что-нибудь в меню.' }; render(); return; }
