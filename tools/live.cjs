@@ -3365,14 +3365,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   if (part(1)) {
     let n = 0, landed = false;
     const slow = () => new Promise(r => setTimeout(() => { landed = true; r(json(200, [row('new')])); }, 1500));
-    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ list: () => ++n === 1 ? slow() : json(200, [row('ready')]) }));
+    // первый GET /bar/orders — дверь «Мой заказ» при входе в меню (шаг 23); медленный — первый ОПРОС заказа, второй по счёту
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ list: () => ++n === 2 ? slow() : json(200, [row(n === 1 ? 'new' : 'ready')]) }));
     await toBar(s);
     await s.p.click('[data-action="buy:11"]');
     await s.p.waitForTimeout(250);
     await s.p.evaluate(() => { go('bar'); go('barOrder'); });
     await s.p.waitForTimeout(300);
     const gets = s.calls.filter(c => c.method === 'GET' && c.url.includes('/bar/orders')).length;
-    if (gets !== 2) bad.push(`order-late: возврат не перечитал заказ (запросов ${gets})`);
+    // дверь меню ×2 (вход и возврат через go('bar')) + опрос ×2
+    if (gets !== 4) bad.push(`order-late: возврат не перечитал заказ (запросов ${gets}, ждали 4: дверь меню дважды и опрос дважды)`);
     if (landed) bad.push('order-late: прежний ответ пришёл раньше второго запроса — гонки не было, случай гарда не проверяет');
     await s.p.waitForTimeout(1600);
     const st = await s.p.evaluate(() => DATA.bar.mine && DATA.bar.mine.state);
@@ -3874,12 +3876,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const s = await open(true, true, json(200, w22([{ role: 'worker', direction_id: 9 }], true)), null, null, null, route22({ state: ok }));
       await toBar(s, 7);
       if (await s.p.evaluate(() => BAR && BAR.id) !== 7) bad.push(`${n}: НЕ ВЫПОЛНЕНО — выбор бара 7 не встал, случай не различает`);
-      else if (await toTab(s, n)) {
+      // шаг 23: меню бара 7 спрашивает СВОЙ заказ человека (дверь «Мой заказ») по направлению 7 — это не очередь; судим запросы после меню
+      else if (await (async () => { s.mark = s.calls.length; return toTab(s, n); })()) {
         const t = await s.view();
         if (t.includes('261018-08') || !t.includes('261018-03')) bad.push(`${n}: очередь взята по выбору на «Услугах», а не по роли: ` + t.slice(0, 160));
         // смена над очередью — бара 7 (BAR), а очередь бизнеса 9: строки смены быть не должно
         if (t.includes('Смена открыта')) bad.push(`${n}: над очередью своего бизнеса — смена выбранного чужого`);
-        if (lists(s).some(x => x !== 'direction_id=9')) bad.push(`${n}: очередь спрошена по чужому направлению: ` + JSON.stringify(lists(s)));
+        const q = lists({ calls: s.calls.slice(s.mark) });
+        if (!q.length || q.some(x => x !== 'direction_id=9')) bad.push(`${n}: очередь спрошена по чужому направлению: ` + JSON.stringify(q));
       }
       await s.ctx.close();
     }
@@ -3920,6 +3924,139 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const s = await open(true, true, json(200, w22([], true)), null, null, null, route22({ state: ok }));
       if (await s.p.$('[data-go="barQueue"]')) bad.push(`${n}: у члена клуба без роли есть вход в «Заказы»`);
       if (!(await s.p.$('#tabs [data-go="home"]'))) bad.push(`${n}: НЕ ВЫПОЛНЕНО — член клуба не дошёл до «Клуба», вкладок нет`);
+      await s.ctx.close();
+    }
+  }
+  // ── шаг 23 (Cafe13KPG#554, ТЗ, поправка о ветви 1, снимок формы api d10c56d — в комментариях карточки; рецепт
+  // `_docs/recept/ekran/23/barOrder.md`): дверь «Мой заказ» на меню, выданный заказ находится, получение подтверждается.
+  // Зритель — член клуба без рабочих ролей. Ветвь 3 (`served_by`, `zakaz-kto-vydal`) — случай СЕРВЕРА: клиенту поле не отдаётся.
+  if (part(2)) {
+    const M23 = clone(OWNER); M23.roles = [];
+    // 12:05 UTC — 19:05 по острову (hm считает в Asia/Bangkok)
+    const SERVED = got => Object.assign(row('served'), { accepted_at: '2026-10-18T12:01:00+00:00', ready_at: '2026-10-18T12:03:00+00:00',
+      served_at: '2026-10-18T12:05:00+00:00', received_at: got ? '2026-10-18T12:06:00+00:00' : null });
+    // чужой заказ новее своего и свой старый: дверь обязана взять самый новый СВОЙ
+    const FOREIGN = Object.assign(row('new'), { id: 6, number: '261018-06', member_id: 2 });
+    const OLD = Object.assign(row('cancelled'), { id: 4, number: '261018-00' });
+    const r23 = o => { const base = bar(o); return q => (q.method() === 'POST' && /\/bar\/orders\/\d+\/received$/.test(q.url())) ? o.rcv(q) : base(q); };
+    const open23 = o => open(true, true, json(200, M23), null, null, null, r23(o));
+    const door = s => s.p.$eval('#view [data-go="barOrder"]', e => e.textContent.replace(/\s+/g, ' ').trim()).catch(() => null);
+    const rcvs = s => s.calls.filter(c => c.method === 'POST' && /\/received$/.test(c.url));
+    const R4 = 'Выдан в 19:05. Заберите и подтвердите получение.', R6 = 'Получение подтверждено. Выдан в 19:05.';
+    const toDoor = async (s, n) => {
+      await s.p.click('#view [data-go="barOrder"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на меню нет двери «Мой заказ»`));
+      await s.p.waitForTimeout(400);
+    };
+    {
+      // ветвь 1: после «перезапуска» (DATA.bar.mine пуст — новый контекст) выданный заказ находится дверью; уход и возврат — тоже
+      const n = 'zakaz-dver';
+      const s = await open23({ list: json(200, [OLD, SERVED(false), FOREIGN]) });
+      await toBar(s); await s.p.waitForTimeout(300);
+      const d = await door(s);
+      if (d !== 'Мой заказ№261018-01 · выдан' && d !== 'Мой заказ №261018-01 · выдан') bad.push(`${n}: дверь «${d}», ждали «Мой заказ · №261018-01 · выдан»`);
+      await toDoor(s, n);
+      let t = await s.view();
+      if (!t.includes('261018-01') || !t.includes('выдан') || t.includes('За сегодня и вчера заказов нет')) bad.push(`${n}: выданный заказ не найден после перезапуска`);
+      if (t.includes('261018-06')) bad.push(`${n}: дверь показала чужой заказ`);
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(150);
+      await toBar(s); await s.p.waitForTimeout(300);
+      await toDoor(s, n);
+      t = await s.view();
+      if (!t.includes('261018-01')) bad.push(`${n}: после ухода с экрана заказ дверью не находится`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ветвь 2: у выданного R4 и R5; нажатие — POST {} на свой id, экран рисует R6 с временем выдачи; одно перечитывание.
+      // Здесь же chlen-served-403: у члена клуба на экране заказа нет кнопок очереди («Выдан» ставит сторона очереди)
+      const n = 'zakaz-poluchenie';
+      let got = false;
+      const s = await open23({ list: () => json(200, [SERVED(got)]),
+        rcv: () => { got = true; return json(200, { id: 5, number: '261018-01', state: 'served', served_at: '2026-10-18T12:05:00+00:00', received_at: '2026-10-18T12:06:00+00:00' }); } });
+      await toBar(s); await s.p.waitForTimeout(300); await toDoor(s, n);
+      let t = await s.view();
+      if (!t.includes(R4)) bad.push(`${n}: нет «${R4}»`);
+      const btn = await s.p.$eval('[data-action="order-received"]', e => e.textContent).catch(() => null);
+      if (btn !== 'Подтвердить получение') bad.push(`${n}: кнопка «${btn}», ждали «Подтвердить получение»`);
+      if (await s.p.$('#view [data-action^="q-"]')) bad.push('chlen-served-403: у члена клуба на своём заказе кнопка очереди');
+      if (/книг|списан при выдаче/.test(t.replace('Со счёта · уже списано', ''))) bad.push(`${n}: слово о книге или деньгах у выдачи`);
+      const before = s.calls.length;
+      await s.p.click('[data-action="order-received"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(500);
+      const rc = rcvs(s);
+      if (rc.length !== 1 || !rc[0].url.endsWith('/bar/orders/5/received') || rc[0].body !== '{}') bad.push(`${n}: подтверждение ушло не так: ${JSON.stringify(rc.map(c => [c.url, c.body]))}`);
+      t = await s.view();
+      if (!t.includes(R6)) bad.push(`${n}: после нажатия нет «${R6}»`);
+      if (await s.p.$('[data-action="order-received"]')) bad.push(`${n}: кнопка осталась после подтверждения`);
+      const after = s.calls.slice(before).filter(c => c.method === 'GET' && c.url.includes('/bar/orders')).length;
+      if (after !== 1) bad.push(`${n}: после подтверждения перечитываний ${after}, ждали одно`);
+      await s.ctx.close();
+    }
+    {
+      // контроль 4: повторное нажатие, пока ответ в пути, — одно подтверждение; подтверждённый — без кнопки и после перезапуска
+      const n = 'poluchenie-povtorno';
+      const slow = () => new Promise(r => setTimeout(() => r(json(200, { id: 5, number: '261018-01', state: 'served', served_at: '2026-10-18T12:05:00+00:00', received_at: '2026-10-18T12:06:00+00:00' })), 500));
+      const s = await open23({ list: json(200, [SERVED(false)]), rcv: slow });
+      await toBar(s); await s.p.waitForTimeout(300); await toDoor(s, n);
+      await s.p.evaluate(() => { doAction('order-received'); doAction('order-received'); });
+      await s.p.waitForTimeout(800);
+      if (rcvs(s).length !== 1) bad.push(`${n}: ${rcvs(s).length} подтверждений за два нажатия`);
+      await s.ctx.close();
+      const s2 = await open23({ list: json(200, [SERVED(true)]), rcv: () => json(200, {}) });
+      await toBar(s2); await s2.p.waitForTimeout(300); await toDoor(s2, n);
+      if (!(await s2.view()).includes(R6) || await s2.p.$('[data-action="order-received"]')) bad.push(`${n}: подтверждённый заказ после перезапуска не «${R6}» или с кнопкой`);
+      await s2.ctx.close();
+    }
+    for (const [n, st, code, detail] of [['poluchenie-chuzhogo', 'served', 403, 'Это не ваш заказ.'],
+                                          ['poluchenie-do-vydachi', 'served', 409, 'Заказ ещё не выдан.']]) {
+      // контроли 2 и 3: отказ сервера — словами сервера, печатью; кнопка остаётся, R6 не рисуется
+      const s = await open23({ list: json(200, [SERVED(false)]), rcv: () => json(code, { detail }) });
+      await toBar(s); await s.p.waitForTimeout(300); await toDoor(s, n);
+      await s.p.click('[data-action="order-received"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет кнопки «Подтвердить получение»`));
+      await s.p.waitForTimeout(400);
+      const v = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (v !== detail) bad.push(`${n}: отказ «${v}», ждали словами сервера «${detail}»`);
+      if ((await s.view()).includes('Получение подтверждено')) bad.push(`${n}: после отказа нарисовано «Получение подтверждено»`);
+      await s.ctx.close();
+    }
+    {
+      // контроль 3, клиентская половина: до `served` кнопки R5 нет, и нажатие в обход экрана на сервер не уходит
+      const n = 'poluchenie-do-vydachi';
+      for (const st of ['new', 'making', 'ready']) {
+        const s = await open23({ list: json(200, [row(st)]), rcv: () => json(200, {}) });
+        await toBar(s); await s.p.waitForTimeout(300); await toDoor(s, n);
+        if (await s.p.$('[data-action="order-received"]')) bad.push(`${n}: у «${st}» есть «Подтвердить получение»`);
+        if ((await s.view()).includes('Заберите и подтвердите')) bad.push(`${n}: у «${st}» слово выдачи`);
+        await s.p.evaluate(() => doAction('order-received')); await s.p.waitForTimeout(200);
+        if (rcvs(s).length) bad.push(`${n}: у «${st}» подтверждение ушло на сервер`);
+        await s.ctx.close();
+      }
+    }
+    {
+      // гард поколения двери: ответ двери меню, ушедший РАНЬШЕ опроса и вернувшийся позже, не откатывает выданный заказ
+      const n = 'zakaz-dver-pozdniy';
+      let k = 0;
+      const slow = () => new Promise(r => setTimeout(() => r(json(200, [row('ready')])), 900));
+      const s = await open23({ list: () => ++k === 1 ? slow() : json(200, [SERVED(false)]) });
+      await toBar(s);
+      await s.p.evaluate(() => go('barOrder')); await s.p.waitForTimeout(1300);
+      const st = await s.p.evaluate(() => DATA.bar.mine && DATA.bar.mine.state);
+      if (k < 2) bad.push(`${n}: НЕ ВЫПОЛНЕНО — опроса не было (${k})`);
+      else if (st !== 'served') bad.push(`${n}: поздний ответ двери откатил заказ к «${st}»`);
+      await s.ctx.close();
+    }
+    {
+      // контроль 5: без заказов в окне — на меню «заказов нет», на экране заказа R3 и «Открыть меню»; не ошибка
+      const n = 'dver-bez-zakazov';
+      const s = await open23({ list: json(200, [FOREIGN]) });
+      await toBar(s); await s.p.waitForTimeout(300);
+      const d = await door(s);
+      if (!/^Мой заказ ?заказов нет$/.test(d || '')) bad.push(`${n}: дверь «${d}», ждали «Мой заказ · заказов нет»`);
+      await toDoor(s, n);
+      const t = await s.view();
+      if (!t.includes('За сегодня и вчера заказов нет.')) bad.push(`${n}: нет «За сегодня и вчера заказов нет.»`);
+      if (t.includes('Заказ не загрузился') || t.includes('261018-06')) bad.push(`${n}: вместо пустого — ошибка или чужой заказ`);
+      if ((await s.p.$eval('#view [data-go="bar"]', e => e.textContent).catch(() => null)) !== 'Открыть меню') bad.push(`${n}: нет «Открыть меню»`);
       await s.ctx.close();
     }
   }

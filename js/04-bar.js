@@ -49,7 +49,7 @@ function bizPick(id) {
   var x = (KLUB_BIZ.list || []).filter(function (b) { return b.id === id; })[0];
   if (!x) return;
   // корзина — позиции ОДНОГО бизнеса: при смене выбора она не переезжает в чужое меню
-  if (BAR_PICK !== id) { CART = {}; MENU_STATE = ''; DATA.bar.menu = []; }
+  if (BAR_PICK !== id) { CART = {}; MENU_STATE = ''; DATA.bar.menu = []; DATA.bar.mine = null; MINE_NONE = false; }
   BAR_PICK = id;
   BAR = { id: x.id, open: x.is_open, title: x.title };
   go('bar');
@@ -158,6 +158,7 @@ function loadMenu() {
       return;
     }
     loadBarMenu();
+    loadMineDoor();
   });
 }
 

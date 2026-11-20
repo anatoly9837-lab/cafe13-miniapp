@@ -629,9 +629,12 @@ function fromOrder(d, items) {
   if (d.sum !== undefined && !(num(d.sum) >= 0)) return null;
   var list = items || (Array.isArray(d.items) ? d.items.map(function (i) { return [i.title, i.qty]; }) : null);
   if (!list || !PLACES[d.place] || (d.pay_method !== 'account' && d.pay_method !== 'cash')) return null;
+  /* Шаг 23: время выдачи и признак получения — из той же строки. `served_at` сервер отдавал и раньше,
+     клиент его выбрасывал; `received_at` — снимок формы шага 23 (api d10c56d), до события null. */
   return { id: d.number, oid: d.id, at: hm(d.created_at), where: d.place,
            pay: d.pay_method === 'cash' ? 'наличными' : 'со счёта',
-           sum: d.sum === undefined ? null : num(d.sum), state: d.state, items: list };
+           sum: d.sum === undefined ? null : num(d.sum), state: d.state, items: list,
+           servedAt: d.served_at ? hm(d.served_at) : '', got: !!d.received_at };
 }
 
 /* Отказ «Купить» — состояние корзины, а не экран (макет E23б): плашка над
@@ -705,6 +708,7 @@ function pollMine() {
   if (POLL) { clearTimeout(POLL); POLL = null; }
   if (!LIVE || current !== 'barOrder' || !BAR) return;
   var gen = ++POLL_GEN;              // запрос старой цепочки, вернувшийся позже, молчит
+  DOOR_GEN++;                        // и ответ двери меню, ушедший раньше опроса: он старше и не откатит состояние
   api('GET', '/bar/orders?direction_id=' + BAR.id).then(function (r) {
     /* Половина `current !== 'barOrder'` недостижима (мутация зелёная, 22.10.2026):
        current пишет только go(), а go() на входе в barOrder зовёт pollMine и
@@ -716,14 +720,7 @@ function pollMine() {
        поднимать POLL_GEN на входе. Тогда — случай на неё. */
     if (current !== 'barOrder' || gen !== POLL_GEN) return;
     if (r.status === 200 && Array.isArray(r.data)) {
-      var mine = DATA.bar.mine;
-      // Админу и бару сервер отдаёт всю очередь — свой заказ ищем по своему id,
-      // иначе после обрыва связи гость увидел бы чужой заказ как свой.
-      var own = r.data.filter(function (x) { return x && x.member_id === DATA.member.uid; });
-      var row = mine ? own.filter(function (x) { return x.id === mine.oid; })[0]
-                     : own.filter(function (x) { return x.state !== 'served' && x.state !== 'cancelled'; })[0];
-      var o = row ? fromOrder(row) : null;
-      if (o) DATA.bar.mine = o;
+      takeMine(r.data);
       MINE_FAIL = '';
     } else {
       MINE_FAIL = r.status === 0 ? 'Сервер не ответил — состояние может быть устаревшим.'
@@ -736,6 +733,60 @@ function pollMine() {
   });
 }
 var MINE_FAIL = '';
+
+/* Свой заказ из ответа /bar/orders (шаг 23, ветвь 1). Админу и бару сервер отдаёт всю очередь — свой ищем
+   по своему id, иначе после обрыва связи гость увидел бы чужой заказ как свой. `DATA.bar.mine` — подсказка
+   после покупки, а не условие: нет его (перезапуск) или нет его строки — берётся самый новый свой заказ окна
+   в ЛЮБОМ состоянии, ВКЛЮЧАЯ выданный (рецепт 23/barOrder; прежний фильтр «не served» терял забранный).
+   MINE_NONE — сервер ответил, и своих заказов в окне нет вовсе: только тогда дверь говорит «заказов нет». */
+var MINE_NONE = false;
+function takeMine(rows) {
+  var mine = DATA.bar.mine;
+  var own = rows.filter(function (x) { return x && x.member_id === DATA.member.uid; });
+  var row = mine ? own.filter(function (x) { return x.id === mine.oid; })[0] : null;
+  if (!row) row = own.reduce(function (a, x) { return typeof x.id === 'number' && (!a || x.id > a.id) ? x : a; }, null);
+  var o = row ? fromOrder(row) : null;
+  if (o) DATA.bar.mine = o;
+  MINE_NONE = !own.length && !DATA.bar.mine;
+}
+
+/* Дверь «Мой заказ» на меню (шаг 23): своё состояние спрашивается при входе в меню, тем же запросом, что
+   и опрос заказа. Без направления не спрашиваем: его грузит меню, и второй /directions был бы лишним. */
+var DOOR_GEN = 0;
+function loadMineDoor() {
+  if (!LIVE || !BAR) return;
+  var gen = ++DOOR_GEN, who = WHO;
+  api('GET', '/bar/orders?direction_id=' + BAR.id).then(function (r) {
+    if (gen !== DOOR_GEN || who !== WHO) return;
+    if (r.status === 200 && Array.isArray(r.data)) takeMine(r.data);
+    if (current === 'bar') render();
+  });
+}
+
+/* Подтверждение получения (шаг 23, ветвь 2): `POST /bar/orders/{id}/received`, тело `{}` (снимок формы
+   api d10c56d). Деньги не трогает — списаны при покупке. Повтор сервер отдаёт 200 с прежним временем.
+   Отказ (404 / 403 не свой / 409 ещё не выдан) — словами сервера. После успеха — одно перечитывание. */
+var RCV = { busy: false, deny: '' };
+function confirmReceived() {
+  var o = DATA.bar.mine;
+  if (!o || RCV.busy || o.state !== 'served') return;
+  RCV.busy = true; RCV.deny = '';
+  render();
+  api('POST', '/bar/orders/' + o.oid + '/received', {}).then(function (r) {
+    RCV.busy = false;
+    if (r.status === 200 && r.data && r.data.id === o.oid && r.data.received_at) {
+      o.got = true;
+      if (r.data.served_at) o.servedAt = hm(r.data.served_at);
+      haptic('ok');
+      if (current === 'barOrder') { render(); pollMine(); }
+      return;
+    }
+    haptic('warn');
+    RCV.deny = detailOf(r) || (r.status === 0 ? 'Сервер не ответил — получение не записано.'
+                                              : 'Получение не записано: сервер ответил кодом ' + r.status + '.');
+    render();
+  });
+}
 
 var ME_GEN = 0;
 function refreshMe() {
@@ -853,7 +904,7 @@ function switchTo(on, as) {
     if (POLL) { clearTimeout(POLL); POLL = null; }
     QUEUE_GEN++; POLL_GEN++; WHO++;
     BAR = null; BAR_FAIL = ''; MENU_STATE = ''; QUEUE = null; QUEUE_FAIL = ''; MINE_FAIL = '';
-    PASS = null; PASS_FAIL = ''; CART = {}; DATA.bar.mine = null;
+    PASS = null; PASS_FAIL = ''; CART = {}; DATA.bar.mine = null; MINE_NONE = false; RCV.deny = '';
     BOOK.done = []; BOOK.kind = ''; BOOK.ask = false;
     DAY.data = null; DAY.fail = ''; DAY.gen++;
     TOPUP.amount = ''; TOPUP.ask = false;
