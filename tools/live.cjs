@@ -5183,6 +5183,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
     await s.ctx.close();
   }
+  // T7 — только у живого членства ТОГО ЖЕ вида: другой вид — новое членство, не продление; пожизненное не продлевается
+  // (возврат arhitector-b7 на #351: мутация «тот же вид → true» проходила зелёной — проверялось только присутствие)
+  if (part(1)) for (const [name, ms, pick] of [
+    ['kassa-t7-drugoy-vid', { level: 'member', starts_at: ENDS, ends_at: '2026-11-30T17:00:00+00:00', lifelong: false }, 'organizer'],
+    ['kassa-t7-pozhiznenno', { level: 'member', starts_at: ENDS, ends_at: null, lifelong: true }, 'member']]) {
+    const live = Object.assign({}, PERSON, { membership_active: true, membership: ms });
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, live) }));
+    if (await toPerson(s, name) && await toForm(s, name, 'membership')) {
+      await s.p.click(`[data-action="tp-level:${pick}"]`);
+      await s.p.waitForTimeout(150);
+      const t = await s.view();
+      if (!t.includes('Цена вида:')) bad.push(`${name}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — форма без T4, вид не выбран`);
+      if (t.includes('Продлит членство')) bad.push(`${name}: T7 «Продлит членство» там, где продлевать нечего (${pick} при ${ms.lifelong ? 'пожизненном' : 'живом ' + ms.level})`);
+    }
+    await s.ctx.close();
+  }
   // доля нулевая у мастера и партнёра, у члена — 2 600: одна фикстура долей, три вида
   if (part(1)) for (const [level, word, amount, want] of [['member', 'Член клуба', '3600', 'На счёт: 2 600 ฿.'],
       ['organizer', 'Мастер', '3000', 'На счёт ничего не зачислено — вся сумма клубу.'], ['partner', 'Бизнес-партнёр', '5000', 'На счёт ничего не зачислено — вся сумма клубу.']]) {
