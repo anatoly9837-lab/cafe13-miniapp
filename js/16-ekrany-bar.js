@@ -16,6 +16,26 @@ function noDrink() {
 }
 /* Тот же приём для своего заказа: отказ опроса — это «заказ не загрузился», а не «заказа нет»,
    и у него есть выход (рецепт `barOrder`). Прежний заказ, если он был, стоит ниже. */
+/* Дверь к своему заказу на меню (шаг 23, рецепт 23/barOrder `R1`/`R2`): стоит всегда. Номер и состояние —
+   из ответа сервера; «заказов нет» — только когда сервер ответил, что своих в окне нет. Пока ответа нет
+   (или он отказ) — строка без подписи: дверь ведёт на `barOrder`, где видно и отказ, и «Повторить». */
+/* Выдан — подтвердите получение (`R4`/`R5`) или получение подтверждено (`R6`), шаг 23. Кнопки до `served`
+   нет; кто выдал, члену клуба не показывается (`served_by` сервер не отдаёт). Отказ — печатью сервера. */
+function servedRow(o) {
+  if (o.state !== 'served') return '';
+  var at = o.servedAt ? ' в ' + esc(o.servedAt) : '';
+  if (o.got) return '<span class="small" id="order-got">Получение подтверждено. Выдан' + at + '.</span>';
+  return '<span class="small" id="order-served">Выдан' + at + '. Заберите и подтвердите получение.</span>' +
+    (RCV.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(RCV.deny) + '</span></div>' : '') +
+    '<button type="button" class="btn" data-action="order-received"' + (RCV.busy ? ' disabled' : '') + '>Подтвердить получение</button>';
+}
+function mineDoor() {
+  var o = DATA.bar.mine;
+  var sub = o ? '№' + esc(o.id) + ' · ' + OSTATE[o.state].label : MINE_NONE ? 'заказов нет' : '';
+  return '<div class="card quiet"><button type="button" class="listitem" data-go="barOrder">' +
+    '<span class="grow"><b>Мой заказ</b>' + (sub ? '<span class="small">' + sub + '</span>' : '') + '</span>' +
+    svg(ICON.chev, 'chev') + '</button></div>';
+}
 function mineFail() {
   return '<div class="card quiet"><div class="col"><b>Заказ не загрузился</b>' +
     '<span class="small">' + esc(MINE_FAIL) + '</span></div>' +
@@ -53,6 +73,7 @@ Object.assign(SCREENS, {
           (BAR ? '<span class="pill' + (BAR.open ? ' on' : '') + '">' + (BAR.open ? 'открыт' : 'закрыт') + '</span>' : '') +
         '</div>' +
         '<div class="row"><span class="small">На счёте</span><b class="num">' + money(DATA.member.balance) + ' ฿</b></div></div>' +
+        mineDoor() +
         (n ? '<div class="card accent"><div class="row">' +
           '<div class="col"><b>В заказе ' + n + ' ' + plural(n, ['позиция', 'позиции', 'позиций']) + '</b>' +
             '<span class="small num">на ' + money(cartSum()) + ' ฿</span></div>' +
@@ -192,7 +213,7 @@ Object.assign(SCREENS, {
     if (LIVE && !o) {
       return (FLASH ? flash() : '') +
         (MINE_FAIL ? mineFail()
-                   : '<div class="card quiet"><span class="small">Открытого заказа на сервере нет.</span></div>') +
+                   : '<div class="card quiet"><span class="small">За сегодня и вчера заказов нет.</span></div>') +
         '<button type="button" class="btn ghost" data-go="bar">Открыть меню</button>';
     }
     if (LIVE && o.state === 'cancelled') {
@@ -221,6 +242,7 @@ Object.assign(SCREENS, {
           '<div><span class="small">Оплата</span><b>' + (o.pay === 'со счёта' ? 'Со счёта · уже списано' : esc(o.pay)) + '</b></div>' +
           (o.sum === null ? '' : '<div><span class="small">Сумма</span><b class="num">' + money(o.sum) + ' ฿</b></div>') +
         '</div>' +
+        servedRow(o) +
         '<div class="group"><h2>Что заказано</h2><div class="rows">' + o.items.map(function (i) {
           return '<div><span class="clamp1">' + esc(i[0]) + '</span><span class="small num">' + i[1] + ' шт</span></div>';
         }).join('') + '</div></div>' +
@@ -234,7 +256,7 @@ Object.assign(SCREENS, {
       ['Бар принял', 'видно, когда работник нажмёт «Принять»'],
       ['Готовится', 'обычно 3–5 минут'],
       ['Готов', o.where === 'за стойку' ? 'забирайте у стойки' : 'подадут ' + o.where],
-      ['Выдан', 'заказ закрыт, строка ушла в книгу клуба']
+      ['Выдан', 'заказ у вас в руках; подтвердите получение']
     ];
     return (FLASH ? flash() : '') +
       '<div class="card strong"><div class="row top">' +
