@@ -2289,6 +2289,30 @@
   },
   "status": 200
  },
+ "till-arrivals": {
+  "request": "GET /till/arrivals",
+  "shape": {
+   "arrivals": [
+    {
+     "created_at": null,
+     "first_name": null,
+     "id": null,
+     "last_name": null,
+     "tg_user_id": null,
+     "username": null
+    }
+   ]
+  },
+  "status": 200
+ },
+ "till-arrive": {
+  "request": "POST /till/arrive",
+  "shape": {
+   "created_at": null,
+   "id": null
+  },
+  "status": 201
+ },
  "till-by-member-denied-guest": {
   "request": "GET /till/by-member/N",
   "shape": {
@@ -2399,6 +2423,28 @@
    "detail": null
   },
   "status": 409
+ },
+ "till-membership-arrival": {
+  "request": "POST /till",
+  "shape": {
+   "amount": null,
+   "arrival_id": null,
+   "at": null,
+   "id": null,
+   "kind": null,
+   "member_id": null,
+   "membership": {
+    "ends_at": null,
+    "id": null,
+    "level": null,
+    "starts_at": null
+   },
+   "method": null,
+   "note": null,
+   "to_account": null,
+   "to_club": null
+  },
+  "status": 201
  },
  "till-topup": {
   "request": "POST /till",
