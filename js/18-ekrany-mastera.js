@@ -172,7 +172,8 @@ Object.assign(SCREENS, {
       : '<div class="row"><span class="small">' + esc(EV_PLACES_STATE) + '</span><button type="button" class="btn quiet" data-action="ms-retry-places">Повторить</button></div>';
     if (msPlace() && dateOk) loadBusy();
     // занятость — только той даты, что выбрана сейчас: ответ о прежней дате не показывается
-    var B = dateOk && MSB.key.indexOf('|' + MSF.date + '|') > 0 ? MSB.data : null, clash = B && B.fits === false;
+    // в витрине занятость — демо-набора, без ключа запроса (вне Telegram сервер не спрашивается)
+    var B = dateOk && (MR.demo || MSB.key.indexOf('|' + MSF.date + '|') > 0) ? MSB.data : null, clash = B && B.fits === false;
     var why = MR.busy ? '' : !dateOk ? 'Выберите дату — сегодня или позже.'
       : typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
       : p > bal ? 'Не хватает ' + money(p - bal) + ' ฿ на счёте.' : EV_PLACES && !msPlace() ? 'Места «' + MS_PLACE + '» нет.' : !EV_PLACES ? 'Загружаем место…'
