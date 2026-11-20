@@ -177,6 +177,76 @@ Object.assign(SCREENS, {
       '</div>';
   },
 
+  // ── шаг 20 (Cafe13KPG#551): рецепт `_docs/recept/ekran/20/bizMoney.md`, договор остатка `20/ostatok.md`.
+  // Сверху остаток (сколько ЕСТЬ), ниже отчёт месяца (откуда). Выбор бизнеса — общий с bizWorkers (`BW.dirs`, `BW.biz`)
+  bizMoney: function () {
+    var dirs = LIVE ? BW.dirs : [{ id: 0, title: 'Кофейня', active: true, wallet: { sum: 0, through: null } }];
+    var bizId = LIVE ? BW.biz : 0;
+    var m = LIVE ? (MM.biz === bizId ? MM.data : null)
+      : { title: 'Кофейня', start: Date.parse('2026-10-31T17:00:00Z'), revenue: 52000, opex: 31000, net: 21000, invest: 0,
+          clubPct: 30, club: 6300, partnerPct: 70, partner: 14700 };
+    var quiet = function (body) { return '<div class="card quiet">' + body + '</div>'; };
+    var retry = function (why, act) {
+      return quiet('<div class="row"><span class="small">' + esc(why) + '</span>' +
+        '<button type="button" class="btn quiet" data-action="' + act + '">Повторить</button></div>');
+    };
+    var no = quiet('<div class="col"><b>Сюда нельзя</b><span class="small">Деньги бизнеса видит его партнёр, куратор направления или глава клуба.</span></div>');
+    if (!dirs) return BW.dirsFail ? retry(BW.dirsFail, 'bm-retry-biz') : quiet('<span class="small">Загружаем деньги бизнеса…</span>');
+    if (!dirs.length) return no;
+    var b = dirs.filter(function (x) { return x.id === bizId; })[0] || null;
+    var pick = dirs.length === 1 ? '' : '<div class="group"><span class="label">Ваши бизнесы</span>' + dirs.map(function (x) {
+      return '<button type="button" class="listitem" data-action="bm-biz:' + x.id + '"' + (x.id === bizId ? ' aria-current="true"' : '') + '>' +
+        '<span class="grow"><b class="clamp1">' + esc(x.title) + '</b></span>' +
+        (x.id === bizId ? '<span class="pill on">сейчас</span>' : svg(ICON.chev, 'chev')) + '</button>';
+    }).join('') + '</div>';
+    if (!b) return (BW.lost ? '<div class="note">' + svg(ICON.info) + '<span>Прежде выбранный бизнес больше не ваш.</span></div>' : '') + pick;
+    // шапка: остаток главным числом; «раз в месяц» — при ЛЮБОМ состоянии (вариант C владельца)
+    var w = b.wallet, k = walletKind(w);
+    var say = { 'null': 'доли ещё не назначены', wait: 'доля будет зачислена по закрытию месяца', zero: 'по закрытым месяцам зачислять было нечего' };
+    var head = '<div class="card strong"><div class="col"><span class="small">На счёте</span>' +
+        (k === 'sum' ? '<h2 class="num">' + esc(bmSum(w.sum)) + '</h2>' : k === 'dash' ? '<h2 class="num">—</h2>' : '<b>' + esc(say[k]) + '</b>') +
+        '<span class="small">Доля зачисляется раз в месяц, по закрытию. Продажи месяца видны ниже.</span>' +
+        (k === 'dash' ? '<span class="small">Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».</span>' : '') +
+        // `wallet_through` — КОНЕЦ периода: месяц берётся у мгновения ПЕРЕД ним (у полуночи 1 ноября — октябрь)
+        (w && w.through ? '<span class="small">Зачислено по ' + esc(bmMonth(Date.parse(w.through) - 1).toLowerCase()) + '</span>' +
+          '<span class="small">Счёт ведётся с месяца, когда появился в клубе: за прежние месяцы доли на него не зачислялись.</span>' : '') +
+        '<span class="small">Бизнес „' + esc(b.title) + '“ · месяц по Пхангану</span></div></div>';
+    var body;
+    if (!m) {
+      body = MM.code === 409 ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(MM.fail) + '</span></div>' +
+          '<div class="note">' + svg(ICON.info) + '<span>Как только доли появятся, здесь будут выручка, затраты и доли.</span></div>'
+        : MM.code === 403 ? no
+        : MM.fail ? retry(MM.fail, 'bm-retry') : quiet('<span class="small">Загружаем деньги бизнеса…</span>');
+    } else if (m.bad) {
+      body = '<div class="deny" role="alert">' + svg(ICON.info) + '<span>Числа отчёта не сходятся между собой — показывать их нельзя. Сообщите администратору клуба.</span></div>';
+    } else {
+      // проценты — числа сервера без нулевого хвоста: «30 %», а не «30.00 %»
+      var pct = function (n) { return String(Number(n)).replace('.', ','); };
+      body = '<h2>' + esc(bmMonth(m.start)) + '</h2>' +
+        '<div class="group"><span class="label">Итог месяца</span><div class="rows">' +
+          '<div><span class="small">Выручка</span><b class="num">' + esc(bmSum(m.revenue)) + '</b></div>' +
+          '<div><span class="small">Текущие затраты</span><b class="num">' + esc(bmSum(m.opex)) + '</b></div>' +
+          '<div><span>Чистая прибыль</span><b class="num">' + esc(bmSum(m.net)) + '</b></div>' +
+        '</div></div>' +
+        '<div class="group"><span class="label">Как делится</span><div class="rows">' +
+          // пустая доля партнёра — СЛОВА, а не «0 ฿»: null значит «не назначали», а не ноль
+          '<div><span>Ваша доля' + (m.partnerPct === null ? '</span><span class="small">не назначена</span>'
+            : ' · <span class="num">' + pct(m.partnerPct) + ' %</span></span><b class="num">' + esc(bmSum(m.partner)) + '</b>') + '</div>' +
+          '<div><span class="small">Клубу · <span class="num">' + pct(m.clubPct) + ' %</span></span><b class="num">' + esc(bmSum(m.club)) + '</b></div>' +
+        '</div>' +
+        (m.partnerPct === null ? '<span class="small">Долю партнёра у этого бизнеса ещё не назначили.</span>'
+          : m.net <= 0 ? '<span class="small">За месяц прибыли нет: доли считаются только с прибыли, поэтому обе по нулю.</span>'
+          : '<span class="small">Ваша доля зачислится на счёт по закрытию месяца.</span>') + '</div>' +
+        (m.invest > 0 ? '<div class="group"><span class="label">Вложения</span><div class="rows">' +
+          '<div><span class="small">Вложения за месяц</span><b class="num">' + esc(bmSum(m.invest)) + '</b></div></div>' +
+          '<span class="small">В чистую прибыль и в доли не входят — возвращаются из вашей доли.</span></div>' : '');
+    }
+    return head + pick + body +
+      '<button type="button" class="btn quiet" data-action="bm-refresh">Обновить</button>' +
+      '<div class="note">' + svg(ICON.info) + '<span>Вывод со счёта в приложении пока не делается. ' +
+        'Ошибочную строку отменяет администратор клуба — отменённое в отчёт не входит.</span></div>';
+  },
+
   // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g (подтверждение) снят по #695; E56d — причина; E56e — своя
   topupQueue: function () {
     // слова отказа — сервера (`_may_decide`, 403) буквой
@@ -250,7 +320,7 @@ Object.assign(SCREENS, {
   /* ── шаг 12: «Бизнесы клуба» (кадры E75 список, E75b пусто, E75v не загрузилось; Cafe13KPG#877, #881) — данные в
      06-lyudi.js (`BIZ`). Плашка — НЕ кнопка и без шеврона (решение дизайнера, #881): за ней в шаге 12 нет экрана,
      а шеврон обещал бы дверь. Пилюля — про СМЕНУ (`is_open`), и это сказано прозой под списком: без неё
-     «закрыт» читался бы как «закрыт навсегда» (`is_active`). Ни одного числа доли: шаг 21. */
+     «закрыт» читался бы как «закрыт навсегда» (`is_active`). Доли — группой в карточке (шаг 21). */
   businesses: function () {
     if (LIVE && !mayOps()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Бизнесы клуба видит операционный директор.</span></div></div>';
@@ -260,12 +330,46 @@ Object.assign(SCREENS, {
       : '<div class="card quiet"><span class="small">Загружаем бизнесы клуба…</span></div>';
     if (!BIZ.list.length) return '<div class="note">' + svg(ICON.info) + '<span>Бизнесов в клубе пока нет. ' +
       'Бизнес появляется, когда клуб договаривается с партнёром.</span></div>';
+    // шаг 20 (рецепт 20/businesses): остаток счёта строкой в карточке каждого бизнеса — у разных бизнесов состояния разные
+    var say = { 'null': 'доли ещё не назначены', wait: 'доля будет зачислена по закрытию месяца',
+                zero: 'по закрытым месяцам зачислять было нечего', nopartner: 'счёта нет: у бизнеса нет партнёра' };
+    var dash = BIZ.list.some(function (b) { return b.wallet === undefined; });
     return BIZ.list.map(function (b) {
       return '<div class="card"><div class="row"><span class="col"><b>' + esc(b.title) + '</b>' +
           '<span class="small">' + (b.partner ? 'Партнёр: ' + esc(b.who || 'имя не указано') : 'Партнёра нет') + '</span></span>' +
-          (b.open ? '<span class="pill on">открыт</span>' : '<span class="pill">закрыт</span>') + '</div></div>';
+          (b.open ? '<span class="pill on">открыт</span>' : '<span class="pill">закрыт</span>') + '</div>' +
+          walletRow('На счёте', b.wallet, say, !b.partner) + doli(b) + '</div>';
     }).join('') +
+      (dash ? '<span class="small">Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».</span>' : '') +
       '<div class="note">' + svg(ICON.info) + '<span>«Открыт» и «закрыт» — про смену на сегодня, а не про закрытие бизнеса: ' +
-      'смену открывает куратор направления или администратор. Условий сделки и долей здесь нет.</span></div>';
+      'смену открывает куратор направления или администратор.</span></div>';
+    /* шаг 21 (рецепт 21/businesses): группа долей — четыре состояния. Слова «не назначены» и «нет партнёра» —
+       ЦИТАТЫ шага 20 (тот же `say`), своих шаг не вводит. Умолчания в полях нет: оба числа руками. */
+    function doli(b) {
+      var head = '<div class="group"><span class="label">Доли</span>';
+      // отказ сервера на записи (партнёр ушёл между списком и нажатием) стоит и здесь: перечитанный список уже без партнёра
+      var deny = DOLI.id === b.id && DOLI.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(DOLI.err) + '</span></div>' : '';
+      if (!b.partner) return head + '<p class="verbatim">' + esc(say.nopartner) + '</p>' + deny + '</div>';
+      if (b.shares === undefined) return head + '<span class="small">—</span>' +
+        '<span class="small">Сервер пока не отдаёт долей — у ручки нет поля.</span></div>';
+      if (DOLI.id === b.id) {
+        var lock = DOLI.busy ? ' disabled' : '';
+        return head +
+          '<div class="field"><label for="doli-club">Клубу, %</label><input id="doli-club" class="num" inputmode="numeric" autocomplete="off" value="' + esc(DOLI.club) + '"' + lock + '></div>' +
+          '<div class="field"><label for="doli-partner">Партнёру, %</label><input id="doli-partner" class="num" inputmode="numeric" autocomplete="off" value="' + esc(DOLI.partner) + '"' + lock + '></div>' +
+          '<span class="small">Сумма обязана быть 100. Новые доли действуют вперёд: уже записанные деньги не пересчитываются.</span>' +
+          deny +
+          '<button type="button" class="btn" id="doli-save" data-action="doli-save"' + (DOLI.busy || !doliReady() ? ' disabled' : '') + '>' +
+            (DOLI.busy ? 'Сохраняем…' : 'Сохранить доли') + '</button>' +
+          '<button type="button" class="btn quiet" data-action="doli-keep"' + lock + '>Назад</button></div>';
+      }
+      var act = DOLI.busy ? ' disabled' : '';
+      if (b.shares === false) return head + '<p class="verbatim">' + esc(say['null']) + '</p>' +
+        '<span class="small">Пока доли не назначены, продажи идут, но деньги месяца не делятся: долю клуба и партнёра посчитать нельзя.</span>' +
+        '<button type="button" class="btn" data-action="doli-open:' + b.id + '"' + act + '>Назначить доли</button></div>';
+      return head + '<div class="rows"><div><span>Клубу · <span class="num">' + pct(b.shares.club) + '</span> %</span></div>' +
+          '<div><span>Партнёру · <span class="num">' + pct(b.shares.partner) + '</span> %</span></div></div>' +
+        '<button type="button" class="btn quiet" data-action="doli-open:' + b.id + '"' + act + '>Изменить доли</button></div>';
+    }
   },
 });

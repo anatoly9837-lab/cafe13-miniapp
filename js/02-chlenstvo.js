@@ -354,6 +354,8 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               partnerApply: 1, partnerReqs: 1, partnerReq: 1,
               // шаг 14 (Cafe13KPG#545): работники бизнеса — ручки cafe13-api#146 (в бою 91b26f7); рецепт cafe13-miniapp#276
               bizWorkers: 1,
+              // шаг 20 (Cafe13KPG#551): деньги бизнеса у партнёра — отчёт месяца (api#153) и остаток полем (api#156); рецепт `_docs/recept/ekran/20/`
+              bizMoney: 1,
               // шаг 15 (Cafe13KPG#546): карточки меню — оттаяны из FROZEN для работника бизнеса; ручки cafe13-api#147 (d4b6812),
               // рецепт `_docs/recept/ekran/15/`. Дверь работника — на «Услугах» (`guest`)
               barCards: 1, barCard: 1,

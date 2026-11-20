@@ -258,7 +258,7 @@ var TITLES = {
   masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера', masterRenew: 'Продление',
   payouts: 'Распределить', payout: 'Распределить', businesses: 'Бизнесы клуба',
   partnerApply: 'Заявка в партнёры', partnerReqs: 'Заявки в партнёры', partnerReq: 'Заявка в партнёры',
-  bizWorkers: 'Работники бизнеса'
+  bizWorkers: 'Работники бизнеса', bizMoney: 'Деньги бизнеса'
 };
 
 /* Вкладки идут от уровня членства, а рабочая — от роли с сервера: бармен
@@ -322,7 +322,7 @@ var BACK = {
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
-  payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home',
+  payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -580,7 +580,9 @@ function go(screen, p) {
   if (screen === 'partnerReq') { PR.qErr = ''; if (current !== 'partnerReq' || param !== p) { PR.ask = 0; PR.note = ''; } if (!PR.q && mayOps()) loadPartnerQueue(); }
   // форма: остаток и цена — на входе (рецепт R2, правило Cafe13KPG#638)
   if (screen === 'partnerApply' && current !== 'partnerApply' && LIVE) { PR.err = ''; refreshMe(); loadPartnerPrice(); }
-  if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') PR.mineState = '';
+  if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { PR.mineState = ''; BW.dirsAsked = false; }
+  // шаг 20 (рецепт 20/bizMoney): свои бизнесы с остатком и отчёт месяца — на каждом входе; выбор бизнеса общий с bizWorkers
+  if (screen === 'bizMoney' && current !== 'bizMoney' && LIVE) { BW.lost = false; BW.dirs = null; BW.dirsFail = ''; MM.data = null; MM.fail = ''; MM.code = 0; loadMyBiz(false, true); }
   // шаг 14 (рецепт 14/bizWorkers, «Перечитать на входе»): свои бизнесы с оплаченностью и работники — на каждом входе;
   // запомненный бизнес сверяется со свежим списком в loadMyBiz
   if (screen === 'bizWorkers' && current !== 'bizWorkers' && LIVE) {
@@ -590,7 +592,10 @@ function go(screen, p) {
   if ((screen === 'manage' || screen === 'payouts') && current !== screen && mayMasters()) { PAY.err = ''; loadPayouts(); }
   if (screen === 'payout') { PAY.err = ''; if (!PAY.list && mayMasters()) loadPayouts(); }
   // шаг 12: каждый вход на «Бизнесы клуба» — свежий список: смена открывается и закрывается без нас
-  if (screen === 'businesses' && current !== 'businesses' && mayOps()) loadBusinesses();
+  // шаг 21: вход перечитывает список (доли не замерзают), а начатая правка долей не переживает уход
+  if (screen === 'businesses' && current !== 'businesses' && mayOps()) {
+    if (!DOLI.busy) { DOLI.id = null; DOLI.err = ''; } loadBusinesses();
+  }
   if (screen === 'masterRenew' && current !== 'masterRenew' && LIVE) { RNW.err = ''; RNW.key = ''; if (MR.mineState === '' || !MR.mine) loadMineMaster(); }
   // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
   // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
@@ -1139,6 +1144,10 @@ function doAction(a) {
     if (a === 'pay-open') { go('payout', Number(arg)); return; }
     if (a === 'pay-go' && mayMasters()) { sendPayout(Number(arg)); return; }
     if (a === 'biz-retry' && mayOps()) { loadBusinesses(); render(); return; }
+    // шаг 21: доли бизнеса
+    if (a === 'doli-open' && mayOps()) { doliOpen(Number(arg)); render(); return; }
+    if (a === 'doli-keep') { if (!DOLI.busy) { DOLI.id = null; DOLI.err = ''; } render(); return; }
+    if (a === 'doli-save') { doliSave(); return; }
     // шаг 14: работники бизнеса
     if (a === 'bw-send') { bwAssign(); return; }
     if (a === 'bw-revoke') { bwGrab(); bwRevokeAsk(Number(arg)); render(); return; }
@@ -1146,6 +1155,11 @@ function doAction(a) {
     if (a === 'bw-retry') { loadWorkers(); bwGrab(); render(); return; }
     if (a === 'bw-retry-biz') { loadMyBiz(true); render(); return; }
     if (a === 'bw-bot') { bwBot(); return; }
+    // шаг 20: деньги бизнеса
+    if (a === 'bm-retry-biz') { loadMyBiz(false, true); render(); return; }
+    if (a === 'bm-retry') { loadMonth(); render(); return; }
+    if (a === 'bm-refresh') { loadMyBiz(false, true); render(); return; }
+    if (a === 'bm-biz') { BW.biz = Number(arg); BW.lost = false; MM.data = null; loadMonth(); render(); return; }
     if (a === 'bw-biz' && !BW.busy && BW.ask === null) {
       bwGrab(); BW.biz = Number(arg); BW.lost = false; BW.list = null; BW.listFail = ''; BW.err = null; BW.rowErr = ''; BW.done = '';
       loadWorkers(); render(); return;
@@ -1187,6 +1201,12 @@ document.addEventListener('input', function (ev) {
   if (ev.target && ev.target.id === 'p-find') { PEOPLE.find = ev.target.value; peopleFilter(); }
   if (ev.target && ev.target.id === 'd-note') MREQS.note = ev.target.value;
   if (ev.target && ev.target.id === 'join-said') JOIN.said = ev.target.value;
+  // доли: набранное в память, кнопка без перерисовки (фокус не теряется)
+  if (ev.target && (ev.target.id === 'doli-club' || ev.target.id === 'doli-partner')) {
+    doliGrab();
+    var ds = document.getElementById('doli-save');
+    if (ds) ds.disabled = DOLI.busy || !doliReady();
+  }
   // сумма пополнения — в память формы, кнопка отправки без перерисовки (фокус не теряется)
   if (ev.target && ev.target.id === 'tu-amount') {
     TUP.amount = ev.target.value;
