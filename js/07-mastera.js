@@ -589,6 +589,8 @@ function fromWithdrawMine(d) {
     var q = d.requests[i];
     if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount))) return null;
     out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount),
+               // счёт запроса (форма шагов 26–30): без ключа — личный, как на шаге 25
+               account: typeof q.account === 'string' ? q.account : 'personal',
                iso: typeof q.created_at === 'string' ? q.created_at : '',
                answer: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' });
   }
@@ -602,7 +604,8 @@ function loadWithdraw() {
   api('GET', '/withdraw/requests/mine').then(function (r) {
     if (gen !== WD.gen || who !== WHO) return;
     var got = r.status === 200 ? fromWithdrawMine(r.data) : null;
-    if (got) WD.list = got;
+    // свои запросы с ЛИЧНОГО счёта: с шагов 26–30 тот же список несёт и запросы со счетов ролей и бизнеса
+    if (got) WD.list = got.filter(function (q) { return q.account === 'personal'; });
     else { WD.list = null; WD.fail = r.status === 200 ? failText(r) : wdServerWord(r); }
     if (current === 'withdraw') render();
   });
@@ -684,4 +687,81 @@ document.addEventListener('input', function (ev) {
   if (!t) return;
   if (t.id === 'wd-amount') WD.amount = t.value;
   else if (/^wq-note-\d+$/.test(t.id)) WQ.note[Number(t.id.slice(8))] = t.value;
+});
+
+/* ── шаги 27, 29, 30: счёт роли (рецепт `_docs/recept/ekran/27/roleAccount.md`, форма — проект `backend-uvedomleniya-4e`
+   в Cafe13KPG#557, до снимка) ── Счёт держит РОЛЬ, а не человек: держателей может быть несколько, и остаток выведет
+   попросивший первым; защита — одобрение `admin`. Механика — шага 25: тот же запрос с ключом `account`. */
+// роль → счёт и его слово (R1 и заголовок); у владельца `head` и `god_mentor` — одна роль, счёт клуба один
+var RA_ACC = { art_director: 'art_director', space_manager: 'space_manager', head: 'club' };
+var RA_WORD = { art_director: 'Счёт арт-директора', space_manager: 'Счёт управляющей пространством', club: 'Счёт клуба' };
+var RA = { acc: '', accs: null, mine: null, fail: '', gen: 0, busy: false, err: '', amount: '', who: -1 };
+function raAccounts() {
+  return LIVE ? (DATA.roles || []).map(function (r) { return RA_ACC[r]; })
+    .filter(function (a, i, all) { return a && all.indexOf(a) === i; }) : [];
+}
+function mayRoleAccount(acc) { return raAccounts().indexOf(acc) !== -1; }
+/* «мои счета» — `GET /withdraw/accounts` (остаток и ждущий запрос счёта), свои запросы — `GET /withdraw/requests/mine`
+   (с ключом `account`). Оба на входе и после подачи/отмены: счёт меняют другие держатели роли и `admin`. */
+function fromRaAccounts(d) {
+  if (!d || !Array.isArray(d.accounts)) return null;
+  var out = {};
+  for (var i = 0; i < d.accounts.length; i++) {
+    var a = d.accounts[i];
+    if (!a || typeof a.account !== 'string' || !isFinite(moneyOf(a.balance))) return null;
+    var p = a.pending;
+    if (p !== null && p !== undefined && (typeof p !== 'object' || typeof p.id !== 'number' || !isFinite(moneyOf(p.amount)))) return null;
+    out[a.account] = { balance: moneyOf(a.balance), pending: p ? { id: p.id, sum: moneyOf(p.amount), iso: typeof p.created_at === 'string' ? p.created_at : '' } : null };
+  }
+  return out;
+}
+function loadRoleAccount() {
+  if (!mayRoleAccount(RA.acc)) return;
+  var gen = ++RA.gen, who = WHO, left = 2, accs, mine, fail = '';
+  if (RA.who !== WHO) { RA.accs = null; RA.mine = null; RA.amount = ''; RA.err = ''; RA.who = WHO; }
+  RA.fail = '';
+  var done = function () {
+    if (--left || gen !== RA.gen || who !== WHO) return;
+    if (fail) { RA.accs = null; RA.mine = null; RA.fail = fail; }
+    else { RA.accs = accs; RA.mine = mine; }
+    if (current === 'roleAccount') render();
+  };
+  api('GET', '/withdraw/accounts').then(function (r) {
+    accs = r.status === 200 ? fromRaAccounts(r.data) : null;
+    if (!accs && !fail) fail = r.status === 200 ? failText(r) : wdServerWord(r);
+    done();
+  });
+  api('GET', '/withdraw/requests/mine').then(function (r) {
+    var d = r.status === 200 ? fromWithdrawMine(r.data) : null;
+    if (d) mine = d.filter(function (q) { return q.account === RA.acc; });
+    else if (!fail) fail = r.status === 200 ? failText(r) : wdServerWord(r);
+    done();
+  });
+}
+function sendRoleWithdraw() {
+  if (RA.busy || !RA.accs || !mayRoleAccount(RA.acc)) return;
+  RA.busy = true; RA.err = ''; render();
+  var who = WHO, acc = RA.acc;
+  api('POST', '/withdraw/request', { amount: RA.amount.trim().replace(',', '.'), account: acc }).then(function (r) {
+    RA.busy = false;
+    if (who !== WHO) return;
+    if (r.status === 201 && r.data && typeof r.data.id === 'number') { haptic('ok'); RA.amount = ''; loadRoleAccount(); }
+    else { haptic('warn'); RA.err = wdServerWord(r); }
+    if (current === 'roleAccount') render();
+  });
+}
+function cancelRoleWithdraw(id) {
+  if (RA.busy) return;
+  RA.busy = true; RA.err = ''; render();
+  var who = WHO;
+  api('POST', '/withdraw/requests/' + id + '/cancel', {}).then(function (r) {
+    RA.busy = false;
+    if (who !== WHO) return;
+    if (r.status === 200) haptic('ok'); else { haptic('warn'); RA.err = wdServerWord(r); }
+    loadRoleAccount();
+    if (current === 'roleAccount') render();
+  });
+}
+document.addEventListener('input', function (ev) {
+  if (ev.target && ev.target.id === 'ra-amount') RA.amount = ev.target.value;
 });

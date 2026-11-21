@@ -281,6 +281,43 @@ Object.assign(SCREENS, {
     }).join('');
   },
 
+  /* шаги 27, 29, 30 (рецепт 27/roleAccount): счёт роли — один экран на троих, счёт приходит параметром (строка R1 на «Клубе»).
+     R2 стоит ВСЕГДА: счёт общий у держателей роли. Остаток — `GET /withdraw/accounts`, с суммой его клиент не сравнивает.
+     В списке — свои запросы с этого счёта и ждущий запрос счёта; чужой ждущий — без «Отменить» и без имени: форма
+     отдаёт у ждущего только номер, сумму и время (кто просил — в форме нет). */
+  roleAccount: function (acc) {
+    if (!mayRoleAccount(acc)) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Счёт роли видит тот, кто держит эту роль.</span></div></div>';
+    var r2 = '<span class="small">Это счёт роли, а не ваш личный: вывести из него может любой, кто держит эту роль. ' +
+      'Запрос решает администратор клуба; приложение записывает запрос и решение, как клуб передаст деньги — не решает.</span>';
+    if (!RA.accs || !RA.mine) return RA.fail
+      ? '<div class="card quiet"><div class="col"><b>Счёт не загрузился.</b><span class="verbatim">' + esc(RA.fail) + '</span></div>' +
+        '<button type="button" class="btn" data-action="ra-retry">Повторить</button></div>'
+      : '<div class="card quiet"><span class="small">Загружаем счёт…</span></div>';
+    var a = RA.accs[acc];
+    // счёт не назван сервером — права на него нет (сервер не кладёт в список счёт без права): формы не показываем
+    if (!a) return '<div class="card quiet"><div class="col"><b>Счёт не загрузился.</b><span class="verbatim">Сервер не назвал этот счёт среди ваших.</span></div>' +
+        '<button type="button" class="btn" data-action="ra-retry">Повторить</button></div>';
+    var busy = RA.busy ? ' disabled' : '';
+    var list = RA.mine.slice();
+    if (a.pending && !list.some(function (q) { return q.id === a.pending.id; }))
+      list.unshift({ id: a.pending.id, status: 'pending', sum: a.pending.sum, iso: a.pending.iso, answer: '', other: true });
+    return '<div class="card"><div class="col"><b>' + esc(RA_WORD[acc]) + '</b>' +
+        '<div class="row"><span class="small">На счёте:</span><b class="num">' + money(a.balance) + ' ฿</b></div>' + r2 + '</div>' +
+        '<div class="field"><label for="ra-amount">Сколько вывести, ฿</label>' +
+          '<input id="ra-amount" inputmode="decimal" autocomplete="off" value="' + esc(RA.amount) + '"></div>' +
+        '<button type="button" class="btn" data-action="ra-send"' + busy + '>Попросить вывод</button></div>' +
+      (RA.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(RA.err) + '</span></div>' : '') +
+      (!list.length ? '<div class="card quiet"><span class="small">Запросов на вывод ещё не было.</span></div>'
+        : '<div class="rows">' + list.map(function (q) {
+            return '<div><div class="col"><b class="num">' + money(q.sum) + ' ฿</b>' +
+                '<span class="small clamp1">' + esc((q.other ? 'другой держатель роли' : 'вы') + ' · ' + askedWhen(q.iso, true)) + '</span>' +
+                (q.status === 'rejected' && q.answer ? '<span class="small">' + esc(q.answer) + '</span>' : '') +
+                (q.status === 'pending' && !q.other ? '<button type="button" class="btn ghost" data-action="ra-cancel:' + q.id + '"' + busy + '>Отменить запрос</button>' : '') +
+              '</div><span class="pill' + WD_PILL[q.status] + '">' + WD_WORD[q.status] + '</span></div>';
+          }).join('') + '</div>');
+  },
+
   // E56: очередь; E56b/E56v — заявка (чек снимком / PDF); E56g (подтверждение) снят по #695; E56d — причина; E56e — своя
   topupQueue: function () {
     // слова отказа — сервера (`_may_decide`, 403) буквой

@@ -120,6 +120,7 @@ bizWorkers	—	в тесте	Cafe13KPG#545	2026-11-18	—
 bizMoney	—	в тесте	Cafe13KPG#551	2026-11-19	—
 withdraw	—	в тесте	Cafe13KPG#556	2026-11-20	_docs/recept/ekran/25/withdraw.md
 withdrawQueue	—	в тесте	Cafe13KPG#556	2026-11-20	_docs/recept/ekran/25/withdrawQueue.md
+roleAccount	—	в тесте	Cafe13KPG#557	2026-11-20	_docs/recept/ekran/27/roleAccount.md
 # ⚠ Ниже — экраны, кадры которых НАРИСОВАНЫ, а кода в клиенте нет вовсе
 # (Cafe13KPG#859, замер мой 05.11.2026: ключа SCREENS с таким предметом в
 # стволе клиента нет ни одного). Имя словами — по правилу заголовка этого
