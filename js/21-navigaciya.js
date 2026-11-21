@@ -21,7 +21,12 @@ function myRoles() {
     DATA.roles.map(function (r) { return ROLE_NAME[r] || r; })
       .filter(function (n, i, all) { return all.indexOf(n) === i; })
       .map(function (n) { return '<span class="pill">' + esc(n) + '</span>'; }).join('') +
-  '</div></div></div>';
+  '</div></div>' +
+    // шаги 27/29/30 (R1, умолчание архитектора: «Ваши роли» есть у всех троих, «Управления» у Нок нет) — строка на счёт роли
+    raAccounts().map(function (acc) {
+      return '<button type="button" class="listitem" data-go="roleAccount" data-action="ra-open:' + acc + '"><span class="grow"><b>' +
+        esc(RA_WORD[acc]) + '</b></span>' + svg(ICON.chev, 'chev') + '</button>';
+    }).join('') + '</div>';
 }
 
 /* У каждой роли свои действия. Пересечений нет: организатор не заводит
@@ -244,7 +249,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
@@ -314,7 +319,7 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', topupReq: 'topupQueue', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -408,7 +413,9 @@ function render() {
   } else {
     // шапка меню — название ВЫБРАННОГО бизнеса словом сервера (шаг 19), а не литерал таблицы
     title.textContent = LIVE && current === 'demo' ? 'Просмотр'
-      : current === 'bar' ? (LIVE ? (BAR && BAR.title) : DATA.bar.title) || 'Café XIII' : TITLES[current] || 'Café XIII';
+      : current === 'bar' ? (LIVE ? (BAR && BAR.title) : DATA.bar.title) || 'Café XIII'
+      // заголовок счёта роли — то же слово, что строка R1 (рецепт 27/roleAccount)
+      : current === 'roleAccount' && RA_WORD[param] ? RA_WORD[param] : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
   var right = document.getElementById('bar-right');
@@ -571,6 +578,10 @@ function go(screen, p) {
   if (screen === 'manage' && current !== 'manage' && mayTopups()) loadTopupQueue();
   // шаг 25: свои запросы на вывод и очередь решений — на каждом входе (admin решает без мастера, мастер отменяет без admin)
   if (screen === 'withdraw' && current !== 'withdraw') { WD.err = ''; loadWithdraw(); }
+  if (screen === 'roleAccount' && (current !== 'roleAccount' || param !== p)) {
+    if (RA.acc !== p) { RA.accs = null; RA.mine = null; RA.amount = ''; }
+    RA.acc = p; RA.err = ''; loadRoleAccount();
+  }
   if ((screen === 'manage' || screen === 'withdrawQueue') && current !== screen && mayWithdrawQueue()) { WQ.done = ''; WQ.err = {}; loadWithdrawQueue(); }
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
@@ -582,7 +593,7 @@ function go(screen, p) {
   if (screen === 'partnerApply' && current !== 'partnerApply' && LIVE) { PR.err = ''; refreshMe(); loadPartnerPrice(); }
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { PR.mineState = ''; BW.dirsAsked = false; }
   // шаг 20 (рецепт 20/bizMoney): свои бизнесы с остатком и отчёт месяца — на каждом входе; выбор бизнеса общий с bizWorkers
-  if (screen === 'bizMoney' && current !== 'bizMoney' && LIVE) { BW.lost = false; BW.dirs = null; BW.dirsFail = ''; MM.data = null; MM.fail = ''; MM.code = 0; loadMyBiz(false, true); }
+  if (screen === 'bizMoney' && current !== 'bizMoney' && LIVE) { BW.lost = false; BW.dirs = null; BW.dirsFail = ''; MM.data = null; MM.fail = ''; MM.code = 0; BWD.err = ''; loadMyBiz(false, true); }
   // шаг 14 (рецепт 14/bizWorkers, «Перечитать на входе»): свои бизнесы с оплаченностью и работники — на каждом входе;
   // запомненный бизнес сверяется со свежим списком в loadMyBiz
   if (screen === 'bizWorkers' && current !== 'bizWorkers' && LIVE) {
@@ -1109,6 +1120,10 @@ function doAction(a) {
     if (a === 'wd-retry') { loadWithdraw(); render(); return; }
     if (a === 'wq-ok') { decideWithdraw(Number(arg), 'approved'); return; }
     if (a === 'wq-no') { decideWithdraw(Number(arg), 'rejected'); return; }
+    if (a === 'ra-open') { go('roleAccount', arg); return; }
+    if (a === 'ra-send') { sendRoleWithdraw(); return; }
+    if (a === 'ra-cancel') { cancelRoleWithdraw(Number(arg)); return; }
+    if (a === 'ra-retry') { loadRoleAccount(); render(); return; }
     if (a === 'wq-retry') { loadWithdrawQueue(); render(); return; }
     if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
     if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
@@ -1159,7 +1174,11 @@ function doAction(a) {
     if (a === 'bm-retry-biz') { loadMyBiz(false, true); render(); return; }
     if (a === 'bm-retry') { loadMonth(); render(); return; }
     if (a === 'bm-refresh') { loadMyBiz(false, true); render(); return; }
-    if (a === 'bm-biz') { BW.biz = Number(arg); BW.lost = false; MM.data = null; loadMonth(); render(); return; }
+    if (a === 'bm-biz') { BW.biz = Number(arg); BW.lost = false; MM.data = null; loadMonth(); loadBizWd(); render(); return; }
+    // шаг 26: вывод денег бизнеса; после подачи и отмены — и остаток в шапке, и список (рецепт, «перечитать»)
+    if (a === 'bm-wd-send') { sendBizWd(); return; }
+    if (a === 'bm-wd-cancel') { cancelBizWd(Number(arg)); return; }
+    if (a === 'bm-wd-retry') { loadBizWd(); render(); return; }
     if (a === 'bw-biz' && !BW.busy && BW.ask === null) {
       bwGrab(); BW.biz = Number(arg); BW.lost = false; BW.list = null; BW.listFail = ''; BW.err = null; BW.rowErr = ''; BW.done = '';
       loadWorkers(); render(); return;

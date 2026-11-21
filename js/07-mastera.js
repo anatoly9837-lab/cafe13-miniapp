@@ -239,6 +239,17 @@ function msDemoFill() {
   // шаг 12: «Бизнесы клуба» кадра E75 — бар с партнёром и закрытый без партнёра (обе подписи плашки)
   BIZ.list = [{ id: 1, title: 'Бар', open: true, partner: true, who: '[партнёр]' },
               { id: 2, title: 'Кофейня', open: false, partner: false, who: null }];
+  // «Заявки в партнёры» (шаг 13) — сырой ответ `GET /partner/requests` в форме снимка `partner-requests-ops-director`,
+  // пропущенный через тот же разборщик: набор не может обещать полей, которых живой разбор не даёт
+  var prq = function (id, title, status, word, extra) {
+    return Object.assign({ id: id, title: title, about: 'Одной строкой: чем он занимается.', amount: '2600.00', status: status, status_ru: word,
+      created_at: '2026-11-18T03:00:00+00:00', decided_at: status === 'pending' ? null : '2026-11-19T05:00:00+00:00', decision_note: '',
+      direction_id: status === 'approved' ? 2 : null, paid_till: status === 'approved' ? '2026-12-19T05:00:00+00:00' : null,
+      active: status === 'approved', member_id: id, first_name: '[член клуба]', last_name: '', username: null }, extra || {});
+  };
+  var prd = fromPartnerList({ pending: 1, requests: [prq(921, 'Чайная', 'pending', 'ждёт решения', { created_at: '2026-11-19T09:00:00+00:00' }),
+    prq(922, 'Кофейня', 'approved', 'согласовано'), prq(923, 'Ремонт велосипедов', 'rejected', 'отклонено', { decision_note: 'Такой бизнес в клубе уже есть.' })] }, true);
+  if (prd) { PR.q = prd.list; PR.pending = prd.pending; }
   MR.price = {}; for (var h = 2; h <= MS_MAX_H; h++) MR.price[h] = 100;
   if (!EV_PLACES) { EV_PLACES = [{ id: 1, name: 'Зал', capacity: null }]; EV_PLACES_STATE = 'ok'; MR.demoPlaces = true; }
   MSB.data = { busy: [{ title: 'Чайная церемония', from: '16:00', to: '17:30' }], conflict: null, fits: true };
@@ -249,6 +260,7 @@ function msDemoClear() {
   MR.demo = false; MR.mine = null; MR.mineState = ''; MR.q = null; MR.pending = null; MR.slots = null; MR.without = null;
   PAY.list = null; PAY.pending = null; PAY.err = '';
   BIZ.list = null; BIZ.fail = '';
+  PR.q = null; PR.pending = null; PR.qFail = '';
   MR.price = {}; MR.priceAsk = {}; MSB.data = null; MSB.key = '';
   if (MR.demoPlaces) { MR.demoPlaces = false; EV_PLACES = null; EV_PLACES_STATE = ''; }
 }
@@ -523,8 +535,13 @@ var WD_PILL = { pending: ' gold', approved: ' on', rejected: '', cancelled: '' }
 // право подать — роль `master` в `roles` (сервер: `has_role("master")`, роль выдаёт согласование мастера); решать — `admin`
 function mayWithdraw() { return LIVE && grant('master'); }
 function mayWithdrawQueue() { return LIVE && grant('admin'); }
-// «Счёт: …» (Q6): сегодня сервер знает одну книгу — личный счёт (`ledger`); шаги 26–30 добавят книги ролей
+// «Счёт: …» (Q6): личный счёт — по книге (`ledger`); кошелёк бизнеса (шаг 26) — по `account` и названию бизнеса
 var WD_BOOK = { ledger: 'личный' };
+/* Шаг 26 (проект формы сервера в Cafe13KPG#557): какой счёт — ключ `account`; без него строка шага 25 = личный.
+   `direction_id` есть только у `business`. Один список «моих» запросов делится по счёту на экране: на «Вывести
+   деньги» — только личный, в bizMoney — только кошелёк выбранного бизнеса. */
+function wdAccount(q) { return typeof q.account === 'string' ? q.account : 'personal'; }
+function wdDir(q) { return typeof q.direction_id === 'number' ? q.direction_id : null; }
 function wdServerWord(r) { var d = detailOf(r); return d || failText(r); }
 
 /* Одна битая строка — отказ целиком: список с пропавшим запросом выглядел бы полным. */
@@ -534,7 +551,8 @@ function fromWithdrawMine(d) {
   for (var i = 0; i < d.requests.length; i++) {
     var q = d.requests[i];
     if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount))) return null;
-    out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount),
+    // счёт запроса (форма шагов 26–30): без ключа — личный, как на шаге 25
+    out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount), account: wdAccount(q), dir: wdDir(q),
                iso: typeof q.created_at === 'string' ? q.created_at : '',
                answer: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' });
   }
@@ -548,7 +566,8 @@ function loadWithdraw() {
   api('GET', '/withdraw/requests/mine').then(function (r) {
     if (gen !== WD.gen || who !== WHO) return;
     var got = r.status === 200 ? fromWithdrawMine(r.data) : null;
-    if (got) WD.list = got;
+    // свои запросы с ЛИЧНОГО счёта: с шагов 26–30 тот же список несёт и запросы со счетов ролей и бизнеса
+    if (got) WD.list = got.filter(function (q) { return q.account === 'personal'; });
     else { WD.list = null; WD.fail = r.status === 200 ? failText(r) : wdServerWord(r); }
     if (current === 'withdraw') render();
   });
@@ -587,7 +606,8 @@ function fromWithdrawQueue(d) {
     if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount)) || typeof q.member_id !== 'number') return null;
     out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount), mine: me !== null && q.member_id === me,
                name: [q.first_name, q.last_name].filter(Boolean).join(' ') || 'Без имени',
-               book: typeof q.book === 'string' ? q.book : '',
+               book: typeof q.book === 'string' ? q.book : '', account: wdAccount(q),
+               dirTitle: typeof q.direction_title === 'string' ? q.direction_title : '',
                iso: typeof q.created_at === 'string' ? q.created_at : '' });
   }
   return { list: out, pending: d.pending };
@@ -630,4 +650,81 @@ document.addEventListener('input', function (ev) {
   if (!t) return;
   if (t.id === 'wd-amount') WD.amount = t.value;
   else if (/^wq-note-\d+$/.test(t.id)) WQ.note[Number(t.id.slice(8))] = t.value;
+});
+
+/* ── шаги 27, 29, 30: счёт роли (рецепт `_docs/recept/ekran/27/roleAccount.md`, форма — проект `backend-uvedomleniya-4e`
+   в Cafe13KPG#557, до снимка) ── Счёт держит РОЛЬ, а не человек: держателей может быть несколько, и остаток выведет
+   попросивший первым; защита — одобрение `admin`. Механика — шага 25: тот же запрос с ключом `account`. */
+// роль → счёт и его слово (R1 и заголовок); у владельца `head` и `god_mentor` — одна роль, счёт клуба один
+var RA_ACC = { art_director: 'art_director', space_manager: 'space_manager', head: 'club' };
+var RA_WORD = { art_director: 'Счёт арт-директора', space_manager: 'Счёт управляющей пространством', club: 'Счёт клуба' };
+var RA = { acc: '', accs: null, mine: null, fail: '', gen: 0, busy: false, err: '', amount: '', who: -1 };
+function raAccounts() {
+  return LIVE ? (DATA.roles || []).map(function (r) { return RA_ACC[r]; })
+    .filter(function (a, i, all) { return a && all.indexOf(a) === i; }) : [];
+}
+function mayRoleAccount(acc) { return raAccounts().indexOf(acc) !== -1; }
+/* «мои счета» — `GET /withdraw/accounts` (остаток и ждущий запрос счёта), свои запросы — `GET /withdraw/requests/mine`
+   (с ключом `account`). Оба на входе и после подачи/отмены: счёт меняют другие держатели роли и `admin`. */
+function fromRaAccounts(d) {
+  if (!d || !Array.isArray(d.accounts)) return null;
+  var out = {};
+  for (var i = 0; i < d.accounts.length; i++) {
+    var a = d.accounts[i];
+    if (!a || typeof a.account !== 'string' || !isFinite(moneyOf(a.balance))) return null;
+    var p = a.pending;
+    if (p !== null && p !== undefined && (typeof p !== 'object' || typeof p.id !== 'number' || !isFinite(moneyOf(p.amount)))) return null;
+    out[a.account] = { balance: moneyOf(a.balance), pending: p ? { id: p.id, sum: moneyOf(p.amount), iso: typeof p.created_at === 'string' ? p.created_at : '' } : null };
+  }
+  return out;
+}
+function loadRoleAccount() {
+  if (!mayRoleAccount(RA.acc)) return;
+  var gen = ++RA.gen, who = WHO, left = 2, accs, mine, fail = '';
+  if (RA.who !== WHO) { RA.accs = null; RA.mine = null; RA.amount = ''; RA.err = ''; RA.who = WHO; }
+  RA.fail = '';
+  var done = function () {
+    if (--left || gen !== RA.gen || who !== WHO) return;
+    if (fail) { RA.accs = null; RA.mine = null; RA.fail = fail; }
+    else { RA.accs = accs; RA.mine = mine; }
+    if (current === 'roleAccount') render();
+  };
+  api('GET', '/withdraw/accounts').then(function (r) {
+    accs = r.status === 200 ? fromRaAccounts(r.data) : null;
+    if (!accs && !fail) fail = r.status === 200 ? failText(r) : wdServerWord(r);
+    done();
+  });
+  api('GET', '/withdraw/requests/mine').then(function (r) {
+    var d = r.status === 200 ? fromWithdrawMine(r.data) : null;
+    if (d) mine = d.filter(function (q) { return q.account === RA.acc; });
+    else if (!fail) fail = r.status === 200 ? failText(r) : wdServerWord(r);
+    done();
+  });
+}
+function sendRoleWithdraw() {
+  if (RA.busy || !RA.accs || !mayRoleAccount(RA.acc)) return;
+  RA.busy = true; RA.err = ''; render();
+  var who = WHO, acc = RA.acc;
+  api('POST', '/withdraw/request', { amount: RA.amount.trim().replace(',', '.'), account: acc }).then(function (r) {
+    RA.busy = false;
+    if (who !== WHO) return;
+    if (r.status === 201 && r.data && typeof r.data.id === 'number') { haptic('ok'); RA.amount = ''; loadRoleAccount(); }
+    else { haptic('warn'); RA.err = wdServerWord(r); }
+    if (current === 'roleAccount') render();
+  });
+}
+function cancelRoleWithdraw(id) {
+  if (RA.busy) return;
+  RA.busy = true; RA.err = ''; render();
+  var who = WHO;
+  api('POST', '/withdraw/requests/' + id + '/cancel', {}).then(function (r) {
+    RA.busy = false;
+    if (who !== WHO) return;
+    if (r.status === 200) haptic('ok'); else { haptic('warn'); RA.err = wdServerWord(r); }
+    loadRoleAccount();
+    if (current === 'roleAccount') render();
+  });
+}
+document.addEventListener('input', function (ev) {
+  if (ev.target && ev.target.id === 'ra-amount') RA.amount = ev.target.value;
 });
