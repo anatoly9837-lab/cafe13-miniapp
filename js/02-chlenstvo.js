@@ -357,7 +357,7 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               // шаги 27/29/30: счёт роли (форма — проект в Cafe13KPG#557, миграция 037)
               roleAccount: 1,
               // шаг 3 (v109): мастера на ручках сервера — бой `bbf09f8`, миграция 020 накачена
-              masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1, masterRenew: 1,
+              masters: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterList: 1, masterApply: 1,
               // шаг 4 (слово владельца 30.10.2026, Cafe13KPG#670): афиша доступна всем — из FROZEN обратно сюда
               events: 1, event: 1,
               // шаг 4, пункт третий — «Свои ивенты» мастеру и правка недели (кадры E55k/E55l, ручка `POST /events/{id}/edit`)
@@ -415,8 +415,8 @@ var PROTO = {};
 /* Витрина вне Telegram (Cafe13KPG#637): экраны шага 3 рисуются на демо-наборе, а не отказом и не
    «Загружаем…». Над ними — плашка прототипа: данные примерные, нажатия ничего не отправляют (загрузчики и
    отправки модуля мастеров вне LIVE возвращаются, не позвав сервер). Демо-человек — МАСТЕР со своим
-   согласованным слотом (решение координатора): живы «Клуб» с «Продлить», продление и «Вы мастер».
-   Форму E54b и «Заявка уже ждёт решения» снимает опись своей фикстурой (`MR.mine = []` / `[pending]`). */
-var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1, masterRenew: 1,
+   согласованным букингом и ждущим вторым (Cafe13KPG#985): «Клуб» показывает список букингов.
+   Форму E54b снимает опись своей фикстурой (`MR.mine = []`). */
+var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1,
                payouts: 1, payout: 1, businesses: 1, partnerReqs: 1, partnerReq: 1 };
 

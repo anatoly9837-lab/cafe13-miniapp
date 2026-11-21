@@ -424,14 +424,24 @@
   },
   "status": 200
  },
- "event-edit-403-not-organizer": {
+ "event-edit-200-master": {
   "request": "POST /events/N/edit",
   "shape": {
-   "detail": null
+   "about": null,
+   "ask_donation": null,
+   "duration_min": null,
+   "id": null,
+   "kind": null,
+   "place_id": null,
+   "price": null,
+   "seats": null,
+   "starts_at": null,
+   "state": null,
+   "title": null
   },
-  "status": 403
+  "status": 200
  },
- "event-edit-403-unpaid-master": {
+ "event-edit-403-not-organizer": {
   "request": "POST /events/N/edit",
   "shape": {
    "detail": null
@@ -594,6 +604,13 @@
    "detail": null
   },
   "status": 409
+ },
+ "events-403-master": {
+  "request": "POST /events",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
  },
  "events-afisha": {
   "request": "GET /events",
@@ -1092,6 +1109,13 @@
   },
   "status": 409
  },
+ "master-decide-409-legacy": {
+  "request": "POST /master/requests/N/decide",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
  "master-decide-409-own": {
   "request": "POST /master/requests/N/decide",
   "shape": {
@@ -1139,95 +1163,12 @@
   },
   "status": 422
  },
- "master-renew-201": {
-  "request": "POST /master/requests/N/periods",
-  "shape": {
-   "about": null,
-   "amount": null,
-   "charged": null,
-   "created_at": null,
-   "decided_at": null,
-   "decision_note": null,
-   "events": [],
-   "hours": null,
-   "hours_extra": null,
-   "id": null,
-   "months": [],
-   "paid_till": null,
-   "paid_until": null,
-   "periods": [
-    {
-     "ends_at": null,
-     "starts_at": null
-    }
-   ],
-   "place_id": null,
-   "place_name": null,
-   "seats": null,
-   "start_local": null,
-   "status": null,
-   "status_ru": null,
-   "title": null,
-   "weekday": null,
-   "weekday_ru": null
-  },
-  "status": 201
- },
- "master-renew-409-busy": {
+ "master-renew-409": {
   "request": "POST /master/requests/N/periods",
   "shape": {
    "detail": null
   },
   "status": 409
- },
- "master-renew-409-no-money": {
-  "request": "POST /master/requests/N/periods",
-  "shape": {
-   "detail": null
-  },
-  "status": 409
- },
- "master-renew-preview": {
-  "request": "GET /master/requests/N/periods/preview?months=N",
-  "shape": {
-   "charged": null,
-   "enough": null,
-   "months": [],
-   "paid_till": null,
-   "paid_until": null,
-   "per_month": null,
-   "periods": [
-    {
-     "ends_at": null,
-     "starts_at": null
-    }
-   ],
-   "request_id": null,
-   "short": null,
-   "weeks": null
-  },
-  "status": 200
- },
- "master-renew-preview-short": {
-  "request": "GET /master/requests/N/periods/preview?months=N",
-  "shape": {
-   "charged": null,
-   "enough": null,
-   "months": [],
-   "paid_till": null,
-   "paid_until": null,
-   "per_month": null,
-   "periods": [
-    {
-     "ends_at": null,
-     "starts_at": null
-    }
-   ],
-   "request_id": null,
-   "short": null,
-   "weeks": null
-  },
-  "status": 200
  },
  "master-request-201": {
   "request": "POST /master/request",
@@ -1246,6 +1187,7 @@
    "place_name": null,
    "seats": null,
    "start_local": null,
+   "starts_at": null,
    "status": null,
    "status_ru": null,
    "title": null,
@@ -1271,6 +1213,33 @@
    "place_name": null,
    "seats": null,
    "start_local": null,
+   "starts_at": null,
+   "status": null,
+   "status_ru": null,
+   "title": null,
+   "weekday": null,
+   "weekday_ru": null
+  },
+  "status": 201
+ },
+ "master-request-201-second": {
+  "request": "POST /master/request",
+  "shape": {
+   "about": null,
+   "amount": null,
+   "created_at": null,
+   "decided_at": null,
+   "decision_note": null,
+   "hours": null,
+   "hours_extra": null,
+   "id": null,
+   "paid_till": null,
+   "paid_until": null,
+   "place_id": null,
+   "place_name": null,
+   "seats": null,
+   "start_local": null,
+   "starts_at": null,
    "status": null,
    "status_ru": null,
    "title": null,
@@ -1293,6 +1262,13 @@
   },
   "status": 404
  },
+ "master-request-409-membership-ends": {
+  "request": "POST /master/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
  "master-request-409-no-money": {
   "request": "POST /master/request",
   "shape": {
@@ -1300,14 +1276,7 @@
   },
   "status": 409
  },
- "master-request-409-nothing": {
-  "request": "POST /master/request",
-  "shape": {
-   "detail": null
-  },
-  "status": 409
- },
- "master-request-409-pending": {
+ "master-request-409-past": {
   "request": "POST /master/request",
   "shape": {
    "detail": null
@@ -1371,6 +1340,7 @@
      "place_name": null,
      "seats": null,
      "start_local": null,
+     "starts_at": null,
      "status": null,
      "status_ru": null,
      "title": null,
@@ -1384,7 +1354,30 @@
  "master-requests-mine-empty": {
   "request": "GET /master/requests/mine",
   "shape": {
-   "requests": []
+   "requests": [
+    {
+     "about": null,
+     "amount": null,
+     "created_at": null,
+     "decided_at": null,
+     "decision_note": null,
+     "hours": null,
+     "hours_extra": null,
+     "id": null,
+     "paid_till": null,
+     "paid_until": null,
+     "place_id": null,
+     "place_name": null,
+     "seats": null,
+     "start_local": null,
+     "starts_at": null,
+     "status": null,
+     "status_ru": null,
+     "title": null,
+     "weekday": null,
+     "weekday_ru": null
+    }
+   ]
   },
   "status": 200
  },
@@ -1407,6 +1400,7 @@
      "place_name": null,
      "seats": null,
      "start_local": null,
+     "starts_at": null,
      "status": null,
      "status_ru": null,
      "title": null,
@@ -1436,6 +1430,7 @@
      "place_name": null,
      "seats": null,
      "start_local": null,
+     "starts_at": null,
      "status": null,
      "status_ru": null,
      "title": null,
@@ -1468,6 +1463,7 @@
      "place_name": null,
      "seats": null,
      "start_local": null,
+     "starts_at": null,
      "status": null,
      "status_ru": null,
      "title": null,
@@ -1480,83 +1476,55 @@
   "status": 200
  },
  "master-slot-busy": {
-  "request": "GET /master/slot-busy?place_id=N&weekday=N",
+  "request": "GET /master/slot-busy?place_id=N&date=D",
   "shape": {
-   "dates": [
+   "busy": [
     {
-     "busy": [
-      {
-       "ends_at": null,
-       "starts_at": null,
-       "title": null
-      }
-     ],
-     "date": null
+     "ends_at": null,
+     "starts_at": null,
+     "title": null
     }
    ],
-   "month": null,
+   "date": null,
    "place_id": null,
-   "place_name": null,
-   "weekday": null,
-   "weekday_ru": null,
-   "window": {
-    "ends_at": null,
-    "starts_at": null
-   }
+   "place_name": null
   },
   "status": 200
  },
  "master-slot-busy-422": {
-  "request": "GET /master/slot-busy?place_id=N&weekday=N&start_local=N:N",
+  "request": "GET /master/slot-busy?place_id=N&date=D&start_local=N:N",
   "shape": {
    "detail": null
   },
   "status": 422
  },
  "master-slot-busy-time": {
-  "request": "GET /master/slot-busy?place_id=N&weekday=N&start_local=N:N&hours=N",
+  "request": "GET /master/slot-busy?place_id=N&date=D&start_local=N:N&hours=N",
   "shape": {
-   "dates": [
+   "busy": [
     {
-     "busy": [
-      {
-       "ends_at": null,
-       "starts_at": null,
-       "title": null
-      }
-     ],
-     "conflict": {
-      "ends_label": null,
-      "starts_label": null,
-      "title": null
-     },
-     "date": null,
-     "starts_at": null
+     "ends_at": null,
+     "starts_at": null,
+     "title": null
     }
    ],
+   "conflict": {
+    "ends_label": null,
+    "starts_label": null,
+    "title": null
+   },
+   "date": null,
    "fits": null,
-   "month": null,
    "place_id": null,
    "place_name": null,
-   "weekday": null,
-   "weekday_ru": null,
-   "window": {
-    "ends_at": null,
-    "starts_at": null
-   }
+   "starts_at": null
   },
   "status": 200
  },
  "master-slots": {
   "request": "GET /master/slots",
   "shape": {
-   "masters_without_slot": [
-    {
-     "first_name": null,
-     "last_name": null,
-     "username": null
-    }
-   ],
+   "masters_without_slot": [],
    "slots": [
     {
      "first_name": null,
@@ -1568,6 +1536,7 @@
      "place_name": null,
      "request_id": null,
      "start_local": null,
+     "starts_at": null,
      "state": null,
      "title": null,
      "username": null,

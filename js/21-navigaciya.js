@@ -14,15 +14,8 @@ function notWired(what) {
   '</div></div>';
 }
 
-// E68: «Продлить» — прямо под ролями, а не в конце экрана: прочтя роль, мастер видит, где платить.
-// Только у своей СОГЛАСОВАННОЙ заявки: у мастера по старому виду членства слота нет
-function masterRenewDoor() {
-  return LIVE && msIsMaster() && msOwnSlot() ? '<button type="button" class="btn ghost" data-go="masterRenew">Продлить</button>' : '';
-}
-
 function myRoles() {
-  var door = masterRenewDoor();
-  if (!DATA.roles || !DATA.roles.length) return door;
+  if (!DATA.roles || !DATA.roles.length) return '';
   return '<div class="group"><span class="label">Ваши роли</span><div class="card quiet"><div class="row" style="flex-wrap:wrap;gap:6px;justify-content:flex-start">' +
     // head и god_mentor у владельца — одно и то же звание: одна плашка
     DATA.roles.map(function (r) { return ROLE_NAME[r] || r; })
@@ -33,7 +26,7 @@ function myRoles() {
     raAccounts().map(function (acc) {
       return '<button type="button" class="listitem" data-go="roleAccount" data-action="ra-open:' + acc + '"><span class="grow"><b>' +
         esc(RA_WORD[acc]) + '</b></span>' + svg(ICON.chev, 'chev') + '</button>';
-    }).join('') + door + '</div>';
+    }).join('') + '</div>';
 }
 
 /* У каждой роли свои действия. Пересечений нет: организатор не заводит
@@ -260,7 +253,7 @@ var TITLES = {
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
-  masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера', masterRenew: 'Продление',
+  masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера',
   payouts: 'Распределить', payout: 'Распределить', businesses: 'Бизнесы клуба',
   partnerApply: 'Заявка в партнёры', partnerReqs: 'Заявки в партнёры', partnerReq: 'Заявка в партнёры',
   bizWorkers: 'Работники бизнеса', bizMoney: 'Деньги бизнеса'
@@ -327,7 +320,7 @@ var BACK = {
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
   people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
-  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home', masterRenew: 'home',
+  masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
@@ -614,10 +607,9 @@ function go(screen, p) {
   if (screen === 'businesses' && current !== 'businesses' && mayOps()) {
     if (!DOLI.busy) { DOLI.id = null; DOLI.err = ''; } loadBusinesses();
   }
-  if (screen === 'masterRenew' && current !== 'masterRenew' && LIVE) { RNW.err = ''; RNW.key = ''; if (MR.mineState === '' || !MR.mine) loadMineMaster(); }
   // вход на экран, где остаток решает (кнопки «Я мастер», «+» часа, пополнение), — перечитать его (Cafe13KPG#638)
   // кроме первого входа с «Загрузки»: остаток только что пришёл ответом /me на старте
-  if ({ home: 1, topup: 1, masterApply: 1, masterRenew: 1, withdraw: 1 }[screen] && current !== screen && current !== 'loading' && LIVE && !noEntry()) refreshMe();
+  if ({ home: 1, topup: 1, masterApply: 1, withdraw: 1 }[screen] && current !== screen && current !== 'loading' && LIVE && !noEntry()) refreshMe();
   // шаг 3: каждый вход — свежие данные сервера
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { MR.mineState = ''; }
   if ((screen === 'masters' || screen === 'masterReqs') && current !== screen && mayMasters()) { MR.qErr = ''; loadMasterQueue(); loadMineMaster(); }
@@ -626,7 +618,7 @@ function go(screen, p) {
   if (screen === 'masterEvent') { MR.sErr = ''; if (!MR.slots && mayMasters()) loadSlots(); }
   if (screen === 'masterApply' && current !== 'masterApply' && LIVE) {
     MSF.err = ''; if (!EV_PLACES && EV_PLACES_STATE !== 'loading') loadPlaces();
-    loadPrice(2); loadPrice(2 + MSF.extra); loadPrice(3 + MSF.extra);
+    loadPrice(2); loadPrice(2 + MSF.extra);
     if (MR.mineState === '') loadMineMaster();
   }
   if (screen === 'topupQueue' && current !== 'topupQueue') { TOPQ.err = ''; TOPQ.step = ''; TOPQ.note = ''; if (mayTopups()) loadTopupQueue(); }
@@ -711,9 +703,9 @@ document.addEventListener('input', function (ev) {
   if (tail) tail.hidden = !eh.ok;
 });
 
-// «Начало» — выбор (select): смена значения кликом не приходит, а занятость обязана перечитаться под новое время
+// «Дата» и «Начало» — поля выбора: смена значения кликом не приходит, а занятость обязана перечитаться под новые дату и время
 document.addEventListener('change', function (ev) {
-  if (ev.target && ev.target.id === 'msf-time' && current === 'masterApply') { msfGrab(); MSF.err = ''; render(); }
+  if (ev.target && (ev.target.id === 'msf-time' || ev.target.id === 'msf-date') && current === 'masterApply') { msfGrab(); MSF.err = ''; render(); }
 });
 document.addEventListener('click', function (ev) {
   var el = ev.target.closest('[data-go],[data-event],[data-role],[data-kind],[data-place],[data-toggle],[data-manage],[data-action],[data-drink],[data-where],[data-pay],[data-exp],[data-expay]');
@@ -1148,21 +1140,12 @@ function doAction(a) {
       MSF.err = '';
     }
     if (a === 'ms-apply') { MSF.err = ''; go('masterApply'); return; }
-    if (a === 'msf-day') { MSF.day = Number(arg); render(); return; }
     if (a === 'msf-busy-retry') { MSB.key = ''; render(); return; }
-    if (a === 'msf-plus' && 2 + MSF.extra < MS_MAX_H && MR.price[3 + MSF.extra] <= msBalance()) {
-      MSF.extra += 1; loadPrice(3 + MSF.extra); render(); return;
+    if (a === 'msf-plus' && 2 + MSF.extra < MS_MAX_H) {
+      MSF.extra += 1; loadPrice(2 + MSF.extra); render(); return;
     }
     if (a === 'msf-minus' && MSF.extra > 0) { MSF.extra -= 1; render(); return; }
     if (a === 'ms-send') { sendMaster(); return; }
-    if (a === 'rnw-plus' && RNW.months < RNW_MAX && !UNDO.key) { RNW.months += 1; RNW.err = ''; render(); return; }
-    if (a === 'rnw-minus' && RNW.months > 1 && !UNDO.key) { RNW.months -= 1; RNW.err = ''; render(); return; }
-    if (a === 'rnw-retry') { RNW.key = ''; render(); return; }
-    // окно отмены ДО отправки (E59b) — общая функция снятия уровня; ключ несёт номер слота и число месяцев
-    if (a === 'rnw-go' && RNW.prev && RNW.prev.enough && !RNW.busy && msOwnSlot()) {
-      RNW.err = ''; undoStart('renew:' + msOwnSlot().id + ':' + RNW.months, renewSend, { leave: 'cancel' }); render(); return;
-    }
-    if (a === 'rnw-keep') { if (UNDO.key && /^renew:/.test(UNDO.key)) undoStop(); render(); return; }
     if (a === 'ms-yes' && mayMasters()) { decideMaster(Number(arg), 'approved'); return; }
     // форму отказа видит и витрина (опись снимет её состояние); отправка вне Telegram не уходит — decideMaster
     if (a === 'ms-ask' && (mayMasters() || !LIVE) && !MR.busy) { MR.ask = Number(arg); MR.note = ''; MR.qErr = ''; render(); return; }

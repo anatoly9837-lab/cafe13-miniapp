@@ -92,11 +92,11 @@ const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
     // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
     ['Пожизненно', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
-    // 5 = /me, /events и три запроса блока «Я мастер» на «Клубе»: /master/requests/mine, /master/price?hours=2 и
-    // hours=3 (цена часа сверх — в подписи «ещё час — N ฿», с сервера, а не константой); 7 — плюс два запроса блока
+    // 4 = /me, /events и два запроса блока букинга на «Клубе»: /master/requests/mine и /master/price?hours=2 (цена
+    // от часов не зависит — Cafe13KPG#985, второй цены блок не спрашивает); 6 — плюс два запроса блока
     // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера)
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 7],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 7],
+    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
+  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 6],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['нет в списке'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -660,7 +660,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.waitForTimeout(200);
       // экраны — из PROTO самой страницы, а не списком здесь: v107 добавил masterEvent, и список из пяти
       // его не знал. Меньше пяти — признак сломан (PROTO не прочитан), а не «прототипов стало меньше»
-      // привратник у прототипов НЕ один: экраны арт-директора стережёт mayMasters, «Я мастер» (masterApply,
+      // привратник у прототипов НЕ один: экраны арт-директора стережёт mayMasters, «Забукать» (masterApply,
       // v108) — членство. Делим по СВОЙСТВУ тела экрана; прототип без известного привратника — «не выполнено»,
       // а не молча вне проверки (иначе следующий экран со своим привратником дал бы ложное красное или ничего)
       const split = await s.p.evaluate(() => {
@@ -695,7 +695,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
-    // экраны, которые стережёт ЧЛЕНСТВО («Я мастер», masterApply): гостю — «Сюда нельзя», члену клуба без
+    // экраны, которые стережёт ЧЛЕНСТВО («Забукать», masterApply): гостю — «Сюда нельзя», члену клуба без
     // ролей — экран формы; с v109 он на ручках (места, цена, своя заявка), плашки и «ноля запросов» нет
     const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = []; guest.roles = [];
     const plain = clone(OWNER); plain.roles = [];
@@ -901,25 +901,27 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     price: '120.00', mins: 10, is_alcohol: false, sort: 0, state: 'draft', decision_note: '' }, extra || {});
 
   // ── М.2: заглушки ручек мастера — на уровне функции, а не в блоке случаев: те же построители уходят в `STUBS`
-  // (сверка с формой сервера по снимкам `master-*`, cafe13-miniapp#255). ⚠ `paid_until` (старое поле, сервер отдаёт
-  // его рядом с `paid_till`) стоит НАРОЧНО другим днём: разборщик, читающий его вместо `paid_till`, обязан краснеть.
-  const PRICE = h => 2700 + 1300 * (h - 2);
+  // (сверка с формой сервера по снимкам `master-*`). Букинг (Cafe13KPG#985): `starts_at` — МОМЕНТ начала, считается
+  // от «сейчас» прогона: букинг на прошедшую дату клиент не показывает, и константа однажды тихо ушла бы в прошлое.
+  // ⚠ Цена в заглушке НАРОЧНО не 100: клиент, подставивший свою константу, совпал бы с ценой сервера и прошёл бы зелёным.
+  const PRICE = () => 130;
+  // дата по острову (+07:00) через `days` дней от сегодня и момент начала в ней
+  const MDAY = days => new Date(Date.now() + 7 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);
+  const MAT = (days, hm) => MDAY(days) + 'T' + (hm || '18:00') + ':00+07:00';
   const mreq = (id, status, extra) => Object.assign({ id, title: 'Проба мастера', about: '', seats: 8, place_id: 1, place_name: 'Зал',
     weekday: 4, weekday_ru: 'четверг', start_local: '18:00', hours: 2, hours_extra: 0, amount: String(PRICE(2)), status,
     status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
-    created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null, paid_until: null },
-    extra && extra.paid_till ? { paid_until: '2026-10-01' } : {}, extra || {});
-  // `months` в ответе — пустой список, как в снимке `master-renew-preview` (элемента сверить не с чем); клиент его не читает
-  const MPREVIEW = N => ({ request_id: 901, months: [],
-    per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', periods: Array(N).fill(null).map((_, i) => ({ starts_at: i ? '2026-12-30T07:30:00+00:00' : '2026-11-30T07:30:00+00:00', ends_at: i ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00' })),
-    paid_till: N === 2 ? '2027-01-30T07:30:00+00:00' : '2026-12-30T07:30:00+00:00', paid_until: '2026-10-01', enough: true, short: '0.00' });
-  const MRENEWED = () => Object.assign(mreq(901, 'approved', { paid_till: '2027-01-30T07:30:00+00:00' }), { charged: '5400.00', months: [],
-    events: [], periods: [{ starts_at: '2026-12-30T07:30:00+00:00', ends_at: '2027-01-30T07:30:00+00:00' }] });
+    created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null, paid_until: null,
+    starts_at: MAT(7) }, extra || {});
+  // строка `/master/slots` — букинг (у прежних недельных `starts_at` null)
+  const mslot = (id, extra) => Object.assign({ request_id: id, title: 'Проба мастера', weekday: 4, weekday_ru: 'четверг', start_local: '18:00',
+    hours: 2, hours_extra: 0, paid_until: null, place_name: 'Зал', first_name: '[мастер]', last_name: '', username: 'm' + id, weeks_on: 1, weeks_off: 0,
+    membership_live: true, state: 'published', starts_at: MAT(7) }, extra || {});
+  const mbusy = (date, fits, busy, conflict) => ({ place_id: 1, place_name: 'Зал', date, busy: busy || [], starts_at: date + 'T18:00:00+07:00',
+    conflict: conflict || null, fits });
 
-  // ── «Я мастер» на «Клубе» (v109 на ручках, кадры E54*): цена сервера, «+» по остатку, подача, своя заявка ──
-  // Замеры frontend-upravlenie-ec; подлог arhitector-47 на v108 («+» без сверки) держит вторая линия ниже.
-  // ⚠ Цена в заглушке НАРОЧНО не 2 600: клиент, подставивший свою константу, совпал бы с «естественной» ценой
-  // и прошёл бы зелёным. Каждое нажатие — через tapIf: нет элемента — красная строка, а не обрыв батареи.
+  // ── букинг мастера на «Клубе» (кадры E54*; модель — Cafe13KPG#985, редакция 2): цена сервера, подача на ДАТУ,
+  // свои букинги списком. Каждое нажатие — через tapIf: нет элемента — красная строка, а не обрыв батареи.
   if (part(1)) {
     const mem = (bal, roles) => { const p = clone(OWNER); p.roles = roles.map(role => ({ role, direction_id: null })); p.balance = bal; return p; };
     // заглушки ручек мастера; mine — функцией, чтобы после подачи перечитанный список был уже с заявкой
@@ -928,7 +930,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (u.startsWith('/master/price')) { const h = Number((u.match(/hours=(\d+)/) || [])[1]); return json(200, { hours: h, hours_included: 2, amount: String(PRICE(h)) }); }
       if (u === '/master/requests/mine') return json(200, { requests: o.mine() });
       if (u === '/master/requests') return json(200, { requests: o.queue || [], pending: (o.queue || []).length });
-      if (u === '/master/slots') return json(200, { slots: [], masters_without_slot: [] });
+      if (u === '/master/slots') return json(200, { slots: o.slots || [], masters_without_slot: [] });
+      // продления нет (Cafe13KPG#985): сервер отвечает 409, клиент звать не должен — каждый вызов записывается
+      if (/\/periods/.test(u)) { (o.periods = o.periods || []).push(m + ' ' + u); return json(409, { detail: 'продление не нужно: букинг — на один ивент' }); }
       if (u === '/places') return json(200, [{ id: 1, name: 'Зал', capacity: 20, state: 'active' }]);
       if (u === '/master/request' && m === 'POST') { o.posted.push(JSON.parse(q.postData() || '{}')); o.after && o.after(); return json(201, mreq(901, 'pending')); }
       return undefined;
@@ -940,41 +944,41 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       return ok;
     };
     const offer = s => s.p.evaluate(() => {
-      const b = [...document.querySelectorAll('#view [data-action="ms-apply"]')].filter(x => x.textContent === 'Я мастер')[0];
+      const b = [...document.querySelectorAll('#view [data-action="ms-apply"]')].filter(x => x.textContent === 'Забукать')[0];
       return { has: !!b, off: b ? b.disabled : null, text: document.getElementById('view').textContent };
     });
-    // меньше цены сервера — «Я мастер» погашен, и недостача названа ДО нажатия словами СЕРВЕРНОЙ цены
+    // меньше цены сервера — «Забукать» погашен, и недостача названа ДО нажатия словами СЕРВЕРНОЙ цены
     {
       const n = 'offer-short';
       const o = { mine: () => [], posted: [] };
-      const s = await open(true, true, json(200, mem(2000, [])), null, null, null, masterApi(o));
+      const s = await open(true, true, json(200, mem(100, [])), null, null, null, masterApi(o));
       await s.p.waitForTimeout(300);
       const f = await offer(s);
-      if (!f.has) bad.push(`${n}: на «Клубе» нет «Я мастер» у члена клуба`);
+      if (!f.has) bad.push(`${n}: на «Клубе» нет «Забукать» у члена клуба`);
       else {
-        if (f.off !== true) bad.push(`${n}: при остатке 2 000 «Я мастер» нажимается — цена 2 700`);
-        if (!f.text.includes('Не хватает 700 ฿')) bad.push(`${n}: недостача не названа ценой сервера (ждали «Не хватает 700 ฿»)`);
+        if (f.off !== true) bad.push(`${n}: при остатке 100 «Забукать» нажимается — цена 130`);
+        if (!f.text.includes('Не хватает 30 ฿')) bad.push(`${n}: недостача не названа ценой сервера (ждали «Не хватает 30 ฿»)`);
         if (f.text.includes('Прототип')) bad.push(`${n}: у блока плашка «Прототип» — с v109 он на ручках`);
       }
       await s.ctx.close();
     }
-    // ровно цена — «Я мастер» жив, «+» часа погашен (следующий час дороже остатка); вторая линия — обработчик
+    // ровно цена — «Забукать» жив; «+» часа жив и цену под новые часы спрашивает у СЕРВЕРА (цена от часов не
+    // зависит, но клиент её не обещает: начни сервер брать за час — форма скажет это без правки клиента)
     {
       const n = 'offer-exact';
       const o = { mine: () => [], posted: [] };
       const s = await open(true, true, json(200, mem(PRICE(2), [])), null, null, null, masterApi(o));
       await s.p.waitForTimeout(300);
       const f = await offer(s);
-      if (!f.has || f.off !== false) bad.push(`${n}: при остатке ровно в цену «Я мастер» недоступен (${JSON.stringify(f.off)})`);
-      else if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+      if (!f.has || f.off !== false) bad.push(`${n}: при остатке ровно в цену «Забукать» недоступен (${JSON.stringify(f.off)})`);
+      else if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
         await s.p.waitForTimeout(200);
-        if (await s.p.evaluate(() => current) !== 'masterApply') bad.push(`${n}: «Я мастер» не открыл заявку`);
-        else {
-          const plusOff = await s.p.evaluate(() => { const b = document.querySelector('[data-action="msf-plus"]'); return b ? b.disabled : null; });
-          if (plusOff !== true) bad.push(`${n}: при остатке ровно в цену «+» часа доступен — следующий час дороже (${JSON.stringify(plusOff)})`);
-          await s.p.evaluate(() => { const b = document.querySelector('[data-action="msf-plus"]'); if (b) { b.disabled = false; b.click(); } });
-          await s.p.waitForTimeout(150);
-          if (await s.p.evaluate(() => MSF.extra) !== 0) bad.push(`${n}: обработчик «+» прибавил час сверх остатка — сверки суммы нет`);
+        if (await s.p.evaluate(() => current) !== 'masterApply') bad.push(`${n}: «Забукать» не открыл форму`);
+        else if (await tapIf(s, n, '[data-action="msf-plus"]', '«+» часа')) {
+          await s.p.waitForTimeout(300);
+          if (!s.calls.some(c => /\/master\/price\?hours=3$/.test(c.url))) bad.push(`${n}: после «+» цена 3 часов не спрошена у сервера`);
+          const t = (await s.view()).replace(/[\s\u00a0\u202f]/g, '');
+          if (!t.includes('Спишется·3часа130฿')) bad.push(`${n}: после «+» не «Спишется · 3 часа 130 ฿» — сумма не из ответа сервера`);
         }
       }
       if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия «Отправить»`);
@@ -987,17 +991,18 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const o = { mine: () => (sent ? [mreq(901, 'pending')] : []), posted: [], after: () => { sent = true; } };
       const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
       await s.p.waitForTimeout(300);
-      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
         await s.p.waitForTimeout(300);
         // место ФИКСИРОВАНО «Зал» (слово владельца) — чипа нет, номер места берётся из /places по имени
         if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
-        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить букинг»');
         await s.p.waitForTimeout(300);
         const b = o.posted[0] || {};
         if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
         // мест по умолчанию 0 = «без ограничения» (слово владельца)
-        else if (b.title !== 'Проба мастера' || b.seats !== 0 || b.place_id !== 1 || b.hours !== 2 || b.weekday !== 4 || b.start_local !== '18:00')
-          bad.push(`${n}: тело заявки не то: ${JSON.stringify(b)}`);
+        // дата — по умолчанию завтра по острову; дня недели в теле нет (сервер выводит его из даты)
+        else if (b.title !== 'Проба мастера' || b.seats !== 0 || b.place_id !== 1 || b.hours !== 2 || b.starts_on !== MDAY(1) || b.start_local !== '18:00' || 'weekday' in b)
+          bad.push(`${n}: тело букинга не то: ${JSON.stringify(b)}`);
         if (!(await s.view()).includes('ждёт решения')) bad.push(`${n}: после подачи на «Клубе» нет «ждёт решения» — своя заявка не перечитана`);
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
@@ -1005,15 +1010,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
     // ── повторная заявка заполнена последней ОТПРАВЛЕННОЙ (слово владельца 31.10.2026, Cafe13KPG#697) ──
     // Последняя по created_at стоит в ответе ПОСЛЕДНЕЙ: клиент, взявший первую строку без сортировки, получил бы старую.
-    const OLD = mreq(801, 'rejected', { title: 'Старая проба', about: 'старое', seats: 5, weekday: 2, start_local: '10:00',
+    // ДАТА не подставляется (Cafe13KPG#985: «на следующую неделю надо букать следующий») — у прошлого букинга она своя
+    const OLD = mreq(801, 'rejected', { title: 'Старая проба', about: 'старое', seats: 5, weekday: 2, start_local: '10:00', starts_at: MAT(3, '10:00'),
       created_at: '2026-10-20T10:00:00+07:00', decided_at: '2026-10-21T10:00:00+07:00' });
-    const NEW = mreq(802, 'rejected', { title: 'Гончарный вечер', about: 'Глина и круг', seats: 12, weekday: 6, start_local: '19:30',
+    const NEW = mreq(802, 'rejected', { title: 'Гончарный вечер', about: 'Глина и круг', seats: 12, weekday: 6, start_local: '19:30', starts_at: MAT(5, '19:30'),
       hours: 4, hours_extra: 2, amount: String(PRICE(4)), created_at: '2026-10-29T10:00:00+07:00', decided_at: '2026-10-30T10:00:00+07:00' });
     const formNow = s => s.p.evaluate(() => {
       const v = id => { const x = document.getElementById(id); return x ? x.value : null; };
-      const day = document.querySelector('#view [data-action^="msf-day:"][aria-pressed="true"]');
       return { title: v('msf-title'), about: v('msf-about'), seats: v('msf-seats'), time: v('msf-time'),
-               day: day ? day.getAttribute('data-action') : null, extra: MSF.extra,
+               date: v('msf-date'), extra: MSF.extra,
                send: (document.querySelector('[data-action="ms-send"]') || {}).disabled, text: document.getElementById('view').textContent };
     });
     {
@@ -1021,16 +1026,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const o = { mine: () => [OLD, NEW], posted: [] };
       const s = await open(true, true, json(200, mem(20000, [])), null, null, null, masterApi(o));
       await s.p.waitForTimeout(300);
-      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
         await s.p.waitForTimeout(300);
         const f = await formNow(s);
-        const want = { title: 'Гончарный вечер', about: 'Глина и круг', seats: '12', time: '19:30', day: 'msf-day:6', extra: 2 };
+        const want = { title: 'Гончарный вечер', about: 'Глина и круг', seats: '12', time: '19:30', date: MDAY(1), extra: 2 };
         Object.keys(want).forEach(k => { if (f[k] !== want[k]) bad.push(`${n}: ${k} = ${JSON.stringify(f[k])}, ждали ${JSON.stringify(want[k])} из последней отправленной`); });
-        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить букинг»');
         await s.p.waitForTimeout(300);
         const b = o.posted[0] || {};
         if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
-        else if (b.title !== 'Гончарный вечер' || b.seats !== 12 || b.hours !== 4 || b.weekday !== 6 || b.start_local !== '19:30' || 'price' in b || 'amount' in b)
+        else if (b.title !== 'Гончарный вечер' || b.seats !== 12 || b.hours !== 4 || b.starts_on !== MDAY(1) || b.start_local !== '19:30' || 'price' in b || 'amount' in b)
           bad.push(`${n}: тело заявки не из подставленного: ${JSON.stringify(b)}`);
       }
       await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
@@ -1045,7 +1050,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const o = { mine: () => list, posted: [] };
       const s = await open(true, true, json(200, mem(20000, [])), null, null, null, masterApi(o));
       await s.p.waitForTimeout(300);
-      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
         await s.p.waitForTimeout(300);
         if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Моё название'); else bad.push(`${n}: нет поля названия`);
         await s.p.evaluate(() => loadMineMaster()); await s.p.waitForTimeout(300);
@@ -1055,26 +1060,33 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         await s.p.evaluate(() => loadMineMaster()); await s.p.waitForTimeout(300);
         f = await formNow(s);
         if (f.title !== 'Моё название') bad.push(`${n}: подстановка перетёрла набранное (${JSON.stringify(f.title)})`);
-        if (f.day !== 'msf-day:4' || f.seats !== '0') bad.push(`${n}: в тронутую форму подставлены поля (${f.day}, мест ${f.seats})`);
+        if (f.time !== '18:00' || f.seats !== '0') bad.push(`${n}: в тронутую форму подставлены поля (${f.time}, мест ${f.seats})`);
       }
       if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия`);
       await s.ctx.close();
     }
-    // прошлые часы теперь дороже остатка: часы НЕ урезаны молча, недостача названа, отправка погашена
+    // букингов сколько угодно (Cafe13KPG#985, ветвь 5): ждущий первый не мешает второму — форма открыта, подача уходит,
+    // а на «Клубе» оба букинга стоят списком. Прежний клиент закрывал форму «Заявка уже ждёт решения»
     {
-      const n = 'ms-povtor-dorozhe';
-      const o = { mine: () => [NEW], posted: [] };
-      const s = await open(true, true, json(200, mem(PRICE(3), [])), null, null, null, masterApi(o));
+      const n = 'buking-mnogo';
+      let sent = false;
+      const FIRST = mreq(810, 'pending', { title: 'Первый вечер', starts_at: MAT(4, '19:00'), start_local: '19:00' });
+      const o = { mine: () => (sent ? [mreq(811, 'pending', { title: 'Второй вечер', starts_at: MAT(1) }), FIRST] : [FIRST]), posted: [], after: () => { sent = true; } };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
       await s.p.waitForTimeout(300);
-      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+      const f = await offer(s);
+      if (!f.has || f.off !== false) bad.push(`${n}: при ждущем букинге «Забукать» нет или погашен (${JSON.stringify(f)})`);
+      if (!f.text.includes('Первый вечер')) bad.push(`${n}: ждущий букинг не показан на «Клубе»`);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
+        await s.p.waitForTimeout(300);
+        if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Второй вечер'); else bad.push(`${n}: при ждущем букинге формы нет — второй не подать`);
+        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить букинг»');
         await s.p.waitForTimeout(400);
-        const f = await formNow(s);
-        if (f.extra !== 2) bad.push(`${n}: часы прошлой заявки урезаны (${f.extra} сверх двух, ждали 2)`);
-        // нехватка 1 300 ฿ (цена 4 ч минус остаток в цену 3 ч) — числом, а не любым «Не хватает»
-        if (!/Не хватает 1\s?300 ฿/.test(f.text)) bad.push(`${n}: недостача 1 300 ฿ не названа`);
-        if (f.send !== true) bad.push(`${n}: «Отправить заявку» нажимается при нехватке`);
+        if (o.posted.length !== 1) bad.push(`${n}: второй букинг ушёл ${o.posted.length} раз, ждали 1`);
+        const t = await s.view();
+        if (!t.includes('Первый вечер') || !t.includes('Второй вечер')) bad.push(`${n}: после подачи на «Клубе» не оба букинга списком`);
       }
-      if (o.posted.length) bad.push(`${n}: заявка ушла`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
     // подача, на которую сервер ответил НЕразобранно: деньги могли уйти, человек остаётся на форме — своя заявка
@@ -1090,12 +1102,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         return api(q);
       });
       await s.p.waitForTimeout(300);
-      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
         await s.p.waitForTimeout(300);
         // место ФИКСИРОВАНО «Зал» (слово владельца) — чипа нет, номер места берётся из /places по имени
         if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
         const before = s.calls.length;
-        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+        await tapIf(s, n, '[data-action="ms-send"]', '«Отправить букинг»');
         await s.p.waitForTimeout(400);
         const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
         if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
@@ -1109,7 +1121,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // → `_check_free`) — тот 409, ради которого фраза и писалась: время выбрано из свободного, место заняли
     {
       const n = 'ms-busy-409';
-      const DETAIL = 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00. Деньги не списаны, заявка не подана';
+      const DETAIL = 'время пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00. Деньги не списаны, заявка не подана';
       const o = { mine: () => [], posted: [] };
       const api = masterApi(o);
       const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
@@ -1118,26 +1130,26 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         return api(q);
       });
       await s.p.waitForTimeout(300);
-      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
         await s.p.waitForTimeout(300);
         if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
-        const before = s.calls.length;   // ДО нажатия (см. rnw-send-lost)
-        if (await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»')) {
+        const before = s.calls.length;   // ДО нажатия: иначе в «после» попали бы и запросы входа
+        if (await tapIf(s, n, '[data-action="ms-send"]', '«Отправить букинг»')) {
           await s.p.waitForTimeout(400);
           const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
           const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
           if (o.posted.length !== 1) bad.push(`${n}: POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
           if (await s.p.evaluate(() => current) !== 'masterApply') bad.push(`${n}: после 409 форма закрылась`);
-          if (!alert.includes('Неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00.')) bad.push(`${n}: слова сервера о занятом месте не показаны плашкой отказа: ${JSON.stringify(alert)}`);
+          if (!alert.includes('Время пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00.')) bad.push(`${n}: слова сервера о занятом месте не показаны плашкой отказа: ${JSON.stringify(alert)}`);
           if (!alert.includes('Деньги не списаны, заявка не подана.')) bad.push(`${n}: не сказано, что деньги не списаны: ${JSON.stringify(alert)}`);
-          if ((await s.view()).includes('Заявка отправлена')) bad.push(`${n}: после 409 сказано «Заявка отправлена»`);
+          if ((await s.view()).includes('Букинг отправлен')) bad.push(`${n}: после 409 сказано «Букинг отправлен»`);
           const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
           if (miss.length) bad.push(`${n}: после 409 не перечитано ${JSON.stringify(miss)}`);
           const title = await s.p.evaluate(() => { const e = document.getElementById('msf-title'); return e ? e.value : null; });
           if (title !== 'Проба мастера') bad.push(`${n}: после 409 набранное название пропало (${JSON.stringify(title)}) — человеку набирать заново`);
           // подать заново человек обязан мочь: MR.busy снят ответом (arhitector-47)
           const send = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
-          if (!send || send.off || send.txt !== 'Отправить заявку') bad.push(`${n}: после 409 «Отправить заявку» не вернулась (${JSON.stringify(send)}) — подать заново нечем`);
+          if (!send || send.off || send.txt !== 'Отправить букинг') bad.push(`${n}: после 409 «Отправить букинг» не вернулась (${JSON.stringify(send)}) — подать заново нечем`);
         }
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
@@ -1262,49 +1274,188 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         await s.ctx.close();
       }
     }
-    // занятость слота (v112, `GET /master/slot-busy`): fits false — «Отправить» погашен и причина названа ДО
-    // нажатия; fits true — жив, заявка уходит. Запрос — с выбранными часами: «+» спрашивает сервер заново.
-    // ⚠ Второй линии нет НАРОЧНО: sendMaster пересечения не проверяет, последняя защита — 409 сервера (код v112).
+    // занятость ОДНОЙ даты (`GET /master/slot-busy?place_id&date&start_local&hours`, Cafe13KPG#985): fits false —
+    // «Отправить» погашен и причина названа ДО нажатия; fits true — жив, букинг уходит. Запрос — под выбранные дату,
+    // время и часы: «+» и смена даты спрашивают сервер заново.
+    // ⚠ Второй линии нет НАРОЧНО: sendMaster пересечения не проверяет, последняя защита — 409 сервера.
     for (const fits of [false, true]) {
       const n = fits ? 'slot-fits-free' : 'slot-fits-clash';
       const asked = [];
       const o = { mine: () => [], posted: [] };
       const api = masterApi(o);
-      const busyRow = { title: 'Чужой вечер', starts_at: '2026-12-03T18:00:00+07:00', ends_at: '2026-12-03T20:00:00+07:00' };
       const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
         const u = q.url().replace(/^https?:\/\/[^/]+/, '');
         if (!u.startsWith('/master/slot-busy')) return api(q);
         asked.push(u);
-        return json(200, { month: '2026-12', fits, dates: [
-          { date: '2026-12-03', busy: [busyRow], conflict: fits ? null : { title: 'Чужой вечер', starts_label: '03.12 18:00', ends_label: '20:00' } },
-          { date: '2026-12-10', busy: [], conflict: null }] });
+        const date = (u.match(/date=([\d-]+)/) || [])[1];
+        return json(200, mbusy(date, fits, [{ title: 'Чужой вечер', starts_at: date + 'T18:00:00+07:00', ends_at: date + 'T20:00:00+07:00' }],
+          fits ? null : { title: 'Чужой вечер', starts_label: date.slice(8) + '.' + date.slice(5, 7) + ' 18:00', ends_label: '20:00' }));
       });
       await s.p.waitForTimeout(300);
-      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Я мастер»')) {
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
         await s.p.waitForTimeout(400);
         if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера'); else bad.push(`${n}: нет поля названия`);
         const f = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]');
           return { off: b ? b.disabled : null, text: document.getElementById('view').textContent }; });
-        if (!asked.some(u => /place_id=1&weekday=4&start_local=18%3A00&hours=2$/.test(u))) bad.push(`${n}: занятость не спрошена под выбранные день и время: ${JSON.stringify(asked)}`);
+        if (!asked.some(u => u.endsWith(`place_id=1&date=${MDAY(1)}&start_local=18%3A00&hours=2`))) bad.push(`${n}: занятость не спрошена под выбранные дату и время: ${JSON.stringify(asked)}`);
+        if (!f.text.includes('18:00–20:00') || !f.text.includes('«Чужой вечер»')) bad.push(`${n}: занятое в этот день не показано (ждали 18:00–20:00 «Чужой вечер»)`);
         if (!fits) {
-          if (f.off !== true) bad.push(`${n}: при fits false «Отправить заявку» нажимается (${JSON.stringify(f.off)}) — человек узнает о пересечении отказом`);
+          if (f.off !== true) bad.push(`${n}: при fits false «Отправить букинг» нажимается (${JSON.stringify(f.off)}) — человек узнает о пересечении отказом`);
           if (!f.text.includes('Выбранное время пересекается с занятым — выберите другое')) bad.push(`${n}: при fits false причина погашенной кнопки не названа`);
-          if (!f.text.includes('пересекается: 18:00–20:00 «Чужой вечер»')) bad.push(`${n}: дата с пересечением не названа (ждали «пересекается: 18:00–20:00 «Чужой вечер»»)`);
-          if (o.posted.length) bad.push(`${n}: заявка ушла при пересечении`);
+          if (!f.text.includes('Пересекается: 18:00–20:00 «Чужой вечер»')) bad.push(`${n}: пересечение не названо (ждали «Пересекается: 18:00–20:00 «Чужой вечер»»)`);
+          if (o.posted.length) bad.push(`${n}: букинг ушёл при пересечении`);
         } else {
-          if (f.off !== false) bad.push(`${n}: при fits true «Отправить заявку» погашен (${JSON.stringify(f.off)})`);
+          if (f.off !== false) bad.push(`${n}: при fits true «Отправить букинг» погашен (${JSON.stringify(f.off)})`);
           if (f.text.includes('пересекается с занятым')) bad.push(`${n}: при fits true сказано «пересекается с занятым»`);
-          if (!f.text.includes('Выбранное время свободно на всех 2 датах месяца')) bad.push(`${n}: при fits true не сказано, что время свободно`);
-          // «+» — новый запрос занятости уже под 3 часа
+          if (!f.text.includes('— свободно.')) bad.push(`${n}: при fits true не сказано, что выбранное время свободно`);
+          // «+» — новый запрос занятости уже под 3 часа; смена даты — под новую дату
           await tapIf(s, n, '[data-action="msf-plus"]', '«+» часа');
           await s.p.waitForTimeout(400);
           if (!asked.some(u => /hours=3$/.test(u))) bad.push(`${n}: после «+» занятость не спрошена под 3 часа: ${JSON.stringify(asked)}`);
-          if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера');   // перерисовка «+» могла снять набранное
-          await tapIf(s, n, '[data-action="ms-send"]', '«Отправить заявку»');
+          if (await s.p.$('#msf-date')) { await s.p.fill('#msf-date', MDAY(9)); await s.p.dispatchEvent('#msf-date', 'change'); await s.p.waitForTimeout(400); }
+          else bad.push(`${n}: нет поля даты`);
+          if (!asked.some(u => u.includes(`date=${MDAY(9)}&`))) bad.push(`${n}: после смены даты занятость не спрошена под новую дату: ${JSON.stringify(asked)}`);
+          if (await s.p.$('#msf-title')) await s.p.fill('#msf-title', 'Проба мастера');   // перерисовка могла снять набранное
+          await tapIf(s, n, '[data-action="ms-send"]', '«Отправить букинг»');
           await s.p.waitForTimeout(300);
           if (o.posted.length !== 1) bad.push(`${n}: при fits true POST /master/request ушёл ${o.posted.length} раз, ждали 1`);
+          else if (o.posted[0].starts_on !== MDAY(9) || o.posted[0].hours !== 3) bad.push(`${n}: тело не под выбранные дату и часы: ${JSON.stringify(o.posted[0])}`);
         }
       }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // `fits` false БЕЗ пересечения — время уже прошло (снимок api d75c445, сегодня в 00:00): кнопка погашена, но
+    // «пересекается с занятым» не говорится — пересекаться не с чем
+    {
+      const n = 'slot-vremya-proshlo';
+      const o = { mine: () => [], posted: [] };
+      const api = masterApi(o);
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (!u.startsWith('/master/slot-busy')) return api(q);
+        return json(200, mbusy((u.match(/date=([\d-]+)/) || [])[1], false, []));
+      });
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
+        await s.p.waitForTimeout(300);
+        await s.p.fill('#msf-title', 'Проба мастера');
+        await s.p.fill('#msf-date', MDAY(0)); await s.p.dispatchEvent('#msf-date', 'change'); await s.p.waitForTimeout(400);
+        const f = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]'); return { off: b ? b.disabled : null, text: document.getElementById('view').textContent }; });
+        if (f.off !== true) bad.push(`${n}: при fits false «Отправить букинг» нажимается`);
+        if (f.text.includes('ересекается')) bad.push(`${n}: без пересечения сказано «пересекается»`);
+        if (!f.text.includes('Это время уже прошло — выберите другое.')) bad.push(`${n}: причина погашенной кнопки не «Это время уже прошло»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // ответ занятости о ДРУГОЙ дате — не ответ: «не загрузилась», чужой день как свободный не показан
+    {
+      const n = 'slot-busy-chuzhaya-data';
+      const o = { mine: () => [], posted: [] };
+      const api = masterApi(o);
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (!u.startsWith('/master/slot-busy')) return api(q);
+        return json(200, mbusy(MDAY(2), true, []));
+      });
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        if (!t.includes('Занятость не загрузилась')) bad.push(`${n}: ответ о другой дате принят за занятость выбранной`);
+        if (t.includes('— свободно.') || t.includes('свободно')) bad.push(`${n}: день показан свободным по ответу о другой дате`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // дата в прошлом: «Отправить букинг» погашен с причиной; вторая линия — sendMaster не шлёт и при прямом вызове
+    {
+      const n = 'buking-data-proshla';
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Забукать»')) {
+        await s.p.waitForTimeout(300);
+        await s.p.fill('#msf-title', 'Проба мастера');
+        await s.p.fill('#msf-date', MDAY(-1)); await s.p.dispatchEvent('#msf-date', 'change'); await s.p.waitForTimeout(300);
+        const f = await s.p.evaluate(() => { const b = document.querySelector('[data-action="ms-send"]'); return { off: b ? b.disabled : null, text: document.getElementById('view').textContent }; });
+        if (f.off !== true) bad.push(`${n}: на вчерашнюю дату «Отправить букинг» нажимается`);
+        if (!f.text.includes('Выберите дату — сегодня или позже.')) bad.push(`${n}: причина погашенной кнопки не названа`);
+        await s.p.evaluate(() => sendMaster()); await s.p.waitForTimeout(300);
+        if (o.posted.length) bad.push(`${n}: букинг на вчера ушёл прямым вызовом sendMaster — охрана только в разметке`);
+        if (s.calls.some(c => /slot-busy/.test(c.url) && c.url.includes(MDAY(-1)))) bad.push(`${n}: занятость спрошена под прошедшую дату`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // свои букинги на «Клубе» СПИСКОМ (Cafe13KPG#985): ждущий, согласованный впереди, отказанный впереди — с причиной и
+    // возвратом, прежний недельный согласованный — «каждую неделю»; ПРОШЕДШИЙ не показан (иначе список растёт вечно)
+    {
+      const n = 'buking-spisok';
+      const mine = [
+        mreq(821, 'pending', { title: 'Ждущий вечер', starts_at: MAT(2, '19:00'), start_local: '19:00' }),
+        mreq(822, 'approved', { title: 'Согласованный вечер', starts_at: MAT(6) }),
+        mreq(823, 'rejected', { title: 'Отказанный вечер', starts_at: MAT(8), decision_note: 'нет фото работ' }),
+        mreq(824, 'approved', { title: 'Прошедший вечер', starts_at: MAT(-3) }),
+        mreq(825, 'approved', { title: 'Недельный слот', starts_at: null, weekday: 2, start_local: '10:00' })];
+      const o = { mine: () => mine, posted: [] };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      ['Ваши букинги', 'Ждущий вечер', 'ждёт решения', 'Согласованный вечер', 'согласовано', 'Отказанный вечер', 'Нет фото работ', 'вернулись на счёт',
+       'Недельный слот', 'каждую неделю', 'Забукать'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: на «Клубе» нет «${w}»`); });
+      if (t.includes('Прошедший вечер')) bad.push(`${n}: прошедший букинг стоит в списке`);
+      // порядок — по дате: ближайший первым
+      const i1 = t.indexOf('Ждущий вечер'), i2 = t.indexOf('Согласованный вечер');
+      if (i1 > -1 && i2 > -1 && i1 > i2) bad.push(`${n}: список не по дате — ближайший не первым`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // строка без `starts_at` — отказ разбора, а не «недельная» заявка: «Букинги не загрузились»
+    {
+      const n = 'buking-net-starts-at';
+      const x = mreq(831, 'approved', { title: 'Без даты' }); delete x.starts_at;
+      const o = { mine: () => [x], posted: [] };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      if (!t.includes('Букинги не загрузились')) bad.push(`${n}: строка без starts_at принята`);
+      if (t.includes('Без даты') || t.includes('каждую неделю')) bad.push(`${n}: строка без starts_at показана как букинг`);
+      await s.ctx.close();
+    }
+    // продления нет (Cafe13KPG#985, ветвь 7): у мастера с согласованным букингом нет «Продлить», экрана нет, ручки
+    // `/periods*` клиент не зовёт
+    {
+      const n = 'prodlenie-net';
+      const o = { mine: () => [mreq(841, 'approved', { paid_till: '2026-12-30T07:30:00+00:00' })], posted: [] };
+      const s = await open(true, true, json(200, mem(9000, ['master'])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      if (t.includes('Продлить') || await s.p.$('[data-go="masterRenew"]')) bad.push(`${n}: на «Клубе» есть «Продлить»`);
+      if (t.includes('Оплачено до')) bad.push(`${n}: на «Клубе» «Оплачено до» — подписки нет`);
+      if (await s.p.evaluate(() => typeof SCREENS.masterRenew !== 'undefined')) bad.push(`${n}: экран masterRenew остался`);
+      if ((o.periods || []).length) bad.push(`${n}: клиент звал ручки продления: ${JSON.stringify(o.periods)}`);
+      await s.ctx.close();
+    }
+    // «Ивенты» арт-директора: строка — букинг ДАТОЙ, без «Недель впереди»; прежний недельный — с днём недели и неделями
+    {
+      const n = 'ms-ivent-data';
+      const o = { mine: () => [], posted: [], slots: [mslot(851, { title: 'Букинг на дату', starts_at: MAT(3) }),
+        mslot(852, { title: 'Недельный', starts_at: null, weekday: 2, start_local: '10:00', weeks_on: 3 })] };
+      const s = await open(true, true, json(200, mem(9000, ['art_director'])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('masterEvents')); await s.p.waitForTimeout(400);
+      let t = await s.view();
+      const d = await s.p.evaluate(x => msDate(x), MDAY(3));
+      if (!t.includes(d + ', 18:00')) bad.push(`${n}: букинг не назван датой «${d}, 18:00»`);
+      if (!t.includes('Вт, 10:00') || !t.includes('каждую неделю')) bad.push(`${n}: недельный слот не назван днём недели «каждую неделю»`);
+      await s.p.evaluate(() => go('masterEvent', 851)); await s.p.waitForTimeout(300);
+      t = await s.view();
+      if (!t.includes('Дата и время')) bad.push(`${n}: у букинга нет «Дата и время»`);
+      if (t.includes('Недель впереди')) bad.push(`${n}: у букинга «Недель впереди» — ивент один`);
+      await s.p.evaluate(() => go('masterEvent', 852)); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes('Недель впереди')) bad.push(`${n}: у недельного слота пропали «Недель впереди»`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
@@ -1459,297 +1610,6 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           if (m) bad.push(`${n}: на ${at} доля или % («${m[0]}») — долей до шага 21 нет`);
         }
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-    }
-    // ── продление мастера (v113, кадры E59/E59b, Cafe13KPG#651): окно ДО отправки с политикой ухода 'cancel' ──
-    // Перенос пяти проб arhitector-47 (ревью #173) словами автора; rnw-send-lost и rnw-lock — его же «не покрыто».
-    // Деньги сверяются без пробелов (в т.ч. неразрывных): разрядка — дело money(), а не случая.
-    {
-      const flat = t => t.replace(/[\s  ]/g, '');
-      const rnwApi = (o, prev) => { const api = masterApi(o); return q => {
-        const u = q.url().replace(/^https?:\/\/[^/]+/, ''), m = q.method();
-        const pm = u.match(/^\/master\/requests\/901\/periods\/preview\?months=(\d+)$/);
-        if (pm) { const N = Number(pm[1]); o.prevAsked.push(N); if (o.prevReply) return o.prevReply(N); return json(200, Object.assign(MPREVIEW(N), prev || {})); }
-        if (u === '/master/requests/901/periods' && m === 'POST') { o.renewed.push(JSON.parse(q.postData() || '{}'));
-          return o.post ? o.post() : json(201, MRENEWED()); }
-        return api(q);
-      }; };
-      // общий вход: мастер с оплатой до 30.11.2026 14:30 по острову (`paid_till` — момент, М.2 Cafe13KPG#894), «Клуб» → «Продлить»
-      const rnwOpen = async (n, o, prev, wrap) => {
-        o.mine = () => [mreq(901, 'approved', { paid_till: '2026-11-30T07:30:00+00:00' })]; o.posted = []; o.prevAsked = []; o.renewed = [];
-        const api = rnwApi(o, prev);
-        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, wrap ? wrap(api) : api);
-        await s.p.waitForTimeout(300);
-        const ok = await tapIf(s, n, '#view [data-go="masterRenew"]', '«Продлить» на «Клубе»');
-        await s.p.waitForTimeout(300);
-        // срок слота — на «Продлении», а не на «Клубе» (E68, Cafe13KPG#682: блок «Вы мастер» снят)
-        if (ok && !(await s.view()).includes('Оплачено до 30 ноября')) bad.push(`${n}: на «Продлении» нет «Оплачено до 30 ноября» — срок не из \`paid_till\``);
-        return { s, ok };
-      };
-      // «Клуб» мастера по E68 (Cafe13KPG#682): роль по-русски, «Продлить» сразу под карточкой ролей и только у своего
-      // СОГЛАСОВАННОГО слота; блока «Вы мастер» со сроком на «Клубе» нет. Мастер без слота — по уровню organizer
-      for (const [n, slot] of [['klub-master-dver', true], ['klub-master-bez-slota', false]]) {
-        const o = { mine: () => slot ? [mreq(901, 'approved', { paid_till: '2026-11-30T07:30:00+00:00' })] : [] };
-        const me = mem(9000, ['master']);
-        if (!slot) me.memberships.push({ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: '2027-01-31T00:00:00+00:00', lifelong: false });
-        const s = await open(true, true, json(200, me), null, null, null, rnwApi(o));
-        await s.p.waitForTimeout(400);
-        const t = await s.view();
-        const f = await s.p.evaluate(() => {
-          const d = document.querySelector('#view [data-go="masterRenew"]'), pills = [...document.querySelectorAll('#view .pill')].map(e => e.textContent);
-          const prev = d && d.previousElementSibling, g = d && d.closest('.group');
-          return { door: !!d, pills, afterRoles: !!prev && prev.matches('.card') && !!prev.querySelector('.pill'),
-            group: g ? (g.querySelector('.label') || {}).textContent : null };
-        });
-        if (/\bmaster\b/.test(t)) bad.push(`${n}: на «Клубе» латинское «master» — роль без русского имени`);
-        if (!f.pills.includes('Мастер')) bad.push(`${n}: роли «Мастер» на «Клубе» нет: ${JSON.stringify(f.pills)}`);
-        if (t.includes('Вы мастер') || t.includes('Оплачено до')) bad.push(`${n}: на «Клубе» блок «Вы мастер» со сроком — по E68 он снят`);
-        if (slot) {
-          if (!f.door) bad.push(`${n}: у мастера с согласованным слотом нет «Продлить» на «Клубе»`);
-          else if (!f.afterRoles || f.group !== 'Ваши роли') bad.push(`${n}: «Продлить» не сразу под карточкой ролей (${JSON.stringify(f)})`);
-        } else if (f.door) bad.push(`${n}: у мастера без согласованного слота есть «Продлить» — продлевать нечего`);
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      // М.2 (Cafe13KPG#894): ответ БЕЗ `paid_till` — форма сервера до М.1, только `paid_until`. Экран обязан сказать
-      // «не загрузились», а не «оплаченных нет» и не старый срок: отсутствие значения пришло бы правдоподобным значением.
-      // Краснеет, если разборщик читает `paid_until` или считает пропавший ключ за null
-      {
-        const n = 'master-bez-paid-till';
-        const o = { mine: () => { const x = mreq(901, 'approved', { paid_until: '2026-11-30' }); delete x.paid_till; return [x]; } };
-        const s = await open(true, true, json(200, mem(9000, ['master'])), null, null, null, rnwApi(o));
-        await s.p.waitForTimeout(400);
-        const t = await s.view();
-        if (!t.includes('Заявки в мастера не загрузились')) bad.push(`${n}: ответ без \`paid_till\` не назван «не загрузились»`);
-        if (t.includes('Оплаченных месяцев нет') || t.includes('Оплачено до')) bad.push(`${n}: ответ без \`paid_till\` показан сроком или «оплаченных нет»`);
-        if (await s.p.$('#view [data-go="masterRenew"]')) bad.push(`${n}: «Продлить» есть при неразобранной заявке`);
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      // М.2: окно, перенесённое миграцией 030, кончается 1-го в 00:00 по острову = `…T17:00:00Z` накануне по UTC.
-      // День берётся по часам КЛУБА: «до 1 декабря», а не «до 30 ноября». Фикстуры выше стоят на 07:30Z, где
-      // UTC и остров дают один день, — подмену часов клуба на UTC видит только этот случай (мутация архитектора, #258)
-      {
-        const n = 'master-paid-till-ostrov';
-        const o = { mine: () => [mreq(901, 'approved', { paid_till: '2026-11-30T17:00:00+00:00' })], posted: [], prevAsked: [], renewed: [] };
-        const s = await open(true, true, json(200, mem(9000, [])), null, null, null, rnwApi(o));
-        await s.p.waitForTimeout(300);
-        if (await tapIf(s, n, '#view [data-go="masterRenew"]', '«Продлить» на «Клубе»')) {
-          await s.p.waitForTimeout(300);
-          const t = await s.view();
-          if (!t.includes('Оплачено до 1 декабря')) bad.push(`${n}: конец окна 1-го 00:00 по острову не назван «Оплачено до 1 декабря» — день не по часам клуба`);
-          if (t.includes('Оплачено до 30 ноября')) bad.push(`${n}: показано «до 30 ноября» — день взят по UTC`);
-        }
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      // причина погасшей «Продлить»: видимые адресаты её aria-describedby (Cafe13KPG#685)
-      const RNW_PRICE = /цен[аы]\s+не\s+(по|пере)?считан/i;
-      const rnwWhy = s => s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); if (!b) return null;
-        const els = (b.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean).map(i => document.getElementById(i)).filter(Boolean);
-        return { off: b.disabled, txt: els.filter(e => e.getClientRects().length).map(e => e.textContent.trim()).join(' | ') }; });
-      // 1. отправка: два месяца — цена и дата от сервера; до конца окна запроса нет, после — ровно один {months:2}
-      {
-        const n = 'rnw-send', o = {};
-        const { s, ok } = await rnwOpen(n, o);
-        if (ok && await tapIf(s, n, '[data-action="rnw-plus"]', '«+» месяца')) {
-          await s.p.waitForTimeout(300);
-          const t = flat(await s.view());
-          if (!o.prevAsked.includes(2)) bad.push(`${n}: предпросмотр не спрошен с months=2: ${JSON.stringify(o.prevAsked)}`);
-          if (!t.includes('5400฿')) bad.push(`${n}: на экране нет «5 400 ฿» от сервера за два месяца`);
-          if (!t.includes('30января2027')) bad.push(`${n}: на экране нет «30 января 2027» от сервера (\`paid_till\` предпросмотра)`);
-          if (await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
-            await s.p.waitForTimeout(500);
-            if (o.renewed.length) bad.push(`${n}: продление ушло до конца окна отмены (через 0,5 с)`);
-            await s.p.waitForTimeout(5500);
-            if (o.renewed.length !== 1 || o.renewed[0].months !== 2) bad.push(`${n}: после окна ждали один POST {months:2}, ушло ${JSON.stringify(o.renewed)}`);
-          }
-        }
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      // 2–4. окно закрыто без отправки: ушёл с экрана, свернул приложение, нажал «Отменить»
-      for (const [n, how] of [['rnw-leave', 'go'], ['rnw-hidden', 'hide'], ['rnw-keep', 'keep']]) {
-        const o = {};
-        const { s, ok } = await rnwOpen(n, o);
-        if (ok && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
-          await s.p.waitForTimeout(300);
-          if (how === 'go') await s.p.evaluate(() => go('home'));
-          if (how === 'hide') await s.p.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
-          if (how === 'keep') await tapIf(s, n, '[data-action="rnw-keep"]', '«Отменить»');
-          await s.p.waitForTimeout(6000);
-          if (o.renewed.length) bad.push(`${n}: продление ушло (${o.renewed.length}) — ${{ go: 'ушёл с экрана', hide: 'свернул приложение', keep: 'нажал «Отменить»' }[how]} в окне, а деньги списаны`);
-        }
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      // 5. денег меньше: «Продлить» погашен, недостача — словами сервера; вторая линия — обработчик
-      {
-        const n = 'rnw-short', o = {};
-        const { s, ok } = await rnwOpen(n, o, { enough: false, short: '1300.00' });
-        if (ok) {
-          const off = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? b.disabled : null; });
-          if (off !== true) bad.push(`${n}: при enough false «Продлить» нажимается (${JSON.stringify(off)})`);
-          if (!flat(await s.view()).includes('Нехватает1300฿')) bad.push(`${n}: недостача не названа словами сервера (ждали «Не хватает 1 300 ฿»)`);
-          await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); if (b) { b.disabled = false; b.click(); } });
-          await s.p.waitForTimeout(200);
-          if (await s.p.$('.undo')) bad.push(`${n}: обработчик «Продлить» открыл окно при enough false — сверки нет`);
-        }
-        await s.ctx.close();
-      }
-      // 6. неразобранный ответ на продление: деньги могли уйти — своя заявка и остаток перечитаны, человек на экране
-      {
-        const n = 'rnw-send-lost', o = { post: () => json(502, '<html>bad gateway</html>') };
-        const { s, ok } = await rnwOpen(n, o);
-        const before = ok ? s.calls.length : 0;   // ДО нажатия: без окна POST и перечитывание успевают внутри tapIf
-        if (ok && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
-          await s.p.waitForTimeout(5800);
-          const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
-          const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
-          if (o.renewed.length !== 1) bad.push(`${n}: POST продления ушёл ${o.renewed.length} раз, ждали 1`);
-          else if (miss.length) bad.push(`${n}: после неразобранного ответа не перечитано ${JSON.stringify(miss)} — деньги могли уйти: ${JSON.stringify(after)}`);
-          if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после неразобранного ответа экран продления закрылся`);
-          if (!(await s.view()).includes('кодом 502')) bad.push(`${n}: отказ не назван (ждали «кодом 502»)`);
-          // перечитанный предпросмотр отвечает 200 — повторить продление человек обязан мочь (arhitector-47)
-          const go = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
-          if (!go || go.off || go.txt !== 'Продлить') bad.push(`${n}: после 502 «Продлить» не вернулась (${JSON.stringify(go)}) — повторить нечем`);
-        }
-        await s.ctx.close();
-      }
-      // отказ предпросмотра (Cafe13KPG#649, detailOf v114): слова сервера печатаются, а стандартная фраза СВОЕГО
-      // кода от FastAPI — нет (замер: несуществующий путь отдаёт {"detail":"Not Found"}), и русский экран не отвечает
-      // чужим языком. det-* — перенос проб arhitector-47 его словами; rnw-404-* — мои. «Продлить» без расчёта погашен
-      for (const [n, code, body, want, not] of [
-        ['det-stock', 404, { detail: 'Not Found' }, 'кодом 404', 'Not Found'],
-        ['det-stock-dot', 405, { detail: 'method not allowed.' }, 'кодом 405', 'allowed'],
-        ['det-own', 409, { detail: 'нет согласованного слота' }, 'Нет согласованного слота', 'кодом 409'],
-        ['det-near', 404, { detail: 'Not Found here' }, 'Not Found here', 'кодом 404'],
-        ['det-other-code', 409, { detail: 'Not Found' }, 'Not Found', 'кодом 409'],   // фраза ЧУЖОГО кода не глотается
-        ['rnw-404-words', 404, { detail: 'заявка не найдена' }, 'Заявка не найдена.', 'кодом 404'],
-        ['rnw-404-empty', 404, '', 'Сервер ответил кодом 404.', null]]) {
-        const o = { prevReply: () => json(code, body) };
-        const { s, ok } = await rnwOpen(n, o);
-        if (ok) {
-          const t = await s.view();
-          if (!t.includes(want)) bad.push(`${n}: на ${code} ${JSON.stringify(body)} нет «${want}»`);
-          if (not && t.includes(not)) bad.push(`${n}: на ${code} ${JSON.stringify(body)} на экране «${not}»`);
-          const off = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? b.disabled : null; });
-          if (off !== true) bad.push(`${n}: без расчёта сервера «Продлить» нажимается (${JSON.stringify(off)})`);
-        }
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      // 409 по занятости на продлении (Cafe13KPG, наряд coordinator-2 30.10): место заняли между предпросмотром и
-      // концом окна. Сервер (`_renew_plan` → `_check_free`, api a1984f2) не пишет НИЧЕГО — ни денег, ни месяцев, ни
-      // недель. Человек остаётся на экране, видит слова сервера, своё и остаток перечитаны; предпросмотр спрошен
-      // заново тем же кодом и теперь тоже 409 — «Продлить» гаснет. Подлог «фикстура 409» без этого случая — 0 красных
-      // Тексты разведены, как у сервера (api main, `RENEW_NOT_CHARGED`): хвост «. Деньги не списаны, месяц не продлён»
-      // получает ТОЛЬКО отказ POST, предпросмотр — нет. Фраза о деньгах в плашке поэтому может прийти лишь от отправки
-      // (граница arhitector-47: строка предпросмотра, нарисованная плашкой, иначе подменяла бы отказ отправки).
-      // E59v (Cafe13KPG#667, v116): один отказ — одно сообщение; тот же отказ предпросмотра — «Цена не пересчитана»,
-      // иной (502) — печатается целиком. Вторая строка — тот самый «иной».
-      for (const [n, prevAfter] of [
-        ['rnw-busy-409', () => json(409, { detail: 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00' })],
-        ['rnw-busy-409-502', () => json(502, '<html>bad gateway</html>')]]) {
-        const BUSY = 'неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00';
-        let taken = false;
-        const o = { post: () => { taken = true; return json(409, { detail: BUSY + '. Деньги не списаны, месяц не продлён' }); },
-          prevReply: N => taken ? prevAfter() : json(200, { request_id: 901, months: Array(N).fill(null).map((_, i) => ({ month: i + 1 })),
-            per_month: '2700.00', weeks: 4, charged: String(2700 * N) + '.00', periods: [{ starts_at: '2026-11-30T07:30:00+00:00', ends_at: '2026-12-30T07:30:00+00:00' }], paid_till: '2026-12-30T07:30:00+00:00', enough: true, short: '0.00' }) };
-        const { s, ok } = await rnwOpen(n, o);
-        const before = ok ? s.calls.length : 0;   // ДО нажатия (см. rnw-send-lost)
-        if (ok && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
-          await s.p.waitForTimeout(5800);
-          const after = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
-          const t = await s.view();
-          // слова — в плашке отказа (role=alert); строка предпросмотра под «Повторить» отказом отправки не считается
-          const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
-          if (o.renewed.length !== 1) bad.push(`${n}: POST продления ушёл ${o.renewed.length} раз, ждали 1`);
-          if (await s.p.evaluate(() => current) !== 'masterRenew') bad.push(`${n}: после 409 экран продления закрылся`);
-          if (!alert.includes('Неделя 1 слота пересекается: место «Зал» занято «Чужой вечер», 03.12 18:00–20:00.')) bad.push(`${n}: слова сервера о занятом месте не показаны плашкой отказа: ${JSON.stringify(alert)}`);
-          if (!alert.includes('Деньги не списаны, месяц не продлён.')) bad.push(`${n}: в плашке не сказано, что деньги не списаны: ${JSON.stringify(alert)}`);
-          const times = (t.match(/слота пересекается/g) || []).length;
-          if (times !== 1) bad.push(`${n}: слова о занятом месте на экране ${times} раз, ждали 1 — один отказ, одно сообщение (Cafe13KPG#667)`);
-          if (n === 'rnw-busy-409') {
-            if (!t.includes('Цена не пересчитана')) bad.push(`${n}: тот же отказ предпросмотра не назван «Цена не пересчитана»`);
-            if (!(await s.p.$('[data-action="rnw-retry"]'))) bad.push(`${n}: у непересчитанной цены нет «Повторить»`);
-          } else {
-            if (!t.includes('Сервер ответил кодом 502.')) bad.push(`${n}: иной отказ предпросмотра не напечатан целиком (ждали «Сервер ответил кодом 502.»)`);
-            if (t.includes('Цена не пересчитана')) bad.push(`${n}: иной отказ (502) выдан за тот же — «Цена не пересчитана»`);
-          }
-          if (t.includes('Продлено')) bad.push(`${n}: после 409 сказано «Продлено»`);
-          const miss = ['GET /master/requests/mine', 'GET /me'].filter(x => !after.includes(x));
-          if (miss.length) bad.push(`${n}: после 409 не перечитано ${JSON.stringify(miss)}`);
-          if (!after.some(u => /^GET \/master\/requests\/901\/periods\/preview/.test(u))) bad.push(`${n}: после 409 предпросмотр не спрошен заново — «Продлить» живёт по старому расчёту`);
-          const go = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-go"]'); return b ? { off: b.disabled, txt: b.textContent.trim() } : null; });
-          if (!go || go.off !== true) bad.push(`${n}: после 409 «Продлить» нажимается (${JSON.stringify(go)}) — место уже занято`);
-          // погашена ПО ЗАМЫСЛУ (предпросмотра нет), поэтому занятость читается подписью: «Продлеваем…» = ответ не дошёл до RNW.busy
-          if (go && go.txt !== 'Продлить') bad.push(`${n}: после ответа на кнопке «${go.txt}» — отправка так и висит (RNW.busy)`);
-          // Cafe13KPG#685: и здесь предпросмотр пуст — причина у погасшей кнопки «цена не посчитана», а не про деньги
-          const why = await rnwWhy(s);
-          if (!why || !RNW_PRICE.test(why.txt) || /не хватает/i.test(why.txt)) bad.push(`${n}: у погасшей после 409 «Продлить» причина не «цена не посчитана»: ${JSON.stringify(why)}`);
-          // предпросмотр после 409 отвечает 409 (отказ) или 502 (сбой) — «отказал» только в первом
-          else if (/отказал/i.test(why.txt) !== (n === 'rnw-busy-409')) bad.push(`${n}: ${n === 'rnw-busy-409' ? 'отказ предпросмотра (409) не назван отказом' : 'сбой предпросмотра (502) выдан за отказ сервера'}: ${JSON.stringify(why.txt)}`);
-        }
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      // Причина у погасшей «Продлить» (Cafe13KPG#685, наряд coordinator-2 31.10): владелец видел погасшую кнопку без
-      // названной причины и «Повторить», которая не называет предмет. Приговоров ДВА, и они не склеиваются: предпросмотр
-      // отказал — «цена не посчитана»; денег мало — «Не хватает N ฿», и про цену ни слова. Причину читаем по
-      // `aria-describedby` кнопки (только видимые адресаты), а не со всего экрана: строка отказа предпросмотра стоит и выше
-      // Отказ сервера (4xx) и сбой (сеть, 5xx) у причины РАЗНЫЕ: «отказал» говорится только про 4xx — подлог
-      // arhitector-47 (ревью #204), поменявший две подписи местами, иначе проходил зелёным
-      for (const [n, reply, refused] of [
-        ['rnw-why-409', () => json(409, { detail: 'неделя 1 слота пересекается: место «Зал» занято «Мастер-класс», 03.12 18:00–20:00' }), true],
-        ['rnw-why-502', () => json(502, '<html>bad gateway</html>'), false]]) {
-        const o = { prevReply: reply };
-        const { s, ok } = await rnwOpen(n, o);
-        if (ok) {
-          const why = await rnwWhy(s);
-          if (!why || why.off !== true) bad.push(`${n}: без расчёта сервера «Продлить» нажимается (${JSON.stringify(why)})`);
-          else if (!RNW_PRICE.test(why.txt)) bad.push(`${n}: у погасшей «Продлить» причина не «цена не посчитана»: ${JSON.stringify(why)}`);
-          if (why && /не хватает/i.test(why.txt)) bad.push(`${n}: отказ предпросмотра выдан за недостачу денег: ${JSON.stringify(why.txt)}`);
-          if (why && refused && !/отказал/i.test(why.txt)) bad.push(`${n}: отказ сервера (4xx) не назван отказом: ${JSON.stringify(why.txt)}`);
-          if (why && !refused && /отказал/i.test(why.txt)) bad.push(`${n}: сбой (502) выдан за отказ сервера: ${JSON.stringify(why.txt)}`);
-          const lab = await s.p.evaluate(() => { const b = document.querySelector('[data-action="rnw-retry"]'); return b ? ((b.getAttribute('aria-label') || '') + ' ' + b.textContent).trim() : null; });
-          if (lab === null) bad.push(`${n}: у непосчитанной цены нет кнопки повтора`);
-          else if (!/цен|счита/i.test(lab) || /слот/i.test(lab)) bad.push(`${n}: подпись повтора «${lab}» не называет счёт цены — читается как повтор слота`);
-        }
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      {
-        const n = 'rnw-why-short', o = {};
-        const { s, ok } = await rnwOpen(n, o, { enough: false, short: '1300.00' });
-        if (ok) {
-          const why = await rnwWhy(s);
-          if (!why || !flat(why.txt).includes('Нехватает1300฿')) bad.push(`${n}: у погасшей «Продлить» причина не «Не хватает 1 300 ฿»: ${JSON.stringify(why)}`);
-          if (why && RNW_PRICE.test(why.txt)) bad.push(`${n}: при посчитанной цене у кнопки сказано «цена не посчитана»: ${JSON.stringify(why.txt)}`);
-          if (RNW_PRICE.test(await s.view())) bad.push(`${n}: цена посчитана, а на экране «цена не посчитана»`);
-        }
-        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
-        await s.ctx.close();
-      }
-      // 7. в окне число месяцев не меняется: «−»/«+» погашены; вторая линия — обработчики
-      {
-        const n = 'rnw-lock', o = {};
-        const { s, ok } = await rnwOpen(n, o);
-        if (ok && await tapIf(s, n, '[data-action="rnw-plus"]', '«+» месяца') && await tapIf(s, n, '[data-action="rnw-go"]', '«Продлить»')) {
-          if (!(await s.p.$('.undo'))) bad.push(`${n}: окна отмены нет после «Продлить»`);
-          else {
-            for (const [act, w] of [['rnw-minus', '«−»'], ['rnw-plus', '«+»']]) {
-              const off = await s.p.evaluate(x => { const b = document.querySelector(`[data-action="${x}"]`); return b ? b.disabled : null; }, act);
-              if (off !== true) bad.push(`${n}: в окне ${w} месяца нажимается (${JSON.stringify(off)}) — сумма меняется после «Продлить»`);
-              await s.p.evaluate(x => { const b = document.querySelector(`[data-action="${x}"]`); if (b) { b.disabled = false; b.click(); } }, act);
-              await s.p.waitForTimeout(150);
-              const mo = await s.p.evaluate(() => RNW.months);
-              if (mo !== 2) bad.push(`${n}: обработчик ${w} в окне сменил число месяцев на ${mo} — сверки окна нет`);
-              if (mo !== 2) await s.p.evaluate(() => { RNW.months = 2; });   // вернуть, иначе одна поломка спишется на другую кнопку
-            }
-          }
-        }
         await s.ctx.close();
       }
     }
@@ -2887,9 +2747,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.p.click('[data-action="retry"]');
     await s.p.waitForTimeout(150);
     if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
-    // + три запроса блока «Я мастер» на «Клубе» (/master/requests/mine, /master/price?hours=2 и hours=3)
+    // + два запроса блока букинга на «Клубе» (/master/requests/mine, /master/price?hours=2)
     // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
-    if (s.calls.length !== 8) bad.push(`retry: запросов ${s.calls.length}, ждали 8 (/me, /me, /events, /master/requests/mine, /master/price ×2, /partner/requests/mine, /partner/price)`);
+    if (s.calls.length !== 7) bad.push(`retry: запросов ${s.calls.length}, ждали 7 (/me, /me, /events, /master/requests/mine, /master/price, /partner/requests/mine, /partner/price)`);
     await s.ctx.close();
   }
 
@@ -12811,10 +12671,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'product-create': { id: 90, direction_id: 9, group: 'Выпечка', title: 'Бриошь', price: '150.00', mins: null, state: 'draft', sort: 0 },
     'product-state-review': { id: 81, state: 'review', decided_at: null, decision_note: '' },
     'product-edit': WCEDIT(81, { price: '200.00' }),
-    // М.2 (Cafe13KPG#894): заглушки masterApi/rnwApi против снимков cafe13-miniapp#255
+    // М.2 (Cafe13KPG#894): заглушки masterApi против снимков master-* (букинг — Cafe13KPG#985)
     'master-request-201': mreq(901, 'pending'), 'master-price': { hours: 2, hours_included: 2, amount: String(PRICE(2)) },
-    'master-requests-mine-approved': { requests: [mreq(901, 'approved', { paid_till: '2026-11-30T07:30:00+00:00' })] },
-    'master-renew-preview': MPREVIEW(1), 'master-renew-201': MRENEWED(),
+    'master-requests-mine-approved': { requests: [mreq(901, 'approved')] },
+    'master-slots': { slots: [mslot(901)], masters_without_slot: [] },
+    // клиент спрашивает занятость ВСЕГДА со временем — сверка со снимком `-time` (в нём conflict, fits, starts_at);
+    // conflict непустой: снимок пишет его объектом, и null здесь сверять было бы не с чем
+    'master-slot-busy-time': mbusy(MDAY(1), false, [{ title: 'Чужой вечер', starts_at: MAT(1, '16:00'), ends_at: MAT(1, '19:30') }],
+      { title: 'Чужой вечер', starts_label: MDAY(1).slice(8) + '.' + MDAY(1).slice(5, 7) + ' 16:00', ends_label: '19:30' }),
     // шаг 25 (Cafe13KPG#556): заглушки случаев `vyvod-*` против снимка api 0887c96 (cafe13-api#161)
     'withdraw-request': WD_POSTED(9), 'withdraw-mine': { requests: [WD_REQ(9, 'approved')], balance: '2670.00' },
     'withdraw-cancel': WD_CANCELLED(9), 'withdraw-queue-admin': { requests: [WD_QROW(9)], pending: 1 },
