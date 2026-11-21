@@ -600,7 +600,7 @@ function go(screen, p) {
   if (screen === 'partnerApply' && current !== 'partnerApply' && LIVE) { PR.err = ''; refreshMe(); loadPartnerPrice(); }
   if (screen === 'home' && current !== 'home' && LIVE && DATA.role !== 'guest') { PR.mineState = ''; BW.dirsAsked = false; }
   // шаг 20 (рецепт 20/bizMoney): свои бизнесы с остатком и отчёт месяца — на каждом входе; выбор бизнеса общий с bizWorkers
-  if (screen === 'bizMoney' && current !== 'bizMoney' && LIVE) { BW.lost = false; BW.dirs = null; BW.dirsFail = ''; MM.data = null; MM.fail = ''; MM.code = 0; loadMyBiz(false, true); }
+  if (screen === 'bizMoney' && current !== 'bizMoney' && LIVE) { BW.lost = false; BW.dirs = null; BW.dirsFail = ''; MM.data = null; MM.fail = ''; MM.code = 0; BWD.err = ''; loadMyBiz(false, true); }
   // шаг 14 (рецепт 14/bizWorkers, «Перечитать на входе»): свои бизнесы с оплаченностью и работники — на каждом входе;
   // запомненный бизнес сверяется со свежим списком в loadMyBiz
   if (screen === 'bizWorkers' && current !== 'bizWorkers' && LIVE) {
@@ -1191,7 +1191,11 @@ function doAction(a) {
     if (a === 'bm-retry-biz') { loadMyBiz(false, true); render(); return; }
     if (a === 'bm-retry') { loadMonth(); render(); return; }
     if (a === 'bm-refresh') { loadMyBiz(false, true); render(); return; }
-    if (a === 'bm-biz') { BW.biz = Number(arg); BW.lost = false; MM.data = null; loadMonth(); render(); return; }
+    if (a === 'bm-biz') { BW.biz = Number(arg); BW.lost = false; MM.data = null; loadMonth(); loadBizWd(); render(); return; }
+    // шаг 26: вывод денег бизнеса; после подачи и отмены — и остаток в шапке, и список (рецепт, «перечитать»)
+    if (a === 'bm-wd-send') { sendBizWd(); return; }
+    if (a === 'bm-wd-cancel') { cancelBizWd(Number(arg)); return; }
+    if (a === 'bm-wd-retry') { loadBizWd(); render(); return; }
     if (a === 'bw-biz' && !BW.busy && BW.ask === null) {
       bwGrab(); BW.biz = Number(arg); BW.lost = false; BW.list = null; BW.listFail = ''; BW.err = null; BW.rowErr = ''; BW.done = '';
       loadWorkers(); render(); return;

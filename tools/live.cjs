@@ -4092,17 +4092,23 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── шаг 25 (Cafe13KPG#556: ТЗ, снимок формы api 18bfcff; рецепт `_docs/recept/ekran/25/`, поправка #355): мастер просит вывод
   // со своего счёта («Управление» → «Деньги» → «Вывести деньги»), держатель `admin` решает в «Запросах на вывод». Контроли 2–4
   // ТЗ (остаток под замком, 403, без задвоения) решает СЕРВЕР; клиент обязан донести его слово и не задвоить нажатие.
-  // заглушки шага 25 — по снимку api 0887c96 (cafe13-api#161): их же сверяет страж формы (STUBS, `withdraw-*` в api-keys.json)
+  // заглушки шага 25 — по снимку api 0887c96 (cafe13-api#161): их же сверяет страж формы (STUBS, `withdraw-*` в api-keys.json).
+  // Шаг 26 (снимок api bdff63e, Cafe13KPG#557): + `account`, `direction_id`, `payout_id`, в очереди `direction_title`;
+  // у строк шага 25 счёт `personal`, бизнеса нет
   const WD_RU = { pending: 'ждёт решения', approved: 'одобрено', rejected: 'отказано', cancelled: 'отменено' };
   const WD_REQ = (id, st, x) => Object.assign({ id, role: 'master', book: 'ledger', amount: '500.00', status: st,
     created_at: '2026-11-20T05:00:00+00:00', decided_at: st === 'pending' ? null : '2026-11-20T06:00:00+00:00',
-    decision_note: null, ledger_id: st === 'approved' ? 77 : null, status_ru: WD_RU[st] }, x || {});
+    decision_note: null, ledger_id: st === 'approved' ? 77 : null, status_ru: WD_RU[st],
+    account: 'personal', direction_id: null, payout_id: null }, x || {});
   // `self_decided` — только в очереди и в ответе решения: истинен у решённого тем же, кто подал; у ждущего всегда false
   const WD_QROW = (id, x) => Object.assign(WD_REQ(id, 'pending'), { member_id: 2, first_name: 'Мастер', last_name: 'Тестовый',
-    username: null, decided_by: null, self_decided: false, balance: '3170.00' }, x || {});
-  const WD_POSTED = id => ({ id, role: 'master', book: 'ledger', amount: '500.00', status: 'pending', created_at: '2026-11-20T05:00:00+00:00', status_ru: WD_RU.pending });
+    username: null, decided_by: null, self_decided: false, balance: '3170.00', direction_title: null }, x || {});
+  const WD_POSTED = (id, x) => Object.assign({ id, role: 'master', book: 'ledger', amount: '500.00', status: 'pending', created_at: '2026-11-20T05:00:00+00:00',
+    status_ru: WD_RU.pending, account: 'personal', direction_id: null }, x || {});
+  // шаг 26: запрос из кошелька бизнеса — книга клуба, деньги при одобрении уходят в `payout_id`, а не в `ledger_id`
+  const WD_BIZ = dir => ({ role: 'partner', book: 'club_ledger', account: 'business', direction_id: dir });
   const WD_DECIDED = (id, st, x) => Object.assign({ id, status: st, decided_at: '2026-11-20T06:00:00+00:00', decision_note: null,
-    ledger_id: st === 'approved' ? 77 : null, self_decided: false, status_ru: WD_RU[st] }, x || {});
+    ledger_id: st === 'approved' ? 77 : null, payout_id: null, self_decided: false, status_ru: WD_RU[st] }, x || {});
   const WD_CANCELLED = id => ({ id, status: 'cancelled', decided_at: '2026-11-20T06:00:00+00:00', status_ru: WD_RU.cancelled });
   if (part(2)) {
     const MST = clone(OWNER); MST.roles = [{ role: 'master', direction_id: null }];
@@ -4265,6 +4271,29 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.click('[data-action="wq-ok:9"]', { timeout: 3000 }).catch(() => bad.push(`${n}: своему запросу нет «Одобрить»`));
       await s.p.waitForTimeout(500);
       if (s.calls.filter(c => c.url.endsWith('/me')).length <= me0) bad.push(`${n}: после одобрения своего запроса остаток не перечитан`);
+      await s.ctx.close();
+    }
+    {
+      // шаг 26: один список «моих» делится по счёту — на «Вывести деньги» мастера строки кошелька бизнеса не идут
+      const n = 'vyvod-lichny-bez-biznesa';
+      const s = await wopen(MST, { mine: () => json(200, { requests: [wreq(9, 'pending', { account: 'personal', direction_id: null }),
+        wreq(12, 'pending', { account: 'business', direction_id: 7, book: 'club_ledger', amount: '777.00' })], balance: '3170.00' }) });
+      await go25(s, n, 'withdraw');
+      const t = await s.view();
+      if (!(await s.p.$('[data-action="wd-cancel:9"]'))) bad.push(`${n}: личного запроса нет`);
+      if ((await s.p.$('[data-action="wd-cancel:12"]')) || t.includes('777')) bad.push(`${n}: запрос кошелька бизнеса на экране личного вывода`);
+      await s.ctx.close();
+    }
+    {
+      // шаг 26 (состав: «Счёт» правится этим PR): запрос из кошелька бизнеса — «Счёт: бизнес „Кофейня“», причину увидит партнёр
+      const n = 'vyvod-ochered-biznes';
+      const s = await wopen(OWNER, { queue: () => json(200, { requests: [qrow(12, Object.assign(WD_BIZ(7), { direction_title: 'Кофейня',
+        first_name: 'Партнёр', last_name: 'Тестовый' }))], pending: 1 }) });
+      await go25(s, n, 'withdrawQueue');
+      const t = await s.view();
+      if (!t.includes('Счёт: бизнес „Кофейня“')) bad.push(`${n}: нет «Счёт: бизнес „Кофейня“»`);
+      if (t.includes('Счёт: личный') || t.includes('club_ledger')) bad.push(`${n}: запрос бизнеса подписан личным счётом или книгой`);
+      if (!t.includes('Причина — её увидит партнёр') || t.includes('её увидит мастер')) bad.push(`${n}: подпись причины не партнёру`);
       await s.ctx.close();
     }
   }
@@ -12124,11 +12153,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (u === '/partner/requests/mine') return json(200, { requests: o.mine || [preq(31, 'approved', { paid_till: '2026-12-01T17:00:00+00:00' })] });
       if (u === '/partner/directions') return json(200, { directions: o.dirs() });
       if (/^\/bar\/products\?/.test(u)) return json(200, []);
+      // шаг 26: вывод бизнеса. Без своих ручек случая — пустой список (случаи шага 20 о выводе не спрашивают)
+      if (m === 'GET' && u === '/withdraw/requests/mine') return o.wdMine ? o.wdMine() : json(200, { requests: [], balance: '0.00' });
+      if (m === 'POST' && u === '/withdraw/request') { o.bodies.push(q.postData()); return o.wdReq(q); }
+      if (m === 'POST' && /^\/withdraw\/requests\/\d+\/cancel$/.test(u)) return o.wdCancel(q);
       const x = u.match(/^\/bar\/month\?direction_id=(\d+)$/);
       if (x) return o.month(Number(x[1]));
       return undefined;
     };
-    const mk = extra => Object.assign({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT))], month: () => json(200, MON()), seen: [] }, extra || {});
+    const mk = extra => Object.assign({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT))], month: () => json(200, MON()), seen: [], bodies: [] }, extra || {});
     const tap = async (s, n, sel, what) => {
       const ok = await s.p.evaluate(x => { const b = document.querySelector(x); if (!b || b.disabled) return false; b.click(); return true; }, sel);
       if (!ok) bad.push(`${n}: нечего нажать — ${what} (${sel})`);
@@ -12143,7 +12176,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const ok = await tap(s, n, '#view [data-go="bizMoney"]', 'дверь «Деньги бизнеса» на «Клубе»');
       return { s, ok, home };
     };
-    const body = s => s.p.evaluate(() => { const v = document.getElementById('view').cloneNode(true); const h = v.querySelector('.card.strong'); if (h) h.remove(); return v.textContent; });
+    // тело экрана без шапки остатка и без блока «Вывод» шага 26 (`[data-bwd]`): в нём «฿» подписи поля, а не число отчёта
+    const body = s => s.p.evaluate(() => { const v = document.getElementById('view').cloneNode(true); v.querySelectorAll('.card.strong, [data-bwd]').forEach(h => h.remove()); return v.textContent; });
     const done = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
     const flat = t => t.replace(/[\s  ]/g, '');
 
@@ -12269,6 +12303,139 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         }
       }
       await done(s, n);
+    }
+    // ── шаг 26 (ТЗ Cafe13KPG#557 ветвь 3, рецепт `_docs/recept/ekran/26/`, проект формы сервера там же): блок «Вывод»
+    // в bizMoney. Запрос — `account: business` + `direction_id` ВЫБРАННОГО бизнеса; список — общий `/withdraw/requests/mine`,
+    // в блок идут только строки этого бизнеса. «Не больше остатка» и «свой бизнес» решает сервер; клиент несёт его слово.
+    {
+      const RU = WD_RU;
+      // строки «моих» — общие заглушки шага 25 (их сверяет страж формы); dir = null — личный запрос
+      const brq = (id, st, dir, x) => dir === null ? WD_REQ(id, st, x)
+        : WD_REQ(id, st, Object.assign(WD_BIZ(dir), { ledger_id: null, payout_id: st === 'approved' ? 55 : null }, x || {}));
+      const made = (id, dir) => json(201, WD_POSTED(id, WD_BIZ(dir)));
+      const B2 = 'Вывести можно остаток этого бизнеса — его долю за закрытые месяцы. Запрос решает администратор клуба; приложение записывает запрос и решение, как клуб передаст деньги — не решает.';
+      const wdv = s => s.p.evaluate(() => { const b = document.querySelector('#view [data-bwd]'); return b ? b.textContent : null; });
+      const deny = s => s.p.$eval('#view [data-bwd] .deny .verbatim', e => e.textContent).catch(() => null);
+      const amt = s => s.p.$eval('#bm-wd-amount', e => e.value).catch(() => null);
+      {
+        // ветвь 3: запрос не больше остатка → «ждёт решения»; после одобрения остаток в шапке меньше на сумму.
+        // В общем списке — личный запрос и запрос ДРУГОГО бизнеса: в блок они не попадают
+        const n = 'vyvod-biznes-zapros';
+        let list = [brq(3, 'pending', null), brq(4, 'pending', 9)], wal = '14854.00';
+        const o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W(wal, OCT))],
+          wdMine: () => json(200, { requests: list, balance: '9000.00' }),
+          wdReq: () => { list = list.concat([brq(12, 'pending', 7)]); return made(12, 7); } });
+        const { s, ok } = await enter(o, n);
+        if (ok) {
+          let t = await wdv(s);
+          if (t === null) bad.push(`${n}: блока «Вывод» нет при остатке`);
+          else {
+            if (!t.includes(B2)) bad.push(`${n}: нет B2`);
+            if (!t.includes('Запросов на вывод ещё не было.')) bad.push(`${n}: личный или чужой запрос попал в блок бизнеса: ${t}`);
+            if (/переведём|на карту/.test(t)) bad.push(`${n}: блок обещает способ выплаты`);
+          }
+          if (await amt(s) !== '') bad.push(`${n}: поле суммы не пустое (подставлен остаток?)`);
+          await s.p.fill('#bm-wd-amount', '500');
+          const dirs0 = o.seen.filter(c => c === 'GET /partner/directions').length;
+          await tap(s, n, '#view [data-action="bm-wd-send"]', 'B4 «Попросить вывод»');
+          if (JSON.stringify(o.bodies) !== JSON.stringify(['{"amount":"500","account":"business","direction_id":7}'])) bad.push(`${n}: запрос ушёл не так: ${JSON.stringify(o.bodies)}`);
+          if (o.seen.filter(c => c === 'GET /partner/directions').length <= dirs0) bad.push(`${n}: после подачи остаток не перечитан`);
+          t = await wdv(s) || '';
+          if (!t.includes('ждёт решения') || !(await s.p.$('#view [data-action="bm-wd-cancel:12"]'))) bad.push(`${n}: после подачи нет строки «ждёт решения» с «Отменить запрос»`);
+          if (await s.p.$('#view [data-action="bm-wd-cancel:3"], #view [data-action="bm-wd-cancel:4"]')) bad.push(`${n}: в блоке строка личного или чужого запроса`);
+          // admin одобрил: сервер списал — остаток в шапке после «Обновить» меньше на 500
+          list = [brq(12, 'approved', 7)]; wal = '14354.00';
+          await tap(s, n, '#view [data-action="bm-refresh"]', '«Обновить»');
+          const h = await s.p.evaluate(() => document.querySelector('#view .card.strong').textContent);
+          if (!flat(h).includes('14354฿')) bad.push(`${n}: после одобрения остаток в шапке не 14 354: ${h}`);
+          if (!(await wdv(s) || '').includes('одобрен — списано со счёта')) bad.push(`${n}: нет «одобрен — списано со счёта»`);
+        }
+        await done(s, n);
+      }
+      {
+        // контроль 1: больше остатка — запрос УХОДИТ (клиент не сравнивает), отказ словами сервера, сумма цела
+        const n = 'vyvod-biznes-bolshe';
+        const D = 'в кошельке бизнеса 14854 ฿ — вывести 20000 ฿ нельзя';
+        const o = mk({ wdReq: () => json(409, { detail: D }) });
+        const { s, ok } = await enter(o, n);
+        if (ok) {
+          await s.p.fill('#bm-wd-amount', '20000');
+          await tap(s, n, '#view [data-action="bm-wd-send"]', 'B4');
+          if (o.bodies.length !== 1) bad.push(`${n}: запрос больше остатка не ушёл на сервер — клиентская заслонка`);
+          const v = await deny(s);
+          if (v !== D) bad.push(`${n}: отказ «${v}», ждали словами сервера «${D}»`);
+          if (await amt(s) !== '20000') bad.push(`${n}: введённая сумма не сохранилась`);
+        }
+        await done(s, n);
+      }
+      {
+        // контроль 5: два бизнеса — запрос несёт direction_id ВЫБРАННОГО; чужой бизнес — 403 словами сервера.
+        // Смена бизнеса перечитывает список: строка бизнеса 7 под бизнесом 9 не стоит
+        const n = 'vyvod-chuzhoy-biznes';
+        const D = 'это не ваш бизнес';
+        const o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT)), Object.assign(BWDIR(9, true), W('3200.00', OCT))],
+          month: d => json(200, MON({ direction: d === 9 ? 'Пекарня' : 'Кофейня' })),
+          wdMine: () => json(200, { requests: [brq(12, 'pending', 7)], balance: '9000.00' }),
+          wdReq: q => JSON.parse(q.postData()).direction_id === 9 ? json(403, { detail: D }) : made(13, 7) });
+        const { s, ok } = await enter(o, n);
+        if (ok) {
+          if (await wdv(s) !== null) bad.push(`${n}: блок «Вывод» до выбора бизнеса`);
+          if (await tap(s, n, '#view [data-action="bm-biz:7"]', 'бизнес 7')) {
+            if (!(await s.p.$('#view [data-action="bm-wd-cancel:12"]'))) bad.push(`${n}: у бизнеса 7 нет его ждущего запроса`);
+          }
+          if (await tap(s, n, '#view [data-action="bm-biz:9"]', 'бизнес 9')) {
+            const t = await wdv(s) || '';
+            if (await s.p.$('#view [data-action="bm-wd-cancel:12"]') || !t.includes('Запросов на вывод ещё не было.')) bad.push(`${n}: под бизнесом 9 запрос бизнеса 7`);
+            await s.p.fill('#bm-wd-amount', '500');
+            await tap(s, n, '#view [data-action="bm-wd-send"]', 'B4');
+            if (JSON.stringify(o.bodies) !== JSON.stringify(['{"amount":"500","account":"business","direction_id":9}'])) bad.push(`${n}: запрос ушёл не с выбранным бизнесом: ${JSON.stringify(o.bodies)}`);
+            const v = await deny(s);
+            if (v !== D) bad.push(`${n}: отказ «${v}», ждали словами сервера «${D}»`);
+          }
+        }
+        await done(s, n);
+      }
+      {
+        // контроль 7, клиентская половина: два нажатия, пока ответ в пути, — один запрос; второй вывод тех же денег решает сервер
+        const n = 'vyvod-dvazhdy-ne-vyvesti';
+        const o = mk({ wdReq: () => new Promise(r => setTimeout(() => r(made(12, 7)), 500)) });
+        const { s, ok } = await enter(o, n);
+        if (ok) {
+          await s.p.fill('#bm-wd-amount', '500');
+          await s.p.evaluate(() => { doAction('bm-wd-send'); doAction('bm-wd-send'); });
+          await s.p.waitForTimeout(800);
+          if (o.bodies.length !== 1) bad.push(`${n}: ${o.bodies.length} запросов за два нажатия`);
+        }
+        await done(s, n);
+      }
+      {
+        // отмена своего ждущего: POST cancel, строка «отменён», остаток перечитан
+        const n = 'vyvod-biznes-otmena';
+        let st = 'pending';
+        const o = mk({ wdMine: () => json(200, { requests: [brq(12, st, 7)], balance: '9000.00' }),
+          wdCancel: () => { st = 'cancelled'; return json(200, { id: 12, status: 'cancelled', decided_at: '2026-11-20T06:00:00+00:00', status_ru: RU.cancelled }); } });
+        const { s, ok } = await enter(o, n);
+        if (ok && await tap(s, n, '#view [data-action="bm-wd-cancel:12"]', 'B10 «Отменить запрос»')) {
+          if (!o.seen.includes('POST /withdraw/requests/12/cancel')) bad.push(`${n}: отмена не ушла на сервер`);
+          if (!(await wdv(s) || '').includes('отменён')) bad.push(`${n}: после отмены нет «отменён»`);
+        }
+        await done(s, n);
+      }
+      for (const [n, o, what] of [
+        // доли не назначены — блока нет; список не загрузился — слова и «Повторить», формы нет (подал бы вслепую)
+        ['vyvod-biznes-doli-null', mk({ dirs: () => [Object.assign(BWDIR(7, true), W(null, null))], month: () => json(409, { detail: 'доли не назначены' }) }), 'net'],
+        ['vyvod-biznes-ne-zagruzilos', mk({ wdMine: () => json(500, { detail: 'сбой' }) }), 'fail']]) {
+        const { s, ok } = await enter(o, n);
+        if (ok) {
+          const t = await wdv(s);
+          if (what === 'net' && (t !== null || /Попросить вывод/.test(await s.view()))) bad.push(`${n}: блок «Вывод» при wallet = null`);
+          if (what === 'fail') {
+            if (!t || !t.includes('Запросы не загрузились.') || !(await s.p.$('#view [data-action="bm-wd-retry"]'))) bad.push(`${n}: нет «Запросы не загрузились.» с «Повторить»`);
+            if (await s.p.$('#bm-wd-amount')) bad.push(`${n}: форма подачи без списка запросов`);
+          }
+        }
+        await done(s, n);
+      }
     }
     // 9. двери нет: гость и ждущая заявка; ни отчёта, ни списка своих бизнесов
     for (const [n, guest, mine] of [[`${n0}-net-gost`, true, []], [`${n0}-net-zhdet`, false, [preq(31, 'pending')]]]) {
@@ -12652,6 +12819,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'withdraw-request': WD_POSTED(9), 'withdraw-mine': { requests: [WD_REQ(9, 'approved')], balance: '2670.00' },
     'withdraw-cancel': WD_CANCELLED(9), 'withdraw-queue-admin': { requests: [WD_QROW(9)], pending: 1 },
     'withdraw-decide-approved': WD_DECIDED(9, 'approved'),
+    'withdraw-request-business': WD_POSTED(12, WD_BIZ(7)), 'withdraw-decide-business': WD_DECIDED(12, 'approved', { ledger_id: null, payout_id: 55 }),
     // шаги 27/29/30 (Cafe13KPG#557): заглушки случаев `vyvod-rol-*` против снимка api bdff63e
     'withdraw-accounts-role': { accounts: [RA_ACCROW('art_director', '1200.00')] },
     'withdraw-mine-club': { requests: [RA_REQ(40, 'club', 'pending')], balance: '3170.00' }

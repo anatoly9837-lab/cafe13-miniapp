@@ -228,6 +228,17 @@ function msDemoFill() {
   // шаг 12: «Бизнесы клуба» кадра E75 — бар с партнёром и закрытый без партнёра (обе подписи плашки)
   BIZ.list = [{ id: 1, title: 'Бар', open: true, partner: true, who: '[партнёр]' },
               { id: 2, title: 'Кофейня', open: false, partner: false, who: null }];
+  // «Заявки в партнёры» (шаг 13) — сырой ответ `GET /partner/requests` в форме снимка `partner-requests-ops-director`,
+  // пропущенный через тот же разборщик: набор не может обещать полей, которых живой разбор не даёт
+  var prq = function (id, title, status, word, extra) {
+    return Object.assign({ id: id, title: title, about: 'Одной строкой: чем он занимается.', amount: '2600.00', status: status, status_ru: word,
+      created_at: '2026-11-18T03:00:00+00:00', decided_at: status === 'pending' ? null : '2026-11-19T05:00:00+00:00', decision_note: '',
+      direction_id: status === 'approved' ? 2 : null, paid_till: status === 'approved' ? '2026-12-19T05:00:00+00:00' : null,
+      active: status === 'approved', member_id: id, first_name: '[член клуба]', last_name: '', username: null }, extra || {});
+  };
+  var prd = fromPartnerList({ pending: 1, requests: [prq(921, 'Чайная', 'pending', 'ждёт решения', { created_at: '2026-11-19T09:00:00+00:00' }),
+    prq(922, 'Кофейня', 'approved', 'согласовано'), prq(923, 'Ремонт велосипедов', 'rejected', 'отклонено', { decision_note: 'Такой бизнес в клубе уже есть.' })] }, true);
+  if (prd) { PR.q = prd.list; PR.pending = prd.pending; }
   MR.price = { 2: 2600, 3: 3900, 4: 5200, 5: 6500 };
   if (!EV_PLACES) { EV_PLACES = [{ id: 1, name: 'Зал', capacity: null }]; EV_PLACES_STATE = 'ok'; MR.demoPlaces = true; }
   MSB.data = { dates: [{ day: '05.11', busy: [], conflict: null }, { day: '12.11', busy: [{ title: 'Чайная церемония', from: '16:00', to: '17:30' }], conflict: null },
@@ -245,6 +256,7 @@ function msDemoClear() {
   MR.demo = false; MR.mine = null; MR.mineState = ''; MR.q = null; MR.pending = null; MR.slots = null; MR.without = null;
   PAY.list = null; PAY.pending = null; PAY.err = '';
   BIZ.list = null; BIZ.fail = '';
+  PR.q = null; PR.pending = null; PR.qFail = '';
   MR.price = {}; MR.priceAsk = {}; RNW.prev = null; RNW.key = ''; MSB.data = null; MSB.key = '';
   if (MR.demoPlaces) { MR.demoPlaces = false; EV_PLACES = null; EV_PLACES_STATE = ''; }
 }
@@ -577,8 +589,13 @@ var WD_PILL = { pending: ' gold', approved: ' on', rejected: '', cancelled: '' }
 // право подать — роль `master` в `roles` (сервер: `has_role("master")`, роль выдаёт согласование мастера); решать — `admin`
 function mayWithdraw() { return LIVE && grant('master'); }
 function mayWithdrawQueue() { return LIVE && grant('admin'); }
-// «Счёт: …» (Q6): сегодня сервер знает одну книгу — личный счёт (`ledger`); шаги 26–30 добавят книги ролей
+// «Счёт: …» (Q6): личный счёт — по книге (`ledger`); кошелёк бизнеса (шаг 26) — по `account` и названию бизнеса
 var WD_BOOK = { ledger: 'личный' };
+/* Шаг 26 (проект формы сервера в Cafe13KPG#557): какой счёт — ключ `account`; без него строка шага 25 = личный.
+   `direction_id` есть только у `business`. Один список «моих» запросов делится по счёту на экране: на «Вывести
+   деньги» — только личный, в bizMoney — только кошелёк выбранного бизнеса. */
+function wdAccount(q) { return typeof q.account === 'string' ? q.account : 'personal'; }
+function wdDir(q) { return typeof q.direction_id === 'number' ? q.direction_id : null; }
 function wdServerWord(r) { var d = detailOf(r); return d || failText(r); }
 
 /* Одна битая строка — отказ целиком: список с пропавшим запросом выглядел бы полным. */
@@ -588,9 +605,8 @@ function fromWithdrawMine(d) {
   for (var i = 0; i < d.requests.length; i++) {
     var q = d.requests[i];
     if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount))) return null;
-    out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount),
-               // счёт запроса (форма шагов 26–30): без ключа — личный, как на шаге 25
-               account: typeof q.account === 'string' ? q.account : 'personal',
+    // счёт запроса (форма шагов 26–30): без ключа — личный, как на шаге 25
+    out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount), account: wdAccount(q), dir: wdDir(q),
                iso: typeof q.created_at === 'string' ? q.created_at : '',
                answer: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' });
   }
@@ -644,7 +660,8 @@ function fromWithdrawQueue(d) {
     if (!q || typeof q.id !== 'number' || !WD_WORD[q.status] || !isFinite(moneyOf(q.amount)) || typeof q.member_id !== 'number') return null;
     out.push({ id: q.id, status: q.status, sum: moneyOf(q.amount), mine: me !== null && q.member_id === me,
                name: [q.first_name, q.last_name].filter(Boolean).join(' ') || 'Без имени',
-               book: typeof q.book === 'string' ? q.book : '',
+               book: typeof q.book === 'string' ? q.book : '', account: wdAccount(q),
+               dirTitle: typeof q.direction_title === 'string' ? q.direction_title : '',
                iso: typeof q.created_at === 'string' ? q.created_at : '' });
   }
   return { list: out, pending: d.pending };
