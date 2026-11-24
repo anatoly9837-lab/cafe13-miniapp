@@ -4263,7 +4263,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       club: { book: 'club_ledger', member: { amount: x.member || '4800.00', count: 2 }, master: { amount: '700.00', count: 1 },
         event: { amount: '150.00', count: 2 }, partner: { amount: '0', count: 0 }, total: x.total || '5650.00', balance: '9170.00',
         unknown_joins: { in_period: 0, all_time: 0, note: 'взнос неизвестен' } },
-      memberships: { book: 'memberships', new: x.isNew === undefined ? 3 : x.isNew, live: 17, live_at: '2026-11-24T05:00:00+00:00' },
+      memberships: { book: 'memberships', new: x.isNew === undefined ? 3 : x.isNew, live: 17,
+        live_at: x.liveEnd ? '2026-11-30T17:00:00+00:00' : '2026-11-24T05:00:00+00:00' },
       events: ev, till: { arrivals: x.arrivals === undefined ? 4 : x.arrivals },
       business: { book: 'club_ledger', closed: x.closed === undefined ? null : x.closed, current: x.current === undefined ? null : x.current },
       masters: { book: 'event_payouts', rows: [] },
@@ -4295,7 +4296,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // ветвь 1: три разреза — три окна на одном дне (`at` сохраняется), числа сервера своего окна; «посещ» нет ни в одном
       const n = 'stats-razrez';
       const NEW = { day: 1, week: 6, month: 23 };
-      const s = await csopen(OWNER, p => json(200, CS_RESP({ isNew: NEW[p.get('period')] }, p.get('period'))));
+      // сервер мерит «живых» на конце окна у прошлого периода и «сейчас» у текущего (поправка рецепта 6a313fa)
+      let first = null;
+      const s = await csopen(OWNER, p => { first = first || p.get('at');
+        return json(200, CS_RESP({ isNew: NEW[p.get('period')], liveEnd: p.get('at') !== first }, p.get('period'))); });
       await go31(s, n);
       const seen = {};
       for (const p of ['month', 'week', 'day']) {
@@ -4303,6 +4307,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const m = await card(s, 'Членство');
         seen[p] = m;
         if (!m || !m.includes('Новых за период' + NEW[p])) bad.push(`${n}: ${p} — «Членство» не с числом своего окна: «${m}»`);
+        if (!m || !m.includes('Живых сейчас17')) bad.push(`${n}: ${p} — текущий период не «Живых сейчас»: «${m}»`);
         if (/посещ/i.test(await s.view())) bad.push(`${n}: ${p} — на экране «посещ…»`);
       }
       const q = statsCalls(s).map(c => new URL(c.url).searchParams);
@@ -4314,6 +4319,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.click('[data-action="cs-prev"]'); await s.p.waitForTimeout(400);
       const prev = statsCalls(s).slice(-1).map(c => new URL(c.url).searchParams)[0];
       if (!prev || prev.get('period') !== 'day' || prev.get('at') >= [...ats][0]) bad.push(`${n}: ‹ не спросила предыдущий день`);
+      const mp = await card(s, 'Членство');
+      if (!mp || !mp.includes('Живых на конец периода17') || /\d{4}/.test(mp)) bad.push(`${n}: прошлый период не «Живых на конец периода» или с датой: «${mp}»`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }

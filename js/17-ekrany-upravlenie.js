@@ -476,7 +476,8 @@ Object.assign(SCREENS, {
 /* ── шаг 31: статистика клуба у главы (ТЗ Cafe13KPG#688 ред. 1, рецепт `_docs/recept/ekran/31/clubStats.md`,
    снимок формы api 61db38e) ── Одна ручка на страницу: `GET /stats/club?period=&at=`. Пусто ≠ 0 (§4): счётчики
    приходят числом всегда, а суммы ивентов по пустому периоду — `null`, и это НЕ ноль. Даты экран не считает:
-   «живых на» — `memberships.live_at`, закрытие текущего месяца — `business.current.closes_on`. Посещений нет вовсе
+   закрытие текущего месяца — `business.current.closes_on`; дату `live_at` не печатает вовсе (поправка рецепта
+   6a313fa: конец окна — 00:00 следующего дня, «на 1 декабря» о ноябре читалось бы неверно). Посещений нет вовсе
    (слово владельца 21.11.2026). Числа не кэшируются между периодами: каждая смена разреза — новый запрос. */
 var CS = { period: 'month', at: '', data: null, fail: '', deny: '', gen: 0 };
 function mayClubStats() { return LIVE && (grant('head') || grant('admin')); }
@@ -524,6 +525,7 @@ function fromClubStats(d) {
   club.total = csMoney(c.total); club.balance = csMoney(c.balance);
   if (!isFinite(club.total) || !isFinite(club.balance)) return null;
   if (!csCount(m.new) || !csCount(m.live) || typeof m.live_at !== 'string' || isNaN(Date.parse(m.live_at))) return null;
+  if (typeof d.period_end !== 'string' || isNaN(Date.parse(d.period_end))) return null;
   if (!csCount(e.count) || !csCount(t.arrivals)) return null;
   // ивентов нет — суммы `null`; ивенты есть — числа (ивент без записей даёт 0, а не null)
   var none = e.count === 0;
@@ -531,7 +533,8 @@ function fromClubStats(d) {
   var closed = b.closed, cur = b.current;
   if (closed !== null && (!closed || typeof closed !== 'object' || !isFinite(csMoney(closed.amount)))) return null;
   if (cur !== null && (!cur || typeof cur !== 'object' || typeof cur.closes_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(cur.closes_on))) return null;
-  return { club: club, isNew: m.new, live: m.live, liveOn: bkk(new Date(m.live_at)).ymd,
+  return { club: club, isNew: m.new, live: m.live, // «на конец периода» — когда сервер мерил на конце окна; раньше конца — период текущий, мерил «сейчас»
+           liveEnd: Date.parse(m.live_at) === Date.parse(d.period_end),
            count: e.count, bookings: none ? null : e.bookings, collected: none ? null : csMoney(e.collected),
            arrivals: t.arrivals, closed: closed === null ? null : csMoney(closed.amount),
            closesOn: cur === null ? null : cur.closes_on };
@@ -577,7 +580,7 @@ Object.assign(SCREENS, {
         row('Бизнесы', bmSum(s.club.partner)) + row('Итого', bmSum(s.club.total)) + row('Остаток счёта клуба', bmSum(s.club.balance)) +
       '</div><span class="small">Остаток — на сегодня, а не за период.</span></div>';
     var M = '<div class="card"><b>Членство</b><div class="rows">' +
-        row('Новых за период', s.isNew) + row('Живых на ' + esc(csDay(s.liveOn)), s.live) + '</div></div>';
+        row('Новых за период', s.isNew) + row(s.liveEnd ? 'Живых на конец периода' : 'Живых сейчас', s.live) + '</div></div>';
     // E1: ивентов не было — строки записей и собранного не стоят вовсе; «0» из `null` солгал бы «был, но пустой»
     var E = '<div class="card"><b>Ивенты</b><div class="rows">' + row('Ивентов', s.count) +
         (s.count === 0 ? '' : row('Записей', s.bookings) + row('Собрано', bmSum(s.collected))) + '</div>' +
