@@ -67,15 +67,15 @@
 | `dver` | `home` | — | 10398 | 8 | 0 |
 | `dver` | `sostav` | — | 2456 | 4 | 0 |
 | `master` | `home` | — | 5756 | 8 | 9 |
-| `master` | `masterApply` | — | 14357 | 9 | 22 |
-| `master` | `sostav` | — | 4463 | 4 | 0 |
+| `master` | `masterApply` | — | 15808 | 9 | 22 |
+| `master` | `sostav` | — | 4470 | 4 | 0 |
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
 | `odobrenie` | `sostav` | — | 4281 | 4 | 0 |
 | `popolnenie` | `noAccess` | — | 4185 | 3 | 6 |
 | `popolnenie` | `sostav` | — | 4762 | 4 | 0 |
 | `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
-| `popolnenie` | `topup` | — | 4762 | 3 | 0 |
+| `popolnenie` | `topup` | — | 5429 | 3 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
 - `Исключение, а не долг: чем они отличаются` — строк 7
