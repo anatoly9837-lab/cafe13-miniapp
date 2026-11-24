@@ -6414,7 +6414,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // важно их значение, задаёт его сам (`over`), как и прежде
     ask_donation: null, full_refund_until: null, my_may_thank: null,
     my_entry_paid: null, my_refund_now: null, my_donated: null,
-    my_booking_paid: null, my_amount_due: null
+    my_booking_paid: null, my_amount_due: null,
+    // фича 4 (api #176, снимок events-afisha* на 4428e6d): одобрение в строке ивента. По умолчанию — одобрен, как всё,
+    // что миграция 040 застала опубликованным; ждущий и отклонённый задают своё (`over`, случаи odobr-*)
+    approval: 'approved', reject_note: null
   }, over);
   const AFISHA = [
     EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
