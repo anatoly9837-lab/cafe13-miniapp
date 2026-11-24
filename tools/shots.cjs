@@ -246,6 +246,15 @@ const LIVE_SHOTS = [
    [],
    { '/join': { amount_thb: '3600.00', amount_usd: '130.00', period_months: 1, currency: 'THB', request: null,
                 about_token: 'tok-проверка', you: { first_name: '[просящий]', last_name: '', username: 'ab' } } }],
+  ['69-event-approval', 'eventApproval', null, 'Вечер работника', 'Клуб · ответственность',
+   'Ивенты на одобрение (фича 4, рецепт `_docs/recept/ekran/odobrenie/eventApproval.md`): надпись о том, что неодобренный ивент ' +
+   'в афише видят только автор и арт-директор, ниже очередь — название, время и автор, кнопки «Одобрить» и «Отклонить». ' +
+   '⚠ Снимок ЖИВОГО режима на фикстуре: форма — по снимку api `events-pending-approval` (страж формы съёмки), значения — ' +
+   'заглушка `ODOBR.PROW` из `tools/live.cjs`. Признак — «Вечер работника»: название из фикстуры, без неё экран печатал бы загрузку.',
+   ['art_director'],
+   { '/events/pending-approval': [{ id: 41, title: 'Вечер работника', starts_at: '2026-12-04T12:00:00+00:00', duration_min: 90,
+       seats: 10, kind: 'paid', price: '400.00', place_id: null, organizer_id: 987654,
+       organizer_first_name: 'Работник', organizer_last_name: 'Клуба' }] }],
 ];
 /* Страж формы живого съёма (координатор 24.11.2026: фикстура не должна стать ВТОРЫМ источником правды о сервере).
    Каждая фикстура обязана совпасть ключами хотя бы с одним снимком api той же ручки (`tools/api-keys.json`, ответ 200):
