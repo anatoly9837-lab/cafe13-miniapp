@@ -270,8 +270,10 @@ function tabList() {
   // DATA.role здесь не правится: его читают homeOf, isMember, касса.
   if (LIVE) {
     var on = {};
+    // Фича 1 «ДВЕРЬ»: у новичка без членства вкладки члена — «Клуб» больше не прячется за членством (рецепт dver/home).
+    // Работник без членства — как прежде, «Услуги»: его дом там (решение №13)
     ((DATA.member && DATA.member.memberships) || []).map(function (m) { return m.level; })
-      .concat(DATA.role).forEach(function (l) {
+      .concat(DATA.role === 'guest' && !grant('worker') ? 'member' : DATA.role).forEach(function (l) {
         (TABS[l] || []).forEach(function (x) { on[x[0]] = x; });
       });
     t = TAB_ORDER.filter(function (k) { return on[k]; }).map(function (k) { return on[k]; });
@@ -301,8 +303,11 @@ function homeOf() {
   // видит только её». Экран входа (BARE): вкладок и выхода нет по построению — и у держателя роли без членства тоже,
   // это названная цена решения (Cafe13KPG#324). В демонстрации — прежние «Услуги»: гостя там показывают
   // Исключение — РАБОЧАЯ роль `worker` (решение владельца №13, Cafe13KPG#927: «входит по допуску, без членства»):
-  // работник бизнеса без членства идёт на «Услуги», где его дверь «Карточки меню». Прочие роли без членства — как прежде
-  if (DATA.role === 'guest') return !LIVE || grant('worker') ? 'guest' : 'noAccess';
+  // работник бизнеса без членства идёт на «Услуги», где его дверь «Карточки меню».
+  // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009, рецепт `_docs/recept/ekran/dver/home.md`; решения владельца №24, №35): «просьбы о
+  // вступлении» больше нет — новичок без членства начинает с «Клуба». `noAccess` остаётся ТОЛЬКО выгнанному: его
+  // сервер не пускает (`/me` → 403 «доступа нет», api 5d79c84), и туда ведёт boot, а не выбор дома
+  if (DATA.role === 'guest') return !LIVE || grant('worker') ? 'guest' : 'home';
   if (DATA.role === 'staff') return 'staff';
   if (DATA.role === 'bar') return 'barQueue';
   if (DATA.role === 'curator') return 'curator';
