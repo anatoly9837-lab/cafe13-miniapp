@@ -249,7 +249,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
@@ -324,7 +324,7 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -589,6 +589,7 @@ function go(screen, p) {
   }
   // шаг 31 (рецепт «Перечитать на входе»): на каждый вход — месяц, в который попадает сегодня
   if (screen === 'clubStats' && current !== 'clubStats') { CS.period = 'month'; CS.at = msToday(); loadClubStats(); }
+  if (screen === 'artStats' && current !== 'artStats') { AS.period = 'month'; AS.at = msToday(); loadArtStats(); }
   if ((screen === 'manage' || screen === 'withdrawQueue') && current !== screen && mayWithdrawQueue()) { WQ.done = ''; WQ.err = {}; loadWithdrawQueue(); }
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
@@ -1137,6 +1138,10 @@ function doAction(a) {
     if (a === 'cs-prev') { csMove(-1); return; }
     if (a === 'cs-next') { csMove(1); return; }
     if (a === 'cs-retry') { loadClubStats(); render(); return; }
+    if (a === 'as-period' && /^(day|week|month)$/.test(arg)) { if (AS.period !== arg) { AS.period = arg; loadArtStats(); } render(); return; }
+    if (a === 'as-prev') { asMove(-1); return; }
+    if (a === 'as-next') { asMove(1); return; }
+    if (a === 'as-retry') { loadArtStats(); render(); return; }
     if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
     if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
     if (a === 'tq-shot' && mayTopups()) { delete TOPQ.shot[Number(arg)]; topupShot(Number(arg)); render(); return; }

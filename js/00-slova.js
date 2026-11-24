@@ -1,0 +1,68 @@
+/* Ключи перевода (решение владельца №22, 24.11.2026: «русский остаётся четвёртым языком; ключи закладываем с шага 32»).
+   Первый экран на ключах — artStats (шаг 32, Cafe13KPG#563). Выпущенное до v177 ключей НЕ несёт и сюда в попутных
+   правках не переводится — это отдельная работа.
+
+   Ключ — `<экран>.<блок>.<слот>` латиницей через точку; один ключ — одна строка словаря (признак сборки рецепта —
+   `rg -c '<ключ>' js/00-slova.js`, цель 1). Подстановка — `{имя}`: slovo('artStats.money.closes', { date: '…' }).
+
+   Языков четыре: th, my, en, ru — порядок списка владельца (шаг 41) с русским четвёртым. Заполнен пока только ru;
+   выбора языка в клиенте нет, поэтому LANG стоит 'ru'.
+
+   ⚠ Ключа нет в словаре текущего языка → slovo() отдаёт САМ КЛЮЧ, а не пустую строку и не русский текст другого
+   языка (AGENTS §4: «нет» видно, а не молчит). Подстановки, которой не передали, остаётся видимой как `{имя}`.
+   Подмены на ru нет НАРОЧНО: тайский экран с русскими строками читался бы переведённым. Батарея (live.cjs,
+   `slova-*`) краснеет на ключе, которого нет в ru, по ВСЕМ вызовам slovo('…') клиента.
+
+   ⚠ Возвращается ТЕКСТ, а не разметка: в HTML он идёт через esc(), как любые слова. Имя функции — не `t`:
+   в клиенте локальное `var t` встречается часто, и оно молча закрыло бы общую функцию. */
+var LANGS = ['th', 'my', 'en', 'ru'];
+var LANG = 'ru';
+var SLOVA = {
+  th: {},
+  my: {},
+  en: {},
+  ru: {
+    // шаг 32, artStats — рецепт `_docs/recept/ekran/32/artStats.md` (слова дизайнера; ⚠ отмеченные «клиент» — вне
+    // таблицы рецепта: подписи стрелок для чтения с экрана, «загружаем» и отказ при прямом входе без права)
+    'artStats.door': 'Статистика арт-директора',
+    'artStats.title': 'Статистика арт-директора',
+    'artStats.period.day': 'День',
+    'artStats.period.week': 'Неделя',
+    'artStats.period.month': 'Месяц',
+    'artStats.period.dayLabel': '{date}',
+    'artStats.period.weekLabel': 'Неделя {from}–{to}',
+    'artStats.period.monthLabel': '{month} {year}',
+    'artStats.period.prev': 'Предыдущий период',            // клиент
+    'artStats.period.next': 'Следующий период',             // клиент
+    'artStats.period.clockNote': 'Ивенты считаются по дню ивента, деньги — по дню распределения: ивент 30-го, распределённый 2-го, попадёт в разные периоды.',
+    'artStats.events.title': 'Ивенты',
+    'artStats.events.count': 'Ивентов',
+    'artStats.events.bookings': 'Записей',
+    'artStats.events.collected': 'Собрано',
+    'artStats.events.cashNote': 'В деньгах ивента только безналичные: оплата наличными на кассе сюда не входит.',
+    'artStats.events.none': 'Ивентов в этом периоде не было.',
+    'artStats.masters.title': 'Мастера',
+    'artStats.masters.payouts': 'Распределений: {n}',
+    'artStats.masters.none': 'Распределений мастерам в этом периоде не было.',
+    'artStats.money.title': 'Деньги арт-директора',
+    'artStats.money.balance': 'На счёте роли',
+    'artStats.money.accrued': 'Начислено за период',
+    'artStats.money.expected': 'Ожидается к начислению',
+    'artStats.money.roleNote': 'Счёт общий для роли: если её держат двое, деньги у них общие и вывести их может любой из них.',
+    'artStats.money.expectedNone': 'Нераспределённых ивентов нет.',
+    'artStats.money.nowNote': 'На счёте и ожидаемое — на сегодня, а не за период; за период — только начисленное.',
+    'artStats.error': 'Статистика не загрузилась.',
+    'artStats.retry': 'Повторить',
+    'artStats.loading': 'Загружаем статистику…',            // клиент
+    'artStats.denyTitle': 'Сюда нельзя',                     // клиент
+    'artStats.denyNote': 'Статистику арт-директора видит арт-директор.'   // клиент
+  }
+};
+function slovo(key, vars) {
+  var d = SLOVA[LANG], s = d && Object.prototype.hasOwnProperty.call(d, key) ? d[key] : null;
+  if (typeof s !== 'string' || s === '') return key;
+  if (!vars) return s;
+  return s.replace(/\{(\w+)\}/g, function (m, k) {
+    return Object.prototype.hasOwnProperty.call(vars, k) && vars[k] !== null && vars[k] !== undefined ? String(vars[k]) : m;
+  });
+}
