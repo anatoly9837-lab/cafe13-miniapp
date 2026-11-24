@@ -67,7 +67,7 @@
 | `dver` | `home` | — | 10398 | 8 | 0 |
 | `dver` | `sostav` | — | 2456 | 4 | 0 |
 | `master` | `home` | — | 5481 | 8 | 8 |
-| `master` | `masterApply` | — | 13371 | 9 | 21 |
+| `master` | `masterApply` | — | 13889 | 9 | 21 |
 | `master` | `sostav` | — | 4463 | 4 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
