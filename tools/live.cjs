@@ -5010,6 +5010,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         bad.push(`${n}: money с null — не D3 и «нет данных»: «${D}»`);
       if (nul.errs.length) bad.push(`${n}: ошибки страницы (null) ${nul.errs.join('; ')}`);
       await nul.ctx.close();
+      // ноль — не «нет данных»: доля клуба 0 (партнёру 100) — «0 %», а не H1; pct 0 — «Мои 0 %», а не D3
+      const z0 = await osopen(OPS, () => json(200, OS_RESP({ businesses: [OS_BIZ(3, 'Чайная', { share_club: '0.00', share_partner: '100.00' })], months: [],
+        money: { pct: '0.00', accrued: '90.00', balance: '270.00' } })));
+      await go33(z0, n);
+      const h0 = await card3(z0, await W3(z0, 'opsStats.shares.title')), v0 = await z0.view();
+      if (!h0 || !h0.includes(await W3(z0, 'opsStats.shares.row', { club: '0', partner: '100' })) || h0.includes(await W3(z0, 'opsStats.shares.unset'))) bad.push(`${n}: доля 0 — не «0 %» или H1: «${h0}»`);
+      if (!(await card3(z0, await W3(z0, 'opsStats.money.title', { pct: '0' }))) || v0.includes(await W3(z0, 'opsStats.money.pctNone'))) bad.push(`${n}: pct 0 — не «Мои 0 %» или D3`);
+      await z0.ctx.close();
       const z = await osopen(OPS, () => json(200, OS_RESP({ businesses: [], months: [], money: { pct: '3.00', accrued: '0.00', balance: '0.00' } })));
       await go33(z, n);
       const vz = await z.view(), Dz = await card3(z, await W3(z, 'opsStats.money.title', { pct: '3' }));
