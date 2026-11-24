@@ -4970,6 +4970,52 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     {
+      // my-period: ‹ уходит запросом с `at` прошлого месяца при том же period, и на экране числа прошлого окна; › погашена
+      // на текущем, после ‹ — нет, и возвращает в текущий месяц (ревью #406 на все четыре страницы). Образец — ms-period
+      const n = 'my-period';
+      let first = null;
+      const s = await myopen(GUEST, p => { first = first || p.get('at');
+        return json(200, MY_RESP({ kind: p.get('period'), events: { count: p.get('at').slice(0, 7) === first.slice(0, 7) ? 7 : 2, spent: '2500.00' } })); });
+      await go36(s, n);
+      const ev = await W(s, 'myStats.events.title'), cnt = await W(s, 'myStats.events.count');
+      const q = () => s.calls.filter(c => c.method === 'GET' && /\/stats\/me/.test(c.url)).map(c => new URL(c.url).searchParams);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(first || '')) bad.push(`${n}: первый запрос без дня at: «${first}»`);
+      if (!(await s.p.$('[data-action="my-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await s.p.click('[data-action="my-prev"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет ‹`)); await s.p.waitForTimeout(400);
+      const prev = q().slice(-1)[0];
+      if (!prev || prev.get('period') !== 'month' || !(prev.get('at').slice(0, 7) < first.slice(0, 7))) bad.push(`${n}: ‹ не спросила прошлый месяц: ${prev && prev.toString()}`);
+      const e1 = await card(s, ev);
+      if (!e1 || !e1.includes(cnt + '2')) bad.push(`${n}: после ‹ на экране не числа прошлого окна: «${e1}»`);
+      if (await s.p.$('[data-action="my-next"][disabled]')) bad.push(`${n}: › погашена на прошлом периоде`);
+      await s.p.click('[data-action="my-next"]', { timeout: 3000 }).catch(() => bad.push(`${n}: › не нажать`)); await s.p.waitForTimeout(400);
+      const nx = q().slice(-1)[0], e2 = await card(s, ev);
+      if (!nx || nx.get('at').slice(0, 7) !== first.slice(0, 7) || nx.get('period') !== 'month') bad.push(`${n}: › не вернула к текущему месяцу: ${nx && nx.toString()}`);
+      if (!e2 || !e2.includes(cnt + '7')) bad.push(`${n}: после › не числа текущего окна: «${e2}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // my-pozdniy: ответ месяца задержан, неделя пришла раньше — на экране числа недели (держит `gen !== MY.gen` в
+      // loadMyStats). Образец — ms-pozdniy, art-pozdniy
+      const n = 'my-pozdniy';
+      let landed = false;
+      const s = await myopen(GUEST, p => p.get('period') === 'month'
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, MY_RESP({ kind: 'month', events: { count: 77, spent: '2500.00' } }))); }, 1500))
+        : json(200, MY_RESP({ kind: p.get('period'), events: { count: 4, spent: '1300.00' } })));
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="myStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Клубе» нет двери myStats`));
+      await s.p.waitForTimeout(100);
+      await s.p.click('[data-action="my-period:week"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза week`));
+      await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: ответ месяца пришёл раньше запроса недели — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный ответ месяца так и не пришёл — гонки не было`);
+      const e = await card(s, await W(s, 'myStats.events.title'));
+      if (!e || e.includes('77') || !e.includes((await W(s, 'myStats.events.count')) + '4')) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${e}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
       // my-dver: дверь Y0 у вошедшего без ролей и без членства есть; вне Telegram — нет и ручку не спрашивают
       const n = 'my-dver';
       const s = await myopen(GUEST, () => json(200, MY_RESP()));
