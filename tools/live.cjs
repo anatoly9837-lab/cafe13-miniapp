@@ -4383,6 +4383,28 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
   }
+  // ── Cafe13KPG#999 (слова владельца 24.11.2026): №11 — роль `staff` зовётся «Работник» везде; №9 — демо бара без часов ──
+  if (part(1)) {
+    {
+      const n = 'rabotnik-slovo';
+      const s = await open(false, true, json(200, OWNER));
+      await s.p.evaluate(() => go('demo')); await s.p.waitForTimeout(200);
+      const row = await s.p.$eval('[data-role="staff"] b', e => e.textContent).catch(() => null);
+      if (row !== 'Работник') bad.push(`${n}: в демо-переключателе роль staff «${row}», ждали «Работник»`);
+      const w = await s.p.evaluate(() => roleWords('staff'));
+      if (w !== 'Работник') bad.push(`${n}: имя роли staff в карточках людей и кассы «${w}», ждали «Работник»`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'demo-bar-bez-chasov';
+      const s = await open(false, true, json(200, OWNER));
+      await s.p.evaluate(() => { DATA.bar.open = true; go('bar'); }); await s.p.waitForTimeout(200);
+      const t = await s.view();
+      if (!t.includes('Заказ уходит на бар сразу')) bad.push(`${n}: демо открытого бара не нарисовано — проверять нечего`);
+      if (/до \d{1,2}:\d{2}/.test(t)) bad.push(`${n}: демо бара обещает часы: «${(t.match(/.{0,20}до \d{1,2}:\d{2}/) || [''])[0]}»`);
+      await s.ctx.close();
+    }
+  }
   // Фото не загрузилось — сказано явно, а не пустой кружок.
   if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
@@ -10082,7 +10104,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // (мутация «без margin-left: auto» была зелёной: условие не возникло). Правило мерится на
       // КОРОТКОМ тексте, подставленном в ту же плашку: тогда справа её держит только CSS.
       const gapShort = await s.p.evaluate(() => { const n = document.querySelector('.note.act'), b = n && n.querySelector('[data-action="p-back"]');
-        if (!n || !b) return null; n.querySelector('span').textContent = 'Снято: Касса.';
+        if (!n || !b) return null; n.querySelector('span').textContent = 'Снято: Работник.';
         return Math.round(n.getBoundingClientRect().right - b.getBoundingClientRect().right); });
       if (gapShort === null || gapShort > 20) bad.push(`people-revoke: на коротком итоге «Отменить» не у правого края (${gapShort} px) — справа держит длина фразы, а не правило`);
       if (s.calls.filter(c => c.url.endsWith('/people')).length !== 2) bad.push('people-revoke: список не перечитан');
