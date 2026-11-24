@@ -5144,6 +5144,52 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (/Мои 3|70 %|30 %/.test(src) || /Мои 3/.test(fs.readFileSync(ROOT + '/js/00-slova.js', 'utf8'))) bad.push(`${n}: литерал процента в коде`);
     }
     {
+      // os-period: ‹ уходит запросом с `at` прошлого месяца при том же period, и на экране выручка прошлого окна; › погашена
+      // на текущем, после ‹ — нет, и возвращает в текущий месяц (ревью #406 на все четыре страницы). Образец — ms-period
+      const n = 'os-period';
+      let first = null;
+      const s = await osopen(OPS, p => { first = first || p.get('at');
+        return json(200, OS_RESP({ kind: p.get('period'), businesses: [OS_BIZ(3, 'Чайная', { revenue: p.get('at').slice(0, 7) === first.slice(0, 7) ? '4200.00' : '110.00' })] })); });
+      await go33(s, n);
+      const row = async () => s.p.$eval('#view [data-biz="3"]', e => e.textContent).catch(() => '');
+      const q = () => s.calls.filter(c => c.method === 'GET' && /\/stats\/ops/.test(c.url)).map(c => new URL(c.url).searchParams);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(first || '')) bad.push(`${n}: первый запрос без дня at: «${first}»`);
+      if (!(await s.p.$('[data-action="os-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await s.p.click('[data-action="os-prev"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет ‹`)); await s.p.waitForTimeout(400);
+      const prev = q().slice(-1)[0];
+      if (!prev || prev.get('period') !== 'month' || !(prev.get('at').slice(0, 7) < first.slice(0, 7))) bad.push(`${n}: ‹ не спросила прошлый месяц: ${prev && prev.toString()}`);
+      const r1 = await row();
+      if (!r1.includes(await sum3(s, '110.00')) || r1.includes(await sum3(s, '4200.00'))) bad.push(`${n}: после ‹ на экране не выручка прошлого окна: «${r1}»`);
+      if (await s.p.$('[data-action="os-next"][disabled]')) bad.push(`${n}: › погашена на прошлом периоде`);
+      await s.p.click('[data-action="os-next"]', { timeout: 3000 }).catch(() => bad.push(`${n}: › не нажать`)); await s.p.waitForTimeout(400);
+      const nx = q().slice(-1)[0], r2 = await row();
+      if (!nx || nx.get('at').slice(0, 7) !== first.slice(0, 7) || nx.get('period') !== 'month') bad.push(`${n}: › не вернула к текущему месяцу: ${nx && nx.toString()}`);
+      if (!r2.includes(await sum3(s, '4200.00'))) bad.push(`${n}: после › не выручка текущего окна: «${r2}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // os-pozdniy: ответ месяца задержан, неделя пришла раньше — на экране выручка недели (держит `gen !== OPS.gen` в
+      // loadOpsStats). Образец — ms-pozdniy, art-pozdniy
+      const n = 'os-pozdniy';
+      let landed = false;
+      const s = await osopen(OPS, p => p.get('period') === 'month'
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, OS_RESP({ kind: 'month', businesses: [OS_BIZ(3, 'Чайная', { revenue: '7777.00' })] }))); }, 1500))
+        : json(200, OS_RESP({ kind: p.get('period'), businesses: [OS_BIZ(3, 'Чайная', { revenue: '760.00' })] })));
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="opsStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери opsStats`));
+      await s.p.waitForTimeout(100);
+      await s.p.click('[data-action="os-period:week"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза week`));
+      await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: ответ месяца пришёл раньше запроса недели — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный ответ месяца так и не пришёл — гонки не было`);
+      const r = await s.p.$eval('#view [data-biz="3"]', e => e.textContent).catch(() => '');
+      if (r.includes(await sum3(s, '7777.00')) || !r.includes(await sum3(s, '760.00'))) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${r}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
       // os-dver: без ops_director и admin двери O0 нет, прямой вход — «Сюда нельзя» без запроса; контроль — опер-директор (go33 выше)
       const n = 'os-dver';
       const M = clone(OWNER); M.roles = [{ role: 'art_director', direction_id: null }];
