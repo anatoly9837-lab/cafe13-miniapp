@@ -511,9 +511,10 @@ Object.assign(SCREENS, {
         (s.count === 0 ? '' : row(slovo('masterStats.events.bookings'), msNum(s.bookings)) + row(slovo('masterStats.events.collected'), msNum(s.collected, true))) + '</div>' +
       (s.count === 0 ? '<span class="small">' + esc(slovo('masterStats.events.none')) + '</span>' : '') +
       '<span class="small">' + esc(slovo('masterStats.events.cashNote')) + '</span></div>';
-    var Pc = '<div class="card"><b>' + esc(slovo('masterStats.payouts.title')) + '</b>' + (s.pCount === 0
-        ? '<span class="small">' + esc(slovo('masterStats.payouts.none')) + '</span>'
-        : '<div class="rows">' + row(slovo('masterStats.payouts.amount'), msNum(s.pAmount, true)) + row(slovo('masterStats.payouts.count'), msNum(s.pCount)) + '</div>') + '</div>';
+    // пустой блок — по СЧЁТЧИКУ (рецепт #400): при 0 счётчик стоит числом, P1 — вместо строки суммы
+    var Pc = '<div class="card"><b>' + esc(slovo('masterStats.payouts.title')) + '</b><div class="rows">' +
+        (s.pCount === 0 ? '' : row(slovo('masterStats.payouts.amount'), msNum(s.pAmount, true))) + row(slovo('masterStats.payouts.count'), msNum(s.pCount)) + '</div>' +
+      (s.pCount === 0 ? '<span class="small">' + esc(slovo('masterStats.payouts.none')) + '</span>' : '') + '</div>';
     // D1 — строка, а не «0 ฿»: expected_events 0 — ждать нечего
     var D = '<div class="card"><b>' + esc(slovo('masterStats.money.title')) + '</b><div class="rows">' +
         row(slovo('masterStats.money.balance'), msNum(s.balance, true)) + row(slovo('masterStats.money.withdrawable'), msNum(s.withdrawable, true)) +
@@ -597,7 +598,9 @@ Object.assign(SCREENS, {
     var E = '<div class="card"><b>' + esc(slovo('myStats.events.title')) + '</b><div class="rows">' + row(slovo('myStats.events.count'), myNum(s.count)) +
         (s.count === 0 ? '' : row(slovo('myStats.events.spent'), myNum(s.spent, true))) + '</div>' +
       (s.count === 0 ? '<span class="small">' + esc(slovo('myStats.events.none')) + '</span>' : '') + '</div>';
-    var T = '<div class="card"><b>' + esc(slovo('myStats.topups.title')) + '</b><div class="rows">' + row(slovo('myStats.topups.amount'), myNum(s.tAmount, true)) +
+    var T = '<div class="card"><b>' + esc(slovo('myStats.topups.title')) + '</b><div class="rows">' +
+        // пустой блок — по СЧЁТЧИКУ (рецепт #403): при 0 «Пополнений 0» числом и T1, «Пополнено» скрыто
+        (s.tCount === 0 ? '' : row(slovo('myStats.topups.amount'), myNum(s.tAmount, true))) +
         row(slovo('myStats.topups.count'), myNum(s.tCount)) + '</div>' +
       (s.tCount === 0 ? '<span class="small">' + esc(slovo('myStats.topups.none')) + '</span>' : '') + '</div>';
     var D = '<div class="card"><b>' + esc(slovo('myStats.money.title')) + '</b><div class="rows">' + row(slovo('myStats.money.balance'), myNum(s.balance, true)) + '</div>' +
