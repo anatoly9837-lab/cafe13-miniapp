@@ -31,8 +31,8 @@ Object.assign(SCREENS, {
   // Кого нет в списке: просьба о вступлении (кадры E44*, Cafe13KPG#459)
   noAccess: function () {
     var j = JOIN.info;
-    var head = '<h2>Вас ещё нет в списке</h2>' + joinWho() +
-      '<p>Приложение открыто тем, кого внёс владелец. Попасть в список можно отсюда.</p>';
+    // J0 (рецепт popolnenie/noAccess, #397): выгнанный был в списке — заголовок «Доступ снят», абзаца новичка нет
+    var head = '<h2>' + esc(slovo('noAccess.return.title')) + '</h2>' + joinWho();
     if (!j) return '<div class="card strong">' + head +
       (JOIN.fail ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(JOIN.fail) + '</span></div>' +
         '<button type="button" class="btn" data-action="join-retry">Попробовать снова</button>' : '') + '</div>';

@@ -98,10 +98,11 @@ const CASES = [
     ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
   ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 6],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
-    ['Подпись не принята'], ['нет в списке'], 1],
+    ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
     // + GET /join: экран просьбы спрашивает сервер сам (Cafe13KPG#459); здесь /join тоже 403
-    ['Вас ещё нет в списке'], ['Подпись не принята', 'Член клуба'], 2],
+    // J0 (рецепт #397): шапка выгнанного — «Доступ снят»; слов новичка о списке нет
+    ['Доступ снят'], ['Подпись не принята', 'Член клуба', 'Вас ещё нет в списке', 'Попасть в список'], 2],
   ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], [], 1],
   ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], [], 1],
   ['html-200', true, true, { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
@@ -352,7 +353,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!(await s.view()).includes(stay)) bad.push(`${n}: переход data-go увёл с экрана отказа`);
     };
     for (const [n, me, stay] of [
-      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Вас ещё нет в списке'],
+      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Доступ снят'],
       ['vyhod-401', json(401, { detail: 'подпись не принята' }), 'Подпись не принята'],
       ['vyhod-500', json(500, { detail: 'x' }), 'Сервер клуба недоступен']]) {
       const s = await open(true, true, me);
@@ -1965,7 +1966,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open('nosign', true, json(401, { detail: 'подпись не принята' }));
     const t = await s.view();
     if (s.calls.length) bad.push(`${n}: без подписи ушло запросов к серверу: ${s.calls.length}`);
-    if (t.includes('Подпись не принята') || t.includes('нет в списке')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
+    if (t.includes('Подпись не принята') || t.includes('Доступ снят')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
     // признак витрины — срок демонстрационного члена («1 250» ушёл с главной в скрытую шапку, v87)
     if (!t.includes('Действует до 14 ноября')) bad.push(`${n}: без подписи нет витрины (демонстрационного срока)`);
     await s.ctx.close();
@@ -2093,7 +2094,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // «без членства — только просьба» (слово владельца 05.11.2026); рамка 24.11 его сняла: новичок без членства и без
     // ролей начинает с «Клуба» (№24, №35), вкладки — как у члена, плашки членства и «Пропуска» нет (№45). Пара — без
     // прав и держатель права без членства (ответственный за пополнения): у второго сверху «Управление» по праву.
-    // ⚠ «Я мастер» и запись на ивент новичку — после фич 3 и 5 (сервер 5d79c84 там ещё спрашивает членство): не здесь
+    // ⚠ «Я мастер» новичку — после фичи 3; запись без членства — фича 5, случаи dver-zapis*
     for (const [n, roles, extra] of [['dver-dom', [], []], ['dver-dom-pravo', [{ role: 'topups', direction_id: null }], ['manage']]]) {
       const g = clone(OWNER); g.membership_active = false; g.membership = null; g.memberships = []; g.roles = roles;
       const s = await joinCase(json(200, JOIN0), null, () => json(200, g));
@@ -2108,6 +2109,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (await s.p.$('#view [data-go="pass"]')) bad.push(`${n}: у новичка дверь «Пропуск» (решение №45 — пропуска нет)`);
       if (await s.p.$('#join-said')) bad.push(`${n}: у новичка форма просьбы о вступлении`);
       if (!t.includes('Мои записи')) bad.push(`${n}: на «Клубе» новичка нет «Мои записи» — признак «Клуба» мёртв`);
+      // Порядок выкладки (решение координатора 24.11.2026): «Я мастер» новичку — только ПОСЛЕ выкладки api#176. На боевом
+      // 29a088c `queries.event_live` прячет ивент мастера без живого членства, и новичок заплатил бы 100 ฿ за ивент, которого
+      // нет в афише. Снимать эту строку — вместе с клиентом фичи 3 и по /health ≥ fc474be, не раньше.
+      if (await s.p.$('#view [data-action^="ms-"]') || /Забукать ивент|Ваши букинги|Букинги не загрузились/.test(t))
+        bad.push(`${n}: у новичка блок «Я мастер» — фича 3 раньше выкладки api#176 (ивент мастера без членства невидим)`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
@@ -2932,7 +2938,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open(true, true, json(200, OWNER), null, json(403, { detail: 'доступа нет' }), SAVED);
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('Вас ещё нет в списке')) bad.push('pass-403-list: не экран «нет в списке»');
+    if (!(await s.view()).includes('Доступ снят')) bad.push('pass-403-list: не экран «Доступ снят»');
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('pass-403-list: запас не стёрт');
     await s.ctx.close();
   }
@@ -4143,6 +4149,53 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   // ── шаги 27, 29, 30 (Cafe13KPG#557: ТЗ, форма — ПРОЕКТ `backend-uvedomleniya-4e` до снимка; рецепт `_docs/recept/ekran/27/roleAccount.md`):
   // держатель роли со счётом в книге клуба видит остаток СВОЕЙ роли и просит вывод; решает admin в «Запросах на вывод» (шаг 25)
+  // ── рецепт отказов (`_docs/recept/ekran/otkazy.md`, Cafe13KPG#1009, miniapp#388): 403 при ЗАГРУЗКЕ вывода, очереди
+  //    вывода и счёта роли — отказ сервера его словами (.deny → .verbatim, дословно), БЕЗ «Повторить»: повтор дал бы тот же
+  //    отказ. Контроль на тех же экранах — 500: «не загрузилось» с «Повторить» остаётся (данные различают ветки) ──
+  if (part(2)) {
+    const n = 'otkaz-403-zagruzka';
+    const who = r => { const m = clone(OWNER); m.roles = [{ role: r, direction_id: null }]; return m; };
+    for (const [scr, arg, role, word, retry, gets] of [
+      ['withdraw', null, 'master', 'вывод денег чужими глазами не делается', 'wd-retry', ['/withdraw/requests/mine']],
+      ['withdrawQueue', null, 'admin', 'вывод денег одобряет администратор клуба', 'wq-retry', ['/withdraw/requests']],
+      ['roleAccount', 'art_director', 'art_director', 'счёт арт-директора выводит держатель этой роли', 'ra-retry', ['/withdraw/accounts', '/withdraw/requests/mine']]]) {
+      for (const code of [403, 500]) {
+        const s = await open(true, true, json(200, who(role)), null, null, null, q => {
+          const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+          if (q.method() === 'GET' && gets.includes(u)) return code === 403 ? json(403, { detail: word }) : json(500, {});
+          return undefined;
+        });
+        await s.p.evaluate(([x, y]) => go(x, y), [scr, arg]); await s.p.waitForTimeout(400);
+        const g = await s.p.evaluate(r => ({ v: (x => x ? x.textContent : null)(document.querySelector('#view .deny .verbatim')),
+          retry: !!document.querySelector(`#view [data-action="${r}"]`), t: document.getElementById('view').textContent }), retry);
+        if (code === 403) {
+          if (g.v !== word) bad.push(`${n} ${scr}: 403 загрузки — «${g.v}», ждали слова сервера дословно в .deny .verbatim`);
+          if (g.retry) bad.push(`${n} ${scr}: у отказа 403 есть «Повторить» — повтор даст тот же отказ`);
+          if (/не загрузил/.test(g.t)) bad.push(`${n} ${scr}: отказ 403 назван «не загрузилось»`);
+        } else if (!g.retry || g.v !== null) bad.push(`${n} ${scr}: ПРОВЕРКА НЕ РАЗЛИЧАЕТ — у сбоя 500 нет «Повторить» или есть .deny`);
+        if (s.errs.length) bad.push(`${n} ${scr}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+    }
+    // счёт роли грузит ДВЕ ручки: 403 одной и 500 другой — отказ сервера, он важнее сбоя второй (рецепт otkazy.md);
+    // оба порядка, иначе перестановка deny/fail в done() не видна
+    const W = 'счёт арт-директора выводит держатель этой роли';
+    for (const [d403, d500] of [['/withdraw/accounts', '/withdraw/requests/mine'], ['/withdraw/requests/mine', '/withdraw/accounts']]) {
+      const s = await open(true, true, json(200, who('art_director')), null, null, null, q => {
+        const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+        if (q.method() !== 'GET') return undefined;
+        if (u === d403) return json(403, { detail: W });
+        if (u === d500) return json(500, {});
+        return undefined;
+      });
+      await s.p.evaluate(() => go('roleAccount', 'art_director')); await s.p.waitForTimeout(400);
+      const g = await s.p.evaluate(() => ({ v: (x => x ? x.textContent : null)(document.querySelector('#view .deny .verbatim')),
+        retry: !!document.querySelector('#view [data-action="ra-retry"]') }));
+      if (g.v !== W || g.retry) bad.push(`${n} roleAccount ${d403} 403 + ${d500} 500: «${g.v}», Повторить=${g.retry} — ждали отказ сервера без «Повторить»`);
+      if (s.errs.length) bad.push(`${n} roleAccount смешанный: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
   // заглушки счёта роли — по снимку api bdff63e (Cafe13KPG#557): их же сверяет страж формы (STUBS, `withdraw-accounts-role`, `withdraw-mine-club`)
   const RA_ACCROW = (account, balance, pending) => ({ account, book: 'club_ledger', direction_id: null, direction_title: null, balance, pending: pending || null });
   const RA_REQ = (id, account, st) => ({ id, role: account, book: 'club_ledger', account, direction_id: null, payout_id: null, amount: '400.00', status: st,
@@ -6349,8 +6402,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // ── фича 4 (Cafe13KPG#1009, рецепт `_docs/recept/ekran/odobrenie/`; api #176 fc474be, миграция 040): одобрение ивентов ──
-  // Форма — код сервера на fc474be (`PENDING_APPROVAL_SQL`, `_decide_event`, `queries.py:636`); снимка формы ещё нет: он
-  // снимается после выкладки, тогда `approval`/`reject_note` лягут и в AFISHA. Слова — по словарю (SLOVA.ru со страницы).
+  // Форма — снимок api 410f240 (Cafe13KPG#1009, комментарий в карточке; случаи cafe13-api#187): `events-pending-approval`,
+  // `event-approve`, `event-reject` сверяются с PROW/DEC в STUBS. Слова — по словарю (SLOVA.ru со страницы).
   const ODOBR = (() => {
     const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
     const MEMB = clone(OWNER); MEMB.roles = []; MEMB.member.tg_user_id = 77;
@@ -7640,20 +7693,23 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
 
-  // ── записываются только члены клуба (слово владельца 30.10.2026 «записываться пока не нужно», Cafe13KPG#670;
-  // кадр E37k, текст designer-55) ──
-  // Запрет КЛИЕНТСКИЙ: сервер (`POST /bookings`) членства не спрашивает, и фикстура нарочно отвечает 201 — зелёное
-  // здесь значит «держит клиент», а не «отказал сервер». Пара — член клуба на той же строке афиши: без неё прошёл бы
-  // и «запрет всем». Серверные отказы записи — свои случаи (book-409, book-201-pusto), сюда они не смешиваются.
-  // Гость, УЖЕ записанный, — «Отменить запись»: словом владельца не покрыто, вопрос координатору, ожидания нет.
+  // ── запись без членства (фича 5, Cafe13KPG#1009, №39; рамка владельца 24.11 «членство для ивента не нужно») ──
+  // Прежде здесь держался клиентский запрет E37k «записываются только члены клуба» (Cafe13KPG#670); фича 5 его сняла:
+  // сервер (`POST /bookings`, бой 410f240) спрашивает только дверь. Пара — член клуба на той же строке афиши.
   if (part(2)) {
     const GUEST = clone(OWNER);
     GUEST.membership = null; GUEST.membership_active = false; GUEST.memberships = [];
-    for (const [n, me, guest] of [['book-gost-zapret', GUEST, true], ['book-chlen-mozhet', OWNER, false]]) {
+    // ФИЧА 5 (Cafe13KPG#1009, №39; api #175, бой 410f240 — запись спрашивает только дверь): новичок без членства
+    // записывается так же, как член клуба. Прежний случай book-gost-zapret (E37k «только члены клуба») снят вместе с запретом.
+    // dver-zapis-409: отказ по деньгам — словами сервера (клиент остатка хватает, сервер считает иначе)
+    const NO_MONEY = 'на счёте 0, а вход 400: не хватает 400';
+    for (const [n, me, guest, refuse] of [['dver-zapis', GUEST, true, false], ['dver-zapis-409', GUEST, true, true],
+                                          ['book-chlen-mozhet', OWNER, false, false]]) {
       const posts = [];
       const s = await open(true, true, json(200, me), null, null, null, q => {
         const u = q.url();
-        if (u.endsWith('/bookings')) { posts.push(1); return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' }); }
+        if (u.endsWith('/bookings')) { posts.push(1); return refuse ? json(409, { detail: NO_MONEY }) :
+          json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00', ledger_id: 31 }); }
         if (u.endsWith('/events')) return json(200, [freeRow()]);
         return undefined;
       }, null, NOWFIX);
@@ -7663,7 +7719,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         await s.ctx.close(); continue;
       }
       await openRow(s, '4'); await s.p.waitForTimeout(120);
-      // у члена клуба на платном кнопка «Записаться за 400 ฿» (E62), у гостя — погашенная «Записаться» (E37k)
+      // у члена клуба на платном кнопка «Записаться за 400 ฿» (E62), у новичка — та же живая (фича 5)
       const btn = () => s.p.evaluate(() => {
         const b = [...document.querySelectorAll('#view button')].find(x => x.textContent.trim().startsWith('Записаться'));
         return b ? { off: b.disabled, aria: b.getAttribute('aria-disabled'), act: b.getAttribute('data-action') } : null;
@@ -7672,19 +7728,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const main = await s.p.evaluate(() => window.__main !== null);
       if (!b) bad.push(`${n}: кнопки «Записаться» на карточке нет`);
       if (guest) {
-        if (b && (b.off !== true || b.aria !== 'true')) bad.push(`${n}: у гостя «Записаться» не погашена (disabled ${b.off}, aria-disabled ${b.aria})`);
-        if (b && b.act) bad.push(`${n}: у погашенной «Записаться» осталось действие «${b.act}»`);
-        if (main) bad.push(`${n}: у гостя главная кнопка Telegram есть — запись уйдёт мимо погашенной кнопки на экране`);
-        if (!t.includes('Пока записываются только члены клуба.')) bad.push(`${n}: причина не названа (ждали «Пока записываются только члены клуба.»)`);
-        if (t.includes(FRAZA_748) || t.includes(FRAZA_0)) bad.push(`${n}: у гостя подсказка о деньгах — она про то, что будет после нажатия, а нажатия нет (designer-55)`);
-        // обе дороги в обход экрана: снятый disabled и сам обработчик записи
-        await s.p.evaluate(() => {
-          const x = [...document.querySelectorAll('#view button')].find(y => y.textContent.trim() === 'Записаться');
-          if (x) { x.disabled = false; x.click(); }
-          bookEvent('4');
-        });
-        await s.p.waitForTimeout(400);
-        if (posts.length) bad.push(`${n}: запись гостя ушла на сервер (${posts.length}) — сервер её примет, держать некому`);
+        if (!b || b.off) bad.push(`${n}: у новичка «Записаться» нет или погашена — членство больше не условие (№39)`);
+        if (!main) bad.push(`${n}: у новичка нет главной кнопки Telegram`);
+        if (t.includes('Пока записываются только члены клуба.') || /член(ы|ам) клуба/.test(t)) bad.push(`${n}: запись новичку объяснена членством`);
+        if (main) { await s.p.evaluate(() => window.__main()); await s.p.waitForTimeout(500); }
+        if (posts.length !== 1) bad.push(`${n}: запись новичка ушла ${posts.length} раз, ждали 1`);
+        const t2 = await s.view();
+        if (refuse && !t2.includes('На счёте 0, а вход 400: не хватает 400.')) bad.push(`${n}: отказ 409 по деньгам не словами сервера`);
       } else {
         if (b && b.off) bad.push(`${n}: у члена клуба «Записаться» погашена — запрет «всем», а не гостю`);
         if (!main) bad.push(`${n}: у члена клуба нет главной кнопки Telegram`);
@@ -13109,7 +13159,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'stats-club-empty-day': CS_RESP({ events: { count: 0, bookings: null, collected: null }, isNew: 0, arrivals: 0 }, 'day'),
     // шаг 32 (Cafe13KPG#563): заглушки случаев `art-*` против снимка api 65e62d8
     'stats-art-month-2019-03': AS_RESP(),
-    'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] })
+    'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] }),
+    // фича 4 (Cafe13KPG#1009): заглушки случаев `odobr-*` против снимка api 410f240 (cafe13-api#187)
+    'events-pending-approval': [ODOBR.PROW(41, 'Вечер работника')],
+    'event-approve': ODOBR.DEC(41, true), 'event-reject': ODOBR.DEC(41, false, 'не наш формат')
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
