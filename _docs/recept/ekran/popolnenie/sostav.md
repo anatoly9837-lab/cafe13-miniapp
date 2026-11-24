@@ -43,8 +43,8 @@
 | `js/00-slova.js` | ключи `tillTopup.*`, `tillPerson.action.topup`, `staff.arrivals.*`, `noAccess.return.*` |
 | `FROZEN` / `WIRED` | `tillTopup` вон из `FROZEN`; `tillMembership` вон из `WIRED`; `tillDay` остаётся |
 | `screens/СТАДИИ.tsv`, `tools/catalog.py` | `tillMembership` — стадия и вход по факту ухода; `tillTopup` — «за:tillPerson» как сегодня |
-| `tools/api-keys.json` | снимок `till-membership-arrival` переименован в `till-membership-410` (api #179); `join-request-create` — с `amount_thb` (api #180) |
-| выкладка | продажа членства уходит сцепкой с api #180 (`/health` ≥ `f89d540`); `tillTopup` — после правки `arrival_id`; форма возврата `noAccess` — после правки `/join/request` без денег |
+| `tools/api-keys.json` | снимок `till-membership-arrival` переименован в `till-membership-410` (api #179); `join-request-create` — без денег (api #182), новый `join-request-money-410` (api #183) |
+| выкладка | продажа членства уходит сцепкой с api #180 (`/health` ≥ `f89d540`); `tillTopup` — после правки `arrival_id`; форма возврата `noAccess` — сцепкой с api #182/#183 (`f27eb90`) |
 
 ## Чего этот состав НЕ несёт
 
