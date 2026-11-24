@@ -62,8 +62,8 @@
 | `bar` | `drink` | — | 9393 | 1 | 13 |
 | `bar` | `sostav` | — | 20326 | 5 | 0 |
 | `bar` | `sverka-semi` | — | 8553 | 2 | 0 |
-| `dver` | `home` | — | 9733 | 8 | 0 |
-| `dver` | `sostav` | — | 2379 | 4 | 0 |
+| `dver` | `home` | — | 9709 | 8 | 0 |
+| `dver` | `sostav` | — | 2362 | 4 | 0 |
 | `master` | `home` | — | 5425 | 8 | 8 |
 | `master` | `masterApply` | — | 9840 | 9 | 20 |
 | `master` | `sostav` | — | 4281 | 4 | 0 |
