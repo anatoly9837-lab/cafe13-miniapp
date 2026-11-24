@@ -22,6 +22,40 @@ var SLOVA = {
   my: {},
   en: {},
   ru: {
+    // шаг 32, artStats — рецепт `_docs/recept/ekran/32/artStats.md` (слова дизайнера; ⚠ отмеченные «клиент» — вне
+    // таблицы рецепта: подписи стрелок для чтения с экрана, «загружаем» и отказ при прямом входе без права)
+    'artStats.door': 'Статистика арт-директора',
+    'artStats.title': 'Статистика арт-директора',
+    'artStats.period.day': 'День',
+    'artStats.period.week': 'Неделя',
+    'artStats.period.month': 'Месяц',
+    'artStats.period.dayLabel': '{date}',
+    'artStats.period.weekLabel': 'Неделя {from}–{to}',
+    'artStats.period.monthLabel': '{month} {year}',
+    'artStats.period.prev': 'Предыдущий период',            // клиент
+    'artStats.period.next': 'Следующий период',             // клиент
+    'artStats.period.clockNote': 'Ивенты считаются по дню ивента, деньги — по дню распределения: ивент 30-го, распределённый 2-го, попадёт в разные периоды.',
+    'artStats.events.title': 'Ивенты',
+    'artStats.events.count': 'Ивентов',
+    'artStats.events.bookings': 'Записей',
+    'artStats.events.collected': 'Собрано',
+    'artStats.events.cashNote': 'В деньгах ивента только безналичные: оплата наличными на кассе сюда не входит.',
+    'artStats.events.none': 'Ивентов в этом периоде не было.',
+    'artStats.masters.title': 'Мастера',
+    'artStats.masters.payouts': 'Распределений: {n}',
+    'artStats.masters.none': 'Распределений мастерам в этом периоде не было.',
+    'artStats.money.title': 'Деньги арт-директора',
+    'artStats.money.balance': 'На счёте роли',
+    'artStats.money.accrued': 'Начислено за период',
+    'artStats.money.expected': 'Ожидается к начислению',
+    'artStats.money.roleNote': 'Счёт общий для роли: если её держат двое, деньги у них общие и вывести их может любой из них.',
+    'artStats.money.expectedNone': 'Нераспределённых ивентов нет.',
+    'artStats.money.nowNote': 'На счёте и ожидаемое — на сегодня, а не за период; за период — только начисленное.',
+    'artStats.error': 'Статистика не загрузилась.',
+    'artStats.retry': 'Повторить',
+    'artStats.loading': 'Загружаем статистику…',            // клиент
+    'artStats.denyTitle': 'Сюда нельзя',                     // клиент
+    'artStats.denyNote': 'Статистику арт-директора видит арт-директор.'   // клиент
   }
 };
 function slovo(key, vars) {

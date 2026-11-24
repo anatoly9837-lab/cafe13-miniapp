@@ -4411,6 +4411,123 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
   }
+  // ── шаг 32 (Cafe13KPG#563: ТЗ ред. 1, снимок формы api 65e62d8 — в карточке #563; рецепт
+  // `_docs/recept/ekran/32/artStats.md`): статистика арт-директора — «Управление» → группа «Ивенты» → «Статистика
+  // арт-директора». Клиентские ветви рецепта; `art-mastera-vse` (отбор по decided_by) и «наличные мимо Собрано» —
+  // СЕРВЕРА. Слова судятся ПО СЛОВАРЮ (SLOVA.ru со страницы), а не литералом: экран на ключах (№22), и «ключа нет»
+  // ловит и `slova-klyuchi`, и признак здесь — ключ в тексте экрана. Заглушки сверяет страж формы (`stats-art-*`).
+  const AS_RESP = x => {
+    x = x || {};
+    return { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
+      events: x.events || { count: 3, bookings: 7, collected: '2100.00' },
+      masters: x.masters || [{ member_id: 5, name: 'Мастер Б', payouts: 1, amount: '300.00' },
+                             { member_id: 6, name: 'Мастер А', payouts: 2, amount: '850.00' }],
+      money: { book: 'club_ledger', balance: x.balance || '120.00', accrued: x.accrued || '45.00', accrued_count: x.accrued === '0' ? 0 : 1,
+               expected: x.expected || '30.00', expected_events: x.expected_events === undefined ? 2 : x.expected_events } };
+  };
+  if (part(2)) {
+    const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
+    const asopen = (me, stats) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+      if (q.method() === 'GET' && u.startsWith('/stats/art')) return stats(new URL('https://x' + u).searchParams);
+      if (q.method() === 'GET' && u.startsWith('/stats/club')) return json(403, { detail: 'нужна роль head' });
+      return undefined;
+    });
+    const artCalls = s => s.calls.filter(c => c.method === 'GET' && /\/stats\/art/.test(c.url));
+    const W = async (s, k) => s.p.evaluate(k => SLOVA.ru[k], k);
+    const go32 = async (s, n) => {
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет вкладки «Управление»`));
+      await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="artStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери artStats`));
+      await s.p.waitForTimeout(400);
+    };
+    const card = async (s, title) => (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.startsWith(title))[0] || null;
+    const NOTES = ['artStats.events.cashNote', 'artStats.money.roleNote', 'artStats.period.clockNote', 'artStats.money.nowNote'];
+    {
+      // art-razrez: три разреза — три окна на одном дне; «Ивентов» и «Начислено» своего окна, «На счёте» и «Ожидается»
+      // одни и те же; три надписи N1–N3 и D2 стоят; кассы, бизнесов и членства на странице нет; ключей на экране нет
+      const n = 'art-razrez';
+      const CNT = { day: 1, week: 4, month: 9 }, ACC = { day: '5.00', week: '15.00', month: '45.00' };
+      const s = await asopen(ART, p => json(200, AS_RESP({ kind: p.get('period'), events: { count: CNT[p.get('period')], bookings: 2, collected: '400.00' },
+        accrued: ACC[p.get('period')] })));
+      await go32(s, n);
+      const ev = await W(s, 'artStats.events.title'), mo = await W(s, 'artStats.money.title');
+      if (!ev || !mo) bad.push(`${n}: на странице нет слов artStats в SLOVA.ru — судить не по чему`);
+      const money = {};
+      for (const p of ['month', 'week', 'day']) {
+        if (p !== 'month') { await s.p.click(`[data-action="as-period:${p}"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза ${p}`)); await s.p.waitForTimeout(400); }
+        const e = await card(s, ev), m = await card(s, mo), v = await s.view();
+        if (!e || !e.includes((await W(s, 'artStats.events.count')) + CNT[p])) bad.push(`${n}: ${p} — «Ивенты» не с числом своего окна: «${e}»`);
+        if (!m || !m.includes((await W(s, 'artStats.money.accrued')) + ACC[p].replace('.00', '') + ' ฿')) bad.push(`${n}: ${p} — «Начислено» не своего окна: «${m}»`);
+        money[p] = m && m.replace(/Начислено за период[^฿]*฿/, '');
+        let bare = v;
+        for (const k of NOTES) { const w = await W(s, k); if (!v.includes(w)) bad.push(`${n}: ${p} — нет надписи ${k}`); bare = bare.split(w).join(''); }
+        // N1 сама говорит «на кассе» — блоков кассы это не делает; судится текст без надписей
+        if (/касс|бизнес|членств/i.test(bare)) bad.push(`${n}: ${p} — на странице касса, бизнесы или членство`);
+        if (/artStats\.\w/.test(v)) bad.push(`${n}: ${p} — на экране ключ вместо слова: «${(v.match(/artStats\.[\w.]+/) || [''])[0]}»`);
+      }
+      if (new Set(Object.values(money)).size !== 1) bad.push(`${n}: «На счёте» и «Ожидается» менялись с разрезом: ${JSON.stringify(money)}`);
+      const q = artCalls(s).map(c => new URL(c.url).searchParams);
+      if (q.map(x => x.get('period')).join() !== 'month,week,day') bad.push(`${n}: разрезы ушли «${q.map(x => x.get('period')).join()}»`);
+      if (new Set(q.map(x => x.get('at'))).size !== 1) bad.push(`${n}: день разрезов не один`);
+      if (!(await s.p.$('[data-action="as-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await s.p.click('[data-action="as-prev"]'); await s.p.waitForTimeout(400);
+      const prev = artCalls(s).slice(-1).map(c => new URL(c.url).searchParams)[0];
+      if (!prev || prev.get('period') !== 'day' || prev.get('at') >= q[0].get('at')) bad.push(`${n}: ‹ не спросила предыдущий день`);
+      // мастера — от большей суммы (ВЫБОР рецепта), «Распределений: N» под именем
+      const pm = await card(s, await W(s, 'artStats.masters.title'));
+      if (!pm || pm.indexOf('Мастер А') < 0 || pm.indexOf('Мастер А') > pm.indexOf('Мастер Б')) bad.push(`${n}: мастера не от большей суммы: «${pm}»`);
+      if (!pm || !pm.includes('Распределений: 2')) bad.push(`${n}: нет «Распределений: N» у мастера: «${pm}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // art-pusto: ивентов нет (null) — E1, а не «0» из null; мастеров нет — P1; нераспределённых нет — D1, а не «0 ฿»;
+      // остаток 0 — числом, и N2 при нём стоит (art-schet-roli); N1 стоит и без ивентов (art-nalichnye, клиентская половина)
+      const n = 'art-pusto';
+      const s = await asopen(ART, () => json(200, AS_RESP({ events: { count: 0, bookings: null, collected: null }, masters: [],
+        balance: '0', accrued: '0', expected: '0', expected_events: 0 })));
+      await go32(s, n);
+      const v = await s.view();
+      const e = await card(s, await W(s, 'artStats.events.title')), m = await card(s, await W(s, 'artStats.money.title'));
+      if (!e || !e.includes(await W(s, 'artStats.events.none')) || e.includes(await W(s, 'artStats.events.bookings'))) bad.push(`${n}: ивентов нет — не E1: «${e}»`);
+      if (!e || !e.includes(await W(s, 'artStats.events.cashNote'))) bad.push(`${n}: без ивентов пропала N1`);
+      if (!v.includes(await W(s, 'artStats.masters.none'))) bad.push(`${n}: мастеров нет — нет P1`);
+      if (!m || !m.includes(await W(s, 'artStats.money.expectedNone'))) bad.push(`${n}: нераспределённых нет — нет D1: «${m}»`);
+      if (m && m.includes((await W(s, 'artStats.money.expected')) + '0 ฿')) bad.push(`${n}: «Ожидается» — «0 ฿» вместо D1`);
+      if (!m || !m.includes((await W(s, 'artStats.money.balance')) + '0 ฿')) bad.push(`${n}: остаток 0 не числом: «${m}»`);
+      if (!m || !m.includes(await W(s, 'artStats.money.roleNote'))) bad.push(`${n}: при остатке 0 нет N2`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // art-ne-art: глава без art_director — двери нет, ручку не спрашивают, прямой вход — отказ; арт-директору 403 — словами
+      // сервера; битый ответ — «не загрузилось» и «Повторить», а не пустые карточки
+      const n = 'art-ne-art';
+      const HEAD = clone(OWNER); HEAD.roles = [{ role: 'head', direction_id: null }];
+      let s = await asopen(HEAD, () => json(200, AS_RESP()));
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(300);
+      if (await s.p.$('#view [data-go="artStats"]')) bad.push(`${n}: у главы без art_director дверь artStats`);
+      if (!(await s.p.$('#view [data-go="clubStats"]'))) bad.push(`${n}: у главы нет «Статистики клуба» — признак «Управления» мёртв`);
+      await s.p.evaluate(() => go('artStats')); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes(await W(s, 'artStats.denyTitle')) || artCalls(s).length) bad.push(`${n}: экран открылся не-арт-директору или ручку спросили`);
+      await s.ctx.close();
+      s = await asopen(ART, () => json(403, { detail: 'нужна роль art_director' }));
+      await go32(s, n);
+      const vb = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (vb !== 'нужна роль art_director') bad.push(`${n}: отказ «${vb}», ждали словами сервера`);
+      await s.ctx.close();
+      let k = 0;
+      s = await asopen(ART, () => ++k === 1 ? json(200, { events: { count: 1 } }) : json(200, AS_RESP()));
+      await go32(s, n);
+      if (!(await s.view()).includes(await W(s, 'artStats.error'))) bad.push(`${n}: битый ответ — не «не загрузилось»`);
+      await s.p.click('[data-action="as-retry"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Повторить»`));
+      await s.p.waitForTimeout(400);
+      if (!(await card(s, await W(s, 'artStats.money.title')))) bad.push(`${n}: «Повторить» не перечитало`);
+      await s.ctx.close();
+    }
+  }
   // ── Cafe13KPG#999 (слова владельца 24.11.2026): №11 — роль `staff` зовётся «Работник» везде; №9 — демо бара без часов ──
   if (part(1)) {
     {
@@ -12876,7 +12993,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'withdraw-mine-club': { requests: [RA_REQ(40, 'club', 'pending')], balance: '3170.00' },
     // шаг 31 (Cafe13KPG#688): заглушки случаев `stats-*` против снимка api 61db38e
     'stats-club-month-2020-03': CS_RESP({ closed: CS_CLOSED }), 'stats-club-month-now': CS_RESP({ current: CS_CURRENT }),
-    'stats-club-empty-day': CS_RESP({ events: { count: 0, bookings: null, collected: null }, isNew: 0, arrivals: 0 }, 'day')
+    'stats-club-empty-day': CS_RESP({ events: { count: 0, bookings: null, collected: null }, isNew: 0, arrivals: 0 }, 'day'),
+    // шаг 32 (Cafe13KPG#563): заглушки случаев `art-*` против снимка api 65e62d8
+    'stats-art-month-2019-03': AS_RESP(),
+    'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] })
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
