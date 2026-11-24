@@ -1061,6 +1061,13 @@
   },
   "status": 201
  },
+ "join-request-money-410": {
+  "request": "POST /join/request",
+  "shape": {
+   "detail": null
+  },
+  "status": 410
+ },
  "join-request-pending-409": {
   "request": "POST /join/request",
   "shape": {
@@ -2290,6 +2297,13 @@
   },
   "status": 201
  },
+ "till-by-member-404": {
+  "request": "GET /till/by-member/N",
+  "shape": {
+   "detail": null
+  },
+  "status": 404
+ },
  "till-by-member-denied-guest": {
   "request": "GET /till/by-member/N",
   "shape": {
@@ -2401,27 +2415,12 @@
   },
   "status": 409
  },
- "till-membership-arrival": {
+ "till-membership-410": {
   "request": "POST /till",
   "shape": {
-   "amount": null,
-   "arrival_id": null,
-   "at": null,
-   "id": null,
-   "kind": null,
-   "member_id": null,
-   "membership": {
-    "ends_at": null,
-    "id": null,
-    "level": null,
-    "starts_at": null
-   },
-   "method": null,
-   "note": null,
-   "to_account": null,
-   "to_club": null
+   "detail": null
   },
-  "status": 201
+  "status": 410
  },
  "till-topup": {
   "request": "POST /till",
@@ -2435,6 +2434,27 @@
    "note": null
   },
   "status": 201
+ },
+ "till-topup-arrival": {
+  "request": "POST /till",
+  "shape": {
+   "amount": null,
+   "arrival_id": null,
+   "at": null,
+   "id": null,
+   "kind": null,
+   "member_id": null,
+   "method": null,
+   "note": null
+  },
+  "status": 201
+ },
+ "till-topup-arrival-409": {
+  "request": "POST /till",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
  },
  "topup-decide-approved": {
   "request": "POST /topup/requests/N/decide",
