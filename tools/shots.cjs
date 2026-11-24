@@ -173,8 +173,8 @@ const LIVE_ME = (roles) => ({
   roles: roles.map(r => ({ role: r, direction_id: null }))
 });
 const LIVE_SHOTS = [
-  // [имя, экран, признак, группа, подпись, роли, { префикс ручки: тело ответа 200 }]
-  ['62-art-stats', 'artStats', 'Мастер А', 'Клуб · ответственность',
+  // [имя, экран, довод, признак, группа, подпись, роли, { префикс ручки: тело ответа 200 }]
+  ['62-art-stats', 'artStats', null, 'Мастер А', 'Клуб · ответственность',
    'Статистика арт-директора (шаг 32, рецепт `_docs/recept/ekran/32/artStats.md`): переключатель «День · Неделя · Месяц», ' +
    'период со стрелками, блоки «Ивенты», «Мастера» и «Деньги» и три надписи, без которых экран врёт. ⚠ Снимок ЖИВОГО режима ' +
    'на фикстуре: право начинается с `LIVE`, и вне Telegram экран рисует только отказ. Числа — фикстура съёмки, не данные ' +
@@ -187,6 +187,35 @@ const LIVE_SHOTS = [
                  { member_id: 6, name: 'Мастер А', payouts: 2, amount: '850.00' }],
        money: { book: 'club_ledger', balance: '120.00', accrued: '45.00', accrued_count: 1,
                 expected: '30.00', expected_events: 2 } } }],
+  ['63-club-stats', 'clubStats', null, 'Остаток счёта клуба', 'Клуб · ответственность',
+   'Статистика клуба у главы (шаг 31, рецепт `_docs/recept/ekran/31/clubStats.md`): переключатель периода, блоки денег клуба, ' +
+   'членства, ивентов, бизнесов и кассы. ⚠ Снимок ЖИВОГО режима на фикстуре: право начинается с `LIVE`. Числа — фикстура ' +
+   'съёмки (форма — по заглушке `CS_RESP` в `tools/live.cjs`), не данные клуба. Признак — «Остаток счёта клуба»: строка ' +
+   'рисуется только по пришедшему ответу `/stats/club`, без него экран печатал бы «не загрузилось».',
+   ['head', 'admin', 'god_mentor'],
+   { '/stats/club': {
+       period: 'month', period_start: '2026-10-31T17:00:00+00:00', period_end: '2026-11-30T17:00:00+00:00',
+       club: { book: 'club_ledger', member: { amount: '4800.00', count: 2 }, master: { amount: '700.00', count: 1 },
+         event: { amount: '150.00', count: 2 }, partner: { amount: '0', count: 0 }, total: '5650.00', balance: '9170.00',
+         unknown_joins: { in_period: 0, all_time: 0, note: 'взнос неизвестен' } },
+       memberships: { book: 'memberships', new: 3, live: 17, live_at: '2026-11-24T05:00:00+00:00' },
+       events: { count: 2, bookings: 5, collected: '1500.00' }, till: { arrivals: 4 },
+       business: { book: 'club_ledger', closed: null, current: null },
+       masters: { book: 'event_payouts', rows: [] },
+       roles: { art_director: { book: 'club_ledger', amount: '45.00', count: 1, balance: '45.00', holders: [{ member_id: 3, first_name: 'Арт', last_name: '' }] },
+                space_manager: { book: 'club_ledger', amount: '30.00', count: 1, balance: '30.00', holders: [{ member_id: 4, first_name: 'Простр', last_name: '' }] } },
+       head: [{ member_id: 1, first_name: 'Глава', last_name: '', club: { amount: '5650.00', book: 'club_ledger' }, mine: { amount: null, note: 'личных начислений нет' } }],
+       members: { book: 'ledger', outside_frame: 'бар и касса вне рамки', spent: { events: '0', donations: '0', master_status: '0' },
+                  topups: { request: '0', join_share: '0', master_payout: '0' } } } }],
+  ['64-role-account', 'roleAccount', 'art_director', 'На счёте:', 'Клуб · ответственность',
+   'Счёт роли (шаг 27, рецепт `_docs/recept/ekran/27/roleAccount.md`): остаток счёта СВОЕЙ роли в книге клуба, слово о том, что ' +
+   'это счёт роли, а не личный, поле суммы и запрос на вывод; решает администратор в «Запросах на вывод». ⚠ Снимок ЖИВОГО ' +
+   'режима на фикстуре: право начинается с `LIVE`. Числа — фикстура съёмки (форма — по заглушкам `RA_ACCROW` в ' +
+   '`tools/live.cjs`), не данные клуба. Признак — «На счёте:»: строка рисуется только когда пришли и счета, и свои запросы.',
+   ['art_director'],
+   { '/withdraw/accounts': { accounts: [{ account: 'art_director', book: 'club_ledger', direction_id: null, direction_title: null,
+                                          balance: '1200.00', pending: null }] },
+     '/withdraw/requests/mine': { requests: [], balance: '3170.00' } }],
 ];
 const DARK = [['30-home-dark', 'home', 'Пропуск', 'Ночная тема', 'Главный экран ночью. Тему даёт Telegram, не приложение.']];
 
@@ -536,7 +565,7 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
       HapticFeedback: { notificationOccurred: function () {}, selectionChanged: function () {} },
       BackButton: { onClick: function () {}, offClick: function () {}, show: function () {}, hide: function () {} },
       MainButton: { setText: function () {}, show: function () {}, hide: function () {}, onClick: function () {}, offClick: function () {} } } };`;
-    for (const [name, screen, marker, group, caption, roles, ручки] of LIVE_SHOTS) {
+    for (const [name, screen, prm, marker, group, caption, roles, ручки] of LIVE_SHOTS) {
       const lctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
       await lctx.clock.setFixedTime(new Date(FIXED_NOW));
       await lctx.addInitScript(() => { try { localStorage.setItem('cafe13.consent', '0.1'); } catch (e) {} });
@@ -559,14 +588,14 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
       await lp.goto('file:///app/index.html', { waitUntil: 'networkidle' });
       const живой = await lp.evaluate(() => typeof API_ON !== 'undefined' && API_ON === true && LIVE === true);
       if (!живой) bad.push(name + ': живой режим не включился (API_ON/LIVE ложны) — снимок был бы демо');
-      await lp.evaluate((s) => go(s), screen);
+      await lp.evaluate(([s, q]) => go(s, q), [screen, prm]);
       try { await lp.waitForFunction((m) => document.getElementById('view').textContent.includes(m), marker, { timeout: 4000 }); } catch (e) {}
       await lp.evaluate(() => document.fonts.ready);
       const t = await text(lp);
       if (t.indexOf(marker) === -1) bad.push(name + ': признака «' + marker + '» на экране нет (взято: ' + t.slice(0, 60).replace(/\s+/g, ' ') + '…)');
       if (безФикстуры.length) console.log('  ' + name + ': ручки без фикстуры (ответ 404): ' + [...new Set(безФикстуры)].join(', '));
       await shot(name, lp);
-      разметка[name] = { экран: screen, довод: null, роль: 'живой: ' + roles.join('+'), тема: 'светлая', классы: await классы(lp) };
+      разметка[name] = { экран: screen, довод: prm || null, роль: 'живой: ' + roles.join('+'), тема: 'светлая', классы: await классы(lp) };
       manifest.push({ file: name + '.png', group, caption, screen });
       await lctx.close();
     }
