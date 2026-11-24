@@ -301,6 +301,9 @@ ABSENT = [
     # «Управлении» — у art_director и админа (`/stats/art`, require_role("art_director")). `дверь`: admin в фикстуре
     # у «владельца» — тот же путь, что у clubStats
     'artStats': 'дверь',
+    # фича 4 (Cafe13KPG#1009, рецепт odobrenie/eventApproval, A0): строка «Ивенты на одобрение» в группе «Ивенты» на
+    # «Управлении» — у art_director и админа (`_may_distribute`, api #176). `дверь`: тот же путь, что у artStats
+    'eventApproval': 'дверь',
     # шаги 27/29/30 (Cafe13KPG#557, рецепт 27/roleAccount): строка счёта роли в «Ваших ролях» на «Клубе» —
     # `data-go="roleAccount"` у art_director / space_manager / head. Условие ТЕКСТОМ: `head` в фикстуре — только у
     # «владельца», а «Клуба» у него нет (членства в тестовой базе нет); у куратора «Клуб» есть, роли со счётом нет.
@@ -1293,6 +1296,7 @@ TITLES = {
     'businesses': 'Бизнесы клуба',
     'clubStats': 'Статистика клуба',
     'artStats': 'Статистика арт-директора',
+    'eventApproval': 'Ивенты на одобрение',
     'partnerApply': 'Заявка в партнёры · подача', 'partnerReqs': 'Заявки в партнёры', 'partnerReq': 'Заявка в партнёры · решение',
     'bizWorkers': 'Работники бизнеса',
     'bizMoney': 'Деньги бизнеса',

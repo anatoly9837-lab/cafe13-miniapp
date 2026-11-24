@@ -102,6 +102,9 @@ function eventRow(e, o) {
       : 'ведёт ' + esc(e.master) + ' · ' + (e.done ? 'завершилось'
         : e.booked ? 'вы записаны'
         : e.unl ? 'мест ' + NO_LIMIT : e.seats === 0 ? 'мест нет' : e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats)) + '</span></span>' +
+    // фича 4 (рецепт odobrenie/event.md): ждущий и отклонённый — метка у названия; одобренный — как прежде
+    (e.approval === 'pending' ? '<span class="pill on">' + esc(slovo('event.approval.pendingPill')) + '</span>'
+      : e.approval === 'rejected' ? '<span class="pill warm">' + esc(slovo('event.approval.rejectedPill')) + '</span>' : '') +
     '<span class="pill ' + k.pill + '">' + k.label(e) + '</span>' +
   '</button>';
 }
@@ -249,7 +252,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), eventApproval: slovo('eventApproval.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: slovo('tillTopup.title'),
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
@@ -324,7 +327,7 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', eventApproval: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -590,6 +593,8 @@ function go(screen, p) {
   // шаг 31 (рецепт «Перечитать на входе»): на каждый вход — месяц, в который попадает сегодня
   if (screen === 'clubStats' && current !== 'clubStats') { CS.period = 'month'; CS.at = msToday(); loadClubStats(); }
   if (screen === 'artStats' && current !== 'artStats') { AS.period = 'month'; AS.at = msToday(); loadArtStats(); }
+  // фича 4: очередь — на каждый вход; афиша — тоже, чтобы название в строке открывало свежую карточку ивента
+  if (screen === 'eventApproval' && current !== 'eventApproval') { EA.list = null; EA.deny = ''; EA.no = 0; EA.note = ''; EA.empty = false; loadEventApproval(); if (LIVE && EVENTS_STATE !== 'loading') loadEvents(); }
   if ((screen === 'manage' || screen === 'withdrawQueue') && current !== screen && mayWithdrawQueue()) { WQ.done = ''; WQ.err = {}; loadWithdrawQueue(); }
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
@@ -1141,6 +1146,11 @@ function doAction(a) {
     if (a === 'as-prev') { asMove(-1); return; }
     if (a === 'as-next') { asMove(1); return; }
     if (a === 'as-retry') { loadArtStats(); render(); return; }
+    if (a === 'ea-retry') { loadEventApproval(); render(); return; }
+    if (a === 'ea-yes') { decideEvent(Number(arg), true); return; }
+    if (a === 'ea-ask') { EA.no = Number(arg); EA.note = ''; EA.empty = false; render(); return; }
+    if (a === 'ea-keep') { EA.no = 0; EA.note = ''; EA.empty = false; render(); return; }
+    if (a === 'ea-no') { decideEvent(Number(arg), false); return; }
     if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
     if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
     if (a === 'tq-shot' && mayTopups()) { delete TOPQ.shot[Number(arg)]; topupShot(Number(arg)); render(); return; }

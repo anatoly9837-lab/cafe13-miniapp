@@ -617,6 +617,7 @@
   "shape": [
    {
     "about": null,
+    "approval": null,
     "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
@@ -637,6 +638,7 @@
     "place_id": null,
     "place_name": null,
     "price": null,
+    "reject_note": null,
     "seats": null,
     "seats_left": null,
     "starts_at": null,
@@ -651,6 +653,7 @@
   "shape": [
    {
     "about": null,
+    "approval": null,
     "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
@@ -671,6 +674,7 @@
     "place_id": null,
     "place_name": null,
     "price": null,
+    "reject_note": null,
     "seats": null,
     "seats_left": null,
     "starts_at": null,
@@ -685,6 +689,7 @@
   "shape": [
    {
     "about": null,
+    "approval": null,
     "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
@@ -705,6 +710,7 @@
     "place_id": null,
     "place_name": null,
     "price": null,
+    "reject_note": null,
     "seats": null,
     "seats_left": null,
     "starts_at": null,
@@ -719,6 +725,7 @@
   "shape": [
    {
     "about": null,
+    "approval": null,
     "ask_donation": null,
     "booked_by_me": null,
     "duration_min": null,
@@ -739,6 +746,7 @@
     "place_id": null,
     "place_name": null,
     "price": null,
+    "reject_note": null,
     "seats": null,
     "seats_left": null,
     "starts_at": null,
