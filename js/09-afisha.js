@@ -103,6 +103,11 @@ function fromEvents(d) {
     if (!(price >= 0)) return null;
     var paid = moneyOrNull(e.my_entry_paid), refund = moneyOrNull(e.my_refund_now), donated = moneyOrNull(e.my_donated);
     if (paid === undefined || refund === undefined || donated === undefined) return null;
+    // фича 4 (api #176): `approval` approved|pending|rejected; поля нет — сервер до миграции 040, всё одобрено.
+    // Незнакомое слово — отказ строкой целиком: ждущий ивент, прочитанный одобренным, потерял бы метку
+    var appr = e.approval === undefined ? 'approved' : e.approval;
+    if (appr !== 'approved' && appr !== 'pending' && appr !== 'rejected') return null;
+    if (!(e.reject_note === undefined || e.reject_note === null || typeof e.reject_note === 'string')) return null;
     var start = new Date(e.starts_at);
     if (isNaN(start.getTime())) return null;
     var ends = start.getTime() + e.duration_min * 60000;
@@ -138,7 +143,8 @@ function fromEvents(d) {
       // граница полного возврата — мгновение СЕРВЕРА (`full_refund_until`, Cafe13KPG#750): срок клиент не знает и
       // не называет; нет поля или битое — фразы о границе нет, числа «Вернётся» остаются
       refundUntil: typeof e.full_refund_until === 'string' && !isNaN(Date.parse(e.full_refund_until)) ? new Date(e.full_refund_until) : null,
-      place: pname, placeId: pid
+      place: pname, placeId: pid,
+      approval: appr, rejectNote: typeof e.reject_note === 'string' ? e.reject_note : ''
     });
   }
   return out.sort(function (a, b) { return a.at - b.at; });
@@ -854,6 +860,8 @@ function afterEventCreate(r, sent) {
       haptic('ok');
       // Человека уводим на карточку его события только если он всё ещё на
       // форме: уйти с неё — тоже решение, и отменять его нечем.
+      // фича 4 (E5): ивент работника рождается ждущим — выход говорит, кто его видит до одобрения
+      if (e.approval === 'pending') FLASH = { text: slovo('eventNew.done.pending') };
       if (current === 'eventNew') { go('event', id); return; }
       render(); return;
     }
@@ -1084,6 +1092,7 @@ function eventLive(e) {
   return '<div class="col"><h1>' + esc(e.title) + '</h1>' +
       '<span class="small">' + esc(e.day) + ' · ' + esc(e.time) + '–' + esc(e.until) +
         (e.done ? ' · завершилось' : e.part === 'идёт' ? ' · уже идёт' : '') + '</span></div>' +
+    approvalBlock(e) +
     (e.booked ? '<div class="card accent"><div class="row">' +
         '<div class="col"><b>Вы записаны</b>' +
           '<span class="small">Место держится за вами.</span></div>' +
@@ -1104,6 +1113,22 @@ function eventLive(e) {
       : 'Съёмки на этом событии нет.') + '</span></div>' +
     manageBlock(e) +
     bookBlock(e);
+}
+
+/* Фича 4 (Cafe13KPG#1009, рецепт `_docs/recept/ekran/odobrenie/event.md`): метка одобрения под заголовком. Одобренный —
+   без метки, как прежде. Ждущий: E1, автору E2, арт-директору ссылка в очередь. Отклонён: E3 и E4 с причиной словами
+   арт-директора. Отклонён ≠ отменён (№44): слов отмены здесь нет. Денег нет: ивент без заявки за слот не платил. */
+function approvalBlock(e) {
+  if (e.approval === 'pending')
+    return '<div class="col"><span class="row"><span class="pill on">' + esc(slovo('event.approval.pendingPill')) + '</span></span>' +
+      (isMyEvent(e) ? '<span class="small">' + esc(slovo('event.approval.pendingNote')) + '</span>' : '') +
+      (mayEventApproval() ? '<button type="button" class="btn ghost" data-go="eventApproval">' + esc(slovo('event.approval.toQueue')) + '</button>' : '') +
+      '</div>';
+  if (e.approval === 'rejected')
+    return '<div class="col"><span class="row"><span class="pill warm">' + esc(slovo('event.approval.rejectedPill')) + '</span></span>' +
+      '<span class="small">' + esc(slovo('event.approval.rejectedNote')) + '</span>' +
+      (e.rejectNote ? '<span class="verbatim">' + esc(e.rejectNote) + '</span>' : '') + '</div>';
+  return '';
 }
 
 /* Что можно сделать с событием. Кончившееся и заполненное не предлагают
@@ -1142,6 +1167,8 @@ function bookBlock(e) {
         '</div>';
     return err + '<button type="button" class="btn ghost" data-action="book-cancel">Отменить запись</button>';
   }
+  // фича 4: ждущий и отклонённый записи не принимают (сервер — 409 «не проводится»); причина сказана меткой выше
+  if (e.approval !== 'approved') return err;
   // Своё — вместо кнопки строка с причиной: пустое место под «Управлением» читается как поломка (#700).
   // Раньше членства: причина здесь не в нём. Уже записанному (запись старше этой правки) отмена выше остаётся
   if (isMyEvent(e))

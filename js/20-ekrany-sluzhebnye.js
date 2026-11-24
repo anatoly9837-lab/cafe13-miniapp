@@ -1,16 +1,4 @@
 // Человек уже в клубе и платит на кассе (шаг 24): чек ему не нужен, его находит кассир по нажатию
-function arriveBlock() {
-  if (ARRIVE.done) return '<div class="group"><span class="label">На кассе клуба</span>' +
-      '<div class="card quiet"><div class="col"><b style="font-size:13px">Кассир видит вас в своём списке</b>' +
-      '<span class="small">Допуск в приложение — вместе с оплатой, не раньше. Заплатили — войдите.</span></div></div>' +
-      '<button type="button" class="btn" data-action="retry">Войти в клуб</button></div>';
-  return '<div class="group"><span class="label">На кассе клуба</span>' +
-    '<span class="small">Вы в клубе и платите на месте? Нажмите — кассир найдёт вас в своём списке, чек не нужен.</span>' +
-    (ARRIVE.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(ARRIVE.err) + '</span></div>' : '') +
-    '<button type="button" class="btn ghost" data-action="join-arrive"' + (ARRIVE.busy ? ' disabled' : '') + '>' +
-      (ARRIVE.busy ? '…' : 'Я у кассы') + '</button></div>';
-}
-
 Object.assign(SCREENS, {
 
   /* Состояния входа. Каждое — свой экран со своей причиной: пустой кабинет
@@ -42,8 +30,7 @@ Object.assign(SCREENS, {
 
   // Кого нет в списке: просьба о вступлении (кадры E44*, Cafe13KPG#459)
   noAccess: function () {
-    var j = JOIN.info, note = '<div class="note">' + svg(ICON.info) +
-      '<span>Приложение денег не принимает: оплата идёт прямо в клуб.</span></div>';
+    var j = JOIN.info;
     var head = '<h2>Вас ещё нет в списке</h2>' + joinWho() +
       '<p>Приложение открыто тем, кого внёс владелец. Попасть в список можно отсюда.</p>';
     if (!j) return '<div class="card strong">' + head +
@@ -53,7 +40,8 @@ Object.assign(SCREENS, {
     // E44g: ждёт ответа — отправки нет, вторую сервер отвергнет
     if (q && q.status === 'pending') return '<div class="card strong"><div class="row top"><div class="col">' +
         '<h2>Просьба отправлена</h2>' + joinWho() + '</div><span class="pill">ЖДЁТ ОТВЕТА</span></div>' +
-        '<p>Глава клуба посмотрит чек и ответит здесь же. Второй раз просить не нужно: сервер отвечает «ваша просьба уже ждёт ответа».</p></div>' + note;
+        // J4 (фича 8): просьба без чека — прежние слова «посмотрит чек» врали бы
+        '<p>' + esc(slovo('noAccess.return.sent')) + '</p></div>';
     // E44e: согласовано, а /me читался при старте — войти тем же путём, что «Попробовать снова»
     if (q && q.status === 'approved') return '<div class="card strong"><div class="row top"><div class="col">' +
         '<h2>Вас приняли в клуб</h2>' + joinWho() + '</div><span class="pill">СОГЛАСОВАНО</span></div>' +
@@ -66,36 +54,17 @@ Object.assign(SCREENS, {
         '<p>Можно попросить снова — например, с другим чеком.</p>' +
         (q.note ? '<div class="deny">' + svg(ICON.info) + '<span>«' + esc(q.note) + '»</span></div>' : '') +
         '<button type="button" class="btn" data-action="join-again">Попросить снова</button></div>';
-    // E44, E44b, E44v: просьбы нет — форма
-    var m = JOIN_PAY[JOIN.pay], img = JOIN.img[JOIN.pay], f = JOIN.file, gone = img === 'fail';
+    /* Фича 8 (рецепт `_docs/recept/ekran/popolnenie/noAccess.md`, api #182/#183): выгнанный просит вернуться — без
+       денег, суммы, чека, способа, реквизитов и кассы. J1 — всегда; J2 необязательное, ≤1000 (`said` сервера); отказы —
+       словами сервера (J5: 410 за деньги в теле от старого клиента — человек обязан прочесть, что чек НЕ принят). */
     return '<div class="card strong">' + head +
-        '<button type="button" class="btn quiet" data-action="join-about">О клубе</button></div>' + arriveBlock() +
-      '<div class="group"><span class="label">Чем платить</span><div class="seg">' +
-        Object.keys(JOIN_PAY).map(function (k) {
-          return '<button type="button" data-action="join-pay:' + k + '" aria-pressed="' + (JOIN.pay === k) + '">' + JOIN_PAY[k].name + '</button>';
-        }).join('') + '</div>' +
-        '<div class="qr"><div>' +
-          // E44zh: реквизитов нет — строка вместо квадрата (сообщению нужна ширина), суммы нет, платить не по чему
-          (gone ? '<div class="row"><span class="small">Реквизиты не загрузились</span>' +
-                  '<button type="button" class="btn quiet mini" data-action="join-req-retry">Повторить</button></div>' +
-                '<div class="row"><span class="small">' + m.where + '</span><span class="small">суммы нет</span></div>' +
-                '<span class="small">Платить не по чему, пока их нет.</span>'
-           : (img && img !== 'loading' ? '<div class="place img"><img src="' + esc(img) + '" alt="Реквизиты ' + m.name + '"></div>'
-              : '<div class="place"><span>Загружаем реквизиты…</span></div>') +
-            '<div class="row"><span class="small">' + m.where + '</span><b class="num">' +
-              money(JOIN.pay === 'usdt' ? j.usd : j.thb) + ' ' + m.cur + '</b></div>' +
-            '<span class="small">' + m.hint + '</span>') + '</div></div></div>' +
-      '<div class="field"><label for="join-said">Пара слов о себе <span class="small">— необязательно</span></label>' +
-        '<textarea id="join-said" maxlength="1000" placeholder="Кто вы и почему хотите в клуб">' + esc(JOIN.said) + '</textarea></div>' +
-      // близнец «Фото чека» затрат, но без камеры по умолчанию: чек уже лежит в телефоне (кадр E44)
-      '<label class="btn ghost" for="join-file">' + svg(f ? ICON.check : ICON.cam) + (f ? 'Чек приложен · заменить' : 'Приложить чек') +
-        '<input id="join-file" type="file" accept="' + RECEIPT_TYPES.join(',') + '" hidden></label>' +
-      '<span class="small" style="text-align:center">' +
-        (f ? (f.pdf ? 'PDF' : 'Фото') + ' · ' + money(Math.max(1, Math.round(f.size / 1024))) + ' КБ' : 'Фото или PDF, до 2 МБ') + '</span>' +
-      (JOIN.fileErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(JOIN.fileErr) + '</span></div>' : '') +
-      (JOIN.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(JOIN.err) + '</span></div>' : '') +
-      '<button type="button" class="btn" data-action="join-send"' + (!f || gone || JOIN.busy ? ' disabled' : '') + '>' +
-        (JOIN.busy ? '…' : 'Отправить запрос') + '</button>' + note;
+        '<span class="small">' + esc(slovo('noAccess.return.note')) + '</span>' +
+        '<button type="button" class="btn quiet" data-action="join-about">О клубе</button></div>' +
+      '<div class="field"><label for="join-said">' + esc(slovo('noAccess.return.said')) + '</label>' +
+        '<textarea id="join-said" maxlength="1000">' + esc(JOIN.said) + '</textarea></div>' +
+      (JOIN.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(JOIN.err) + '</span></div>' : '') +
+      '<button type="button" class="btn" data-action="join-send"' + (JOIN.busy ? ' disabled' : '') + '>' +
+        (JOIN.busy ? '…' : esc(slovo('noAccess.return.send'))) + '</button>';
   },
 
   apiDown: function () {

@@ -55,7 +55,49 @@ var SLOVA = {
     'artStats.retry': 'Повторить',
     'artStats.loading': 'Загружаем статистику…',            // клиент
     'artStats.denyTitle': 'Сюда нельзя',                     // клиент
-    'artStats.denyNote': 'Статистику арт-директора видит арт-директор.'   // клиент
+    'artStats.denyNote': 'Статистику арт-директора видит арт-директор.',   // клиент
+    // фича 8 (Cafe13KPG#1009), релиз 2 — рецепты `_docs/recept/ekran/popolnenie/` (слова дизайнера)
+    'tillPerson.action.topup': 'Пополнить счёт',
+    'tillTopup.title': 'Пополнение в кассе',
+    'tillTopup.note': 'Деньги целиком ложатся на счёт человека. Членство касса больше не продаёт.',
+    'tillTopup.balance': 'На счёте: {balance} ฿',
+    'tillTopup.amount': 'Сумма, ฿',
+    'tillTopup.method.cash': 'Наличные',
+    'tillTopup.method.card': 'Карта',
+    'tillTopup.send': 'Внести {amount} ฿',
+    'tillTopup.amountEmpty': 'Назовите сумму больше нуля.',
+    'tillTopup.done': 'Внесено {amount} ฿ на счёт.',
+    'staff.arrivals.note': 'Человек нажимает в боте клуба «Я у кассы» — и появляется здесь. Касса найдёт его, если он хоть раз открывал приложение клуба.',
+    'staff.arrivals.open': 'Пополнить счёт',                           // клиент: кнопка строки пришедшего
+    'staff.arrivals.notFound': 'Пусть человек откроет приложение клуба — потом выберите его здесь снова.',
+    'noAccess.return.note': 'Ваш доступ в приложение снят. Можно попросить главу клуба вернуть его — платить ничего не нужно.',
+    'noAccess.return.said': 'Что передать главе клуба',
+    'noAccess.return.send': 'Попросить вернуть доступ',
+    'noAccess.return.sent': 'Просьба у главы клуба. Ответ придёт сюда.',
+    // фича 4 (Cafe13KPG#1009), одобрение ивентов — рецепты `_docs/recept/ekran/odobrenie/` (слова дизайнера; «клиент» — вне
+    // таблицы рецепта) и `../master/home.md` H8 (решение владельца №46 «б»)
+    'eventApproval.door': 'Ивенты на одобрение',
+    'eventApproval.title': 'Ивенты на одобрение',
+    'eventApproval.note': 'Пока ивент не одобрен, в афише его видят только автор и арт-директор, и записаться на него нельзя.',
+    'eventApproval.approve': 'Одобрить',
+    'eventApproval.reject': 'Отклонить',
+    'eventApproval.reason': 'Причина отказа — её увидит автор',
+    'eventApproval.rejectSend': 'Отклонить',
+    'eventApproval.cancel': 'Не отклонять',
+    'eventApproval.reasonEmpty': 'Без причины ивент не отклоняется.',
+    'eventApproval.none': 'Ивентов на одобрение нет.',
+    'eventApproval.error': 'Очередь не загрузилась.',
+    'eventApproval.retry': 'Повторить',
+    'eventApproval.loading': 'Загружаем очередь…',                        // клиент
+    'eventApproval.denyTitle': 'Сюда нельзя',                             // клиент
+    'eventApproval.denyNote': 'Ивенты одобряет арт-директор.',            // клиент
+    'event.approval.pendingPill': 'Ждёт одобрения',
+    'event.approval.pendingNote': 'Ивент видите вы и арт-директор. В афише для всех он появится после одобрения, записаться на него до этого нельзя.',
+    'event.approval.toQueue': 'Ивенты на одобрение',                      // клиент: ссылка E1 арт-директору (рецепт event.md)
+    'event.approval.rejectedPill': 'Отклонён',
+    'event.approval.rejectedNote': 'Арт-директор отклонил ивент, в афишу он не попадёт. Причина:',
+    'eventNew.done.pending': 'Ивент создан и ждёт одобрения арт-директора. До одобрения его видите только вы и арт-директор.',
+    'home.masterBookings.slotFee': '{amount} ฿ — плата за слот, они остаются клубу.'
   }
 };
 function slovo(key, vars) {

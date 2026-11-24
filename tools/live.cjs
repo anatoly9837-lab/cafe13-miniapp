@@ -415,10 +415,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // пути — кадр E52: «Онлайн» строкой-кнопкой, «Касса» и «USDT» серыми строками со своей подписью
       for (const w of ['Онлайн', 'перевод по реквизитам клуба, с чеком', 'Касса', 'USDT', 'пока только баты'])
         if (!t.includes(w)) bad.push(`${n}: на пополнении нет «${w}»`);
-      // касса в живом заморожена (Cafe13KPG#513): путь не обещается — «появится позже» (designer-55); обратная
-      // сторона условия — в демонстрации, случай freeze
-      if (!t.includes('появится позже') || t.includes('в кассе клуба') || t.includes('сейчас у хостес'))
-        bad.push(`${n}: у «Кассы» при замороженной кассе не «появится позже» — путь обещан`);
+      // фича 8 (№47 «а», рецепт popolnenie/topup): касса оттаяла — путь назван «в кассе клуба», строка по-прежнему
+      // не кнопка (деньги несут к стойке); прежде, при замороженной, — «появится позже» (Cafe13KPG#513)
+      if (!t.includes('в кассе клуба') || t.includes('появится позже') || t.includes('сейчас у хостес'))
+        bad.push(`${n}: у «Кассы» при оттаявшей кассе не «в кассе клуба»`);
       const live = await s.p.$$eval('#view .way', ws => ws.filter(w => w.tagName === 'BUTTON' && !w.disabled).map(w => w.querySelector('b').textContent));
       if (JSON.stringify(live) !== '["Онлайн"]') bad.push(`${n}: нажимаются ${JSON.stringify(live)}, ждали только «Онлайн»`);
     }
@@ -450,6 +450,50 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if ((await s.view()).includes('временно недоступно')) bad.push(`${n}: после «назад» — замороженный экран`);
     const barCalls = s.calls.slice(before).filter(c => /\/directions|\/bar\//.test(c.url)).map(c => c.url.replace(/^https:\/\/[^/]+/, ''));
     if (barCalls.length) bad.push(`${n}: «назад» с пополнения позвала ручки бара: ${barCalls.join(', ')}`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
+  // ── фича 8 (Cafe13KPG#1009, рецепт `_docs/recept/ekran/popolnenie/topup.md`): пополнение из кошелька — ЛЮБОМУ вошедшему.
+  //    Новичок без членства и без ролей доходит до `topup` с «Клуба» (кошелёк в шапке); «Онлайн» живая, USDT серая.
+  //    Порог 500 ฿ держит СЕРВЕР (422 его словами); клиент сумму ниже порога не запирает ──
+  if (part(1)) {
+    const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    const g = clone(OWNER); g.membership_active = false; g.membership = null; g.memberships = []; g.roles = [];
+    const posted = [];
+    const s = await open(true, true, json(200, g), null, null, null, q => {
+      const u = q.url();
+      if (u.endsWith('/join/requisites/promptpay')) return { status: 200, contentType: 'image/png', body: PNG1 };
+      if (u.endsWith('/topup/request') && q.method() === 'POST') { posted.push(JSON.parse(q.postData())); return json(422, { detail: 'пополнение от 500 ฿' }); }
+      if (u.endsWith('/topup/requests/mine')) return json(200, { requests: [], history: [] });
+      return undefined;
+    });
+    let n = 'topup-novichok';
+    if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — новичок не на «Клубе»`);
+    if (!(await s.p.$('#wallet'))) bad.push(`${n}: у новичка нет кошелька в шапке — пополнение недостижимо`);
+    else {
+      await s.p.click('#wallet'); await s.p.waitForTimeout(200);
+      if (await s.p.evaluate(() => current) !== 'topup') bad.push(`${n}: кошелёк новичка не ведёт на пополнение`);
+      const t = await s.view();
+      if (!t.includes('перевод по реквизитам клуба, с чеком')) bad.push(`${n}: у новичка нет пути «Онлайн»`);
+      const ways = await s.p.$$eval('#view .way', ws => ws.map(w => w.querySelector('b').textContent + ':' + (w.tagName === 'BUTTON' && !w.disabled)));
+      if (JSON.stringify(ways) !== JSON.stringify(['Онлайн:true', 'Касса:false', 'USDT:false'])) bad.push(`${n}: пути ${JSON.stringify(ways)}, ждали живую «Онлайн», серые «Касса» и «USDT»`);
+      // порог — сервера: 100 ฿ отправляются, отказ 422 — его словами
+      n = 'topup-porog';
+      await s.p.evaluate(() => { const e = document.querySelector('[data-action="tu-online"]'); if (e) e.click(); });
+      await s.p.waitForTimeout(250);
+      if (!(await s.p.$('#tu-amount'))) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — «Онлайн» не открыло форму`);
+      else {
+        await s.p.fill('#tu-amount', '100');
+        await s.p.setInputFiles('#tu-file', { name: 'chek.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(700, 0x25) }, { timeout: 60000 });
+        await s.p.waitForTimeout(300);
+        if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: клиент сам запирает сумму ниже порога — порог держит сервер`);
+        await s.p.evaluate(() => { const e = document.getElementById('tu-send'); if (e) e.click(); });
+        await s.p.waitForTimeout(300);
+        if (posted.length !== 1 || posted[0].amount !== '100.00') bad.push(`${n}: 100 ฿ не ушли на сервер: ${JSON.stringify(posted.map(p => p.amount))}`);
+        if (!(await s.view()).includes('Пополнение от 500 ฿')) bad.push(`${n}: отказ 422 не показан словами сервера`);
+      }
+    }
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
@@ -1406,6 +1450,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       ['Ваши букинги', 'Ждущий вечер', 'ждёт решения', 'Согласованный вечер', 'согласовано', 'Отказанный вечер', 'Нет фото работ', 'вернулись на счёт',
        'Недельный слот', 'каждую неделю', 'Забукать'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: на «Клубе» нет «${w}»`); });
       if (t.includes('Прошедший вечер')) bad.push(`${n}: прошедший букинг стоит в списке`);
+      // H8 (рецепт master/home.md, №46 «б», фича 4): у согласованного С ДАТОЙ — плата за слот остаётся клубу; ровно у одного
+      // (недельный без даты её не несёт, прошедший скрыт)
+      const fee = await s.p.evaluate(() => SLOVA.ru['home.masterBookings.slotFee']);
+      const feeN = fee ? t.split(fee.replace('{amount} ฿', '').trim()).length - 1 : -1;
+      if (feeN !== 1) bad.push(`${n}: «плата за слот, они остаются клубу» стоит ${feeN} раз, ждали у одного согласованного с датой`);
       // порядок — по дате: ближайший первым
       const i1 = t.indexOf('Ждущий вечер'), i2 = t.indexOf('Согласованный вечер');
       if (i1 > -1 && i2 > -1 && i1 > i2) bad.push(`${n}: список не по дате — ближайший не первым`);
@@ -1907,24 +1956,6 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       judge(n, st);
       await s.ctx.close();
     }
-    // реквизиты PromptPay на экране просьбы — тоже код: знака нет
-    {
-      const n = 'znak-rekvizity';
-      const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-      const J = { amount_thb: '3600.00', amount_usd: '130.00', period_months: 1, currency: 'THB', request: null,
-                  about_token: 'tok', you: { first_name: '[просящий]', last_name: '', username: 'ab' } };
-      const s = await open(true, true, json(403, { detail: 'доступа нет' }), null, null, null, q => {
-        const u = q.url();
-        if (/\/join\/requisites\//.test(u)) return { status: 200, contentType: 'image/png', body: PNG1 };
-        if (u.endsWith('/join')) return json(200, J);
-        return undefined;
-      });
-      await s.p.waitForTimeout(250);
-      const st = await markState(s);
-      if (!st.code) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — реквизиты не нарисованы`);
-      judge(n, st);
-      await s.ctx.close();
-    }
   }
 
   // ── Telegram есть, подписи нет — витрина, а не вход (условие arhitector-47 на v69) ──
@@ -1975,95 +2006,44 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     };
     // клик изнутри страницы: запертая или пропавшая кнопка — ничего не делает, а не обрыв по таймауту
     const tap = async (s, sel) => { await s.p.evaluate(q => { const e = document.querySelector(q); if (e) e.click(); }, sel); await s.p.waitForTimeout(200); };
-    const pdf = n => ({ name: 'chek.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(n, 0x25) });
-    // нет поля чека — строка «не выполнено», а не обрыв по таймауту, прячущий остальное
-    const attach = async (s, n, file) => {
-      if (!(await s.p.$('#join-file'))) { bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — нет поля чека`); return; }
-      await s.p.setInputFiles('#join-file', file, { timeout: 60000 });
-    };
 
-    // форма (E44, E44b, E44v): имя из подписи, обе цены с сервера, реквизиты по подписи, PDF как есть
+    // ФИЧА 8 (Cafe13KPG#1009, рецепт `_docs/recept/ekran/popolnenie/noAccess.md`, api #182/#183): выгнанный просит
+    // вернуться — БЕЗ денег: ни суммы, ни чека, ни способа, ни реквизитов, ни кассы. Тело — только `said`; ответ J4.
+    // Прежние случаи формы с чеком (join-forma, join-szhatie, join-bolshoy, знак на реквизитах) сняты вместе с формой
     {
-      const n = 'join-forma';
+      const n = 'vozvrat-bez-deneg';
       let state = JOIN0;
       const s = await joinCase(() => json(200, state));
       let t = await s.view();
-      for (const w of ['Вас ещё нет в списке', 'Вы входите как', '[просящий] · @ab', '3 600 ฿', 'Bangkok Bank', 'Фото или PDF, до 2 МБ'])
+      for (const w of ['Ваш доступ в приложение снят. Можно попросить главу клуба вернуть его — платить ничего не нужно.',
+                       'Что передать главе клуба', 'Попросить вернуть доступ', '[просящий] · @ab'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
-      if (!(await s.p.$('[data-action="join-send"][disabled]'))) bad.push(`${n}: без чека «Отправить запрос» доступна`);
-      if (!(await s.p.$('.qr img'))) bad.push(`${n}: реквизиты PromptPay не показаны картинкой`);
-      if (!s.calls.some(c => c.url.endsWith('/join/requisites/promptpay') && c.init === INIT))
-        bad.push(`${n}: реквизиты не спрошены с подписью`);
-      await tap(s, '[data-action="join-pay:usdt"]');
-      t = await s.view();
-      for (const w of ['130 USDT', 'сеть TRC20']) if (!t.includes(w)) bad.push(`${n}: USDT — нет «${w}»`);
-      if (t.includes('3 600 USDT')) bad.push(`${n}: в USDT показана сумма в батах`);
-      await s.p.fill('#join-said', 'хочу на вечера');
-      await attach(s, n, pdf(1500));
-      await s.p.waitForTimeout(300);
-      t = await s.view();
-      if (!t.includes('Чек приложен · заменить') || !t.includes('PDF · 1 КБ')) bad.push(`${n}: приложенный PDF не назван (E44b)`);
-      if (await s.p.$('[data-action="join-send"][disabled]')) bad.push(`${n}: с чеком «Отправить запрос» недоступна`);
+      for (const sel of ['#join-file', '[data-action^="join-pay"]', '[data-action="join-arrive"]', '.qr', '#view input[inputmode="decimal"]'])
+        if (await s.p.$(sel)) bad.push(`${n}: на форме возврата есть ${sel} — деньги, чек или касса`);
+      if (/3 600|130|฿|USDT|PromptPay|Bangkok Bank|[Чч]ек|[Рр]еквизит|Я у кассы/.test(t)) bad.push(`${n}: на форме возврата цена, чек, реквизиты или касса: ${t.slice(0, 200)}`);
+      if (/членств|взнос|вступлен/i.test(t)) bad.push(`${n}: форма возврата продаёт членство словами («членство», «взнос», «вступление»)`);
+      if (s.calls.some(c => /\/join\/requisites\//.test(c.url))) bad.push(`${n}: экран просьбы спросил реквизиты — денег на нём нет`);
+      if (await s.p.$('[data-action="join-send"][disabled]')) bad.push(`${n}: без слов просьба заперта — поле необязательное`);
+      await s.p.fill('#join-said', 'хочу вернуться');
       state = withReq('pending');
       await tap(s, '[data-action="join-send"]');
-      const b = s.posted[0];
-      // способ выбран USDT выше — до сервера он доезжает словом сервера (pay_method)
-      if (!b || b.said !== 'хочу на вечера' || b.pay_method !== 'crypto' || b.receipt_mime !== 'application/pdf' ||
-          b.receipt_base64 !== pdf(1500).buffer.toString('base64'))
-        bad.push(`${n}: просьба ушла так: ${JSON.stringify(b && { said: b.said, pay: b.pay_method, mime: b.receipt_mime, len: (b.receipt_base64 || '').length })}`);
+      if (JSON.stringify(s.posted) !== JSON.stringify([{ said: 'хочу вернуться' }])) bad.push(`${n}: просьба ушла так: ${JSON.stringify(s.posted)}`);
       t = await s.view();
-      if (!t.includes('Просьба отправлена') || !t.includes('ЖДЁТ ОТВЕТА')) bad.push(`${n}: после отправки не экран «ждёт ответа» (E44g)`);
+      if (!t.includes('Просьба у главы клуба. Ответ придёт сюда.') || !t.includes('ЖДЁТ ОТВЕТА')) bad.push(`${n}: после отправки нет J4 и «ждёт ответа»`);
+      if (/посмотрит чек/.test(t)) bad.push(`${n}: ожидание обещает проверку чека — чека нет`);
       if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: у ждущей просьбы есть отправка`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
-    }
-    // снимок ужимается в клиенте: большой PNG уходит JPEG-ом не больше 2 МиБ
-    {
-      const n = 'join-szhatie';
-      const s = await joinCase(json(200, JOIN0));
-      // проба — непрозрачный шум 1400×1400: PNG больше потолка, но не десятки мегабайт
-      // (2400×2400 с прозрачностью под нагрузкой не успевал загрузиться в поле за 30 с)
-      const big = await s.p.evaluate(() => {
-        const c = document.createElement('canvas'); c.width = 1400; c.height = 1400;
-        const g = c.getContext('2d'), d = g.createImageData(1400, 1400);
-        // xorshift: шум не сжимается, и PNG выходит заведомо больше потолка
-        let x = 1;
-        for (let i = 0; i < d.data.length; i++) { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; d.data[i] = i % 4 === 3 ? 255 : x & 255; }
-        g.putImageData(d, 0, 0);
-        return c.toDataURL('image/png').split(',')[1];
-      });
-      const buf = Buffer.from(big, 'base64');
-      if (buf.length <= 2 * 1024 * 1024) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — снимок-проба ${buf.length} байт, не больше потолка`);
-      await attach(s, n, { name: 'chek.png', mimeType: 'image/png', buffer: buf });
-      await s.p.waitForTimeout(1500);
-      await tap(s, '[data-action="join-send"]');
-      const b = s.posted[0];
-      const len = b ? Buffer.from(b.receipt_base64, 'base64').length : -1;
-      if (!b || b.receipt_mime !== 'image/jpeg' || len > 2 * 1024 * 1024 || len <= 0)
-        bad.push(`${n}: снимок ушёл так: ${JSON.stringify(b ? { mime: b.receipt_mime, bytes: len } : null)}; на экране: ${(await s.view()).slice(0, 200)}`);
-      // способ по умолчанию — PromptPay, то есть перевод
-      if (b && b.pay_method !== 'transfer') bad.push(`${n}: способ PromptPay ушёл как ${JSON.stringify(b.pay_method)}`);
-      await s.ctx.close();
-    }
-    // PDF больше потолка: отказ ДО отправки, словами, отправка заперта
-    {
-      const n = 'join-bolshoy';
-      const s = await joinCase(json(200, JOIN0));
-      await attach(s, n, pdf(2 * 1024 * 1024 + 10));
-      await s.p.waitForTimeout(400);
-      if (!(await s.view()).includes('Чек больше 2 МБ')) bad.push(`${n}: про потолок 2 МБ не сказано до отправки`);
-      if (!(await s.p.$('[data-action="join-send"][disabled]'))) bad.push(`${n}: с чеком больше потолка отправка доступна`);
-      await s.ctx.close();
-    }
-    // отказ сервера — его словами, плашкой
-    {
-      const n = 'join-otkaz';
-      const s = await joinCase(json(200, JOIN0), json(413, { detail: 'чек больше 2 МиБ — пришлите снимок поменьше' }));
-      await attach(s, n, pdf(800));
-      await s.p.waitForTimeout(300);
-      await tap(s, '[data-action="join-send"]');
-      if (!(await s.view()).includes('Чек больше 2 МиБ — пришлите снимок поменьше.')) bad.push(`${n}: отказ 413 не показан словами сервера`);
-      await s.ctx.close();
+      // J5: 410 за деньги в теле (старый клиент из кэша) и 409 «уже ждёт» — слова сервера ЦЕЛИКОМ, своих нет
+      for (const [code, detail] of [[410, 'оплата здесь больше не принимается: деньги вносятся в кошельке (пополнение) или наличными на кассе, а вернуться в клуб можно просьбой без чека'],
+                                    [409, 'ваша просьба уже ждёт ответа']]) {
+        const s2 = await joinCase(json(200, JOIN0), json(code, { detail }));
+        await tap(s2, '[data-action="join-send"]');
+        const v = await s2.p.evaluate(() => { const x = document.querySelector('#view .deny .verbatim'); return x ? x.textContent : null; });
+        if (v !== detail) bad.push(`${n}: отказ ${code} «${v}», ждали слова сервера целиком в .deny .verbatim`);
+        if (!(await s2.p.$('#join-said'))) bad.push(`${n}: после отказа ${code} пропала форма`);
+        await s2.ctx.close();
+      }
     }
     // отказано (E44d): слово решившего плашкой и второй заход
     {
@@ -2074,7 +2054,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
       if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: форма показана до «Попросить снова»`);
       await tap(s, '[data-action="join-again"]');
-      if (!(await s.p.$('#join-file'))) bad.push(`${n}: «Попросить снова» не открыло форму`);
+      if (!(await s.p.$('#join-said'))) bad.push(`${n}: «Попросить снова» не открыло форму`);
       await s.ctx.close();
     }
     // приняли (E44e): «Войти в клуб» перечитывает /me тем же путём, что «Попробовать снова».
@@ -2106,7 +2086,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const t = await s.view();
       if (await s.p.evaluate(() => current) !== 'noAccess') bad.push(`${n}: не на экране просьбы (${await s.p.evaluate(() => current)})`);
       if (t.includes('Вас приняли в клуб') || t.includes('Членство уже создано')) bad.push(`${n}: давнее согласие показано как сегодняшнее — петля`);
-      if (!(await s.p.$('#join-file'))) bad.push(`${n}: нет формы новой просьбы`);
+      if (!(await s.p.$('#join-said'))) bad.push(`${n}: нет формы новой просьбы`);
       await s.ctx.close();
     }
     // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009, рецепт `_docs/recept/ekran/dver/home.md`, api 5d79c84). Прежде здесь стоял случай
@@ -2126,7 +2106,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const t = await s.view();
       if (t.includes('Активно')) bad.push(`${n}: на «Клубе» новичка плашка членства («Активно»)`);
       if (await s.p.$('#view [data-go="pass"]')) bad.push(`${n}: у новичка дверь «Пропуск» (решение №45 — пропуска нет)`);
-      if (await s.p.$('#join-file')) bad.push(`${n}: у новичка форма просьбы о вступлении`);
+      if (await s.p.$('#join-said')) bad.push(`${n}: у новичка форма просьбы о вступлении`);
       if (!t.includes('Мои записи')) bad.push(`${n}: на «Клубе» новичка нет «Мои записи» — признак «Клуба» мёртв`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
@@ -2176,13 +2156,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (!(await s.p.evaluate(() => window.__backShown === true))) bad.push(`${n}: у тетради нет системной «назад»`);
         await s.p.evaluate(() => window.__back && window.__back());
         await s.p.waitForTimeout(200);
-        if (!(await s.view()).includes('Отправить запрос')) bad.push(`${n}: системная «назад» увела не на экран с «Отправить запрос»`);
+        if (!(await s.view()).includes('Попросить вернуть доступ')) bad.push(`${n}: системная «назад» увела не на экран с «Попросить вернуть доступ»`);
         // Telegram старше 6.1: нарисованная «назад» ведёт туда же
         await tap(s, '[data-action="join-about"]');
         await s.p.evaluate(() => { Telegram.WebApp.isVersionAtLeast = () => false; render(); });
         if (!(await s.p.isVisible('#back'))) bad.push(`${n}: у тетради нет нарисованной «назад»`);
         else { await s.p.click('#back'); await s.p.waitForTimeout(200);
-          if (!(await s.view()).includes('Отправить запрос')) bad.push(`${n}: нарисованная «назад» увела не на экран с «Отправить запрос»`); }
+          if (!(await s.view()).includes('Попросить вернуть доступ')) bad.push(`${n}: нарисованная «назад» увела не на экран с «Попросить вернуть доступ»`); }
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
@@ -2201,38 +2181,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (await s.p.$('.paper')) bad.push(`${n}: при отказе показан лист тетради (E49v: листа нет)`);
       await s.ctx.close();
     }
-    // реквизиты не пришли — не тупик: сказано и есть «Повторить», второй заход их показывает
-    {
-      const n = 'join-rekvizity';
-      let up = false;
-      const s = await open(true, true, json(403, { detail: 'доступа нет' }), null, null, null, q => {
-        const u = q.url();
-        if (u.endsWith('/join/requisites/promptpay'))
-          return up ? { status: 200, contentType: 'image/png', body: PNG1 } : json(503, { detail: 'реквизиты не собраны' });
-        if (u.endsWith('/join')) return json(200, JOIN0);
-        return undefined;
-      });
-      await s.p.waitForTimeout(250);
-      const t0 = await s.view();
-      for (const w of ['Реквизиты не загрузились', 'суммы нет', 'Платить не по чему, пока их нет.'])
-        if (!t0.includes(w)) bad.push(`${n}: нет «${w}» (E44zh)`);
-      if (t0.includes('3 600 ฿')) bad.push(`${n}: без реквизитов показана сумма`);
-      // и с чеком отправка заперта: платить не по чему
-      await attach(s, n, pdf(600));
-      await s.p.waitForTimeout(300);
-      if (!(await s.p.$('[data-action="join-send"][disabled]'))) bad.push(`${n}: без реквизитов отправка доступна`);
-      up = true;
-      if (!(await s.p.$('[data-action="join-req-retry"]'))) bad.push(`${n}: нет «Повторить» у реквизитов`);
-      else { await tap(s, '[data-action="join-req-retry"]'); if (!(await s.p.$('.qr img'))) bad.push(`${n}: после «Повторить» реквизитов нет`); }
-      await s.ctx.close();
-    }
+    // фича 8: случай join-rekvizity снят — реквизитов на форме возврата нет (рецепт popolnenie/noAccess)
     // ответ /join не разобран — так и сказано, и есть повтор; формы без цен нет
     {
       const n = 'join-ne-razobran';
       const s = await joinCase(json(200, { amount_thb: null }));
       const t = await s.view();
       if (!t.includes('Ответ сервера не разобран.')) bad.push(`${n}: неразобранный /join не назван`);
-      if (await s.p.$('#join-file')) bad.push(`${n}: форма без цен показана`);
+      if (await s.p.$('#join-said')) bad.push(`${n}: форма показана по неразобранному ответу`);
       if (!(await s.p.$('[data-action="join-retry"]'))) bad.push(`${n}: нет «Попробовать снова»`);
       await s.ctx.close();
     }
@@ -5070,20 +5026,21 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     { code: 'partner', name: 'Бизнес-партнёр', about: '', price_thb: '5000.00', period_months: 1 }] };
   const ARRIVAL = { id: 31, tg_user_id: NEWP, first_name: 'Уличный', last_name: 'Гость', username: 'ulica', created_at: '2026-10-24T07:05:00+00:00' };
   const split = x => { const a = Math.min(SHARE[x.level] || 0, Number(x.amount)); return { to_account: a.toFixed(2), to_club: (Number(x.amount) - a).toFixed(2) }; };
-  // ответ POST /till на тело запроса; тот же ответ сверяется со снимком `till-membership-arrival` (STUBS)
+  // ответ POST /till на тело запроса; тот же ответ сверяется со снимком `till-topup-arrival` (STUBS). Номер прихода
+  // сервер возвращает у любого вида (фича 8: пополнение пришедшему закрывает приход, api #181)
   function tillRow(x) {
     const row = { id: 95, at: '2026-10-24T10:00:00+00:00', kind: x.kind, amount: Number(x.amount).toFixed(2), method: x.method,
-                  member_id: x.arrival_id ? NEWP : x.member_id, note: '' };
+                  member_id: x.member_id != null ? x.member_id : x.arrival_id ? NEWP : null, note: '' };
     if (x.kind === 'membership') {
       const sp = split(x);
       Object.assign(row, { amount: sp.to_club }, sp, { membership: { id: 7, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS } });
-      if (x.arrival_id) row.arrival_id = x.arrival_id;
     }
+    if (x.arrival_id) row.arrival_id = x.arrival_id;
     return row;
   }
   const ARRIVED = { id: 31, created_at: '2026-10-24T07:05:00+00:00' };   // ответ POST /till/arrive (снимок `till-arrive`)
   function cash(o) {
-    o = Object.assign({ find: () => json(200, PERSON), after: null, refind: null,
+    o = Object.assign({ find: () => json(200, PERSON), after: null, refind: null, member: null,
       arrivals: () => json(200, { arrivals: [] }), tiers: () => json(200, TILL_TIERS),
       post: q => json(201, tillRow(JSON.parse(q.postData()))) }, o);
     const st = { posted: false };
@@ -5092,7 +5049,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (r.method() === 'GET' && u.endsWith('/till/arrivals')) return o.arrivals(r);
       if (r.method() === 'GET' && u.endsWith('/membership-tiers')) return o.tiers(r);
       if (r.method() === 'GET' && u.includes('/till/by-member/')) {
-        if (o.refind) return o.refind(r);
+        if (o.member && !st.posted) return o.member(r);
+        if (o.refind && st.posted) return o.refind(r);
         return json(200, Object.assign({}, PERSON, { member_id: NEWP, first_name: 'Уличный', last_name: 'Гость' }, o.after || {}));
       }
       if (r.method() === 'GET' && u.includes('/till/by-pass/')) {
@@ -5130,13 +5088,20 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (!(await s.p.$(`[data-action="tp-open:${kind}"]`))) { bad.push(`${name}: на карточке нет «${kind}»`); return false; }
     await s.p.click(`[data-action="tp-open:${kind}"]`);
     await s.p.waitForTimeout(100);
-    const want = kind === 'membership' ? ['tillMembership', 'Членство'] : ['tillTopup', 'На счёт'];
+    const want = kind === 'membership' ? ['tillMembership', 'Членство'] : ['tillTopup', 'Пополнение в кассе'];
     if (await at(s) !== want[0]) bad.push(`${name}: форма «${kind}» не на экране ${want[0]}`);
     if (!(await s.p.evaluate(t => document.getElementById('title').textContent === t, want[1])))
       bad.push(`${name}: в шапке формы нет «${want[1]}»`);
     return !!(await s.p.$('#tp-amount')) || (bad.push(`${name}: нет формы приёма`), false);
   }
   const at = s => s.p.evaluate(() => current);
+  // фича 8: у пополнения способ не выбран заранее — без клика по способу кнопка погашена
+  async function payTopup(s, amount, method) {
+    await s.p.fill('#tp-amount', amount);
+    await s.p.click(`[data-action="tp-method:${method || 'cash'}"]`);
+    await s.p.click('[data-action="tp-send"]');
+    await s.p.waitForTimeout(400);
+  }
 
   // ── касса: день и отмена строки (Cafe13KPG#340, кадры E36/E36b/E36v) ──
   // Формы — cafe13-api app/routers/till.py на боевом fa2cebc, по коду (снимка
@@ -5338,76 +5303,68 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
     await s.ctx.close();
   }
-  // Продать членство: скан → карточка → форма → итог по ответу и перечитанной карточке.
+  // ФИЧА 8 (Cafe13KPG#1009, №38 «а», рецепт popolnenie/tillTopup): касса членства НЕ продаёт. Скан → карточка: действия
+  // «Членство» нет, `tillMembership` вне WIRED (экран «ещё не подключено»), открыто одно «Пополнить счёт» (K1)
   if (part(1)) {
-    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ after: { balance: 0 } }));
-    if (await toPerson(s, 'till-sell')) {
-      let t = await s.view();
-      if (await at(s) !== 'tillPerson') bad.push('till-sell: найденный человек не на своём экране');
-      for (const w of ['Пробный Гость', 'Пропуск XIII-0042', 'Членства нет', 'Продать членство', 'Внести на счёт'])
-        if (!t.includes(w)) bad.push(`till-sell: на карточке нет «${w}»`);
-      if (finds(s)[0] && !finds(s)[0].url.endsWith('/till/by-pass/0042')) bad.push('till-sell: искали не тот код: ' + finds(s)[0].url);
-      if (await s.p.evaluate(() => backTo()) !== 'staff') bad.push('till-sell: «назад» с карточки ведёт не к скану');
-      if (await toForm(s, 'till-sell', 'membership')) {
-        if (await s.p.evaluate(() => backTo()) !== 'tillPerson') bad.push('till-sell: «назад» с формы ведёт не к карточке');
-        if (await s.p.$eval('#tp-amount', e => e.value + e.placeholder) !== '') bad.push('till-sell: в поле суммы что-то стоит до ввода');
-        await s.p.click('[data-action="tp-level:organizer"]');
-        await s.p.fill('#tp-months', '6');
-        await s.p.fill('#tp-amount', '3000');
-        await s.p.click('[data-action="tp-method:card"]');
-        if (await s.p.$eval('#tp-amount', e => e.value) !== '3000') bad.push('till-sell: выбор способа стёр сумму');
-        await s.p.click('[data-action="tp-send"]');
-        await s.p.waitForTimeout(400);
-        const tp = tillPosts(s);
-        if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'membership', amount: 3000, method: 'card', member_id: PID, level: 'organizer', months: 6 }))
-          bad.push('till-sell: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
-        t = await s.view();
-        if (t.includes('Организатор')) bad.push('till-sell: вид назван «Организатор», а не «Мастер»');
-        // шаг 24: у мастера доля на счёт 0 — итог T9 из ответа сервера, а не T8 и не «Допуск выдан» (он не новичок)
-        if (!t.includes('Взнос принят. Мастер до 24 апреля 2027. На счёт ничего не зачислено — вся сумма клубу.')) bad.push('till-sell: итог не T9 рецепта 24');
-        if (/На счёт: |Допуск в приложение выдан/.test(t)) bad.push('till-sell: у мастера итог T8 или T10');
-        for (const w of ['Принято 3 000 ฿ картой', 'Мастер', 'до 24 апреля 2027', 'Следующий человек', 'правки членства в приложении пока нет',
-                         'Строка ушла в книгу клуба. Исправить задним числом нельзя. Ошиблись — к администратору клуба.'])
-          if (!t.includes(w)) bad.push(`till-sell: на итоге нет «${w}»`);
-        // Кадр E34g (Cafe13KPG#374): у строки с членством хозяин, привратник отмены срабатывает
-        // раньше субъектного — ни пути, ни субъекта, иначе совет вёл бы к отказу 409.
-        if (/отмените|Дне кассы|тот, кто принял/.test(t)) bad.push('till-sell: итог членства зовёт отменить на «Дне кассы» — строку с членством в приложении не снимает никто (Cafe13KPG#373)');
-        if (finds(s).length !== 2) bad.push(`till-sell: карточка после приёма не перечитана (запросов by-pass: ${finds(s).length})`);
-        await s.p.screenshot({ path: `${OUT}/live-till-done.png`, fullPage: true });
-        if (await leak(s)) bad.push('till-sell: номер человека попал в разметку или хранилище');
-        await s.p.click('[data-action="tp-next"]');
-        await s.p.waitForTimeout(100);
-        if (await at(s) !== 'staff' || (await s.p.$eval('#tp-code', e => e.value)) !== '') bad.push('till-sell: «Следующий человек» не вернул к пустому скану');
-      }
+    const n = 'kassa-bez-chlenstva';
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash());
+    if (await toPerson(s, n)) {
+      const t = await s.view();
+      if (await at(s) !== 'tillPerson') bad.push(`${n}: найденный человек не на своём экране`);
+      for (const w of ['Пробный Гость', 'Пропуск XIII-0042', 'Членства нет', 'Пополнить счёт'])
+        if (!t.includes(w)) bad.push(`${n}: на карточке нет «${w}»`);
+      if (finds(s)[0] && !finds(s)[0].url.endsWith('/till/by-pass/0042')) bad.push(`${n}: искали не тот код: ` + finds(s)[0].url);
+      if (await s.p.evaluate(() => backTo()) !== 'staff') bad.push(`${n}: «назад» с карточки ведёт не к скану`);
+      if (/Продать членство|Принять взнос/.test(await s.p.$eval('#view', e => e.innerHTML))) bad.push(`${n}: на карточке продажа членства`);
+      if (await s.p.$('[data-action="tp-open:membership"]')) bad.push(`${n}: на карточке действие «Членство»`);
+      if (!(await s.p.evaluate(() => { const b = document.querySelector('[data-action="tp-open:topup"]'); return !!b && !b.disabled; })))
+        bad.push(`${n}: «Пополнить счёт» не открыто — tillTopup оттаял (№47 «а»)`);
+      // экран продажи недостижим: вне WIRED, и действие «tp-open:membership» формы не открывает
+      if (await s.p.evaluate(() => !!WIRED.tillMembership)) bad.push(`${n}: tillMembership в WIRED`);
+      await s.p.evaluate(() => { const b = document.createElement('button'); b.dataset.action = 'tp-open:membership'; document.getElementById('view').appendChild(b); b.click(); });
+      await s.p.waitForTimeout(150);
+      if (await at(s) === 'tillMembership' || await s.p.$('#tp-months')) bad.push(`${n}: «tp-open:membership» открыло форму взноса`);
+      await s.p.evaluate(() => go('tillMembership'));
+      await s.p.waitForTimeout(150);
+      if (await s.p.$('#tp-amount') || !(await s.view()).includes('ещё не подключено')) bad.push(`${n}: экран продажи членства рисует форму в живом режиме`);
+      if (tillPosts(s).length) bad.push(`${n}: ушла запись в кассу: ${JSON.stringify(tillPosts(s).map(c => c.body))}`);
+      if (await leak(s)) bad.push(`${n}: номер человека попал в разметку или хранилище`);
     }
-    if (s.errs.length) bad.push('till-sell: ошибки страницы ' + s.errs.join('; '));
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ` + s.errs.join('; '));
     await s.ctx.close();
   }
-  // Внести на счёт: у пополнения нет «со счёта», остаток — из перечитанной карточки.
-  if (part(1)) if (thawed('касса')) {
+  // Пополнение (фича 8, рецепт popolnenie/tillTopup): K2 всегда, два способа, ни один не выбран, «Со счёта» нет
+  // (сервер: 409); K4 — сумма из ответа, остаётся на форме с очищенными полями; совет E34m, остаток — перечитанный.
+  if (part(1)) {
+    const n = 'kassa-popolnenie-sposob';
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({ after: { balance: '500.00' } }));
-    if (await toPerson(s, 'till-topup') && await toForm(s, 'till-topup', 'topup')) {
-      if (await s.p.$('[data-action="tp-method:account"]')) bad.push('till-topup: у пополнения есть «со счёта» — кнопка к верному отказу 409');
-      if (await s.p.$('#tp-months')) bad.push('till-topup: у пополнения поле срока');
-      if (!(await s.view()).includes('Перевести со счёта на счёт нельзя')) bad.push('till-topup: нет строки «со счёта на счёт нельзя» (кадр E34e)');
-      if (await s.p.evaluate(() => backTo()) !== 'tillPerson') bad.push('till-topup: «назад» с формы ведёт не к карточке');
-      await s.p.fill('#tp-amount', '500');
-      await s.p.click('[data-action="tp-send"]');
-      await s.p.waitForTimeout(400);
+    if (await toPerson(s, n) && await toForm(s, n, 'topup')) {
+      let t = await s.view();
+      if (!t.includes('Деньги целиком ложатся на счёт человека. Членство касса больше не продаёт.')) bad.push(`${n}: нет K2`);
+      if (!t.includes('На счёте: 0 ฿')) bad.push(`${n}: нет остатка из карточки`);
+      const ways = await s.p.$$eval('#view .seg [data-action^="tp-method:"]', es => es.map(e => e.dataset.action.split(':')[1] + '/' + e.textContent + '/' + e.getAttribute('aria-pressed')));
+      if (JSON.stringify(ways) !== JSON.stringify(['cash/Наличные/false', 'card/Карта/false'])) bad.push(`${n}: способы ${JSON.stringify(ways)}, ждали «Наличные» и «Карта», ни один не выбран`);
+      if (await s.p.$('[data-action="tp-method:account"]')) bad.push(`${n}: у пополнения есть «Со счёта» — кнопка к верному отказу 409`);
+      if (await s.p.$('#tp-months') || await s.p.$('[data-action^="tp-level:"]')) bad.push(`${n}: у пополнения срок или вид членства`);
+      if (await s.p.evaluate(() => backTo()) !== 'tillPerson') bad.push(`${n}: «назад» с формы ведёт не к карточке`);
+      await payTopup(s, '500', 'card');
       const tp = tillPosts(s);
-      if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'topup', amount: 500, method: 'cash', member_id: PID }))
-        bad.push('till-topup: ушло не так: ' + JSON.stringify(tp.map(c => c.body)));
-      const t = await s.view();
-      if (!t.includes('Принято 500 ฿ наличными') || !t.includes('500 ฿')) bad.push('till-topup: нет итога с остатком');
-      if (t.includes('правки членства')) bad.push('till-topup: плашка про членство у пополнения');
-      // Кадр E34m (Cafe13KPG#374): у пополнения хозяина нет, снимает тот, кто принял, на
-      // «Дне кассы». Совет E34g «к администратору клуба» отправлял бы его от стойки.
+      if (tp.length !== 1 || tp[0].body !== JSON.stringify({ kind: 'topup', amount: 500, method: 'card', member_id: PID }))
+        bad.push(`${n}: ушло не так: ` + JSON.stringify(tp.map(c => c.body)));
+      t = await s.view();
+      if (await at(s) !== 'tillTopup') bad.push(`${n}: принятое пополнение ушло с формы — K4 остаётся на tillTopup`);
+      if (!t.includes('Внесено 500 ฿ на счёт.')) bad.push(`${n}: нет K4 «Внесено 500 ฿ на счёт.»`);
+      if (!t.includes('На счёте: 500 ฿')) bad.push(`${n}: остаток после приёма не перечитан`);
+      if (await s.p.$eval('#tp-amount', e => e.value) !== '' || await s.p.$('#view .seg [aria-pressed="true"]')) bad.push(`${n}: после K4 поля не очищены`);
+      if (!(await s.p.$('#tp-send[disabled]'))) bad.push(`${n}: после K4 кнопка не погашена — повтор без новой суммы`);
+      if (t.includes('правки членства')) bad.push(`${n}: плашка про членство у пополнения`);
+      // Кадр E34m (Cafe13KPG#374): у пополнения хозяина нет, снимает тот, кто принял, на «Дне кассы»
       if (!t.includes('Строка ушла в книгу клуба. Исправить задним числом нельзя — ошиблись, отмените её на «Дне кассы» и внесите заново.'))
-        bad.push('till-topup: итог не дословно E34m «…отмените её на «Дне кассы» и внесите заново»');
-      if (t.includes('к администратору клуба')) bad.push('till-topup: итог пополнения шлёт к администратору клуба — снять строку может тот, кто принял (Cafe13KPG#373, кадр E34m)');
-      if (/пока не сделана/.test(t)) bad.push('till-topup: итог говорит, что отмены в приложении нет, — её принесла v50 (Cafe13KPG#373)');
-      if (await leak(s)) bad.push('till-topup: номер человека попал в разметку или хранилище');
+        bad.push(`${n}: итог не дословно E34m`);
+      if (t.includes('к администратору клуба')) bad.push(`${n}: итог пополнения шлёт к администратору клуба (Cafe13KPG#373, кадр E34m)`);
+      if (await leak(s)) bad.push(`${n}: номер человека попал в разметку или хранилище`);
     }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ` + s.errs.join('; '));
     await s.ctx.close();
   }
   // Отказы поиска — словами сервера, на скане, без перехода к карточке.
@@ -5436,48 +5393,60 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
     await s.ctx.close();
   }
-  // Срок и сумма не те — не отправляется.
-  if (part(1)) for (const [months, amount, want] of [['0', '100', 'от 1 до 24'], ['25', '100', 'от 1 до 24'], ['abc', '100', 'от 1 до 24'],
-                                        ['6', '0', 'Сумма — число больше нуля']]) {
-    const name = `till-form-${months}-${amount}`;
-    const s = await open(true, true, json(200, OWNER), null, null, null, cash());
-    if (await toPerson(s, name) && await toForm(s, name, 'membership')) {
-      await s.p.fill('#tp-months', months);
-      await s.p.fill('#tp-amount', amount);
-      await s.p.click('[data-action="tp-send"]');
+  // Сумму вводит кассир (рецепт tillTopup): поле пустое и у члена с живым членством (цена вида не подставляется);
+  // кнопка «Внести {amount} ฿» гаснет без суммы > 0 и без способа; K3 — проверка клиента до запроса
+  if (part(1)) {
+    const n = 'kassa-summa-pusta';
+    const live = Object.assign({}, PERSON, { membership_active: true, membership: { level: 'member', starts_at: ENDS, ends_at: '2026-11-30T17:00:00+00:00', lifelong: false } });
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, live) }));
+    if (await toPerson(s, n) && await toForm(s, n, 'topup')) {
+      const btn = () => s.p.$eval('#tp-send', e => (e.disabled ? 'off:' : 'on:') + e.textContent);
+      if (await s.p.$eval('#tp-amount', e => e.value + e.placeholder) !== '') bad.push(`${n}: в поле суммы что-то стоит до ввода`);
+      if (await btn() !== 'off:Внести 0 ฿') bad.push(`${n}: без суммы кнопка «${await btn()}», ждали погашенную «Внести 0 ฿»`);
+      await s.p.fill('#tp-amount', '500');
+      if (await btn() !== 'off:Внести 500 ฿') bad.push(`${n}: без способа кнопка «${await btn()}», ждали погашенную «Внести 500 ฿»`);
+      await s.p.click('[data-action="tp-method:cash"]');
+      if (await btn() !== 'on:Внести 500 ฿') bad.push(`${n}: с суммой и способом кнопка «${await btn()}»`);
+      if (await s.p.$eval('#tp-amount', e => e.value) !== '500') bad.push(`${n}: выбор способа стёр сумму`);
+      for (const v of ['0', '-5', 'abc', '']) {
+        await s.p.fill('#tp-amount', v);
+        if (!(await btn()).startsWith('off:')) bad.push(`${n}: при сумме «${v}» кнопка горит`);
+      }
+      // K3: до запроса, даже если отправку позвали мимо погашенной кнопки
+      await s.p.fill('#tp-amount', '0');
+      await s.p.evaluate(() => tillSend());
       await s.p.waitForTimeout(150);
-      if (tillPosts(s).length || !(await s.view()).includes(want)) bad.push(`${name}: принято без «${want}»`);
+      if (!(await s.view()).includes('Назовите сумму больше нуля.')) bad.push(`${n}: нет K3 «Назовите сумму больше нуля.»`);
+      if (tillPosts(s).length) bad.push(`${n}: сумма 0 ушла на сервер`);
     }
     await s.ctx.close();
   }
   // Приём: отказ сервера, потерянный ответ, чужая строка, карточка не перечиталась.
   if (part(1)) for (const [name, kind, o, want, nowant] of [
-    ['till-409', 'membership', { post: () => json(409, { detail: 'на счёте 0, не хватает 3000' }) }, ['На счёте 0, не хватает 3000'], ['Принято']],
+    ['till-409', 'topup', { post: () => json(409, { detail: 'пополнение со счёта на счёт не бывает: наличные или карта' }) }, ['Пополнение со счёта на счёт не бывает: наличные или карта'], ['Внесено']],
     // Ответа не было (E34zh): «неизвестно» верно, совет — перечитать, подождать, позвать.
-    ['till-lost', 'membership', { post: 'abort' }, ['Неизвестно, принято ли', 'Ответ сервера не дошёл.',
+    ['till-lost', 'topup', { post: 'abort' }, ['Неизвестно, принято ли', 'Ответ сервера не дошёл.',
       'Перед приёмом: членства нет, остаток 0 ฿'], ['Принято', 'Деньги проведены', 'Ниже — перечитанная карточка']],
     // 201 — деньги в книге (E34z): «неизвестно» звало бы ко второму приёму (Cafe13KPG#333).
     // Разобранное, но не совпавшее тело — E34k/E34l, случаи till-351-* ниже.
     ['till-201-raw', 'topup', { post: () => ({ status: 201, contentType: 'text/html', body: '<html>ok</html>' }) },
       ['Деньги проведены', 'Если они не изменились, это вопрос к администратору клуба'], ['Принято', 'Неизвестно', 'не разобран']],
     // 201, а карточка не перечиталась (E34i): сверять не с чем — открыть заново по коду.
-    ['till-201-noreread', 'membership', { post: () => ({ status: 201, contentType: 'text/html', body: '<html>ok</html>' }),
+    ['till-201-noreread', 'topup', { post: () => ({ status: 201, contentType: 'text/html', body: '<html>ok</html>' }),
       refind: (() => { let n = 0; return () => n++ ? json(200, Object.assign({}, PERSON, { balance: 500 })) : json(500, { detail: 'x' }); })() },
       ['Деньги проведены', 'Откройте её заново по коду пропуска', 'Это данные ДО приёма: карточка не перечиталась'], ['Если они не изменились, это вопрос к администратору клуба', 'Неизвестно', 'Перед приёмом']],
     // Заметки не-чистых состояний пополнения — дословно кадры (Cafe13KPG#381): E34o держит адрес,
     // у E34n его нет — адрес несёт плашка ниже, второй заставил бы гадать. Текст E34n — начало
     // E34g, поэтому «дословно» здесь держат запреты, а не includes.
-    ['till-noreread', 'topup', { refind: () => json(500, { detail: 'x' }) }, ['Принято 500', 'Остаток не перечитан — обновите карточку', 'Перечитать карточку',
+    ['till-noreread', 'topup', { refind: () => json(500, { detail: 'x' }) }, ['Внесено 500 ฿ на счёт.', 'Остаток не перечитан — обновите карточку', 'Перечитать карточку',
       'Строка ушла в книгу клуба. Исправить задним числом нельзя. Ошиблись — к администратору клуба.'], ['Дне кассы']],
     ['till-nogrow', 'topup', { after: { balance: 0 } }, ['Остаток изменился не на эту сумму', 'Не вносите снова',
       'Строка ушла в книгу клуба. Исправить задним числом нельзя.'], ['Ошиблись', 'ошиблись', 'к администратору клуба', 'Дне кассы']]]) {
-    if (kind === 'topup' && !thawed('касса')) continue;   // пополнение в FROZEN и после шага 24
     const s = await open(true, true, json(200, OWNER), null, null, null, cash(o));
     if (await toPerson(s, name) && await toForm(s, name, kind)) {
-      if (kind === 'membership') { await s.p.fill('#tp-months', '1'); await s.p.click('[data-action="tp-level:organizer"]'); }
-      await s.p.fill('#tp-amount', kind === 'membership' ? '3000' : '500');
-      await s.p.click('[data-action="tp-send"]');
-      await s.p.waitForTimeout(400);
+      await payTopup(s, '500');
+      // принятое пополнение остаётся на форме (K4); остаток и плашки — на карточке, куда ведёт «назад»
+      if (await at(s) === 'tillTopup' && name !== 'till-409') { await s.p.evaluate(() => go(backTo())); await s.p.waitForTimeout(150); }
       const t = await s.view();
       for (const w of want) if (!t.includes(w)) bad.push(`${name}: нет «${w}»`);
       for (const w of nowant) if (t.includes(w)) bad.push(`${name}: есть «${w}»`);
@@ -5515,14 +5484,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const g = await s.p.evaluate(() => ({
           warm: !!document.querySelector('#view .card.warm'),
           loud: [...document.querySelectorAll('#view .btn')].filter(b => !/\b(quiet|ghost)\b/.test(b.className)).map(b => b.textContent),
-          sell: !!document.querySelector('[data-action="tp-open:membership"]') }));
+          sell: !!document.querySelector('[data-action^="tp-open:"]') }));
         if (!g.warm) bad.push(`${name}: неизвестный исход не глиной — тот же вес, что у «Принято»`);
         if (g.loud.join('|') !== 'Перечитать карточку') bad.push(`${name}: громкая кнопка не «Перечитать карточку»: ` + JSON.stringify(g.loud));
         if (g.sell) bad.push(`${name}: при неизвестном исходе предложено принять снова`);
       }
       if (name === 'till-nogrow' && !(await s.p.evaluate(() => [...document.querySelectorAll('#view .deny')].some(e => e.textContent.includes('Не вносите снова')))))
         bad.push('till-nogrow: «Не вносите снова» не плашкой, а тихой подписью');
-      if (name === 'till-409' && (await at(s) !== 'tillMembership' || (await s.p.$eval('#tp-amount', e => e.value)) !== '3000'))
+      if (name === 'till-409' && (await at(s) !== 'tillTopup' || (await s.p.$eval('#tp-amount', e => e.value)) !== '500'))
         bad.push('till-409: после отказа ушли с формы или стёрли сумму');
     }
     await s.ctx.close();
@@ -5546,9 +5515,6 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     for (const [name, kind, f, frame, mine, theirs, id, more] of [
       ['till-351-sum', 'topup', r => { r.amount = '300.00'; }, 'E34k', '500 ฿', '300 ฿', '№ 95'],
       ['till-351-kind', 'topup', r => { r.kind = 'service'; }, 'E34k', 'На счёт', 'За услугу', '№ 95'],
-      // вид разошёлся вместе с суммой — на экран пара вида, а не суммы
-      ['till-351-two', 'membership', r => { r.kind = 'topup'; r.amount = '300.00'; delete r.membership; }, 'E34k', 'Членство', 'На счёт', '№ 95'],
-      ['till-351-level', 'membership', r => { r.membership.level = 'member'; }, 'E34k', 'Мастер', 'Член клуба', '№ 95'],
       // номера в теле нет — строки «Строка в книге» нет, остальной кадр тот же
       ['till-351-noid', 'topup', r => { r.amount = '300.00'; delete r.id; }, 'E34k', '500 ฿', '300 ฿', null],
       ['till-351-who', 'topup', r => { r.member_id = ALIEN; }, 'E34l'],
@@ -5559,20 +5525,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // человека в ответе НЕТ — это не «другой человек»: E34l солгал бы кассиру (возврат архитектора на #82)
       ['till-351-noperson', 'topup', r => { delete r.member_id; }, 'E34z'],
       ['till-351-nullperson', 'topup', r => { r.member_id = null; }, 'E34z'],
-      ['till-351-noend', 'membership', r => { r.membership.ends_at = 'когда-нибудь'; }, 'E34z'],
-      // членство, всё совпало, а объекта membership в ответе нет — печатать нечего
-      ['till-351-noms', 'membership', r => { delete r.membership; }, 'E34z'],
-      // уровень, которого нет в LEVEL, — печатать нечем
-      ['till-351-nolevel', 'membership', r => { r.membership.level = 'gold'; }, 'E34z'],
       ['till-351-nokind', 'topup', r => { r.kind = 'gift'; }, 'E34z'],
       ['till-351-nosum', 'topup', r => { r.amount = 'пятьсот'; }, 'E34z']]) {
-      if (kind === 'topup' && !thawed('касса')) continue;   // пополнение в FROZEN и после шага 24
+      // фича 8: членство касса не продаёт — расхождения вида и срока членства (till-351-two/level/noend/noms/nolevel) сняты
       const s = await open(true, true, json(200, OWNER), null, null, null, cash(Object.assign({ post: bent(f) }, more)));
       if (await toPerson(s, name) && await toForm(s, name, kind)) {
-        if (kind === 'membership') { await s.p.fill('#tp-months', '1'); await s.p.click('[data-action="tp-level:organizer"]'); }
-        await s.p.fill('#tp-amount', kind === 'membership' ? '3000' : '500');
-        await s.p.click('[data-action="tp-send"]');
-        await s.p.waitForTimeout(400);
+        await payTopup(s, '500');
         const t = await s.view();
         const g = await s.p.evaluate(() => {
           const words = el => { if (!el) return null; const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), out = [];
@@ -5632,138 +5590,101 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
 
-  // ── шаг 24: взнос за членство на кассе (Cafe13KPG#555, рецепт `_docs/recept/ekran/24/`, снимок формы v2, api `84fbeef`) ──
-  // Сумму вводит касса, цена вида стоит подписью T4; итог T8/T9 — из ответа (`to_account`), клиент долю не считает.
-  const T3 = 'Человек с улицы нажимает в боте клуба «Я у кассы» — и появляется здесь. Без этого клуб его не знает, и найти его нечем. Допуск он получит вместе с оплатой — не раньше.';
+  // ── фича 8: пришедшие к кассе — пополнение вместо взноса (Cafe13KPG#1009, рецепт `_docs/recept/ekran/popolnenie/tillTopup.md`,
+  //    снимки api 5f6e9c7). Взнос шага 24 снят (№38 «а»: членство не продаётся, 410). Выбранный пришедший → карточка
+  //    `GET /till/by-member/{tg_user_id}` → «Пополнить счёт»; пополнение несёт `member_id` И `arrival_id` и закрывает приход
+  //    (api #181). 404 карточки — T13: человек нажал «Я у кассы», а приложения не открывал. ──
+  const T3 = 'Человек нажимает в боте клуба «Я у кассы» — и появляется здесь. Касса найдёт его, если он хоть раз открывал приложение клуба.';
   const T12 = 'Просьбы о вступлении с чеком перевода здесь не показываются: их решают в «Управлении».';
   const tillBody = s => { const tp = tillPosts(s); return tp.length === 1 ? JSON.parse(tp[0].body) : { posts: tp.length }; };
-  async function payVznos(s, name, level, months, amount, method) {
-    if (!(await s.p.$(`[data-action="tp-level:${level}"]`))) { bad.push(`${name}: нет выбора вида ${level}`); return false; }
-    await s.p.click(`[data-action="tp-level:${level}"]`);
-    await s.p.fill('#tp-months', months);
-    await s.p.fill('#tp-amount', amount);
-    if (method) await s.p.click(`[data-action="tp-method:${method}"]`);
-    await s.p.click('[data-action="tp-send"]');
-    await s.p.waitForTimeout(400);
+  async function toArrival(s, name) {
+    if (!(await s.p.$('#tabs [data-go="staff"]'))) { bad.push(`${name}: у кассира нет вкладки «Касса»`); return false; }
+    await s.p.click('#tabs [data-go="staff"]'); await s.p.waitForTimeout(250);
+    if (!(await s.p.$('[data-action="tp-arr:31"]'))) { bad.push(`${name}: у пришедшего нет кнопки`); return false; }
+    await s.p.click('[data-action="tp-arr:31"]'); await s.p.waitForTimeout(250);
     return true;
   }
-  // взнос члену клуба: продлит членство (T7), цена вида (T4), итог T8 с долей на счёт
+  // список (T1, T2, T3, T12) → карточка по номеру → K1 → пополнение с номером прихода → K4; из списка уходит
   if (part(1)) {
-    const name = 'kassa-vznos-chlenu';
-    const live = Object.assign({}, PERSON, { membership_active: true, membership: { level: 'member', starts_at: ENDS, ends_at: '2026-11-30T17:00:00+00:00', lifelong: false } });
-    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, live), after: { balance: '2600.00' } }));
-    if (await toPerson(s, name) && await toForm(s, name, 'membership')) {
-      await s.p.click('[data-action="tp-level:member"]');
-      await s.p.waitForTimeout(150);
-      let t = await s.view();
-      if (!t.includes('Цена вида: 3 600 ฿')) bad.push(`${name}: нет T4 «Цена вида: 3 600 ฿» — цена с сервера`);
-      if (!t.includes('Продлит членство: сейчас до 1 декабря 2026.')) bad.push(`${name}: нет T7 у живого членства`);
-      if (await s.p.$eval('#tp-amount', e => e.value) !== '') bad.push(`${name}: цена вида подставлена в поле суммы — сверке нечего различать`);
-      if (t.includes('прейскуранта на сервере нет')) bad.push(`${name}: устаревшее «прейскуранта на сервере нет» — цена вида с сервера с 018`);
-      await payVznos(s, name, 'member', '1', '3600', 'cash');
-      const b = tillBody(s);
-      if (JSON.stringify(b) !== JSON.stringify({ kind: 'membership', amount: 3600, method: 'cash', member_id: PID, level: 'member', months: 1 }))
-        bad.push(`${name}: ушло не так: ${JSON.stringify(b)}`);
-      t = await s.view();
-      if (await at(s) !== 'tillMembership') bad.push(`${name}: итог взноса не на экране взноса`);
-      if (!t.includes('Взнос принят. Член клуба до 24 апреля 2027. На счёт: 2 600 ฿.')) bad.push(`${name}: нет итога T8 с долей из ответа`);
-      if (t.includes('вся сумма клубу') || t.includes('Допуск в приложение выдан')) bad.push(`${name}: у члена клуба T9 или T10`);
-      if (await leak(s)) bad.push(`${name}: номер человека попал в разметку или хранилище`);
-    }
-    await s.ctx.close();
-  }
-  // T7 — только у живого членства ТОГО ЖЕ вида: другой вид — новое членство, не продление; пожизненное не продлевается
-  // (возврат arhitector-b7 на #351: мутация «тот же вид → true» проходила зелёной — проверялось только присутствие)
-  if (part(1)) for (const [name, ms, pick] of [
-    ['kassa-t7-drugoy-vid', { level: 'member', starts_at: ENDS, ends_at: '2026-11-30T17:00:00+00:00', lifelong: false }, 'organizer'],
-    ['kassa-t7-pozhiznenno', { level: 'member', starts_at: ENDS, ends_at: null, lifelong: true }, 'member']]) {
-    const live = Object.assign({}, PERSON, { membership_active: true, membership: ms });
-    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, live) }));
-    if (await toPerson(s, name) && await toForm(s, name, 'membership')) {
-      await s.p.click(`[data-action="tp-level:${pick}"]`);
-      await s.p.waitForTimeout(150);
-      const t = await s.view();
-      if (!t.includes('Цена вида:')) bad.push(`${name}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — форма без T4, вид не выбран`);
-      if (t.includes('Продлит членство')) bad.push(`${name}: T7 «Продлит членство» там, где продлевать нечего (${pick} при ${ms.lifelong ? 'пожизненном' : 'живом ' + ms.level})`);
-    }
-    await s.ctx.close();
-  }
-  // доля нулевая у мастера и партнёра, у члена — 2 600: одна фикстура долей, три вида
-  if (part(1)) for (const [level, word, amount, want] of [['member', 'Член клуба', '3600', 'На счёт: 2 600 ฿.'],
-      ['organizer', 'Мастер', '3000', 'На счёт ничего не зачислено — вся сумма клубу.'], ['partner', 'Бизнес-партнёр', '5000', 'На счёт ничего не зачислено — вся сумма клубу.']]) {
-    const name = 'kassa-nulevaya-dolya-' + level;
-    const s = await open(true, true, json(200, OWNER), null, null, null, cash());
-    if (await toPerson(s, name) && await toForm(s, name, 'membership') && await payVznos(s, name, level, '1', amount)) {
-      const t = await s.view();
-      if (!t.includes(`Взнос принят. ${word} до 24 апреля 2027. ${want}`)) bad.push(`${name}: итог не «… ${want}»: ${t.slice(0, 120)}`);
-    }
-    await s.ctx.close();
-  }
-  // человек с улицы: список пришедших (T1, T2, T3, T12) → взнос по arrival_id → T8 + T10, из списка уходит
-  if (part(1)) {
-    const name = 'kassa-vznos-s-ulicy';
+    const name = 'kassa-prihod';
     let paid = false;
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({
       arrivals: () => json(200, { arrivals: paid ? [] : [ARRIVAL] }),
-      post: q => { paid = true; const x = JSON.parse(q.postData());
-        return json(201, { id: 96, at: '2026-10-24T10:00:00+00:00', kind: 'membership', amount: '1000.00', method: x.method, member_id: NEWP, note: '',
-          to_account: '2600.00', to_club: '1000.00', arrival_id: x.arrival_id, membership: { id: 8, level: x.level, starts_at: '2026-10-24T10:00:00+00:00', ends_at: ENDS } }); } }));
-    if (!(await s.p.$('#tabs [data-go="staff"]'))) bad.push(`${name}: у кассира нет вкладки «Касса»`);
-    else {
-      await s.p.click('#tabs [data-go="staff"]');
-      await s.p.waitForTimeout(250);
-      let t = await s.view();
+      post: q => { paid = true; return json(201, tillRow(JSON.parse(q.postData()))); },
+      after: { balance: '500.00' } }));
+    if (await s.p.$('#tabs [data-go="staff"]')) {
+      await s.p.click('#tabs [data-go="staff"]'); await s.p.waitForTimeout(250);
+      const t = await s.view();
       for (const w of ['Пришли к кассе', 'Уличный Гость · 14:05', T3, T12]) if (!t.includes(w)) bad.push(`${name}: на кассе нет «${w}»`);
+      if (t.includes('Допуск он получит вместе с оплатой')) bad.push(`${name}: прежний T3 шага 24 — после двери он врёт`);
       if (s.calls.some(c => /\/join\/requests|\/membership-requests/.test(c.url))) bad.push(`${name}: касса спросила просьбы о вступлении — их решает глава клуба`);
-      if (!(await s.p.$('[data-action="tp-arr:31"]'))) bad.push(`${name}: у пришедшего нет кнопки взноса`);
-      else {
-        await s.p.click('[data-action="tp-arr:31"]');
-        await s.p.waitForTimeout(150);
-        if (await at(s) !== 'tillMembership') bad.push(`${name}: выбор пришедшего не открыл форму взноса`);
-        t = await s.view();
-        if (!t.includes('Уличный Гость')) bad.push(`${name}: в форме нет имени из списка`);
-        if (await s.p.$('[data-action="tp-method:account"]')) bad.push(`${name}: у пришедшего «Со счёта» — счёта у него ещё нет`);
-        await payVznos(s, name, 'member', '1', '3600', 'cash');
+      const b = await s.p.$eval('[data-action="tp-arr:31"]', e => e.textContent).catch(() => null);
+      if (b !== 'Пополнить счёт') bad.push(`${name}: кнопка пришедшего «${b}», ждали «Пополнить счёт»`);
+    }
+    if (await toArrival(s, name)) {
+      if (!s.calls.some(c => c.method === 'GET' && c.url.endsWith('/till/by-member/' + NEWP))) bad.push(`${name}: карточка пришедшего не спрошена по его номеру`);
+      if (await at(s) !== 'tillPerson') bad.push(`${name}: выбор пришедшего не открыл карточку (${await at(s)})`);
+      if (await toForm(s, name, 'topup')) {
+        if (!(await s.view()).includes('Уличный Гость')) bad.push(`${name}: в форме нет имени из карточки`);
+        await payTopup(s, '500');
         const b = tillBody(s);
-        if (JSON.stringify(b) !== JSON.stringify({ kind: 'membership', amount: 3600, method: 'cash', arrival_id: 31, level: 'member', months: 1 }))
-          bad.push(`${name}: ушло не так (ждали arrival_id без member_id): ${JSON.stringify(b)}`);
-        t = await s.view();
-        for (const w of ['Взнос принят. Член клуба до 24 апреля 2027. На счёт: 2 600 ฿.', 'Допуск в приложение выдан.'])
-          if (!t.includes(w)) bad.push(`${name}: на итоге нет «${w}»`);
-        if (!s.calls.some(c => c.method === 'GET' && c.url.endsWith('/till/by-member/' + NEWP))) bad.push(`${name}: карточка нового человека не перечитана по номеру из ответа`);
+        if (JSON.stringify(b) !== JSON.stringify({ kind: 'topup', amount: 500, method: 'cash', member_id: NEWP, arrival_id: 31 }))
+          bad.push(`${name}: ушло не так (ждали member_id и arrival_id): ${JSON.stringify(b)}`);
+        const t = await s.view();
+        if (!t.includes('Внесено 500 ฿ на счёт.')) bad.push(`${name}: нет K4`);
+        if (/Взнос принят|Допуск в приложение выдан/.test(t)) bad.push(`${name}: итог взноса у пополнения`);
+        // второе пополнение тому же человеку — уже без номера прихода: приход закрыт первым
+        await payTopup(s, '200');
+        const tp = tillPosts(s);
+        if (tp.length !== 2 || 'arrival_id' in JSON.parse(tp[1].body)) bad.push(`${name}: второе пополнение снова несёт номер закрытого прихода: ${tp[1] && tp[1].body}`);
         if (await leak(s)) bad.push(`${name}: номер человека попал в разметку или хранилище`);
+        await s.p.evaluate(() => go(backTo())); await s.p.waitForTimeout(150);
         if (await s.p.$('[data-action="tp-next"]')) {
-          await s.p.click('[data-action="tp-next"]');
-          await s.p.waitForTimeout(250);
-          t = await s.view();
-          if (t.includes('Уличный Гость') || !t.includes('Сейчас у кассы никого нет.')) bad.push(`${name}: оплативший остался в списке пришедших (T11 нет)`);
-          if (!t.includes(T3) || !t.includes(T12)) bad.push(`${name}: у пустого списка нет T3 или T12 — они стоят всегда`);
-        } else bad.push(`${name}: на итоге нет «Следующий человек»`);
+          await s.p.click('[data-action="tp-next"]'); await s.p.waitForTimeout(250);
+          const t2 = await s.view();
+          if (t2.includes('Уличный Гость') || !t2.includes('Сейчас у кассы никого нет.')) bad.push(`${name}: пополненный остался в списке пришедших`);
+          if (!t2.includes(T3) || !t2.includes(T12)) bad.push(`${name}: у пустого списка нет T3 или T12 — они стоят всегда`);
+        } else bad.push(`${name}: на карточке после приёма нет «Следующий человек»`);
       }
     }
     if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
-  // отказы — словами сервера, классом .verbatim; поля сохраняются: сумма ≠ цене, не та роль, пришедший уже оплачен
+  // T13: по выбранной строке карточки нет (404) — слова сервера и совет; к карточке не идём. Иной отказ — без совета
+  if (part(1)) for (const [name, code, detail, advice] of [
+    ['kassa-prihod-404', 404, 'человека с таким номером нет', true],
+    ['kassa-prihod-403', 403, 'нужна роль кассы', false]]) {
+    const s = await open(true, true, json(200, OWNER), null, null, null, cash({ arrivals: () => json(200, { arrivals: [ARRIVAL] }),
+      member: () => json(code, { detail }) }));
+    if (await toArrival(s, name)) {
+      const t = await s.view();
+      if (await at(s) !== 'staff') bad.push(`${name}: отказ карточки увёл со списка (${await at(s)})`);
+      const v = await s.p.evaluate(() => { const x = document.querySelector('#view .deny .verbatim'); return x ? x.textContent : null; });
+      const want = detail[0].toUpperCase() + detail.slice(1);
+      if (v !== want) bad.push(`${name}: отказ «${v}», ждали «${want}» в .deny .verbatim`);
+      const has = t.includes('Пусть человек откроет приложение клуба — потом выберите его здесь снова.');
+      if (has !== advice) bad.push(`${name}: совет T13 ${advice ? 'не показан' : 'показан не у 404'}`);
+      if (!t.includes(T3)) bad.push(`${name}: при отказе пропал T3`);
+      if (tillPosts(s).length) bad.push(`${name}: без карточки ушла запись в кассу`);
+    }
+    await s.ctx.close();
+  }
+  // отказы приёма — словами сервера, .verbatim; поля сохраняются: приход уже закрыт, не та роль, 410 (своей причины нет)
   if (part(1)) for (const [name, code, detail, arr] of [
-    ['kassa-summa-ne-cena', 409, 'взнос «Член клуба» на 1 мес. — 3600, принесено 3000', false],
+    ['kassa-prihod-oplachen', 409, 'по этому приходу деньги уже приняты', true],
     ['kassa-ne-ta-rol', 403, 'нужна роль кассы', false],
-    ['kassa-prihod-oplachen', 409, 'взнос по этому приходу уже принят', true]]) {
+    ['kassa-410-slova', 410, 'членство больше не продаётся (решение №38): пополнение счёта — kind=topup', false]]) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({ post: () => json(code, { detail }),
       arrivals: () => json(200, { arrivals: [ARRIVAL] }) }));
-    let ok;
-    if (arr) {
-      await s.p.click('#tabs [data-go="staff"]'); await s.p.waitForTimeout(250);
-      ok = !!(await s.p.$('[data-action="tp-arr:31"]'));
-      if (ok) { await s.p.click('[data-action="tp-arr:31"]'); await s.p.waitForTimeout(150); } else bad.push(`${name}: нет пришедшего в списке`);
-    } else ok = await toPerson(s, name) && await toForm(s, name, 'membership');
-    if (ok && await payVznos(s, name, 'member', '1', '3000')) {
+    const ok = arr ? await toArrival(s, name) && await toForm(s, name, 'topup') : await toPerson(s, name) && await toForm(s, name, 'topup');
+    if (ok) {
+      await payTopup(s, '700');
       const v = await s.p.evaluate(() => { const x = document.querySelector('#view .deny .verbatim'); return x ? x.textContent : null; });
       const want = detail[0].toUpperCase() + detail.slice(1);
       if (v !== want) bad.push(`${name}: отказ «${v}», ждали дословно «${want}» в .deny .verbatim`);
-      if (await at(s) !== 'tillMembership' || await s.p.$eval('#tp-amount', e => e.value) !== '3000' || await s.p.$eval('#tp-months', e => e.value) !== '1')
-        bad.push(`${name}: после отказа ушли с формы или стёрли поля`);
-      if ((await s.view()).includes('Взнос принят')) bad.push(`${name}: при отказе показан итог`);
+      if (await at(s) !== 'tillTopup' || await s.p.$eval('#tp-amount', e => e.value) !== '700' ||
+          !(await s.p.$('#view .seg [data-action="tp-method:cash"][aria-pressed="true"]'))) bad.push(`${name}: после отказа ушли с формы или стёрли поля`);
+      if ((await s.view()).includes('Внесено')) bad.push(`${name}: при отказе показан итог`);
     }
     await s.ctx.close();
   }
@@ -5771,7 +5692,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   if (part(1)) for (const [name, reply, want, nowant] of [
     ['kassa-prishedshih-net', json(200, { arrivals: [] }), ['Сейчас у кассы никого нет.', T3, T12], []],
     ['kassa-prishedshie-403', json(403, { detail: 'нужна роль кассы' }), ['Нужна роль кассы', T3, T12], ['Сейчас у кассы никого нет.']],
-    ['kassa-prishedshie-bad', json(200, { arrivals: [{ id: 31 }] }), ['Ответ сервера не разобран.'], ['Сейчас у кассы никого нет.']]]) {
+    ['kassa-prishedshie-bad', json(200, { arrivals: [{ id: 31 }] }), ['Ответ сервера не разобран.'], ['Сейчас у кассы никого нет.']],
+    // без номера человека строку открыть нечем (карточка — по номеру): не разобрана, а не «пришёл без имени»
+    ['kassa-prishedshie-nouid', json(200, { arrivals: [Object.assign({}, ARRIVAL, { tg_user_id: null })] }), ['Ответ сервера не разобран.'], ['Уличный Гость']]]) {
     const s = await open(true, true, json(200, OWNER), null, null, null, cash({ arrivals: () => reply }));
     await s.p.click('#tabs [data-go="staff"]'); await s.p.waitForTimeout(250);
     const t = await s.view();
@@ -5780,52 +5703,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (name !== 'kassa-prishedshih-net' && !(await s.p.$('[data-action="tp-arr-reload"]'))) bad.push(`${name}: нет «Повторить»`);
     await s.ctx.close();
   }
-  // на карточке человека открыто только «Членство»: пополнение и день кассы — в FROZEN и после шага 24
+  // «День кассы» спит (№47 «а» снял слово 05.11 только для пополнения): кнопка серая, экран в FROZEN
   if (part(1)) {
-    const name = 'kassa-tolko-vznos';
+    const name = 'kassa-den-spit';
     const s = await open(true, true, json(200, OWNER), null, null, null, cash());
-    if (await toPerson(s, name)) {
-      const g = await s.p.evaluate(() => ({ top: (b => b && b.disabled)(document.querySelector('[data-action="tp-open:topup"]')),
-        sell: (b => b && !b.disabled)(document.querySelector('[data-action="tp-open:membership"]')) }));
-      if (!g.top) bad.push(`${name}: «Внести на счёт» не серое — tillTopup остаётся в FROZEN`);
-      if (!g.sell) bad.push(`${name}: «Продать членство» не открыто`);
-    }
     await s.p.click('#tabs [data-go="staff"]'); await s.p.waitForTimeout(150);
     if (!(await s.p.evaluate(() => { const b = document.querySelector('[data-go="tillDay"]'); return !!b && b.disabled; }))) bad.push(`${name}: «День кассы» не серое — tillDay остаётся в FROZEN`);
-    await s.ctx.close();
-  }
-  // незнакомец: «Я у кассы» шлёт {} и не даёт ничего — /me по-прежнему 403, экран тот же
-  if (part(1)) {
-    const name = 'kassa-novichok-bez-oplaty';
-    const J = { amount_thb: '3600.00', amount_usd: '130.00', period_months: 1, currency: 'THB', request: null,
-                about_token: 'tok', you: { first_name: '[просящий]', last_name: '', username: 'ab' } };
-    const s = await open(true, true, json(403, { detail: 'доступа нет' }), null, null, null, q => {
-      const u = q.url();
-      if (/\/join\/requisites\//.test(u)) return json(404, { detail: 'x' });
-      if (u.endsWith('/join')) return json(200, J);
-      if (u.endsWith('/till/arrive')) return json(201, ARRIVED);
-      return undefined;
-    });
-    await s.p.waitForTimeout(250);
-    let t = await s.view();
-    if (!t.includes('Вас ещё нет в списке')) bad.push(`${name}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — незнакомец не на экране просьбы`);
-    if (!(await s.p.$('[data-action="join-arrive"]'))) bad.push(`${name}: у незнакомца нет «Я у кассы»`);
-    else {
-      await s.p.click('[data-action="join-arrive"]');
-      await s.p.waitForTimeout(250);
-      const a = s.calls.filter(c => c.method === 'POST' && c.url.endsWith('/till/arrive'));
-      if (a.length !== 1 || a[0].body !== '{}') bad.push(`${name}: «Я у кассы» ушло не так: ${JSON.stringify(a.map(c => c.body))}`);
-      t = await s.view();
-      if (!t.includes('Кассир видит вас в своём списке') || !t.includes('Допуск в приложение — вместе с оплатой, не раньше.'))
-        bad.push(`${name}: после «Я у кассы» не сказано, что допуска ещё нет`);
-      if (/Вы в клубе|Допуск выдан|Член клуба/.test(t)) bad.push(`${name}: нажатие обещает допуск или членство без оплаты`);
-      if (await s.p.$('[data-action="retry"]')) {
-        await s.p.click('[data-action="retry"]');
-        await s.p.waitForTimeout(300);
-        if (await at(s) !== 'noAccess') bad.push(`${name}: без оплаты вход пустил дальше экрана просьбы`);
-      } else bad.push(`${name}: нет «Войти в клуб» после «Я у кассы»`);
-    }
-    if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+    if (!(await s.p.evaluate(() => !!FROZEN.tillDay))) bad.push(`${name}: tillDay вне FROZEN`);
+    if (s.calls.some(c => c.url.includes('/till/day'))) bad.push(`${name}: спрошен день кассы`);
     await s.ctx.close();
   }
 
@@ -6409,7 +6294,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // важно их значение, задаёт его сам (`over`), как и прежде
     ask_donation: null, full_refund_until: null, my_may_thank: null,
     my_entry_paid: null, my_refund_now: null, my_donated: null,
-    my_booking_paid: null, my_amount_due: null
+    my_booking_paid: null, my_amount_due: null,
+    // фича 4 (api #176, снимок events-afisha* на 4428e6d): одобрение в строке ивента. По умолчанию — одобрен, как всё,
+    // что миграция 040 застала опубликованным; ждущий и отклонённый задают своё (`over`, случаи odobr-*)
+    approval: 'approved', reject_note: null
   }, over);
   const AFISHA = [
     EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
@@ -6459,6 +6347,206 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (can !== true) bad.push(`${n}: запись на мероприятие без ограничения мест закрыта (canBookEvent → ${JSON.stringify(can)})`);
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
+  }
+  // ── фича 4 (Cafe13KPG#1009, рецепт `_docs/recept/ekran/odobrenie/`; api #176 fc474be, миграция 040): одобрение ивентов ──
+  // Форма — код сервера на fc474be (`PENDING_APPROVAL_SQL`, `_decide_event`, `queries.py:636`); снимка формы ещё нет: он
+  // снимается после выкладки, тогда `approval`/`reject_note` лягут и в AFISHA. Слова — по словарю (SLOVA.ru со страницы).
+  const ODOBR = (() => {
+    const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
+    const MEMB = clone(OWNER); MEMB.roles = []; MEMB.member.tg_user_id = 77;
+    const PROW = (id, title, over) => Object.assign({ id, title, starts_at: atBkk(2, 19), duration_min: 90, seats: 10, kind: 'paid',
+      price: '400.00', place_id: null, organizer_id: 987654, organizer_first_name: 'Работник', organizer_last_name: 'Клуба' }, over);
+    const DEC = (id, ok, note) => ({ id, approved_at: ok ? '2026-12-02T01:00:00+00:00' : null, approved_by: ok ? 1 : null,
+      rejected_at: ok ? null : '2026-12-02T01:00:00+00:00', reject_note: ok ? null : note, approval: ok ? 'approved' : 'rejected' });
+    // o.queue() — ответ очереди на каждый GET; o.decide(q) — ответ решения; o.events — строки /events
+    const api = o => q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+      if (q.method() === 'GET' && u === '/events/pending-approval') return o.queue ? o.queue() : json(200, []);
+      if (q.method() === 'POST' && /^\/events\/\d+\/(approve|reject)$/.test(u)) return o.decide(q);
+      if (q.method() === 'GET' && u === '/events') return json(200, o.events || []);
+      return undefined;
+    };
+    const W = async (s, k) => s.p.evaluate(k => SLOVA.ru[k], k);
+    const toQueue = async (s, n) => {
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет вкладки «Управление»`));
+      await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="eventApproval"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери «Ивенты на одобрение»`));
+      await s.p.waitForTimeout(400);
+    };
+    const decCalls = s => s.calls.filter(c => c.method === 'POST' && /\/events\/\d+\/(approve|reject)$/.test(c.url));
+    return { ART, MEMB, PROW, DEC, api, W, toQueue, decCalls };
+  })();
+  if (part(1)) {
+    // odobr-ochered: дверь только у арт-директора; A1 всегда; строка — название и «когда · кто», organizer_id в разметку не идёт;
+    // денег и возврата на экране нет (odobr-bez-deneg); «Одобрить» — POST без тела, строка уходит перечитыванием; пусто — A7
+    const n = 'odobr-ochered';
+    const { ART, PROW, DEC, api, W, toQueue, decCalls } = ODOBR;
+    let k = 0;
+    const o = { queue: () => json(200, ++k === 1 ? [PROW(41, 'Вечер работника'), PROW(42, 'Утро главы', { starts_at: atBkk(3, 10) })] : k === 2 ? [PROW(42, 'Утро главы', { starts_at: atBkk(3, 10) })] : []),
+                decide: q => json(200, DEC(Number(q.url().match(/(\d+)\/approve$/)[1]), true)) };
+    let s = await open(true, true, json(200, ART), null, null, null, api(o), null, NOWFIX);
+    await toQueue(s, n);
+    let v = await s.view();
+    if (!v.includes(await W(s, 'eventApproval.note'))) bad.push(`${n}: нет A1 над очередью`);
+    if (!v.includes('Вечер работника') || !v.includes('Утро главы')) bad.push(`${n}: в очереди нет ждущих ивентов: «${v.slice(0, 200)}»`);
+    if (!v.includes('Работник Клуба')) bad.push(`${n}: в строке нет имени организатора`);
+    if (v.indexOf('Вечер работника') > v.indexOf('Утро главы')) bad.push(`${n}: порядок не сервера (ближайшие первыми)`);
+    if (/฿|возвра/i.test(v)) bad.push(`${n}: на очереди деньги или возврат (odobr-bez-deneg)`);
+    if ((await s.p.$eval('#view', e => e.innerHTML)).includes('987654')) bad.push(`${n}: organizer_id в разметке`);
+    if (/eventApproval\.\w/.test(v)) bad.push(`${n}: на экране ключ вместо слова`);
+    await s.p.click('[data-action="ea-yes:41"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Одобрить» у строки`));
+    await s.p.waitForTimeout(500);
+    const d = decCalls(s);
+    if (d.length !== 1 || !/\/events\/41\/approve$/.test(d[0].url) || d[0].body) bad.push(`${n}: одобрение ушло не POST /events/41/approve без тела: ${JSON.stringify(d.map(c => c.url + ' ' + c.body))}`);
+    v = await s.view();
+    if (v.includes('Вечер работника') || !v.includes('Утро главы')) bad.push(`${n}: после одобрения очередь не перечитана`);
+    await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(200);
+    await s.p.click('#view [data-go="eventApproval"]', { timeout: 3000 }).catch(() => {});
+    await s.p.waitForTimeout(400);
+    v = await s.view();
+    if (!v.includes(await W(s, 'eventApproval.none')) || !v.includes(await W(s, 'eventApproval.note'))) bad.push(`${n}: пустая очередь — не A1 и A7`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+    // не арт-директор: двери нет, прямой вход — отказ без запроса. Мастер (членство organizer) — нарочно: «Управление» и
+    // группу «Ивенты» он видит («Свои ивенты»), и дверь, вставшая без своего условия, была бы видна; у члена без роли
+    // группы нет вовсе, у работника — всего «Управления» (мутант m9 выжил на члене без роли)
+    const STAFF = clone(ODOBR.MEMB); STAFF.memberships = [{ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }];
+    s = await open(true, true, json(200, STAFF), null, null, null, api(o), null, NOWFIX);
+    await s.p.evaluate(() => go('manage'));
+    await s.p.waitForTimeout(300);
+    if (!(await s.p.$('#view [data-go="organizer"]'))) bad.push(`${n}: у мастера нет «Своих ивентов» — граница группы мертва`);
+    if (await s.p.$('#view [data-go="eventApproval"]')) bad.push(`${n}: у мастера дверь «Ивенты на одобрение»`);
+    const before = s.calls.filter(c => /pending-approval/.test(c.url)).length;
+    await s.p.evaluate(() => go('eventApproval')); await s.p.waitForTimeout(300);
+    if (!(await s.view()).includes(await W(s, 'eventApproval.denyTitle')) || s.calls.filter(c => /pending-approval/.test(c.url)).length !== before)
+      bad.push(`${n}: очередь открылась не-арт-директору или ручку спросили`);
+    await s.ctx.close();
+  }
+  if (part(1)) {
+    // odobr-prichina: «Отклонить» открывает A5 и гасит кнопки строки; пустая причина — A6 и НИ ОДНОГО запроса; с причиной —
+    // POST reject {note}; отказ сервера (второй арт-директор успел) — словами сервера над очередью, очередь перечитана
+    const n = 'odobr-prichina';
+    const { ART, PROW, api, W, toQueue, decCalls } = ODOBR;
+    let k = 0;
+    const o = { queue: () => json(200, ++k === 1 ? [PROW(51, 'Спорный вечер')] : []),
+                decide: () => json(409, { detail: 'мероприятие уже одобрено' }) };
+    const s = await open(true, true, json(200, ART), null, null, null, api(o), null, NOWFIX);
+    await toQueue(s, n);
+    await s.p.click('[data-action="ea-ask:51"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Отклонить» у строки`));
+    await s.p.waitForTimeout(200);
+    if (!(await s.p.$('#ea-note'))) bad.push(`${n}: «Отклонить» не открыл поле причины`);
+    if ((await s.p.$eval('#ea-note', e => e.maxLength).catch(() => null)) !== 500) bad.push(`${n}: у причины нет предела 500`);
+    if (!(await s.p.$('[data-action="ea-yes:51"][disabled]'))) bad.push(`${n}: при открытой причине «Одобрить» строки не погашена`);
+    await s.p.click('[data-action="ea-no:51"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет кнопки отправки отказа`));
+    await s.p.waitForTimeout(200);
+    if (decCalls(s).length) bad.push(`${n}: отказ без причины ушёл на сервер`);
+    if (!(await s.view()).includes(await W(s, 'eventApproval.reasonEmpty'))) bad.push(`${n}: пустая причина — нет A6`);
+    await s.p.fill('#ea-note', '   ');
+    await s.p.click('[data-action="ea-no:51"]', { timeout: 3000 }).catch(() => {});
+    await s.p.waitForTimeout(200);
+    if (decCalls(s).length) bad.push(`${n}: причина из пробелов ушла на сервер`);
+    await s.p.fill('#ea-note', 'Пересекается с концертом');
+    await s.p.click('[data-action="ea-no:51"]', { timeout: 3000 }).catch(() => {});
+    await s.p.waitForTimeout(500);
+    const d = decCalls(s);
+    if (d.length !== 1 || !/\/events\/51\/reject$/.test(d[0].url) || JSON.parse(d[0].body || '{}').note !== 'Пересекается с концертом')
+      bad.push(`${n}: отказ ушёл не POST /events/51/reject с причиной: ${JSON.stringify(d.map(c => c.url + ' ' + c.body))}`);
+    const vb = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+    if (vb !== 'мероприятие уже одобрено') bad.push(`${n}: отказ «${vb}», ждали словами сервера`);
+    if (k < 2) bad.push(`${n}: после отказа сервера очередь не перечитана`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  if (part(1)) {
+    // odobr-metka / odobr-zapis / odobr-ne-otmena / odobr-bez-deneg (event.md): автору ждущий — E1 в строке афиши и на карточке,
+    // E2 под ней; отклонённый — E3 и E4 с причиной дословно; записи нет ни там, ни там; слов отмены у отклонённого нет; денег
+    // в метке нет. Одобренный — без метки (граница). Арт-директору у ждущего — ссылка в очередь, а E2 (слова автора) нет.
+    const n = 'odobr-metka';
+    const { ART, W } = ODOBR;
+    const ME = clone(ART); ME.roles = [];                           // автор — член без роли (uid 1 = organizer_id)
+    const evs = [EV({ id: 61, title: 'Мой ждущий', organizer_id: 1, approval: 'pending', reject_note: null, starts_at: atBkk(0, 18) }),
+                 EV({ id: 62, title: 'Мой отклонённый', organizer_id: 1, approval: 'rejected', reject_note: 'Пересекается с концертом', starts_at: atBkk(0, 19) }),
+                 EV({ id: 63, title: 'Чужой одобренный', approval: 'approved', reject_note: null, starts_at: atBkk(0, 20) })];
+    for (const [who, me] of [['автор', ME], ['арт-директор', ART]]) {
+      const list = who === 'автор' ? evs : evs.filter(e => e.approval !== 'rejected').map(e => Object.assign({}, e, { organizer_id: 500 }));
+      const s = await open(true, true, json(200, me), null, null, null, ODOBR.api({ events: list }), null, NOWFIX);
+      await s.p.waitForTimeout(400);
+      await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(400);
+      const pend = await W(s, 'event.approval.pendingPill'), rej = await W(s, 'event.approval.rejectedPill');
+      const row = async id => s.p.evaluate(id => { const b = document.querySelector(`#view [data-event="${id}"]`); return b ? b.textContent : null; }, id);
+      const r61 = await row(61), r63 = await row(63);
+      if (!r61 || !r61.includes(pend)) bad.push(`${n} (${who}): ждущий в афише без метки: «${r61}»`);
+      if (!r63 || r63.includes(pend) || r63.includes(rej)) bad.push(`${n} (${who}): у одобренного метка: «${r63}»`);
+      if (who === 'автор') { const r62 = await row(62); if (!r62 || !r62.includes(rej) || r62.includes(pend)) bad.push(`${n}: отклонённый в афише не «${rej}»: «${r62}»`); }
+      await s.p.evaluate(() => go('event', '61')); await s.p.waitForTimeout(300);
+      let v = await s.view();
+      if (!v.includes(pend)) bad.push(`${n} (${who}): на карточке ждущего нет E1`);
+      const e2 = await W(s, 'event.approval.pendingNote');
+      if ((who === 'автор') !== v.includes(e2)) bad.push(`${n} (${who}): E2 ${who === 'автор' ? 'нет у автора' : 'у не-автора'}`);
+      const link = !!(await s.p.$('#view [data-go="eventApproval"]'));
+      if ((who === 'арт-директор') !== link) bad.push(`${n} (${who}): ссылка в очередь ${link ? 'есть' : 'нет'}`);
+      if (await s.p.$('#view [data-action^="book"]')) bad.push(`${n} (${who}): на ждущем кнопка записи (odobr-zapis)`);
+      if (/฿ вернут|возвра|плата за слот/i.test(v)) bad.push(`${n} (${who}): у ждущего слова о деньгах слота (odobr-bez-deneg)`);
+      if (who === 'автор') {
+        await s.p.evaluate(() => go('event', '62')); await s.p.waitForTimeout(300);
+        v = await s.view();
+        if (!v.includes(rej) || !v.includes(await W(s, 'event.approval.rejectedNote'))) bad.push(`${n}: на карточке отклонённого нет E3/E4`);
+        const vb = await s.p.$eval('#view .verbatim', e => e.textContent).catch(() => null);
+        if (vb !== 'Пересекается с концертом') bad.push(`${n}: причина отказа «${vb}», ждали словами арт-директора`);
+        // слова СОСТОЯНИЯ отмены; кнопка автора «Отменить мероприятие» — прежний блок управления, она не о состоянии
+        if (/отмен(ён|ено|ена)/i.test(v)) bad.push(`${n}: у отклонённого слова отмены (odobr-ne-otmena): «${v.slice(0, 200)}»`);
+        if (await s.p.$('#view [data-action^="book"]')) bad.push(`${n}: на отклонённом кнопка записи (odobr-zapis)`);
+        if (/возвра|плата за слот/i.test(v)) bad.push(`${n}: у отклонённого слова о деньгах слота (odobr-bez-deneg)`);
+      }
+      // граница: одобренный — запись есть, метки нет (иначе гашение записи могло бы стоять у всех)
+      await s.p.evaluate(() => go('event', '63')); await s.p.waitForTimeout(300);
+      v = await s.view();
+      if (v.includes(pend) || v.includes(rej)) bad.push(`${n} (${who}): у одобренного метка на карточке`);
+      if (!(await s.p.$('#view [data-action^="book:63"]'))) bad.push(`${n} (${who}): у одобренного нет записи — признак записи мёртв`);
+      if (s.errs.length) bad.push(`${n} (${who}): ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+  if (part(1)) {
+    // odobr-pozdniy: ответ очереди прежнего входа задержан, второй вход ответил раньше — на экране очередь второго.
+    // Держит `gen !== EA.gen` в loadEventApproval (образец — art-pozdniy, queue-late)
+    const n = 'odobr-pozdniy';
+    const { ART, PROW, api, toQueue } = ODOBR;
+    let k = 0, landed = false;
+    const o = { queue: () => ++k === 1
+      ? new Promise(r => setTimeout(() => { landed = true; r(json(200, [PROW(81, 'qzx-прежний-qzx')])); }, 1500))
+      : json(200, [PROW(82, 'Свежий вечер')]) };
+    const s = await open(true, true, json(200, ART), null, null, null, api(o), null, NOWFIX);
+    await toQueue(s, n);
+    await s.p.evaluate(() => { go('manage'); go('eventApproval'); });
+    await s.p.waitForTimeout(300);
+    if (k < 2) bad.push(`${n}: второй вход не перечитал очередь (запросов ${k})`);
+    if (landed) bad.push(`${n}: прежний ответ пришёл раньше второго запроса — гонки не было, случай гарда не проверяет`);
+    await s.p.waitForTimeout(1600);
+    if (!landed) bad.push(`${n}: задержанный ответ так и не пришёл — гонки не было`);
+    const v = await s.view();
+    if (v.includes('qzx')) bad.push(`${n}: на экране очередь прежнего входа`);
+    else if (!v.includes('Свежий вечер')) bad.push(`${n}: свежей очереди на экране нет: ${v.slice(0, 160)}`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  if (part(1)) {
+    // odobr-vyhod: E5 — ивент работника рождается ждущим; выход создания говорит это вспышкой на карточке. Граница: тот же
+    // выход с одобренным (сервер до 040) — E5 нет
+    const n = 'odobr-vyhod';
+    const STAFF = clone(OWNER); STAFF.roles = [{ role: 'staff', direction_id: null }];
+    for (const appr of ['pending', 'approved']) {
+      const row = EV({ id: 71, title: 'Новый вечер', organizer_id: 1, kind: 'free', price: '0.00', seats: 8, seats_left: 8, approval: appr, reject_note: null });
+      const s = await open(true, true, json(200, STAFF), null, null, null, ODOBR.api({ events: [row] }), null, NOWFIX);
+      await s.p.waitForTimeout(300);
+      await s.p.evaluate(r => { go('eventNew'); afterEventCreate({ status: 201, data: { id: 71 } }, { title: r.title, seats: 8, kind: 'free', starts_at: r.starts_at, price: 0 }); }, row);
+      await s.p.waitForTimeout(500);
+      const v = await s.view(), e5 = await ODOBR.W(s, 'eventNew.done.pending');
+      if ((appr === 'pending') !== v.includes(e5)) bad.push(`${n}: ${appr} — E5 ${appr === 'pending' ? 'нет на выходе' : 'у одобренного'}`);
+      if (appr === 'pending' && !(await s.p.evaluate(() => current === 'event'))) bad.push(`${n}: выход создания не на карточке`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
   /* Места — форма и ЗНАЧЕНИЯ из снимка `places.json` (прогон координатора
      24.10.2026 на стволе api `6332425`, метка sha рядом с каталогом): четыре
@@ -12977,7 +13065,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'till-topup': TILL_ROW, 'bar-expense': EXP_ROW, 'bar-income': INC_ROW, 'bar-day': DAY_ROW,
     // шаг 24 (Cafe13KPG#555): заглушки cash() против снимков cafe13-api#160 (голова 259b5a7)
     'till-arrive': ARRIVED, 'till-arrivals': { arrivals: [ARRIVAL] },
-    'till-membership-arrival': tillRow({ kind: 'membership', amount: '3600', method: 'cash', arrival_id: ARRIVAL.id, level: 'member', months: 1 }),
+    // фича 8 (Cafe13KPG#1009): пополнение пришедшего вместо взноса — снимок api 5f6e9c7
+    'till-topup-arrival': tillRow({ kind: 'topup', amount: '500.00', method: 'cash', arrival_id: ARRIVAL.id }),
     'events-afisha': AFISHA, 'places': PLACE_ROWS,
     // шаг 12 (Cafe13KPG#878): плашки «Бизнесов клуба» — та же BIZ, что у случаев ops-*
     'directions-ops-director': OPS_BIZ,
@@ -13815,9 +13904,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       ['barRecipe', 'flat', 'Рецепта на английском нет — показан на русском', 'Рецепт — рабочая запись бара'],
       ['barMoney', null, 'Записано сейчас', 'вносит куратор'],
       ['tillPerson', null, 'Что принимаем', 'Человек не выбран'],
-      // шаг 24: подпись «Цену называет касса» снята — цена вида с сервера (T4); признак — заголовок группы вида
-      ['tillMembership', null, 'Вид членства', 'Человек не выбран'],
-      ['tillTopup', null, 'Сумму называет человек у стойки', 'Человек не выбран'],
+      // шаг 24: подпись «Цену называет касса» снята — цена вида с сервера (T4); признак — заголовок группы вида.
+      // Фича 8 (№38 «а»): в живом экран продажи вне WIRED — отказ «ещё не подключено», а не «Человек не выбран»
+      ['tillMembership', null, 'Вид членства', 'ещё не подключено'],
+      // фича 8: признак пополнения — K2 рецепта popolnenie/tillTopup (прежняя подпись «Сумму называет…» снята)
+      ['tillTopup', null, 'Деньги целиком ложатся на счёт человека', 'Человек не выбран'],
       ['tillDay', null, 'Строки за сегодня', 'Касса — для работников']
     ];
     // нажатие с охраной: подлог, снявший кнопку, обязан дать СВОЮ строку, а не оборвать батарею

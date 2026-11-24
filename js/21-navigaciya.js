@@ -102,6 +102,9 @@ function eventRow(e, o) {
       : 'ведёт ' + esc(e.master) + ' · ' + (e.done ? 'завершилось'
         : e.booked ? 'вы записаны'
         : e.unl ? 'мест ' + NO_LIMIT : e.seats === 0 ? 'мест нет' : e.seats === e.of ? e.of + ' мест' : 'осталось ' + e.seats)) + '</span></span>' +
+    // фича 4 (рецепт odobrenie/event.md): ждущий и отклонённый — метка у названия; одобренный — как прежде
+    (e.approval === 'pending' ? '<span class="pill on">' + esc(slovo('event.approval.pendingPill')) + '</span>'
+      : e.approval === 'rejected' ? '<span class="pill warm">' + esc(slovo('event.approval.rejectedPill')) + '</span>' : '') +
     '<span class="pill ' + k.pill + '">' + k.label(e) + '</span>' +
   '</button>';
 }
@@ -249,8 +252,8 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
-  tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), eventApproval: slovo('eventApproval.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
+  tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: slovo('tillTopup.title'),
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
   masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера',
@@ -324,7 +327,7 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', eventApproval: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -590,6 +593,8 @@ function go(screen, p) {
   // шаг 31 (рецепт «Перечитать на входе»): на каждый вход — месяц, в который попадает сегодня
   if (screen === 'clubStats' && current !== 'clubStats') { CS.period = 'month'; CS.at = msToday(); loadClubStats(); }
   if (screen === 'artStats' && current !== 'artStats') { AS.period = 'month'; AS.at = msToday(); loadArtStats(); }
+  // фича 4: очередь — на каждый вход; афиша — тоже, чтобы название в строке открывало свежую карточку ивента
+  if (screen === 'eventApproval' && current !== 'eventApproval') { EA.list = null; EA.deny = ''; EA.no = 0; EA.note = ''; EA.empty = false; loadEventApproval(); if (LIVE && EVENTS_STATE !== 'loading') loadEvents(); }
   if ((screen === 'manage' || screen === 'withdrawQueue') && current !== screen && mayWithdrawQueue()) { WQ.done = ''; WQ.err = {}; loadWithdrawQueue(); }
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
@@ -818,7 +823,8 @@ function doAction(a) {
     if (a === 'tp-next') { tillReset(); TP.code = ''; go('staff'); return; }
     if (a === 'tp-arr') { tillArrival(Number(arg)); return; }
     if (a === 'tp-arr-reload') { loadArrivals(); render(); return; }
-    if (a === 'tp-open') { if (arg === 'topup' && (closed('tillTopup') || (TP.who && TP.who.arrival))) return; TP.done = null; tillOpen(arg); return; }
+    // фича 8: открывается только пополнение — членство не продаётся; пришедшему пополнение доступно (api #181)
+    if (a === 'tp-open') { if (arg !== 'topup' || closed('tillTopup')) return; TP.done = null; tillOpen(arg); return; }
     if (a === 'tp-level' && LEVEL[arg] && !TP.busy) { TP.level = arg; render(); return; }
     if (a === 'tp-method' && PAY_HOW[arg] && !TP.busy && (arg !== 'account' || TP.kind === 'membership')) { TP.method = arg; render(); return; }
     if (a === 'tp-send') { tillSend(); return; }
@@ -1097,14 +1103,12 @@ function doAction(a) {
     if (a === 'tu-hist') { TUP.hist = true; TUP.online = false; render(); return; }
     // просьба о вступлении: до входа LIVE ложно, поэтому без «&& LIVE»
     if (a === 'join-retry') { loadJoin(); render(); return; }
-    if (a === 'join-pay' && JOIN_PAY[arg]) { JOIN.pay = arg; loadRequisites(arg); render(); return; }
     if (a === 'join-req-retry') { delete JOIN.img[JOIN.pay]; loadRequisites(JOIN.pay); render(); return; }
     if (a === 'join-again') { JOIN.again = true; JOIN.err = ''; render(); return; }
     if (a === 'join-send') { sendJoin(); return; }
     // тетрадь клуба — браузером по токену на час: заголовка подписи браузер не шлёт
     // тетрадь — внутри приложения, со стрелкой назад на экран просьбы (слово владельца 28.10)
     if (a === 'join-about') { go('joinAbout'); return; }
-    if (a === 'join-arrive') { sendArrive(); return; }
     if (a === 'about-retry') { loadAbout(); render(); return; }
     if (a === 'retry-pass') { loadPass(); render(); return; }
     if (a === 'mr-send' && LIVE) { sendRequest(arg); return; }
@@ -1142,6 +1146,11 @@ function doAction(a) {
     if (a === 'as-prev') { asMove(-1); return; }
     if (a === 'as-next') { asMove(1); return; }
     if (a === 'as-retry') { loadArtStats(); render(); return; }
+    if (a === 'ea-retry') { loadEventApproval(); render(); return; }
+    if (a === 'ea-yes') { decideEvent(Number(arg), true); return; }
+    if (a === 'ea-ask') { EA.no = Number(arg); EA.note = ''; EA.empty = false; render(); return; }
+    if (a === 'ea-keep') { EA.no = 0; EA.note = ''; EA.empty = false; render(); return; }
+    if (a === 'ea-no') { decideEvent(Number(arg), false); return; }
     if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
     if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
     if (a === 'tq-shot' && mayTopups()) { delete TOPQ.shot[Number(arg)]; topupShot(Number(arg)); render(); return; }
@@ -1256,13 +1265,19 @@ document.addEventListener('input', function (ev) {
 document.addEventListener('input', function (ev) {
   var t = ev.target, f = t && { 'tp-code': 'code', 'tp-months': 'months', 'tp-amount': 'amount' }[t.id];
   if (f) TP[f] = t.value;
+  // фича 8: кнопка пополнения называет сумму и гаснет без неё — без перерисовки (перерисовка сняла бы фокус с поля)
+  var b = f === 'amount' && current === 'tillTopup' ? document.getElementById('tp-send') : null;
+  if (b) {
+    var amt = topupAmount(TP.amount);
+    b.disabled = TP.busy || amt === null || !PAY_HOW[TP.method];
+    b.textContent = tpSendWord(amt);
+  }
 });
 
 document.addEventListener('change', function (ev) {
   var t = ev.target;
   // смена даты сразу показывает, в чей отчёт уйдёт запись
   if (t && t.id === 'b-date' && current === 'barMoney' && !BOOK.busy) { bookGrab(); render(); return; }
-  if (t && t.id === 'join-file') { if (t.files && t.files[0]) attachReceipt(t.files[0], JOIN, 'noAccess'); return; }
   if (t && t.id === 'tu-file') { if (t.files && t.files[0]) attachReceipt(t.files[0], TUP, 'topup'); return; }
   if (!t || (t.id !== 'shot-file' && t.id !== 'bill-file')) return;
   var f = t.files && t.files[0];
