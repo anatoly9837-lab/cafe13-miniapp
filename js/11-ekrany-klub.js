@@ -45,7 +45,10 @@ var SCREENS = {
           '<span class="small">' + esc(waitSub(PCARDS.n, 'Что ждёт вашего решения')) + '</span></span>' + waitMark(PCARDS.n) + svg(ICON.chev, 'chev') + '</button>' : '') +
         // шаг 20 (рецепт 20/home): третья дверь — чтение, никого не ждёт, поэтому ниже очереди; суммы на двери нет
         ('<button type="button" class="listitem" data-go="bizMoney"><span class="grow"><b>Деньги бизнеса</b>' +
-          '<span class="small">Чистая, ваша доля и доля клуба — за месяц</span></span>' + svg(ICON.chev, 'chev') + '</button>'),
+          '<span class="small">Чистая, ваша доля и доля клуба — за месяц</span></span>' + svg(ICON.chev, 'chev') + '</button>') +
+        // шаг 35 (рецепт 35/partnerStats, B0): «Статистика бизнеса» — рядом с «Деньгами бизнеса»; вне Telegram нет
+        (mayPartnerStats() ? '<button type="button" class="listitem" data-go="partnerStats"><span class="grow"><b>' + esc(slovo('partnerStats.door')) + '</b></span>' +
+          svg(ICON.chev, 'chev') + '</button>' : ''),
         // остаток — СТРОКОЙ в карточке своего бизнеса (слово владельца «в карточке бизнеса»); договор — 20/ostatok.md
         function (biz) {
           var d = (BW.dirs || []).filter(function (x) { return x.id === biz; })[0];

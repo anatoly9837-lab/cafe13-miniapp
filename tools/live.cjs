@@ -4589,6 +4589,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const OS_BIZ = (id, title, o) => Object.assign({ id, title, partner_id: 9000 + id, partner: 'Анна Ли', share_club: '70.00', share_partner: '30.00', revenue: '4200.00' }, o || {});
   const OS_MON = o => Object.assign({ direction_id: 3, title: 'Чайная', period_start: '2026-10-31T17:00:00+00:00', net_base: '3000.00', partner_pct: '30.00',
     partner: '900.00', ops: '90.00', club: '2010.00' }, o || {});
+  // шаг 35 (Cafe13KPG#566, рецепт 35/partnerStats, #404; снимок api#198 — в карточке #566): статистика бизнеса партнёра
+  const PS_RESP = x => {
+    x = x || {};
+    return { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
+      business: { id: x.id || 7, title: x.title || 'Кофейня' },
+      sales: Object.assign({ book: 'ledger', revenue: '52340.00', opex: '31120.00', net: '21220.00' }, x.sales || {}),
+      shares: Object.assign({ closed: true, partner: '14854.00', club: '5730.00', ops: '636.00', share_partner_pct: '70.00' }, x.shares || {}),
+      wallet: 'wallet' in x ? x.wallet : '14854.00', wallet_through: 'through' in x ? x.through : '2026-11-30T17:00:00+00:00' };
+  };
   const OS_RESP = x => {
     x = x || {};
     const r = { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
@@ -12987,6 +12996,106 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const ok = await tap(s, n, '#view [data-go="bizMoney"]', 'дверь «Деньги бизнеса» на «Клубе»');
       return { s, ok, home };
     };
+    // ── шаг 35: partnerStats (рецепт 35/partnerStats, #404). На КАЖДОЕ число — случай с ненулём и случай с null
+    const PS_OPEN = { closed: false, partner: null, club: null, ops: null, share_partner_pct: null };
+    const psApi = (o, stats) => q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+      if (q.method() === 'GET' && u.startsWith('/stats/partner?')) { o.seen.push('GET ' + u); return stats(new URL('https://x' + u).searchParams); }
+      return pmApi(o)(q);
+    };
+    const psEnter = async (o, stats, n) => {
+      const s = await open(true, true, json(200, pmMe()), null, null, null, psApi(o, stats));
+      await s.p.waitForTimeout(400);
+      await tap(s, n, '#view [data-go="partnerStats"]', 'дверь «Статистика бизнеса» на «Клубе»');
+      return s;
+    };
+    const PW = async (s, k, v) => s.p.evaluate(([k, v]) => v ? slovo(k, v) : SLOVA.ru[k], [k, v]);
+    const pcard = async (s, title) => (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.startsWith(title))[0] || null;
+    const psum = async (s, v) => s.p.evaluate(v => bmSum(Number(v)), v);
+    {
+      // ps-razrez + ps-doli-mesyac + ps-klyuchi: разрезы — свои продажи, кошелёк один; день и неделя — H1, закрытый месяц — доли сервера
+      const n = 'ps-razrez';
+      const SL = { day: ['610.00', '200.00', '410.00'], week: ['4300.00', '1900.00', '2400.00'], month: ['52340.00', '31120.00', '21220.00'] };
+      const o = mk();
+      const s = await psEnter(o, p => json(200, PS_RESP({ kind: p.get('period'), sales: { revenue: SL[p.get('period')][0], opex: SL[p.get('period')][1], net: SL[p.get('period')][2] },
+        shares: p.get('period') === 'month' ? {} : PS_OPEN })), n);
+      const st = await PW(s, 'partnerStats.sales.title'), ht = await PW(s, 'partnerStats.shares.title');
+      if (!st || !ht) bad.push(`${n}: на странице нет слов partnerStats — судить не по чему`);
+      const wal = {};
+      for (const p of ['month', 'week', 'day']) {
+        if (p !== 'month') await tap(s, n, `[data-action="ps-period:${p}"]`, `разрез ${p}`);
+        const c = await pcard(s, st), h = await pcard(s, ht), v = await s.view();
+        for (const [i, k] of [[0, 'revenue'], [1, 'opex'], [2, 'net']])
+          if (!c || !c.includes((await PW(s, 'partnerStats.sales.' + k)) + (await psum(s, SL[p][i])))) bad.push(`${n}: ${p} — ${k} не число сервера своего окна: «${c}»`);
+        if (p === 'month') {
+          const want = [[await PW(s, 'partnerStats.shares.partner', { pct: '70' }), '14854.00'], [await PW(s, 'partnerStats.shares.club'), '5730.00'], [await PW(s, 'partnerStats.shares.ops'), '636.00']];
+          for (const [l, x] of want) if (!h || !h.includes(l + (await psum(s, x)))) bad.push(`${n}: закрытый месяц — «${l}» не ${x} сервера: «${h}»`);
+        } else if (!h || !h.includes(await PW(s, 'partnerStats.shares.open')) || /\d\s?฿/.test(h)) bad.push(`${n}: ${p} — не H1 (ps-doli-mesyac): «${h}»`);
+        wal[p] = (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.includes('кошельке'))[0] || null;
+        if (!wal[p] || !wal[p].includes((await PW(s, 'partnerStats.wallet')) + (await psum(s, '14854.00'))) || !wal[p].includes(await PW(s, 'partnerStats.walletThrough', { month: 'ноябрь 2026' })))
+          bad.push(`${n}: ${p} — кошелёк не число сервера или не «по ноябрь»: «${wal[p]}»`);
+        if (!v.includes(await PW(s, 'partnerStats.period.clockNote'))) bad.push(`${n}: ${p} — нет N3`);
+        if (/partnerStats\.\w/.test(v)) bad.push(`${n}: ${p} — ключ вместо слова (ps-klyuchi)`);
+      }
+      if (wal.month !== wal.week || wal.week !== wal.day) bad.push(`${n}: кошелёк зависит от разреза`);
+      if (o.seen.filter(x => /stats\/partner/.test(x)).some(x => !/direction_id=7&/.test(x))) bad.push(`${n}: запрос не своего бизнеса: ${o.seen.join(' ')}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ps-nol-ne-pusto: 0 — нулём; null — «нет данных»; share_partner_pct null — «Партнёру» без процента; ops null — строки нет
+      const n = 'ps-nol-ne-pusto';
+      const z = await psEnter(mk(), () => json(200, PS_RESP({ sales: { revenue: '0.00', opex: '0.00', net: '0.00' }, shares: { partner: '0.00', club: '0.00', ops: '0.00', share_partner_pct: '0.00' }, wallet: '0.00' })), n);
+      const zc = await pcard(z, await PW(z, 'partnerStats.sales.title')), zh = await pcard(z, await PW(z, 'partnerStats.shares.title')), zv = await z.view(), z0 = await psum(z, '0');
+      for (const k of ['revenue', 'opex', 'net']) if (!zc || !zc.includes((await PW(z, 'partnerStats.sales.' + k)) + z0)) bad.push(`${n}: ${k} 0 — не нулём: «${zc}»`);
+      for (const l of [await PW(z, 'partnerStats.shares.partner', { pct: '0' }), await PW(z, 'partnerStats.shares.club'), await PW(z, 'partnerStats.shares.ops')])
+        if (!zh || !zh.includes(l + z0)) bad.push(`${n}: доля 0 — не нулём у «${l}»: «${zh}»`);
+      if (!zv.includes((await PW(z, 'partnerStats.wallet')) + z0)) bad.push(`${n}: кошелёк 0 — не нулём`);
+      await z.ctx.close();
+      const s = await psEnter(mk(), () => json(200, PS_RESP({ sales: { revenue: null, opex: null, net: null }, shares: { partner: null, club: null, ops: null, share_partner_pct: null }, wallet: null, through: null })), n);
+      const nd = await PW(s, 'partnerStats.noData'), c = await pcard(s, await PW(s, 'partnerStats.sales.title')), h = await pcard(s, await PW(s, 'partnerStats.shares.title')), v = await s.view();
+      for (const k of ['revenue', 'opex', 'net']) if (!c || !c.includes((await PW(s, 'partnerStats.sales.' + k)) + nd)) bad.push(`${n}: ${k} null — не «нет данных»: «${c}»`);
+      if (!h || !h.includes((await PW(s, 'partnerStats.shares.partnerNoPct')) + nd) || !h.includes((await PW(s, 'partnerStats.shares.club')) + nd)) bad.push(`${n}: доли null — не «нет данных»: «${h}»`);
+      if (!h || h.includes(await PW(s, 'partnerStats.shares.ops')) || h.includes('%')) bad.push(`${n}: ops null — строка стоит или процент без числа: «${h}»`);
+      if (!v.includes((await PW(s, 'partnerStats.wallet')) + nd) || /\d\s?฿/.test(v)) bad.push(`${n}: кошелёк null — не «нет данных» или сумма на странице`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+      const src = fs.readFileSync(ROOT + '/js/18-ekrany-mastera.js', 'utf8');
+      if (/70 %|30 %/.test(src)) bad.push(`${n}: литерал процента в коде`);
+    }
+    {
+      // ps-dva-biznesa: смена бизнеса меняет все числа и запрос; ответ чужого бизнеса под выбранным — отказ, не числа
+      const n = 'ps-dva-biznesa';
+      const o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT)), Object.assign(BWDIR(9, true), W('333.00', OCT))] });
+      const s = await psEnter(o, p => { const id = Number(p.get('direction_id')); return json(200, id === 9
+        ? PS_RESP({ id: 9, title: 'Пекарня', sales: { revenue: '7700.00', opex: '3300.00', net: '4400.00' }, shares: { partner: '3080.00', club: '1188.00', ops: '132.00', share_partner_pct: '70.00' }, wallet: '333.00' })
+        : PS_RESP()); }, n);
+      await tap(s, n, '[data-action="ps-biz:9"]', 'выбор бизнеса «Пекарня»');
+      const c = await pcard(s, await PW(s, 'partnerStats.sales.title')), v = await s.view();
+      if (!c || !c.includes(await psum(s, '7700.00')) || c.includes(await psum(s, '52340.00'))) bad.push(`${n}: после смены — продажи не второго бизнеса: «${c}»`);
+      if (!v.includes(await psum(s, '3080.00')) || !v.includes((await PW(s, 'partnerStats.wallet')) + (await psum(s, '333.00'))) || v.includes(await psum(s, '14854.00'))) bad.push(`${n}: доли или кошелёк первого бизнеса под вторым`);
+      await s.ctx.close();
+      const s2 = await psEnter(mk(), () => json(200, PS_RESP({ id: 9 })), n);
+      if (!(await s2.view()).includes(await PW(s2, 'partnerStats.error'))) bad.push(`${n}: ответ о чужом бизнесе показан под своим`);
+      await s2.ctx.close();
+    }
+    {
+      // ps-dver: у не-партнёра (бизнесов нет) двери B0 нет; вне Telegram — нет; 403 — словами сервера
+      const n = 'ps-dver';
+      const s = await open(true, true, json(200, pmMe()), null, null, null, psApi(mk({ dirs: () => [], mine: [] }), () => json(200, PS_RESP())));
+      await s.p.waitForTimeout(400);
+      if (await s.p.$('#view [data-go="partnerStats"]')) bad.push(`${n}: у не-партнёра дверь «Статистика бизнеса»`);
+      await s.ctx.close();
+      const d = await open(false, true, json(200, OWNER));
+      await d.p.waitForTimeout(300);
+      if (await d.p.$('#view [data-go="partnerStats"]')) bad.push(`${n}: вне Telegram дверь стоит`);
+      await d.ctx.close();
+      const D = 'статистику бизнеса видят его партнёр и операционный директор';
+      const s3 = await psEnter(mk(), () => json(403, { detail: D }), n);
+      const t = await s3.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (t !== D) bad.push(`${n}: отказ «${t}», ждали словами сервера`);
+      await s3.ctx.close();
+    }
     // тело экрана без шапки остатка и без блока «Вывод» шага 26 (`[data-bwd]`): в нём «฿» подписи поля, а не число отчёта
     const body = s => s.p.evaluate(() => { const v = document.getElementById('view').cloneNode(true); v.querySelectorAll('.card.strong, [data-bwd]').forEach(h => h.remove()); return v.textContent; });
     const done = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
@@ -13650,6 +13759,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'stats-event-full': ER_RESP(), 'stats-event-undistributed': ER_RESP({ money: { book: 'club_ledger', collected: '1200.00', distributed: false, master: null, club: null } }),
     'stats-event-guest': ER_RESP({ guest: true }),
     // шаг 36 (Cafe13KPG#567): заглушки случаев `my-*` против снимка api 396ce48 (api#195)
+    'stats-partner-closed': PS_RESP(), 'stats-partner-open': PS_RESP({ shares: { closed: false, partner: null, club: null, ops: null, share_partner_pct: null } }),
+    'stats-partner-day': PS_RESP({ kind: 'day', shares: { closed: false, partner: null, club: null, ops: null, share_partner_pct: null } }),
     'stats-ops': OS_RESP({ months: [] }), 'stats-ops-day': OS_RESP({ kind: 'day', months: [] }), 'stats-ops-month-closed': OS_RESP(),
     'stats-me': MY_RESP(), 'stats-me-empty': MY_RESP({ events: { count: 0, spent: null }, topups: { count: 0, amount: '0.00' }, list: [] }),
     // фича 4 (Cafe13KPG#1009): заглушки случаев `odobr-*` против снимка api 410f240 (cafe13-api#187)
