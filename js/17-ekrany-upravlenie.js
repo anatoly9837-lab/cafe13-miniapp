@@ -294,7 +294,8 @@ Object.assign(SCREENS, {
       '<span class="small">Запросы на вывод решает администратор клуба.</span></div></div>';
     var q2 = '<div class="card quiet"><span class="small">Одобрение списывает сумму со счёта человека. Деньги клуб передаёт сам — приложение их не переводит.</span></div>';
     var done = WQ.done ? '<div class="note" role="status">' + svg(ICON.info) + '<span>' + esc(WQ.done) + '</span></div>' : '';
-    if (!WQ.list) return done + q2 + (WQ.fail
+    // рецепт отказов (ekran/otkazy.md): 403 загрузки очереди — слова сервера на месте очереди, без «Повторить»
+    if (!WQ.list) return done + q2 + (WQ.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(WQ.deny) + '</span></div>' : WQ.fail
       ? '<div class="card quiet"><div class="col"><b>Запросы не загрузились.</b><span class="verbatim">' + esc(WQ.fail) + '</span></div>' +
         '<button type="button" class="btn" data-action="wq-retry">Повторить</button></div>'
       : '<div class="card quiet"><span class="small">Загружаем запросы…</span></div>');
@@ -324,7 +325,8 @@ Object.assign(SCREENS, {
       '<span class="small">Счёт роли видит тот, кто держит эту роль.</span></div></div>';
     var r2 = '<span class="small">Это счёт роли, а не ваш личный: вывести из него может любой, кто держит эту роль. ' +
       'Запрос решает администратор клуба; приложение записывает запрос и решение, как клуб передаст деньги — не решает.</span>';
-    if (!RA.accs || !RA.mine) return RA.fail
+    // рецепт отказов (ekran/otkazy.md): 403 загрузки счёта — слова сервера, без «Повторить»
+    if (!RA.accs || !RA.mine) return RA.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(RA.deny) + '</span></div>' : RA.fail
       ? '<div class="card quiet"><div class="col"><b>Счёт не загрузился.</b><span class="verbatim">' + esc(RA.fail) + '</span></div>' +
         '<button type="button" class="btn" data-action="ra-retry">Повторить</button></div>'
       : '<div class="card quiet"><span class="small">Загружаем счёт…</span></div>';
