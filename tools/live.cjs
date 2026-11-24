@@ -4763,8 +4763,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // чужого id; выплат мастера, кассы и бизнесов на странице нет; ключа на экране нет
       const n = 'my-razrez';
       const CNT = { day: 1, week: 3, month: 7 }, TOP = { day: '50.00', week: '150.00', month: '850.00' };
-      const s = await myopen(GUEST, p => json(200, MY_RESP({ kind: p.get('period'), events: { count: CNT[p.get('period')], spent: '400.00' },
-        topups: { count: 1, amount: TOP[p.get('period')] } })));
+      const SP = { day: '400.00', week: '1300.00', month: '2500.00' }, TCN = { day: 1, week: 2, month: 5 };
+      const s = await myopen(GUEST, p => json(200, MY_RESP({ kind: p.get('period'), events: { count: CNT[p.get('period')], spent: SP[p.get('period')] },
+        topups: { count: TCN[p.get('period')], amount: TOP[p.get('period')] } })));
       await go36(s, n);
       const ev = await W(s, 'myStats.events.title'), mo = await W(s, 'myStats.money.title'), tp = await W(s, 'myStats.topups.title');
       if (!ev || !mo || !tp) bad.push(`${n}: на странице нет слов myStats в SLOVA.ru — судить не по чему`);
@@ -4774,6 +4775,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const e = await card(s, ev), m = await card(s, mo), t = await card(s, tp), v = await s.view();
         if (!e || !e.includes((await W(s, 'myStats.events.count')) + CNT[p])) bad.push(`${n}: ${p} — «Записей» не своего окна: «${e}»`);
         if (!t || !t.includes((await W(s, 'myStats.topups.amount')) + (await sum(s, TOP[p])))) bad.push(`${n}: ${p} — «Пополнено» не своего окна: «${t}»`);
+        // ненулевые числа сервера каждого поля (мутанты тестирования 1 в #411: литерал вместо поля выживал)
+        if (!e || !e.includes((await W(s, 'myStats.events.spent')) + (await sum(s, SP[p])))) bad.push(`${n}: ${p} — «Оплачено» не число сервера: «${e}»`);
+        if (!t || !t.includes((await W(s, 'myStats.topups.count')) + TCN[p]) || t.includes(await W(s, 'myStats.topups.none'))) bad.push(`${n}: ${p} — «Пополнений» не число сервера или T1 при пополнениях: «${t}»`);
+        if (!m || !m.includes((await W(s, 'myStats.money.balance')) + (await sum(s, '700.00')))) bad.push(`${n}: ${p} — «На счёте» не число сервера: «${m}»`);
         money[p] = m;
         for (const k of ['myStats.period.clockNote', 'myStats.money.nowNote']) if (!v.includes(await W(s, k))) bad.push(`${n}: ${p} — нет надписи ${k}`);
         if (/myStats\.\w/.test(v)) bad.push(`${n}: ${p} — на экране ключ вместо слова (my-klyuchi)`);
@@ -4805,6 +4810,19 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!m2 || !m2.includes((await W(s2, 'myStats.money.balance')) + (await sum(s2, '0')))) bad.push(`${n}: balance 0 не нулём: «${m2}»`);
       if (!e2 || !e2.includes((await W(s2, 'myStats.events.spent')) + (await W(s2, 'myStats.noData')))) bad.push(`${n}: spent null при записях — не «нет данных»: «${e2}»`);
       await s2.ctx.close();
+      // null на КАЖДОМ числе при видимой строке — «нет данных», не 0: count, spent, topups.count, topups.amount, balance, paid строки
+      const L3 = MY_RESP().list.map(x => Object.assign({}, x)); L3[0].paid = null;
+      const s3 = await myopen(GUEST, () => json(200, MY_RESP({ events: { count: null, spent: null }, topups: { count: null, amount: null }, money: { balance: null }, list: L3 })));
+      await go36(s3, n);
+      const nd3 = await W(s3, 'myStats.noData'), e3 = await card(s3, await W(s3, 'myStats.events.title')), t3 = await card(s3, await W(s3, 'myStats.topups.title'));
+      const m3 = await card(s3, await W(s3, 'myStats.money.title'));
+      for (const [t, k] of [[e3, 'myStats.events.count'], [e3, 'myStats.events.spent'], [t3, 'myStats.topups.amount'], [t3, 'myStats.topups.count'], [m3, 'myStats.money.balance']])
+        if (!t || !t.includes((await W(s3, k)) + nd3)) bad.push(`${n}: ${k} null — не «нет данных»: «${t}»`);
+      const r52 = await s3.p.$eval('#view [data-action="my-event:52"]', e => e.textContent).catch(() => ''), r51 = await s3.p.$eval('#view [data-action="my-event:51"]', e => e.textContent).catch(() => '');
+      if (!r52.includes(nd3) || /\d\s?฿/.test(r52)) bad.push(`${n}: paid строки null — не «нет данных»: «${r52}»`);
+      if (!r51.includes(await sum(s3, '100.00'))) bad.push(`${n}: соседняя строка потеряла paid сервера: «${r51}»`);
+      if (s3.errs.length) bad.push(`${n}: ошибки страницы (null везде) ${s3.errs.join('; ')}`);
+      await s3.ctx.close();
     }
     {
       // my-spisok: строки L от ранних; строка ведёт в отчёт СВОЕГО ивента; у гостя — карточек денег нет (урезает сервер);
