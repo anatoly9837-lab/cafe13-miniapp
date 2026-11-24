@@ -144,6 +144,50 @@ const SHOTS = [
    (рамка 0.1), а какая роль открывает замороженный экран — в самом клиенте,
    не здесь. */
 const ROLE = { organizer: 'organizer', guest: 'guest' };
+/* ── ЖИВОЙ СЪЁМ (Cafe13KPG#563, решение координатора 24.11.2026, вариант «а») ──
+   Экран, чьё право начинается с `LIVE` (`mayArtStats() = LIVE && grant(…)`), вне
+   Telegram рисует только отказ — снимок демо судил бы отказ вместо экрана, и
+   сверка шага 7 по нему была бы «не измерено» навсегда. Поэтому такие экраны
+   снимаются ОТДЕЛЬНЫМ контекстом в живом режиме: Telegram подменён заглушкой с
+   подписью, `API_ON` включён подменой текста при отдаче файла (как в
+   `tools/live.cjs`), ручки отвечают ФИКСТУРОЙ из записи ниже. К настоящему
+   серверу не уходит ни один запрос.
+
+   ⚠ Ручка без фикстуры отвечает 404, а не пустым успехом: снятая фикстура
+   кладёт экран в «не загрузилось», признак записи пропадает, и съёмка
+   КРАСНЕЕТ (мутант «убрать /stats/art» — rc=1). Признак — СЛОВО ИЗ ФИКСТУРЫ,
+   а не заголовок экрана: заголовок стоит и на отказе, и на «загружаем».
+
+   ⚠ Экран, которому живой записи ещё не дали, сверка продолжает называть «в
+   съёмке описи экрана нет» — эта строка живёт, пока запись не появится.
+
+   Формы ответов — по снимкам api (в карточке шага) и по заглушкам `tools/live.cjs`
+   того же шага; страж формы (`stats-art-*` в live.cjs) сверяет их с боем. */
+const LIVE_ME = (roles) => ({
+  member: { tg_user_id: 1, first_name: 'Тест', last_name: '', username: null, photo_url: null,
+            pass_code: null, created_at: '2026-10-01T00:00:00+00:00',
+            consent_data_at: '2026-10-18T10:00:00+00:00', consent_filming_at: null },
+  membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true },
+  memberships: [{ level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }],
+  membership_active: true, membership_request: null, balance: 3170,
+  roles: roles.map(r => ({ role: r, direction_id: null }))
+});
+const LIVE_SHOTS = [
+  // [имя, экран, признак, группа, подпись, роли, { префикс ручки: тело ответа 200 }]
+  ['62-art-stats', 'artStats', 'Мастер А', 'Клуб · ответственность',
+   'Статистика арт-директора (шаг 32, рецепт `_docs/recept/ekran/32/artStats.md`): переключатель «День · Неделя · Месяц», ' +
+   'период со стрелками, блоки «Ивенты», «Мастера» и «Деньги» и три надписи, без которых экран врёт. ⚠ Снимок ЖИВОГО режима ' +
+   'на фикстуре: право начинается с `LIVE`, и вне Telegram экран рисует только отказ. Числа — фикстура съёмки, не данные ' +
+   'клуба. Признак — «Мастер А»: имя из фикстуры `/stats/art`, без неё экран печатал бы «не загрузилось».',
+   ['art_director'],
+   { '/stats/art': {
+       period: { kind: 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
+       events: { count: 3, bookings: 7, collected: '2100.00' },
+       masters: [{ member_id: 5, name: 'Мастер Б', payouts: 1, amount: '300.00' },
+                 { member_id: 6, name: 'Мастер А', payouts: 2, amount: '850.00' }],
+       money: { book: 'club_ledger', balance: '120.00', accrued: '45.00', accrued_count: 1,
+                expected: '30.00', expected_events: 2 } } }],
+];
 const DARK = [['30-home-dark', 'home', 'Пропуск', 'Ночная тема', 'Главный экран ночью. Тему даёт Telegram, не приложение.']];
 
 /* Опись обязана сниматься одинаково в любой день и у любого (Cafe13KPG#445).
@@ -170,7 +214,7 @@ const { FIXED_NOW } = require('./chasy-opisi.cjs');   /* ОДИН источни
    файлов здесь нет НАРОЧНО (он разошёлся бы с тем, что грузит страница).
    Не собрался состав — «НЕ ВЫПОЛНЕНО» до запуска браузера, а не съёмка,
    которую потом нечем сверить. */
-const { slepkiStranicy, svod, chitatelDereva } = require('./klient.cjs');
+const { slepkiStranicy, svod, chitatelDereva, klient: klientLive, apiOnFile } = require('./klient.cjs');
 let слепки, свод_слепков;
 try {
   слепки = slepkiStranicy(chitatelDereva('/app'));
@@ -233,7 +277,7 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
     } catch (e) { шрифты[u] = { байт: null, слепок: 'тело не прочиталось: ' + ((e && e.message) || String(e)) }; }
   });
 
-  const text = () => p.evaluate(() => document.getElementById('view').textContent);
+  const text = (pg = p) => pg.evaluate(() => document.getElementById('view').textContent);
   /* ⚠ СНИМОК ПРИНИМАЕТСЯ, ТОЛЬКО ЕСЛИ ДВА ПОДРЯД СОВПАЛИ БАЙТ В БАЙТ.
      Прежде съёмка ждала 260 мс и верила им. Замер 30.10.2026 (свой): два
      прогона ОДНОГО дерева ОДНОЙ командой разошлись на 42 снимках из 43 —
@@ -245,12 +289,12 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
      Не устоялся за ПОПЫТОК раз — это «не выполнено», а не «снимки те же». */
   const ПОПЫТОК = 4;
   const неустойчивые = [];
-  const shot = async (n) => {
-    await p.waitForTimeout(260);
-    let a = await p.screenshot();
+  const shot = async (n, pg = p) => {
+    await pg.waitForTimeout(260);
+    let a = await pg.screenshot();
     for (let i = 0; i < ПОПЫТОК; i++) {
-      await p.waitForTimeout(140);
-      const b = await p.screenshot();
+      await pg.waitForTimeout(140);
+      const b = await pg.screenshot();
       if (Buffer.compare(a, b) === 0) { fs.writeFileSync(`/work/${n}.png`, b); return; }
       a = b;
     }
@@ -273,7 +317,7 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
      ингредиентом. Наш записанный класс: охрана, которую дверь может погасить,
      — это ожидание, а не охрана. Признак — есть ли у элемента боксы отрисовки
      (`getClientRects`) и не снят ли он `visibility`. */
-  const классы = () => p.evaluate(() => {
+  const классы = (pg = p) => pg.evaluate(() => {
     const карта = {};
     for (const э of document.querySelectorAll('body *')) {
       const имена = Array.from(э.classList).sort();
@@ -478,6 +522,54 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
     await shot(name);
     разметка[name] = { экран: screen, довод: null, роль: 'member', тема: 'тёмная', классы: await классы() };
     manifest.push({ file: name + '.png', group, caption, screen });
+  }
+  /* живой съём — после демо, своим контекстом: демо-контекст не знает Telegram,
+     и смешать их в одной странице значило бы снимать демо с подписью */
+  if (LIVE_SHOTS.length) {
+    const KLL = klientLive('/app'), API_FILE = apiOnFile(KLL);
+    const apiText = KLL.files.find(f => f.file === API_FILE).text;
+    const INIT = 'query_id=AAE&user=%7B%22id%22%3A1%7D&auth_date=1760000000&hash=stub';
+    const TG = `window.Telegram = { WebApp: { platform: 'ios', initData: ${JSON.stringify(INIT)},
+      initDataUnsafe: { user: { id: 1 } }, colorScheme: 'light', version: '7.0',
+      openLink: function () {}, openTelegramLink: function () {}, isVersionAtLeast: function () { return true; },
+      ready: function () {}, expand: function () {}, onEvent: function () {},
+      HapticFeedback: { notificationOccurred: function () {}, selectionChanged: function () {} },
+      BackButton: { onClick: function () {}, offClick: function () {}, show: function () {}, hide: function () {} },
+      MainButton: { setText: function () {}, show: function () {}, hide: function () {}, onClick: function () {}, offClick: function () {} } } };`;
+    for (const [name, screen, marker, group, caption, roles, ручки] of LIVE_SHOTS) {
+      const lctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
+      await lctx.clock.setFixedTime(new Date(FIXED_NOW));
+      await lctx.addInitScript(() => { try { localStorage.setItem('cafe13.consent', '0.1'); } catch (e) {} });
+      const lp = await lctx.newPage();
+      lp.on('pageerror', e => errs.push(name + ': pageerror: ' + e.message));
+      const безФикстуры = [];
+      await lp.route('https://telegram.org/**', r => r.fulfill({ contentType: 'text/javascript', body: TG }));
+      await lp.route('**/' + API_FILE.split('/').pop() + '*', r => r.fulfill({ contentType: 'text/javascript',
+        body: apiText.replace(/var API_ON = (true|false);/, 'var API_ON = true;') }));
+      await lp.route('https://api.cafe13.club/**', r => {
+        const путь = r.request().url().replace(/^https:\/\/api\.cafe13\.club/, '').split('?')[0];
+        const j = (st, тело) => r.fulfill({ status: st, contentType: 'application/json', body: JSON.stringify(тело) });
+        if (путь === '/me') return j(200, LIVE_ME(roles));
+        const ключ = Object.keys(ручки).find(k => путь.startsWith(k));
+        if (ключ) return j(200, ручки[ключ]);
+        if (/\/events(\/history)?$/.test(путь)) return j(200, []);
+        безФикстуры.push(r.request().method() + ' ' + путь);
+        return j(404, { detail: 'у съёмки нет фикстуры этой ручки' });
+      });
+      await lp.goto('file:///app/index.html', { waitUntil: 'networkidle' });
+      const живой = await lp.evaluate(() => typeof API_ON !== 'undefined' && API_ON === true && LIVE === true);
+      if (!живой) bad.push(name + ': живой режим не включился (API_ON/LIVE ложны) — снимок был бы демо');
+      await lp.evaluate((s) => go(s), screen);
+      try { await lp.waitForFunction((m) => document.getElementById('view').textContent.includes(m), marker, { timeout: 4000 }); } catch (e) {}
+      await lp.evaluate(() => document.fonts.ready);
+      const t = await text(lp);
+      if (t.indexOf(marker) === -1) bad.push(name + ': признака «' + marker + '» на экране нет (взято: ' + t.slice(0, 60).replace(/\s+/g, ' ') + '…)');
+      if (безФикстуры.length) console.log('  ' + name + ': ручки без фикстуры (ответ 404): ' + [...new Set(безФикстуры)].join(', '));
+      await shot(name, lp);
+      разметка[name] = { экран: screen, довод: null, роль: 'живой: ' + roles.join('+'), тема: 'светлая', классы: await классы(lp) };
+      manifest.push({ file: name + '.png', group, caption, screen });
+      await lctx.close();
+    }
   }
   fs.writeFileSync('/work/manifest.json', JSON.stringify(manifest, null, 1));
   fs.writeFileSync('/work/razmetka.json', JSON.stringify({

@@ -1,15 +1,16 @@
 {
- "снято": "2026-11-24T08:29:06.573Z",
+ "снято": "2026-11-24T13:40:50.926Z",
  "слепки_страницы": {
-  "index.html": "1b55a4d77cf1405a9e1a7189fbd208dfb4f6509e8988762177e936bc65864790",
+  "index.html": "adfba6af4b5c334350fc41a06f12cf67db1fc204c4de0b6720d0188e88c74ff6",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/01-osnova.js": "d746ac725c090f64947d82966b07267c991817bbd27cfc133142f0728f963207",
-  "js/02-chlenstvo.js": "f87dd6b416c3ad70d27e76d14601f6832c8ed5fcc82e86176abadcdaa22fb035",
-  "js/03-propusk.js": "1b1eca66d0571cb8c1c962f7477b67991198fde538a67d89bc0326d3f30b8cff",
+  "js/00-slova.js": "f496f7a92b61f437be52024153122512ff4a58488d973ae426b96d306c5f4f9a",
+  "js/01-osnova.js": "1acceb0f5182ee98dbb53abbe3ffa65df78952ab55240f32cbe9ba5f8f429191",
+  "js/02-chlenstvo.js": "91780a0a612a2234b0de8c5b320bc8c236427c437827f444ee2de00e049136da",
+  "js/03-propusk.js": "0e9d391b183db16970f99817e96ca9106d07d4f6b6983935a4f9e73d9a7840e4",
   "js/04-bar.js": "305f2bc3ae4cdf0a6f5fe9936888433af9861f015fbff8ca708ac411f72313da",
   "js/05-kassa.js": "637f5fe235f801d47de631e68cea2f510f4d9f04552273efadf43aa8b6e935f3",
   "js/06-lyudi.js": "1ca754db45601c2da900c25218ffcb8899f437f5d08db7841bced4eb761b9262",
@@ -17,20 +18,20 @@
   "js/08-kartochki.js": "6de1be85dea847262e16af4619282c8286f03800bbffa6d7be99138911eac3d9",
   "js/09-afisha.js": "588d991f0100c923877407bc5273b8b08d2f2a6f5824612520f1369e531e12a4",
   "js/10-utility.js": "089f9695e558301b8b1298e14fc0ae8ae06fe660662ad93286cf0d7558058228",
-  "js/11-ekrany-klub.js": "5f078489f2e3bffab7f0ff64fa27a23ca45ac9b7aff14f15b2e83f87cbe307bc",
+  "js/11-ekrany-klub.js": "f7c46f1726ffaed96dc50c842e4ab286aad2c86d878ca270bd143c64a28099ca",
   "js/12-ekrany-afisha.js": "025aeecffc85b0ad2b4f25d57c13ea0c00cdc3dbd961e25e58c0139e1785a5e9",
   "js/13-ekrany-kassa.js": "5add140258dbab6c75ec7e237ba17374afff7b46473cc5f0fc480039b56a8bf4",
   "js/14-ekrany-meropriyatiya.js": "59e862061b446e7b48b9339813189357a28fc467ea9d000230dce62890b24b2a",
   "js/15-ekrany-partner-soglasie.js": "f6ec7b568c6dc8f7bdc8e272f3ec2830ab379b065e5263bc17f6da37403a5815",
   "js/16-ekrany-bar.js": "d2332cf5163033e6d90f82320c0eb1d3f4eb36f1797bd9680950f4e02c9b6bba",
-  "js/17-ekrany-upravlenie.js": "a60118ccd58b2e43e0688e8800e33fccf4b291e8abee356e2f28f3ac2cbb613f",
+  "js/17-ekrany-upravlenie.js": "79bf1dee05e1879370190563db92090e69d9278c0a85e6f0fd4617fe16f6e66e",
   "js/18-ekrany-mastera.js": "9d91b90a2181cf37bd42c495e9050b3083e9747803ec118f74856ffe6ab80437",
   "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
   "js/20-ekrany-sluzhebnye.js": "60d70fc36851a0cfef5672692e1653fe0e283f03a88cd4e48b7bf7a03fabcc16",
-  "js/21-navigaciya.js": "b3ba6dddaba8fd5ca5738c10436e1d415d997a01dd6ffe84062821b596540a88",
+  "js/21-navigaciya.js": "446201b42b2d87efd894ae30d603d1a7db74b38da2640953c9b2527a7f80756e",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
  },
- "свод_слепков": "f051b13f046777509f64cb8f713b1568e141bbe5148ea3e37588f39be4c9d68f",
+ "свод_слепков": "fcac62e2a9e76dcc3dc8485425a33458a06dcdfd63b24b835d01ce8b1eaf94f0",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
@@ -49,12 +50,13 @@
      "вкладки": [
       "Касса",
       "Заказы",
+      "Клуб",
       "Услуги",
       "Ивенты",
       "Управление"
      ],
      "закрыты": [],
-     "всего_вкладок": 5,
+     "всего_вкладок": 6,
      "права": {
       "mayCards": true,
       "mayBook": true,
@@ -68,6 +70,10 @@
        "вкладка"
       ],
       "barQueue": [
+       "вкладка",
+       "home"
+      ],
+      "home": [
        "вкладка"
       ],
       "guest": [
@@ -75,13 +81,22 @@
       ],
       "events": [
        "вкладка",
+       "home",
+       "bookings",
        "organizer"
       ],
       "manage": [
        "вкладка"
       ],
       "barCards": [
-       "barQueue"
+       "barQueue",
+       "home"
+      ],
+      "bookings": [
+       "home"
+      ],
+      "roleAccount": [
+       "home"
       ],
       "joinQueue": [
        "manage"
@@ -108,6 +123,9 @@
        "manage",
        "events"
       ],
+      "artStats": [
+       "manage"
+      ],
       "businesses": [
        "manage"
       ],
@@ -129,10 +147,13 @@
      "длины": {
       "staff": 581,
       "barQueue": 78,
+      "home": 315,
       "guest": 13,
       "events": 247,
-      "manage": 403,
+      "manage": 427,
       "barCards": 19,
+      "bookings": 125,
+      "roleAccount": 52,
       "joinQueue": 18,
       "people": 16,
       "clubStats": 48,
@@ -141,6 +162,7 @@
       "withdrawQueue": 117,
       "masters": 117,
       "organizer": 270,
+      "artStats": 169,
       "businesses": 24,
       "partnerReqs": 17,
       "masterReqs": 17,
@@ -150,8 +172,8 @@
      "проба_подействовала": true,
      "афиша_закрыта": false,
      "обзор": {
-      "всего_в_документе": 16,
-      "в_обзоре": 10
+      "всего_в_документе": 18,
+      "в_обзоре": 11
      }
     }
    ]
@@ -168,11 +190,12 @@
      "уровень": "guest",
      "вкладки": [
       "Касса",
+      "Клуб",
       "Услуги",
       "Ивенты"
      ],
      "закрыты": [],
-     "всего_вкладок": 3,
+     "всего_вкладок": 4,
      "права": {
       "mayCards": false,
       "mayBook": false,
@@ -185,12 +208,20 @@
       "staff": [
        "вкладка"
       ],
+      "home": [
+       "вкладка"
+      ],
       "guest": [
        "вкладка"
       ],
       "events": [
        "вкладка",
+       "home",
+       "bookings",
        "organizer"
+      ],
+      "bookings": [
+       "home"
       ]
      },
      "при_данных": {
@@ -201,15 +232,17 @@
      "сбои": {},
      "длины": {
       "staff": 581,
+      "home": 160,
       "guest": 13,
       "events": 247,
+      "bookings": 125,
       "organizer": 270
      },
      "проба_подействовала": true,
      "афиша_закрыта": false,
      "обзор": {
-      "всего_в_документе": 6,
-      "в_обзоре": 1
+      "всего_в_документе": 7,
+      "в_обзоре": 2
      }
     }
    ]
@@ -381,11 +414,12 @@
      "уровень": "guest",
      "вкладки": [
       "Заказы",
+      "Клуб",
       "Услуги",
       "Ивенты"
      ],
      "закрыты": [],
-     "всего_вкладок": 3,
+     "всего_вкладок": 4,
      "права": {
       "mayCards": true,
       "mayBook": false,
@@ -396,31 +430,43 @@
      "barSide": true,
      "достижимо": {
       "barQueue": [
+       "вкладка",
+       "home"
+      ],
+      "home": [
        "вкладка"
       ],
       "guest": [
        "вкладка"
       ],
       "events": [
-       "вкладка"
+       "вкладка",
+       "home",
+       "bookings"
       ],
       "barCards": [
-       "barQueue"
+       "barQueue",
+       "home"
+      ],
+      "bookings": [
+       "home"
       ]
      },
      "при_данных": {},
      "сбои": {},
      "длины": {
       "barQueue": 78,
+      "home": 260,
       "guest": 13,
       "events": 211,
-      "barCards": 19
+      "barCards": 19,
+      "bookings": 125
      },
      "проба_подействовала": true,
      "афиша_закрыта": false,
      "обзор": {
-      "всего_в_документе": 5,
-      "в_обзоре": 1
+      "всего_в_документе": 9,
+      "в_обзоре": 4
      }
     }
    ]
@@ -434,11 +480,12 @@
     {
      "уровень": "guest",
      "вкладки": [
+      "Клуб",
       "Услуги",
       "Ивенты"
      ],
      "закрыты": [],
-     "всего_вкладок": 2,
+     "всего_вкладок": 3,
      "права": {
       "mayCards": false,
       "mayBook": false,
@@ -448,24 +495,34 @@
      },
      "barSide": false,
      "достижимо": {
+      "home": [
+       "вкладка"
+      ],
       "guest": [
        "вкладка"
       ],
       "events": [
-       "вкладка"
+       "вкладка",
+       "home",
+       "bookings"
+      ],
+      "bookings": [
+       "home"
       ]
      },
      "при_данных": {},
      "сбои": {},
      "длины": {
+      "home": 143,
       "guest": 13,
-      "events": 211
+      "events": 211,
+      "bookings": 125
      },
      "проба_подействовала": true,
      "афиша_закрыта": false,
      "обзор": {
-      "всего_в_документе": 3,
-      "в_обзоре": 0
+      "всего_в_документе": 6,
+      "в_обзоре": 2
      }
     }
    ]
