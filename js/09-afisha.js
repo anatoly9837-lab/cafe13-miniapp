@@ -232,10 +232,11 @@ function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
 // ⚠ `!LIVE ||` сегодня не исполняется НИ ОДНИМ путём (замер frontend-11 по 706edea): canBookEvent/bookBlock
 // зовутся только из живых веток, демо-карточка рисует «Записаться» своей веткой. Оставлено как страховка:
 // у демо-человека членств нет, и демо-путь, начавший звать canBookEvent, без неё закрыл бы запись витрине
-function mayBookEvents() { return !LIVE || ((DATA.member && DATA.member.memberships) || []).length > 0; }
+// Фича 5 (Cafe13KPG#1009, №39; api #175, бой 410f240 — `POST /bookings` спрашивает только дверь): записывается ЛЮБОЙ
+// вошедший, членство не условие. Отказы — словами сервера: 409 по деньгам, 403 — дверь (afterBooking)
 // На своё мероприятие мастер не записывается (слово владельца, Cafe13KPG#700): признак тот же, что у
 // управления, и через этот предикат он доходит и до главной кнопки (`mainFor`), и до самой записи (`bookEvent`)
-function canBookEvent(e) { return !!e && !e.booked && !e.done && !isMyEvent(e) && (e.unl || e.seats > 0) && !BOOK_BUSY && mayBookEvents() && !shortOf(e); }
+function canBookEvent(e) { return !!e && !e.booked && !e.done && !isMyEvent(e) && (e.unl || e.seats > 0) && !BOOK_BUSY && !shortOf(e); }
 /* Вход списывается со счёта ПРИ ЗАПИСИ, и только у платного (api#113, бой 36073d3: `price if kind == "paid" else 0`):
    у донейшна цена — ориентир, она не списывается. Нехватка — до нажатия, остатком из /me; остатка не знаем — не
    держим, решит сервер своим отказом (Cafe13KPG#748, кадры E62/E62b/E62v) */
@@ -1173,12 +1174,6 @@ function bookBlock(e) {
   // Раньше членства: причина здесь не в нём. Уже записанному (запись старше этой правки) отмена выше остаётся
   if (isMyEvent(e))
     return err + (e.done ? '' : '<div class="card quiet"><span class="small">Это ваше мероприятие.</span></div>');
-  // без живого членства (E37k): кнопка ОСТАЁТСЯ, погашена, причина вплотную под ней; подсказка оплаты
-  // снята — она про то, что будет после нажатия, а нажатия не будет (designer-55)
-  if (!mayBookEvents() && !e.done)
-    return err + '<div style="display:flex;flex-direction:column;gap:9px">' +
-      '<button type="button" class="btn" disabled aria-disabled="true">Записаться</button>' +
-      '<span class="small" style="text-align:center">Пока записываются только члены клуба.</span></div>';
   if (shortOf(e) && !e.done && (e.unl || e.seats > 0))
     return err + '<div style="display:flex;flex-direction:column;gap:9px">' +
       '<button type="button" class="btn" disabled aria-disabled="true">Записаться за ' + money(entryOf(e)) + ' ฿</button>' +

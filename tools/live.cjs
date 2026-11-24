@@ -2093,7 +2093,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // «без членства — только просьба» (слово владельца 05.11.2026); рамка 24.11 его сняла: новичок без членства и без
     // ролей начинает с «Клуба» (№24, №35), вкладки — как у члена, плашки членства и «Пропуска» нет (№45). Пара — без
     // прав и держатель права без членства (ответственный за пополнения): у второго сверху «Управление» по праву.
-    // ⚠ «Я мастер» и запись на ивент новичку — после фич 3 и 5 (сервер 5d79c84 там ещё спрашивает членство): не здесь
+    // ⚠ «Я мастер» новичку — после фичи 3; запись без членства — фича 5, случаи dver-zapis*
     for (const [n, roles, extra] of [['dver-dom', [], []], ['dver-dom-pravo', [{ role: 'topups', direction_id: null }], ['manage']]]) {
       const g = clone(OWNER); g.membership_active = false; g.membership = null; g.memberships = []; g.roles = roles;
       const s = await joinCase(json(200, JOIN0), null, () => json(200, g));
@@ -7692,20 +7692,23 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
 
-  // ── записываются только члены клуба (слово владельца 30.10.2026 «записываться пока не нужно», Cafe13KPG#670;
-  // кадр E37k, текст designer-55) ──
-  // Запрет КЛИЕНТСКИЙ: сервер (`POST /bookings`) членства не спрашивает, и фикстура нарочно отвечает 201 — зелёное
-  // здесь значит «держит клиент», а не «отказал сервер». Пара — член клуба на той же строке афиши: без неё прошёл бы
-  // и «запрет всем». Серверные отказы записи — свои случаи (book-409, book-201-pusto), сюда они не смешиваются.
-  // Гость, УЖЕ записанный, — «Отменить запись»: словом владельца не покрыто, вопрос координатору, ожидания нет.
+  // ── запись без членства (фича 5, Cafe13KPG#1009, №39; рамка владельца 24.11 «членство для ивента не нужно») ──
+  // Прежде здесь держался клиентский запрет E37k «записываются только члены клуба» (Cafe13KPG#670); фича 5 его сняла:
+  // сервер (`POST /bookings`, бой 410f240) спрашивает только дверь. Пара — член клуба на той же строке афиши.
   if (part(2)) {
     const GUEST = clone(OWNER);
     GUEST.membership = null; GUEST.membership_active = false; GUEST.memberships = [];
-    for (const [n, me, guest] of [['book-gost-zapret', GUEST, true], ['book-chlen-mozhet', OWNER, false]]) {
+    // ФИЧА 5 (Cafe13KPG#1009, №39; api #175, бой 410f240 — запись спрашивает только дверь): новичок без членства
+    // записывается так же, как член клуба. Прежний случай book-gost-zapret (E37k «только члены клуба») снят вместе с запретом.
+    // dver-zapis-409: отказ по деньгам — словами сервера (клиент остатка хватает, сервер считает иначе)
+    const NO_MONEY = 'на счёте 0, а вход 400: не хватает 400';
+    for (const [n, me, guest, refuse] of [['dver-zapis', GUEST, true, false], ['dver-zapis-409', GUEST, true, true],
+                                          ['book-chlen-mozhet', OWNER, false, false]]) {
       const posts = [];
       const s = await open(true, true, json(200, me), null, null, null, q => {
         const u = q.url();
-        if (u.endsWith('/bookings')) { posts.push(1); return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' }); }
+        if (u.endsWith('/bookings')) { posts.push(1); return refuse ? json(409, { detail: NO_MONEY }) :
+          json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00', ledger_id: 31 }); }
         if (u.endsWith('/events')) return json(200, [freeRow()]);
         return undefined;
       }, null, NOWFIX);
@@ -7715,7 +7718,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         await s.ctx.close(); continue;
       }
       await openRow(s, '4'); await s.p.waitForTimeout(120);
-      // у члена клуба на платном кнопка «Записаться за 400 ฿» (E62), у гостя — погашенная «Записаться» (E37k)
+      // у члена клуба на платном кнопка «Записаться за 400 ฿» (E62), у новичка — та же живая (фича 5)
       const btn = () => s.p.evaluate(() => {
         const b = [...document.querySelectorAll('#view button')].find(x => x.textContent.trim().startsWith('Записаться'));
         return b ? { off: b.disabled, aria: b.getAttribute('aria-disabled'), act: b.getAttribute('data-action') } : null;
@@ -7724,19 +7727,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const main = await s.p.evaluate(() => window.__main !== null);
       if (!b) bad.push(`${n}: кнопки «Записаться» на карточке нет`);
       if (guest) {
-        if (b && (b.off !== true || b.aria !== 'true')) bad.push(`${n}: у гостя «Записаться» не погашена (disabled ${b.off}, aria-disabled ${b.aria})`);
-        if (b && b.act) bad.push(`${n}: у погашенной «Записаться» осталось действие «${b.act}»`);
-        if (main) bad.push(`${n}: у гостя главная кнопка Telegram есть — запись уйдёт мимо погашенной кнопки на экране`);
-        if (!t.includes('Пока записываются только члены клуба.')) bad.push(`${n}: причина не названа (ждали «Пока записываются только члены клуба.»)`);
-        if (t.includes(FRAZA_748) || t.includes(FRAZA_0)) bad.push(`${n}: у гостя подсказка о деньгах — она про то, что будет после нажатия, а нажатия нет (designer-55)`);
-        // обе дороги в обход экрана: снятый disabled и сам обработчик записи
-        await s.p.evaluate(() => {
-          const x = [...document.querySelectorAll('#view button')].find(y => y.textContent.trim() === 'Записаться');
-          if (x) { x.disabled = false; x.click(); }
-          bookEvent('4');
-        });
-        await s.p.waitForTimeout(400);
-        if (posts.length) bad.push(`${n}: запись гостя ушла на сервер (${posts.length}) — сервер её примет, держать некому`);
+        if (!b || b.off) bad.push(`${n}: у новичка «Записаться» нет или погашена — членство больше не условие (№39)`);
+        if (!main) bad.push(`${n}: у новичка нет главной кнопки Telegram`);
+        if (t.includes('Пока записываются только члены клуба.') || /член(ы|ам) клуба/.test(t)) bad.push(`${n}: запись новичку объяснена членством`);
+        if (main) { await s.p.evaluate(() => window.__main()); await s.p.waitForTimeout(500); }
+        if (posts.length !== 1) bad.push(`${n}: запись новичка ушла ${posts.length} раз, ждали 1`);
+        const t2 = await s.view();
+        if (refuse && !t2.includes('На счёте 0, а вход 400: не хватает 400.')) bad.push(`${n}: отказ 409 по деньгам не словами сервера`);
       } else {
         if (b && b.off) bad.push(`${n}: у члена клуба «Записаться» погашена — запрет «всем», а не гостю`);
         if (!main) bad.push(`${n}: у члена клуба нет главной кнопки Telegram`);
