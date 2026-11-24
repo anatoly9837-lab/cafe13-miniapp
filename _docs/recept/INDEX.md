@@ -13,7 +13,7 @@
 | `13` | `partnerReqs` | — | 3207 | 0 | 6 |
 | `13` | `sostav` | — | 15696 | 9 | 0 |
 | `14` | `bizWorkers` | — | 20429 | 1 | 32 |
-| `14` | `razbor-pribora` | — | 20160 | 13 | 0 |
+| `14` | `razbor-pribora` | — | 20465 | 13 | 0 |
 | `14` | `sostav` | — | 17857 | 7 | 0 |
 | `15` | `barCard` | — | 19078 | 2 | 35 |
 | `15` | `barCards` | — | 20276 | 1 | 21 |
@@ -72,7 +72,7 @@
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
 | `odobrenie` | `sostav` | — | 4388 | 4 | 0 |
-| `popolnenie` | `noAccess` | — | 4185 | 3 | 6 |
+| `popolnenie` | `noAccess` | — | 5852 | 3 | 7 |
 | `popolnenie` | `sostav` | — | 4762 | 4 | 0 |
 | `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
 | `popolnenie` | `topup` | — | 5488 | 3 | 0 |
