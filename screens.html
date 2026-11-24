@@ -69,10 +69,10 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 <div class="wrap"><header>
 <div class="wordmark">Caf&eacute; XIII</div>
 <h1>Экраны мини-приложения</h1>
-<div class="meta">v181 · 24.11.2026 &middot; 81 экран, снимков 40 &middot; снимок — с живой страницы, 390&nbsp;&times;&nbsp;844 &middot; <a href="https://anatoly9837-lab.github.io/cafe13-miniapp/">открыть приложение</a></div>
+<div class="meta">v181 · 24.11.2026 &middot; 81 экран, снимков 42 &middot; снимок — с живой страницы, 390&nbsp;&times;&nbsp;844 &middot; <a href="https://anatoly9837-lab.github.io/cafe13-miniapp/">открыть приложение</a></div>
 <p class="lead">Полная опись экранов мини-приложения клуба. Каждый снимок сделан с живой страницы на экране телефона 390 × 844 — это не макет и не рисунок поверх идеи: то же самое открывается по ссылке ниже.</p>
 <p class="lead">Стадия каждого экрана — рамкой, и берётся она из одного файла (СТАДИИ.tsv), а не ставится руками. «Видят» — это ВЫВОД ПО КОДУ приложения: от вкладок человека прибор идёт по входам на отрисованных экранах, пока находятся новые. Право без входа видимостью не считается. Где вход рисуется строкой данных сервера или туда уходит сам код, это сказано словами: «никто» у такого экрана значило бы не «пути нет», а «нечем измерить». Под каждым человеком экран никто не открывал, наблюдение — отдельный шаг. Состав ролей и членств взят из тестовой базы (замер devops5, 27.10.2026, только чтение), а в бою он другой: у владельца там бессрочное членство, и вкладка «Клуб» у него есть. Строка «состояние» у невключённого экрана отвечает на вопрос телефоном: вход в приложении открыт (человек дойдёт и увидит «Раздел ещё не подключён»), закрыт самим реестром (включится вместе с экраном) или его нет вовсе. Считается она по КЛИЕНТУ ЭТОЙ редакции — по тем же файлам, с которых снята видимость (склейка по `index.html`: одного `app.js` после разбивки нет), а не по выложенному: их сверяет отдельный прибор (tools/check-stages.py).</p>
-<p class="lead">снимков 40 &middot; экранов «в тесте» 55, из них БЕЗ снимка 21 — у них нет исполненного рецепта, и снимка с них не спрашивает никто: опись растёт ЗА рецептами, а не впереди них</p>
+<p class="lead">снимков 42 &middot; экранов «в тесте» 55, из них БЕЗ снимка 19 — у них нет исполненного рецепта, и снимка с них не спрашивает никто: опись растёт ЗА рецептами, а не впереди них</p>
 <div class="legend">
 <span style="color:#9AA0A3"><i></i>описан — состав и рецепт есть, кода нет</span>
 <span style="color:#9AA0A3"><i></i>до стадии 1 — кадр есть, рецепта и кода нет</span>
@@ -97,9 +97,10 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 <a href="#g6">Клуб · ответственность</a>
 <a href="#g7">Бизнес-партнёр</a>
 <a href="#g8">Бар · исполнитель</a>
-<a href="#g9">Ночная тема</a>
-<a href="#g10">Без снимка</a>
-<a href="#g11">Нарисовано, кода ещё нет</a>
+<a href="#g9">Касса</a>
+<a href="#g10">Ночная тема</a>
+<a href="#g11">Без снимка</a>
+<a href="#g12">Нарисовано, кода ещё нет</a>
 </nav></header>
 <section id="g0"><div class="head">
 <span class="count">3 экрана</span>
@@ -163,12 +164,12 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 <figcaption><b><span>18</span> &nbsp;Демо-режим <em>demo</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Демо-режим: переключение роли и версия приложения.</span><span class="who">видимость: кнопка солнышка — только у god и god_mentor и только в Telegram</span></figcaption></figure>
 <figure><div class="shot" style="border-color:#9AA0A3"><img loading="lazy" src="screens/43-soon.png" alt="Что человек видит вместо любого НЕВКЛЮЧЁННОГО экрана: раздел написан, но к серве" width="780" height="1688"></div>
 <figcaption><b><span>19</span> &nbsp;Раздел ещё не подключён <em>soon</em></b><span class="stage" style="color:#9AA0A3">служебный</span><span class="who">Что человек видит вместо любого НЕВКЛЮЧЁННОГО экрана: раздел написан, но к серверу не подключён. В Telegram в заголовке стоит имя самого раздела («Членство — ещё не подключено»), здесь общая форма: имени у подстановки нет.</span><span class="who">видимость: показывается вместо любого невключённого экрана; сами входы считает генератор и печатает их у каждого такого экрана строкой «состояние» — числа в этой прозе нет нарочно, оно стареет</span></figcaption></figure>
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/68-no-access.png" alt="Нет доступа: выгнанный просит главу клуба вернуть его (фича 8, рецепт `_docs/rec" width="780" height="1688"></div>
+<figcaption><b><span>20</span> &nbsp;Нет доступа <em>noAccess</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E44<span class="who">Нет доступа: выгнанный просит главу клуба вернуть его (фича 8, рецепт `_docs/recept/ekran/popolnenie/noAccess.md`, J1–J2) — без денег, суммы, чека и кассы. ⚠ Снимок ЖИВОГО режима на фикстуре: вид рисуется только по ответу `GET /join`; форма — по снимку api `join-info-none` (страж формы съёмки), значения — заглушка `JOIN0` из `tools/live.cjs`. Признак — «Ваш доступ в приложение снят»: слово `noAccess.return.note`.</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>20</span> &nbsp;Загрузка <em>loading</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Пока идёт первый ответ сервера.</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
+<figcaption><b><span>21</span> &nbsp;Загрузка <em>loading</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Пока идёт первый ответ сервера.</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>21</span> &nbsp;Подпись не дошла <em>noSign</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Подпись Telegram не дошла — войти нечем.</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
-<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>22</span> &nbsp;Нет доступа <em>noAccess</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E44<span class="who">Допуск снят: выгнанный просит главу клуба вернуть его — без денег и чека (фича 8, рецепт popolnenie/noAccess).</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
+<figcaption><b><span>22</span> &nbsp;Подпись не дошла <em>noSign</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who">Подпись Telegram не дошла — войти нечем.</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
 <figcaption><b><span>23</span> &nbsp;О клубе <em>joinAbout</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E49<span class="who">Тетрадь клуба внутри приложения, по кнопке «О клубе» с экрана просьбы; назад — на просьбу (кадры E49*).</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; виден всем</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
@@ -246,27 +247,32 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 </div></section>
 <section id="g9"><div class="head">
 <span class="count">1 экран</span>
+<h2>Касса</h2>
+<p>Работник: сканировать пропуск, внести деньги.</p></div><div class="grid">
+<figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/67-till-topup.png" alt="Пополнение в кассе (фича 8, рецепт `_docs/recept/ekran/popolnenie/tillTopup.md`)" width="780" height="1688"></div>
+<figcaption><b><span>50</span> &nbsp;Пополнение в кассе <em>tillTopup</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who">Пополнение в кассе (фича 8, рецепт `_docs/recept/ekran/popolnenie/tillTopup.md`): работник вносит деньги на счёт человека — сумма, наличные или карта, кнопка «Внести». Деньги целиком ложатся на счёт; членство касса больше не продаёт — это и есть признак снимка. Имя и остаток — демонстрационные.</span><span class="who">видят: <b>владелец, работник без членства</b> &middot; за экраном «Карточка человека» (из карточки человека, строкой «что продать» — обходом не подтверждено)</span></figcaption></figure>
+</div></section>
+<section id="g10"><div class="head">
+<span class="count">1 экран</span>
 <h2>Ночная тема</h2>
 <p>Тему задаёт Telegram, а не приложение. Ночные цвета сняты с вечернего света места.</p></div><div class="grid">
 <figure><div class="shot" style="border-color:#AF984D"><img loading="lazy" src="screens/30-home-dark.png" alt="Главный экран ночью. Тему даёт Telegram, не приложение." width="780" height="1688"></div>
-<figcaption><b><span>50</span> &nbsp;Клуб <em>home</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E51,E53,E68<span class="who">Главный экран ночью. Тему даёт Telegram, не приложение.</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; своя вкладка</span></figcaption></figure>
+<figcaption><b><span>51</span> &nbsp;Клуб <em>home</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E51,E53,E68<span class="who">Главный экран ночью. Тему даёт Telegram, не приложение.</span><span class="who">видят: <b>владелец, работник без членства, куратор с живым членством, работник бара без членства, гость без ролей</b> &middot; своя вкладка</span></figcaption></figure>
 </div></section>
-<section id="g10"><div class="head">
-<span class="count">25 экранов</span>
+<section id="g11"><div class="head">
+<span class="count">24 экрана</span>
 <h2>Без снимка</h2>
 <p></p></div><div class="grid">
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>51</span> &nbsp;Членство <em>membership</em></b><span class="stage" style="color:#8E3324">не готов</span> &middot; кадры E38<span class="who"></span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span><span class="who">состояние: написан, НЕ включён &middot; вход в коде есть (не меньше 1), но в живом приложении он серый и не нажимается — потому что ЭКРАН НЕ ПОДКЛЮЧЁН, а не выключен словом: включится вместе с экраном</span></figcaption></figure>
+<figcaption><b><span>52</span> &nbsp;Членство <em>membership</em></b><span class="stage" style="color:#8E3324">не готов</span> &middot; кадры E38<span class="who"></span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span><span class="who">состояние: написан, НЕ включён &middot; вход в коде есть (не меньше 1), но в живом приложении он серый и не нажимается — потому что ЭКРАН НЕ ПОДКЛЮЧЁН, а не выключен словом: включится вместе с экраном</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>52</span> &nbsp;Касса <em>staff</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who"></span><span class="who">видят: <b>владелец, работник без членства</b> &middot; своя вкладка</span></figcaption></figure>
+<figcaption><b><span>53</span> &nbsp;Касса <em>staff</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who"></span><span class="who">видят: <b>владелец, работник без членства</b> &middot; своя вкладка</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>53</span> &nbsp;День кассы <em>tillDay</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E36<span class="who"></span><span class="who">видят: <b>сегодня никто</b> &middot; заморожен словом владельца 29.10.2026 (FROZEN, Cafe13KPG#510): в живом приложении вход серый у всех, экран говорит «временно недоступно»</span><span class="who">состояние: заморожен словом владельца 29.10.2026 (FROZEN, Cafe13KPG#510): в живом приложении вход серый у всех, экран говорит «временно недоступно»</span></figcaption></figure>
+<figcaption><b><span>54</span> &nbsp;День кассы <em>tillDay</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E36<span class="who"></span><span class="who">видят: <b>сегодня никто</b> &middot; заморожен словом владельца 29.10.2026 (FROZEN, Cafe13KPG#510): в живом приложении вход серый у всех, экран говорит «временно недоступно»</span><span class="who">состояние: заморожен словом владельца 29.10.2026 (FROZEN, Cafe13KPG#510): в живом приложении вход серый у всех, экран говорит «временно недоступно»</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>54</span> &nbsp;Карточка человека <em>tillPerson</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who"></span><span class="who">видят: <b>владелец, работник без членства</b> &middot; за экраном «Касса» (кнопки нет вовсе: туда уходит сам код, ответом на скан пропуска — обходом не подтверждено)</span></figcaption></figure>
+<figcaption><b><span>55</span> &nbsp;Карточка человека <em>tillPerson</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who"></span><span class="who">видят: <b>владелец, работник без членства</b> &middot; за экраном «Касса» (кнопки нет вовсе: туда уходит сам код, ответом на скан пропуска — обходом не подтверждено)</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>55</span> &nbsp;Продажа членства <em>tillMembership</em></b><span class="stage" style="color:#8E3324">не готов</span> &middot; кадры E34<span class="who"></span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span><span class="who">состояние: написан, НЕ включён &middot; входа в приложении нет вовсе — человек до него не дойдёт</span></figcaption></figure>
-<figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
-<figcaption><b><span>56</span> &nbsp;Пополнение в кассе <em>tillTopup</em></b><span class="stage" style="color:#AF984D">в тесте</span> &middot; кадры E34<span class="who"></span><span class="who">видят: <b>владелец, работник без членства</b> &middot; за экраном «Карточка человека» (из карточки человека, строкой «что продать» — обходом не подтверждено)</span></figcaption></figure>
+<figcaption><b><span>56</span> &nbsp;Продажа членства <em>tillMembership</em></b><span class="stage" style="color:#8E3324">не готов</span> &middot; кадры E34<span class="who"></span><span class="who">видят: <b>сегодня никто</b> &middot; в живом приложении не показывается</span><span class="who">состояние: написан, НЕ включён &middot; входа в приложении нет вовсе — человек до него не дойдёт</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
 <figcaption><b><span>57</span> &nbsp;Новое мероприятие <em>eventNew</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who"></span><span class="who">видят: <b>сегодня никто</b> &middot; заморожен словом владельца 29.10.2026 (FROZEN, Cafe13KPG#510): в живом приложении вход серый у всех, экран говорит «временно недоступно»</span><span class="who">состояние: заморожен словом владельца 29.10.2026 (FROZEN, Cafe13KPG#510): в живом приложении вход серый у всех, экран говорит «временно недоступно»</span></figcaption></figure>
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
@@ -306,7 +312,7 @@ footer code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 <figure><div class="nosh">снимка нет: снимок делается вне Telegram, где прав нет ни у кого: экран живёт только при сервере клуба</div>
 <figcaption><b><span>75</span> &nbsp;Ивенты на одобрение <em>eventApproval</em></b><span class="stage" style="color:#AF984D">в тесте</span><span class="who"></span><span class="who">видят: <b>владелец</b> &middot; дверь на «Управление»</span></figcaption></figure>
 </div></section>
-<section id="g11"><div class="head">
+<section id="g12"><div class="head">
 <span class="count">11 экранов</span>
 <h2>Нарисовано, кода ещё нет</h2>
 <p>Кадры базы экранов есть, кода нет. Стадия 1 по пути экрана: сначала рисуем, потом разрабатываем.</p></div><div class="grid">
