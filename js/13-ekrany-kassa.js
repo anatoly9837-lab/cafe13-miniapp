@@ -10,9 +10,13 @@ function tillArrivals() {
       : !l.length ? '<div class="card quiet"><span class="small">Сейчас у кассы никого нет.</span></div>'
       : '<div class="rows">' + l.map(function (a) {
           return '<div><span><b>' + esc(a.name) + '</b> · <span class="num">' + esc(a.time) + '</span></span>' +
-            '<button type="button" class="btn mini" data-action="tp-arr:' + a.id + '"' + lock + '>Принять взнос</button></div>';
+            '<button type="button" class="btn mini" data-action="tp-arr:' + a.id + '"' + lock + '>' + esc(slovo('staff.arrivals.open')) + '</button></div>';
         }).join('') + '</div>') +
-    '<span class="small">Человек с улицы нажимает в боте клуба «Я у кассы» — и появляется здесь. Без этого клуб его не знает, и найти его нечем. Допуск он получит вместе с оплатой — не раньше.</span>' +
+    // T13 (фича 8): по выбранной строке сервер человека не нашёл — его слова и, у 404, совет
+    (ARR.nf ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(ARR.nf.deny) + '</span></div>' +
+      (ARR.nf.gone ? '<span class="small">' + esc(slovo('staff.arrivals.notFound')) + '</span>' : '') : '') +
+    // T3 — ВСЕГДА; прежний T3 шага 24 («допуск вместе с оплатой») после двери врал (рецепт popolnenie/tillTopup)
+    '<span class="small">' + esc(slovo('staff.arrivals.note')) + '</span>' +
     '<span class="small">Просьбы о вступлении с чеком перевода здесь не показываются: их решают в «Управлении».</span></div>';
 }
 
@@ -118,14 +122,12 @@ Object.assign(SCREENS, {
           '«Внести ещё раз» здесь нет и быть не может: платёж уже прошёл, вторая отправка дала бы в книге вторую строку.</span></div>';
     if (d && d.unsure) return head +
         tillCard(w) +
-        '<span class="small">' + esc(d.reread || !d.sent || d.person || w.arrival ? d.before : 'Это данные ДО приёма: карточка не перечиталась') + '</span>' +
-        (w.arrival ? '<button type="button" class="btn" data-action="tp-next">К списку пришедших</button>'
-          : '<button type="button" class="btn" data-action="tp-reload"' + (TP.busy ? ' disabled' : '') + '>' + reload + '</button>' +
-            '<button type="button" class="btn quiet" data-action="tp-next">Следующий человек</button>') +
+        '<span class="small">' + esc(d.reread || !d.sent || d.person ? d.before : 'Это данные ДО приёма: карточка не перечиталась') + '</span>' +
+        // фича 8: у пришедшего карточка есть (by-member) — перечитывается так же, как по коду пропуска
+        '<button type="button" class="btn" data-action="tp-reload"' + (TP.busy ? ' disabled' : '') + '>' + reload + '</button>' +
+        '<button type="button" class="btn quiet" data-action="tp-next">Следующий человек</button>' +
         '<div class="note">' + svg(ICON.info) + '<span>' + (
-          w.arrival ? 'Карточки у пришедшего до взноса нет — сверять нечем. Вернитесь к списку пришедших: взнос прошёл — человека в нём больше нет; ' +
-                      'остался — позовите администратора клуба, а не принимайте снова.'
-          : d.person ? 'Нажмите «Перечитать карточку». Изменилось — строка легла на этого человека, спорны только подробности: назовите их администратору клуба. ' +
+          d.person ? 'Нажмите «Перечитать карточку». Изменилось — строка легла на этого человека, спорны только подробности: назовите их администратору клуба. ' +
                      'Не изменилось — вывода нет, и «не прошло» это тоже не значит: карточка одного человека о чужой строке не говорит.'
           : !d.sent ? 'Кнопки «Внести ещё раз» здесь нет: вторая отправка может создать второй платёж. Нажмите «Перечитать карточку» и сверьте со строкой «Перед приёмом». Изменилось — платёж прошёл, больше ничего не нужно. Не изменилось — подождите минуту и перечитайте: сервер мог провести его позже, чем экран перестал ждать. Если и тогда не изменилось — позовите администратора клуба, а не вносите заново. Строк книги карточка не показывает.'
           : d.reread ? 'Кнопки «Внести ещё раз» здесь нет и быть не может: платёж уже прошёл. Строк книги в карточке нет. Членство и остаток перед приёмом — выше. Если они не изменились, это вопрос к администратору клуба, а не повод принять снова.'
@@ -141,9 +143,9 @@ Object.assign(SCREENS, {
                             reload + '</button>' : '') +
       (d ? '<button type="button" class="btn" data-action="tp-next">Следующий человек</button>' : '') +
       '<div class="group"><span class="label">' + (d ? 'Тому же человеку' : 'Что принимаем') + '</span>' +
-        '<button type="button" class="btn' + again + '" data-action="tp-open:membership">Продать членство</button>' +
-        // пополнение — в FROZEN (шаг 24 размораживает только путь взноса); у пришедшего счёта ещё нет
-        '<button type="button" class="btn ghost" data-action="tp-open:topup"' + (closed('tillTopup') || w.arrival ? ' disabled aria-disabled="true"' : '') + '>Внести на счёт</button></div>' +
+        // фича 8 (№38 «а», №47 «а»): «Продать членство» ушло — касса только пополняет; K1 — и пришедшему (api #181)
+        '<button type="button" class="btn' + again + '" data-action="tp-open:topup"' + (closed('tillTopup') ? ' disabled aria-disabled="true"' : '') + '>' +
+          esc(slovo('tillPerson.action.topup')) + '</button></div>' +
       (d && d.kind === 'membership'
         ? '<div class="note">' + svg(ICON.info) + '<span>Отменить строку членства отсюда нельзя: «правки членства в приложении пока нет — нужен администратор клуба».</span></div>'
         : '') +

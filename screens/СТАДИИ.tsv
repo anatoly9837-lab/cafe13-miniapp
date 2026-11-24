@@ -65,8 +65,8 @@ bookings	E40	в тесте	—	2026-10-27	—
 staff	E34	в тесте	—	2026-10-27	—
 tillDay	E36	в тесте	—	2026-10-27	—
 tillPerson	E34	в тесте	—	2026-10-27	—
-tillMembership	E34	в тесте	—	2026-10-27	—
-tillTopup	E34	в тесте	—	2026-10-27	—
+tillMembership	E34	не готов	Cafe13KPG#1009	2026-11-24	_docs/recept/ekran/24/tillMembership.md
+tillTopup	E34	в тесте	Cafe13KPG#1009	2026-11-24	_docs/recept/ekran/popolnenie/tillTopup.md
 organizer	E61	в тесте	—	2026-10-27	—
 eventNew	—	в тесте	—	2026-10-27	—
 eventManage	—	не готов	—	2026-10-27	—
