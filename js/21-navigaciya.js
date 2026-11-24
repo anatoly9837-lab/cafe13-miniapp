@@ -1098,14 +1098,12 @@ function doAction(a) {
     if (a === 'tu-hist') { TUP.hist = true; TUP.online = false; render(); return; }
     // просьба о вступлении: до входа LIVE ложно, поэтому без «&& LIVE»
     if (a === 'join-retry') { loadJoin(); render(); return; }
-    if (a === 'join-pay' && JOIN_PAY[arg]) { JOIN.pay = arg; loadRequisites(arg); render(); return; }
     if (a === 'join-req-retry') { delete JOIN.img[JOIN.pay]; loadRequisites(JOIN.pay); render(); return; }
     if (a === 'join-again') { JOIN.again = true; JOIN.err = ''; render(); return; }
     if (a === 'join-send') { sendJoin(); return; }
     // тетрадь клуба — браузером по токену на час: заголовка подписи браузер не шлёт
     // тетрадь — внутри приложения, со стрелкой назад на экран просьбы (слово владельца 28.10)
     if (a === 'join-about') { go('joinAbout'); return; }
-    if (a === 'join-arrive') { sendArrive(); return; }
     if (a === 'about-retry') { loadAbout(); render(); return; }
     if (a === 'retry-pass') { loadPass(); render(); return; }
     if (a === 'mr-send' && LIVE) { sendRequest(arg); return; }
@@ -1270,7 +1268,6 @@ document.addEventListener('change', function (ev) {
   var t = ev.target;
   // смена даты сразу показывает, в чей отчёт уйдёт запись
   if (t && t.id === 'b-date' && current === 'barMoney' && !BOOK.busy) { bookGrab(); render(); return; }
-  if (t && t.id === 'join-file') { if (t.files && t.files[0]) attachReceipt(t.files[0], JOIN, 'noAccess'); return; }
   if (t && t.id === 'tu-file') { if (t.files && t.files[0]) attachReceipt(t.files[0], TUP, 'topup'); return; }
   if (!t || (t.id !== 'shot-file' && t.id !== 'bill-file')) return;
   var f = t.files && t.files[0];

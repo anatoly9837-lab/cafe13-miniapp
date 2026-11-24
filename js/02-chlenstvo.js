@@ -203,7 +203,7 @@ function loadJoin() {
     var got = r.status === 200 ? joinTrust(fromJoin(r.data)) : null;
     if (got) JOIN.info = got;
     else { JOIN.info = null; JOIN.fail = r.status === 200 ? failText(r) : denyText(r); }
-    if (got) loadRequisites(JOIN.pay);
+    // фича 8: форма возврата без денег — реквизиты ей не нужны (их грузит только пополнение, «Онлайн»)
     if (current === 'noAccess') render();
   });
 }
@@ -308,21 +308,8 @@ function loadAbout() {
   });
 }
 
-/* «Я у кассы» (шаг 24, api `84fbeef`): человек с улицы платит на месте, чека у него нет, а просьба без чека
-   не подаётся (правило владельца, 016). Нажатие даёт кассе его номер — и НИЧЕГО больше: ни допуска, ни
-   членства. Подпись без допуска, как у /join; повтор возвращает ту же запись. */
-var ARRIVE = { busy: false, done: false, err: '' };
-function sendArrive() {
-  if (ARRIVE.busy) return;
-  ARRIVE.busy = true; ARRIVE.err = ''; render();
-  api('POST', '/till/arrive', {}).then(function (r) {
-    ARRIVE.busy = false;
-    if ((r.status === 201 || r.status === 200) && r.data && Number.isInteger(r.data.id)) ARRIVE.done = true;
-    else ARRIVE.err = denyText(r);
-    if (current === 'noAccess') render();
-  });
-}
-
+/* «Я у кассы» с экрана просьбы снят фичей 8: форма возврата — без денег и кассы (рецепт popolnenie/noAccess);
+   человек нажимает «Я у кассы» в боте клуба. */
 function sendJoin() {
   if (JOIN.busy) return;
   var said = document.getElementById('join-said');

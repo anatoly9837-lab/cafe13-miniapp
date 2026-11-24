@@ -173,8 +173,10 @@ function tillSend() {
   if (!TP.err && !PAY_HOW[method]) return;              // способ не выбран — кнопка погашена, запроса нет
   TP.deny = '';
   if (TP.err) { render(); return; }
-  var body = who.arrival ? { kind: kind, amount: amt, method: method, arrival_id: who.arrival }
-                         : { kind: kind, amount: amt, method: method, member_id: who.id };
+  // фича 8: у пришедшего номер человека уже из карточки (by-member), и он едет ВМЕСТЕ с номером прихода (рецепт
+  // tillTopup): сервер закрывает приход и сверяет человека — «пришёл другой человек» (409, `till.py` _open_arrival)
+  var body = { kind: kind, amount: amt, method: method, member_id: who.id };
+  if (who.arrival) body.arrival_id = who.arrival;
   if (kind === 'membership') { body.level = level; body.months = months; }
   else if (method === 'account') return;            // у пополнения этой кнопки нет
   TP.busy = true;
@@ -185,7 +187,7 @@ function tillSend() {
     var d = r.data, ms = d && d.membership, mem = kind === 'membership';
     // взнос делится (шаг 24): `amount` — доля клуба, на счёт — `to_account`; сверяем их сумму с принесённым
     var full = mem ? num(d && d.to_club) + num(d && d.to_account) : num(d && d.amount);
-    var mine = who.arrival ? !!d && d.arrival_id === who.arrival && typeof d.member_id === 'number' : !!d && d.member_id === who.id;
+    var mine = !!d && d.member_id === who.id && (!who.arrival || d.arrival_id === who.arrival);
     var ok = r.status === 201 && !!d && d.kind === kind && Math.abs(full - amt) < 0.005 && mine &&
              (!mem || num(d.to_account) >= 0 && num(d.amount) === num(d.to_club) &&
                       !!ms && ms.level === level && !!ruDate(ms.ends_at));
@@ -195,10 +197,11 @@ function tillSend() {
     // Принято или неизвестно — карточка перечитывается в обоих случаях:
     // остаток после оплаты со счёта иначе остался бы прежним, то есть ложным.
     // пришедший: перечитать можно только по номеру из ПРИНЯТОГО ответа — в чужом он мог быть не тем
-    tillLookup(who.arrival ? (ok ? { id: d.member_id, at: who.at } : {}) : who, function (rec) {
+    tillLookup(who, function (rec) {
       TP.busy = false;
       if (ok) {
-        var now = rec || Object.assign({}, who, { arrival: null, id: who.arrival ? d.member_id : who.id, balance: null });
+        // принятое пополнение ЗАКРЫЛО приход: второе пополнение — уже по карточке, без номера прихода
+        var now = rec || Object.assign({}, who, { arrival: null, balance: null });
         if (kind === 'membership') {
           now.level = ms.level; now.until = ruDate(ms.ends_at); now.lifelong = false;
         }
@@ -245,8 +248,8 @@ function tillSend() {
            (тело не разобрано / не совпало) делит tillOdd (#351, E34k/E34l). */
         var odd = r.status === 201 ? tillOdd(d, { who: who.id, arrival: who.arrival, kind: kind, amt: amt, level: level }) : null;
         var ms0 = who.level ? (who.lifelong ? 'членство пожизненно' : 'членство до ' + who.until) : 'членства нет';
-        // у пришедшего счёта до взноса нет — «остаток 0» был бы догадкой
-        var bal0 = who.arrival ? ', у кассы с ' + who.at : ', остаток ' + money(who.balance) + ' ฿';
+        // фича 8: у пришедшего остаток из карточки (by-member) — сверять есть с чем, как у всех
+        var bal0 = ', остаток ' + money(who.balance) + ' ฿';
         TP.done = odd && odd.person
           ? { kind: '', unsure: true, sent: true, reread: !!rec, person: true, text: 'Проведено, а человек в ответе не тот',
               before: 'Перед приёмом: ' + ms0 + bal0,
