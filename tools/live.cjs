@@ -4527,6 +4527,30 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!(await card(s, await W(s, 'artStats.money.title')))) bad.push(`${n}: «Повторить» не перечитало`);
       await s.ctx.close();
     }
+    {
+      // art-pozdniy: ответ первого периода (месяц) задержан, второй (неделя) пришёл раньше — на экране числа недели.
+      // Держит защиту `gen !== AS.gen` в loadArtStats (мутант ревью #378 выжил без этого случая); образец — queue-late.
+      const n = 'art-pozdniy';
+      let landed = false;
+      const s = await asopen(ART, p => p.get('period') === 'month'
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, AS_RESP({ kind: 'month', events: { count: 77, bookings: 2, collected: '400.00' }, accrued: '777.00' }))); }, 1500))
+        : json(200, AS_RESP({ kind: p.get('period'), events: { count: 4, bookings: 2, collected: '400.00' }, accrued: '15.00' })));
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет вкладки «Управление»`));
+      await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="artStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери artStats`));
+      await s.p.waitForTimeout(100);
+      await s.p.click('[data-action="as-period:week"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза week`));
+      await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: ответ месяца пришёл раньше запроса недели — гонки не было, случай гарда не проверяет`);
+      if (artCalls(s).map(c => new URL(c.url).searchParams.get('period')).join() !== 'month,week') bad.push(`${n}: запросы ушли не «month,week»`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный ответ месяца так и не пришёл — гонки не было`);
+      const e = await card(s, await W(s, 'artStats.events.title')), m = await card(s, await W(s, 'artStats.money.title'));
+      if (!e || !e.includes((await W(s, 'artStats.events.count')) + '4')) bad.push(`${n}: на экране недели не её «Ивенты»: «${e}»`);
+      if (!m || m.includes('777') || !m.includes((await W(s, 'artStats.money.accrued')) + '15 ฿')) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${m}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
   // ── Cafe13KPG#999 (слова владельца 24.11.2026): №11 — роль `staff` зовётся «Работник» везде; №9 — демо бара без часов ──
   if (part(1)) {
