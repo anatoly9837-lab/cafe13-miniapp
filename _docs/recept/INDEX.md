@@ -73,9 +73,9 @@
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
 | `odobrenie` | `sostav` | — | 4300 | 4 | 0 |
 | `popolnenie` | `noAccess` | — | 3414 | 4 | 5 |
-| `popolnenie` | `sostav` | — | 4613 | 4 | 0 |
+| `popolnenie` | `sostav` | — | 4611 | 4 | 0 |
 | `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
-| `popolnenie` | `topup` | — | 5521 | 5 | 0 |
+| `popolnenie` | `topup` | — | 5517 | 5 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
 - `Исключение, а не долг: чем они отличаются` — строк 7
