@@ -4771,6 +4771,75 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     {
+      // ms-period: ‹ уходит запросом с `at` РАНЬШЕ текущего при том же period, и на экране числа прошлого окна; › погашена
+      // на текущем, после ‹ — нет, и возвращает в текущий месяц (ревью #406: случаев на ‹ › не было, мутант «at не
+      // сдвигается» жил). Образец — stats-razrez шага 31
+      const n = 'ms-period';
+      let first = null;
+      const s = await msopen(MASTER, p => { first = first || p.get('at');
+        return json(200, MS_RESP({ kind: p.get('period'), events: { count: p.get('at').slice(0, 7) === first.slice(0, 7) ? 7 : 2, bookings: 9, collected: '2700.00' } })); });
+      await go34(s, n);
+      const ev = await W(s, 'masterStats.events.title'), cnt = await W(s, 'masterStats.events.count');
+      const q = () => s.calls.filter(c => c.method === 'GET' && /\/stats\/master/.test(c.url)).map(c => new URL(c.url).searchParams);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(first || '')) bad.push(`${n}: первый запрос без дня at: «${first}»`);
+      if (!(await s.p.$('[data-action="mst-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await s.p.click('[data-action="mst-prev"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет ‹`)); await s.p.waitForTimeout(400);
+      const prev = q().slice(-1)[0];
+      if (!prev || prev.get('period') !== 'month' || !(prev.get('at').slice(0, 7) < first.slice(0, 7))) bad.push(`${n}: ‹ не спросила прошлый месяц: ${prev && prev.toString()}`);
+      const e1 = await card(s, ev);
+      if (!e1 || !e1.includes(cnt + '2')) bad.push(`${n}: после ‹ на экране не числа прошлого окна: «${e1}»`);
+      if (await s.p.$('[data-action="mst-next"][disabled]')) bad.push(`${n}: › погашена на прошлом периоде`);
+      await s.p.click('[data-action="mst-next"]', { timeout: 3000 }).catch(() => bad.push(`${n}: › не нажать`)); await s.p.waitForTimeout(400);
+      const nx = q().slice(-1)[0], e2 = await card(s, ev);
+      if (!nx || nx.get('at').slice(0, 7) !== first.slice(0, 7) || nx.get('period') !== 'month') bad.push(`${n}: › не вернула к текущему месяцу: ${nx && nx.toString()}`);
+      if (!e2 || !e2.includes(cnt + '7')) bad.push(`${n}: после › не числа текущего окна: «${e2}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ms-pozdniy: ответ месяца задержан, неделя пришла раньше — на экране числа недели (держит `gen !== MST.gen` в
+      // loadMasterStats); er-pozdniy ниже — то же для `gen !== ER.gen` в loadEventReport. Загрузчики разного вида —
+      // по случаю на каждый (ревью #406). Образец — art-pozdniy
+      const n = 'ms-pozdniy';
+      let landed = false;
+      const s = await msopen(MASTER, p => p.get('period') === 'month'
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, MS_RESP({ kind: 'month', events: { count: 77, bookings: 9, collected: '2700.00' } }))); }, 1500))
+        : json(200, MS_RESP({ kind: p.get('period'), events: { count: 4, bookings: 5, collected: '1500.00' } })));
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="masterStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери masterStats`));
+      await s.p.waitForTimeout(100);
+      await s.p.click('[data-action="mst-period:week"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза week`));
+      await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: ответ месяца пришёл раньше запроса недели — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный ответ месяца так и не пришёл — гонки не было`);
+      const e = await card(s, await W(s, 'masterStats.events.title'));
+      if (!e || e.includes('77') || !e.includes((await W(s, 'masterStats.events.count')) + '4')) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${e}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // er-pozdniy: отчёт ивента 51 задержан, назад и вход в 52 — на экране доли 52, не поздние 51
+      const n = 'er-pozdniy';
+      let landed = false;
+      const s = await msopen(MASTER, p => json(200, MS_RESP({ kind: p.get('period') })), id => id === 51
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, ER_RESP({ id: 51, money: { book: 'club_ledger', collected: '900.00', distributed: true, master: '777.00', club: '123.00' } }))); }, 1500))
+        : json(200, ER_RESP({ id })));
+      await go34(s, n);
+      await s.p.click('#view [data-action="mst-event:51"]', { timeout: 3000 }).catch(() => bad.push(`${n}: строку L 51 не нажать`));
+      await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-action="mst-event:52"]', { timeout: 3000 }).catch(() => bad.push(`${n}: строку L 52 не нажать`));
+      await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: отчёт 51 пришёл раньше входа в 52 — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный отчёт 51 так и не пришёл — гонки не было`);
+      const mc = await card(s, await W(s, 'eventReport.money.title'));
+      if (!mc || mc.includes('777') || !mc.includes((await W(s, 'eventReport.money.master')) + (await sum(s, '1020.00')))) bad.push(`${n}: поздний отчёт 51 лёг на 52: «${mc}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
       // ms-dver: без своих ивентов двери M0 нет — арт-директор группу «Ивенты» видит (artStats), своих ивентов не ведёт;
       // прямой вход — «Сюда нельзя» без запроса. Положительный контроль — мастер (тот же go34 выше)
       const n = 'ms-dver';
