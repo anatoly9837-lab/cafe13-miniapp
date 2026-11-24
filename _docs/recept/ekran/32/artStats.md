@@ -86,12 +86,18 @@
 | класс | слова | источник |
 |---|---|---|
 | `.seg` | `C1` | — |
-| `.row` | `C2`: ‹ (`.btn ghost`), период, › (`.btn ghost`) | `period{start,end}` |
+| `.row` | `C2`: ‹ (`.icon-btn`), период (одна строка, по центру, занимает остаток), › (`.icon-btn`) | `period{start,end}` |
 | `.small` | `N3` | — |
 | `.card` | `E` или `E1`; `N1` (`.small`) | `events{count,bookings,collected}` |
 | `.card` | `P` строки (`.rows`) или `P1` | `masters[]{member_id,name,payouts,amount}` |
 | `.card` | `D` (`D1` вместо числа `expected`), `D2` (`.small`), `N2` (`.small`) | `money{balance,accrued,expected}` — `balance`, `expected` без окна, `accrued` за период |
 | `.deny` → `.verbatim` | отказ 403 | ответ сервера, как есть |
+
+⚠ **‹ и › — `.icon-btn`, не `.btn ghost`** (рецепт был не точен; опись v179 `46271ff`,
+кадр `screens/62-art-stats.png`, находка `frontend-events-e1`): `.btn`
+растягивается по ширине, и две стрелки заняли по трети строки, а подпись
+периода переломилась надвое. Стрелка — квадрат по знаку, подпись периода —
+одна строка между ними.
 
 Числа — `.num`, деньги — строкой сервера с `฿`. Внутри карточки строка —
 подпись слева, число справа (`.rows > div`). Порядок мастеров — по `amount`
