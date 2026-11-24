@@ -318,7 +318,7 @@ ABSENT = [
     'barCard': ['право:mayCards', 'за:barCards'],
     'topup': ['право:canTopup', 'за:home'],
     'barDay': ['право:mayBook', 'за:barQueue'],
-    'tillPerson': 'за:staff', 'tillMembership': 'за:tillPerson',
+    'tillPerson': 'за:staff',
     'tillTopup': 'за:tillPerson',
 
     'barRecipe': '"админ, а бар и куратор — на своём направлении (mayRecipe; '
@@ -342,6 +342,9 @@ ABSENT = [
 
     # заявки на членство (Cafe13KPG#415): код есть, в WIRED не включён до выкладки api#74
     'memberRequests': 'никто',
+    # фича 8 (Cafe13KPG#1009, №38 «а», рецепт popolnenie/tillTopup): членство не продаётся — tillMembership вне WIRED,
+    # действия «Членство» на tillPerson нет (api #179: 410). Экран — история шага 24
+    'tillMembership': 'никто',
 
     # Шаг 3 (Cafe13KPG#534). Правило названо ТЕКСТОМ нарочно: `право:mayMasters`
     # дало бы ЛОЖНОЕ «никто» — роль арт-директора в club_test уже есть (замер
