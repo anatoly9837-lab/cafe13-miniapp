@@ -45,7 +45,7 @@
 | `23` | `barOrder` | — | 9899 | 3 | 7 |
 | `23` | `sostav` | — | 4419 | 4 | 0 |
 | `24` | `sostav` | — | 5552 | 4 | 0 |
-| `24` | `tillMembership` | — | 15180 | 4 | 11 |
+| `24` | `tillMembership` | — | 15633 | 4 | 11 |
 | `25` | `sostav` | — | 5777 | 4 | 0 |
 | `25` | `withdraw` | — | 13029 | 8 | 20 |
 | `25` | `withdrawQueue` | — | 7909 | 7 | 13 |
@@ -53,10 +53,10 @@
 | `26` | `sostav` | — | 4017 | 4 | 0 |
 | `27` | `roleAccount` | — | 9676 | 7 | 14 |
 | `27` | `sostav` | — | 4603 | 4 | 0 |
-| `31` | `clubStats` | — | 12221 | 8 | 24 |
-| `31` | `sostav` | — | 3632 | 4 | 0 |
-| `32` | `artStats` | — | 14811 | 8 | 27 |
-| `32` | `sostav` | — | 4037 | 4 | 0 |
+| `31` | `clubStats` | — | 12811 | 8 | 24 |
+| `31` | `sostav` | — | 3766 | 4 | 0 |
+| `32` | `artStats` | — | 15401 | 8 | 27 |
+| `32` | `sostav` | — | 4171 | 4 | 0 |
 | `bar` | `bar` | — | 12946 | 1 | 12 |
 | `bar` | `barCart` | — | 10781 | 1 | 15 |
 | `bar` | `barOrder` | — | 14823 | 1 | 14 |
@@ -71,7 +71,11 @@
 | `master` | `sostav` | — | 4463 | 4 | 0 |
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
-| `odobrenie` | `sostav` | — | 4300 | 4 | 0 |
+| `odobrenie` | `sostav` | — | 4281 | 4 | 0 |
+| `popolnenie` | `noAccess` | — | 4185 | 3 | 6 |
+| `popolnenie` | `sostav` | — | 4762 | 4 | 0 |
+| `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
+| `popolnenie` | `topup` | — | 4762 | 3 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
 - `Исключение, а не долг: чем они отличаются` — строк 7
