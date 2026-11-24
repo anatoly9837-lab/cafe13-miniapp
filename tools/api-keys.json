@@ -2866,5 +2866,367 @@
    ]
   },
   "status": 200
+ },
+ "stats-club-empty-day": {
+  "request": "GET /stats/club?period=day&at=N-N-N",
+  "shape": {
+   "business": {
+    "book": null,
+    "closed": null,
+    "current": null
+   },
+   "club": {
+    "balance": null,
+    "book": null,
+    "event": {
+     "amount": null,
+     "count": null
+    },
+    "master": {
+     "amount": null,
+     "count": null
+    },
+    "member": {
+     "amount": null,
+     "count": null
+    },
+    "partner": {
+     "amount": null,
+     "count": null
+    },
+    "total": null,
+    "unknown_joins": {
+     "all_time": null,
+     "in_period": null,
+     "note": null
+    }
+   },
+   "events": {
+    "bookings": null,
+    "collected": null,
+    "count": null
+   },
+   "head": [
+    {
+     "club": {
+      "amount": null,
+      "book": null
+     },
+     "first_name": null,
+     "last_name": null,
+     "member_id": null,
+     "mine": {
+      "amount": null,
+      "note": null
+     }
+    }
+   ],
+   "masters": {
+    "book": null,
+    "rows": []
+   },
+   "members": {
+    "book": null,
+    "outside_frame": null,
+    "spent": {
+     "donations": null,
+     "events": null,
+     "master_status": null
+    },
+    "topups": {
+     "join_share": null,
+     "master_payout": null,
+     "request": null
+    }
+   },
+   "memberships": {
+    "book": null,
+    "live": null,
+    "live_at": null,
+    "new": null
+   },
+   "period": null,
+   "period_end": null,
+   "period_start": null,
+   "roles": {
+    "art_director": {
+     "amount": null,
+     "balance": null,
+     "book": null,
+     "count": null,
+     "holders": [
+      {
+       "first_name": null,
+       "last_name": null,
+       "member_id": null
+      }
+     ]
+    },
+    "space_manager": {
+     "amount": null,
+     "balance": null,
+     "book": null,
+     "count": null,
+     "holders": [
+      {
+       "first_name": null,
+       "last_name": null,
+       "member_id": null
+      }
+     ]
+    }
+   },
+   "till": {
+    "arrivals": null
+   }
+  },
+  "status": 200
+ },
+ "stats-club-month-2020-03": {
+  "request": "GET /stats/club?period=month&at=N-N-N",
+  "shape": {
+   "business": {
+    "book": null,
+    "closed": {
+     "amount": null,
+     "months": null,
+     "note": null
+    },
+    "current": null
+   },
+   "club": {
+    "balance": null,
+    "book": null,
+    "event": {
+     "amount": null,
+     "count": null
+    },
+    "master": {
+     "amount": null,
+     "count": null
+    },
+    "member": {
+     "amount": null,
+     "count": null
+    },
+    "partner": {
+     "amount": null,
+     "count": null
+    },
+    "total": null,
+    "unknown_joins": {
+     "all_time": null,
+     "in_period": null,
+     "note": null
+    }
+   },
+   "events": {
+    "bookings": null,
+    "collected": null,
+    "count": null
+   },
+   "head": [
+    {
+     "club": {
+      "amount": null,
+      "book": null
+     },
+     "first_name": null,
+     "last_name": null,
+     "member_id": null,
+     "mine": {
+      "amount": null,
+      "note": null
+     }
+    }
+   ],
+   "masters": {
+    "book": null,
+    "rows": []
+   },
+   "members": {
+    "book": null,
+    "outside_frame": null,
+    "spent": {
+     "donations": null,
+     "events": null,
+     "master_status": null
+    },
+    "topups": {
+     "join_share": null,
+     "master_payout": null,
+     "request": null
+    }
+   },
+   "memberships": {
+    "book": null,
+    "live": null,
+    "live_at": null,
+    "new": null
+   },
+   "period": null,
+   "period_end": null,
+   "period_start": null,
+   "roles": {
+    "art_director": {
+     "amount": null,
+     "balance": null,
+     "book": null,
+     "count": null,
+     "holders": [
+      {
+       "first_name": null,
+       "last_name": null,
+       "member_id": null
+      }
+     ]
+    },
+    "space_manager": {
+     "amount": null,
+     "balance": null,
+     "book": null,
+     "count": null,
+     "holders": [
+      {
+       "first_name": null,
+       "last_name": null,
+       "member_id": null
+      }
+     ]
+    }
+   },
+   "till": {
+    "arrivals": null
+   }
+  },
+  "status": 200
+ },
+ "stats-club-month-now": {
+  "request": "GET /stats/club?period=month",
+  "shape": {
+   "business": {
+    "book": null,
+    "closed": null,
+    "current": {
+     "closes_at": null,
+     "closes_on": null,
+     "note": null,
+     "period_start": null
+    }
+   },
+   "club": {
+    "balance": null,
+    "book": null,
+    "event": {
+     "amount": null,
+     "count": null
+    },
+    "master": {
+     "amount": null,
+     "count": null
+    },
+    "member": {
+     "amount": null,
+     "count": null
+    },
+    "partner": {
+     "amount": null,
+     "count": null
+    },
+    "total": null,
+    "unknown_joins": {
+     "all_time": null,
+     "in_period": null,
+     "note": null
+    }
+   },
+   "events": {
+    "bookings": null,
+    "collected": null,
+    "count": null
+   },
+   "head": [
+    {
+     "club": {
+      "amount": null,
+      "book": null
+     },
+     "first_name": null,
+     "last_name": null,
+     "member_id": null,
+     "mine": {
+      "amount": null,
+      "note": null
+     }
+    }
+   ],
+   "masters": {
+    "book": null,
+    "rows": [
+     {
+      "amount": null,
+      "first_name": null,
+      "last_name": null,
+      "member_id": null,
+      "payouts": null
+     }
+    ]
+   },
+   "members": {
+    "book": null,
+    "outside_frame": null,
+    "spent": {
+     "donations": null,
+     "events": null,
+     "master_status": null
+    },
+    "topups": {
+     "join_share": null,
+     "master_payout": null,
+     "request": null
+    }
+   },
+   "memberships": {
+    "book": null,
+    "live": null,
+    "live_at": null,
+    "new": null
+   },
+   "period": null,
+   "period_end": null,
+   "period_start": null,
+   "roles": {
+    "art_director": {
+     "amount": null,
+     "balance": null,
+     "book": null,
+     "count": null,
+     "holders": [
+      {
+       "first_name": null,
+       "last_name": null,
+       "member_id": null
+      }
+     ]
+    },
+    "space_manager": {
+     "amount": null,
+     "balance": null,
+     "book": null,
+     "count": null,
+     "holders": [
+      {
+       "first_name": null,
+       "last_name": null,
+       "member_id": null
+      }
+     ]
+    }
+   },
+   "till": {
+    "arrivals": null
+   }
+  },
+  "status": 200
  }
 }
