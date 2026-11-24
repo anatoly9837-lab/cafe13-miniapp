@@ -3228,5 +3228,62 @@
    }
   },
   "status": 200
+ },
+ "stats-art-month-2019-03": {
+  "request": "GET /stats/art?period=month&at=N-N-N",
+  "shape": {
+   "events": {
+    "bookings": null,
+    "collected": null,
+    "count": null
+   },
+   "masters": [
+    {
+     "amount": null,
+     "member_id": null,
+     "name": null,
+     "payouts": null
+    }
+   ],
+   "money": {
+    "accrued": null,
+    "accrued_count": null,
+    "balance": null,
+    "book": null,
+    "expected": null,
+    "expected_events": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   }
+  },
+  "status": 200
+ },
+ "stats-art-empty-day": {
+  "request": "GET /stats/art?period=day&at=N-N-N",
+  "shape": {
+   "events": {
+    "bookings": null,
+    "collected": null,
+    "count": null
+   },
+   "masters": [],
+   "money": {
+    "accrued": null,
+    "accrued_count": null,
+    "balance": null,
+    "book": null,
+    "expected": null,
+    "expected_events": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   }
+  },
+  "status": 200
  }
 }

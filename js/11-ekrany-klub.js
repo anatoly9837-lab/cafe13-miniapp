@@ -6,13 +6,16 @@ var SCREENS = {
     return (FLASH ? flash() : '') +
       // E68 (Cafe13KPG#682): «Активно» в строке заголовка, «Пропуск» — короткой кнопкой справа в плашке.
       // Подпись короткая по замеру дизайнера: «Показать пропуск» — 145 px и перенос даты на вторую строку
+      // Фича 1 «ДВЕРЬ» (рецепт dver/home): у новичка без членства плашки НЕТ вовсе — ни пустой рамки, ни «Пропуска»
+      // (пропуска у новичка нет, решение №45). У члена — как прежде (№38)
+      (LIVE && !isMember() ? '' :
       '<div class="card strong">' +
         '<div class="row top">' +
           '<div class="col grow"><div class="row" style="justify-content:flex-start;gap:8px"><h2>' + esc(m.level) + '</h2><span class="pill on">Активно</span></div>' +
             '<span class="small">' + esc(untilText(m)) + '</span></div>' +
           '<button type="button" class="btn quiet mini" data-go="pass">Пропуск</button>' +
         '</div>' +
-      '</div>' +
+      '</div>') +
 
       // карточки «Баланс» здесь больше нет: остаток живёт в шапке (v83), а две суммы на
       // одном экране — две правды об одном (кадры #500; слово владельца 29.10 «убрать баланс из вкладки клуб»)

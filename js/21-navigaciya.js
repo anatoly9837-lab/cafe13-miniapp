@@ -249,7 +249,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
@@ -270,8 +270,10 @@ function tabList() {
   // DATA.role здесь не правится: его читают homeOf, isMember, касса.
   if (LIVE) {
     var on = {};
+    // Фича 1 «ДВЕРЬ»: у новичка без членства вкладки члена — «Клуб» больше не прячется за членством (рецепт dver/home).
+    // Работник без членства — как прежде, «Услуги»: его дом там (решение №13)
     ((DATA.member && DATA.member.memberships) || []).map(function (m) { return m.level; })
-      .concat(DATA.role).forEach(function (l) {
+      .concat(DATA.role === 'guest' && !grant('worker') ? 'member' : DATA.role).forEach(function (l) {
         (TABS[l] || []).forEach(function (x) { on[x[0]] = x; });
       });
     t = TAB_ORDER.filter(function (k) { return on[k]; }).map(function (k) { return on[k]; });
@@ -301,8 +303,11 @@ function homeOf() {
   // видит только её». Экран входа (BARE): вкладок и выхода нет по построению — и у держателя роли без членства тоже,
   // это названная цена решения (Cafe13KPG#324). В демонстрации — прежние «Услуги»: гостя там показывают
   // Исключение — РАБОЧАЯ роль `worker` (решение владельца №13, Cafe13KPG#927: «входит по допуску, без членства»):
-  // работник бизнеса без членства идёт на «Услуги», где его дверь «Карточки меню». Прочие роли без членства — как прежде
-  if (DATA.role === 'guest') return !LIVE || grant('worker') ? 'guest' : 'noAccess';
+  // работник бизнеса без членства идёт на «Услуги», где его дверь «Карточки меню».
+  // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009, рецепт `_docs/recept/ekran/dver/home.md`; решения владельца №24, №35): «просьбы о
+  // вступлении» больше нет — новичок без членства начинает с «Клуба». `noAccess` остаётся ТОЛЬКО выгнанному: его
+  // сервер не пускает (`/me` → 403 «доступа нет», api 5d79c84), и туда ведёт boot, а не выбор дома
+  if (DATA.role === 'guest') return !LIVE || grant('worker') ? 'guest' : 'home';
   if (DATA.role === 'staff') return 'staff';
   if (DATA.role === 'bar') return 'barQueue';
   if (DATA.role === 'curator') return 'curator';
@@ -319,7 +324,7 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -584,6 +589,7 @@ function go(screen, p) {
   }
   // шаг 31 (рецепт «Перечитать на входе»): на каждый вход — месяц, в который попадает сегодня
   if (screen === 'clubStats' && current !== 'clubStats') { CS.period = 'month'; CS.at = msToday(); loadClubStats(); }
+  if (screen === 'artStats' && current !== 'artStats') { AS.period = 'month'; AS.at = msToday(); loadArtStats(); }
   if ((screen === 'manage' || screen === 'withdrawQueue') && current !== screen && mayWithdrawQueue()) { WQ.done = ''; WQ.err = {}; loadWithdrawQueue(); }
   // пометка ждущих на «Слотах и мастерах» (#769) — счёт очереди мастеров нужен уже на «Управлении»
   if (screen === 'manage' && current !== 'manage' && mayMasters()) loadMasterQueue();
@@ -1132,6 +1138,10 @@ function doAction(a) {
     if (a === 'cs-prev') { csMove(-1); return; }
     if (a === 'cs-next') { csMove(1); return; }
     if (a === 'cs-retry') { loadClubStats(); render(); return; }
+    if (a === 'as-period' && /^(day|week|month)$/.test(arg)) { if (AS.period !== arg) { AS.period = arg; loadArtStats(); } render(); return; }
+    if (a === 'as-prev') { asMove(-1); return; }
+    if (a === 'as-next') { asMove(1); return; }
+    if (a === 'as-retry') { loadArtStats(); render(); return; }
     if (a === 'tq-retry' && mayTopups()) { loadTopupQueue(); render(); return; }
     if (a === 'tq-open' && mayTopups()) { go('topupReq', Number(arg)); return; }
     if (a === 'tq-shot' && mayTopups()) { delete TOPQ.shot[Number(arg)]; topupShot(Number(arg)); render(); return; }

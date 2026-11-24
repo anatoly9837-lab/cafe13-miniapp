@@ -2099,9 +2099,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // «Вас приняли… Осталось войти», а «Войти» возвращало сюда же. Под ОБОИМИ входами на экран: 403 (исключённый)
     // и 200 без живого членства (слово владельца 05.11.2026 — такой человек видит только просьбу). Признак — форма
     // новой просьбы есть, ложных слов нет; «Войти» не нажимается, потому что кнопки нет
-    for (const [n, me] of [['join-petlya-403', json(403, { detail: 'доступа нет' })],
-                           ['join-petlya-bez-chlenstva', (() => { const g = clone(OWNER); g.membership_active = false;
-                             g.membership = null; g.memberships = []; g.roles = []; return json(200, g); })()]]) {
+    // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009): второй вход — «200 без живого членства» — снят: такой человек теперь начинает с
+    // «Клуба» (случай dver-dom), экрана просьбы у него нет. Остаётся выгнанный (403)
+    for (const [n, me] of [['join-petlya-403', json(403, { detail: 'доступа нет' })]]) {
       const s = await joinCase(json(200, withReq('approved')), null, () => me);
       const t = await s.view();
       if (await s.p.evaluate(() => current) !== 'noAccess') bad.push(`${n}: не на экране просьбы (${await s.p.evaluate(() => current)})`);
@@ -2109,21 +2109,48 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!(await s.p.$('#join-file'))) bad.push(`${n}: нет формы новой просьбы`);
       await s.ctx.close();
     }
-    // 0.1 «Путь мастера», слово владельца 05.11.2026: «человек без живого членства попадает на просьбу о вступлении
-    // и видит только её». Пара — без прав и держатель права (ответственный за пополнения): у второго «Управления»
-    // тоже нет, это названная цена решения. Признак «только её» — нет вкладок, нет «назад» ни нарисованной, ни
-    // системной; и не замороженные «Услуги» (прежний стартовый экран)
-    for (const [n, roles] of [['bez-chlenstva-prosba', []], ['bez-chlenstva-prosba-pravo', [{ role: 'topups', direction_id: null }]]]) {
+    // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009, рецепт `_docs/recept/ekran/dver/home.md`, api 5d79c84). Прежде здесь стоял случай
+    // «без членства — только просьба» (слово владельца 05.11.2026); рамка 24.11 его сняла: новичок без членства и без
+    // ролей начинает с «Клуба» (№24, №35), вкладки — как у члена, плашки членства и «Пропуска» нет (№45). Пара — без
+    // прав и держатель права без членства (ответственный за пополнения): у второго сверху «Управление» по праву.
+    // ⚠ «Я мастер» и запись на ивент новичку — после фич 3 и 5 (сервер 5d79c84 там ещё спрашивает членство): не здесь
+    for (const [n, roles, extra] of [['dver-dom', [], []], ['dver-dom-pravo', [{ role: 'topups', direction_id: null }], ['manage']]]) {
       const g = clone(OWNER); g.membership_active = false; g.membership = null; g.memberships = []; g.roles = roles;
       const s = await joinCase(json(200, JOIN0), null, () => json(200, g));
       const at = await s.p.evaluate(() => current);
-      if (at !== 'noAccess') bad.push(`${n}: стартовый экран «${at}», ждали «noAccess»`);
+      if (at !== 'home') bad.push(`${n}: стартовый экран «${at}», ждали «home» — новичок не на «Клубе»`);
+      const tabs = await s.p.$$eval('#tabs [data-go]', es => es.map(e => e.dataset.go));
+      const want = ['home', 'guest', 'events'].concat(extra);
+      if (tabs.join(',') !== want.join(',')) bad.push(`${n}: вкладки «${tabs.join(',')}», ждали «${want.join(',')}»`);
+      if (!(await s.tabsShown())) bad.push(`${n}: вкладки спрятаны — экран входа, а не «Клуб»`);
       const t = await s.view();
-      if (t.includes('временно недоступно')) bad.push(`${n}: стартовый экран — замороженный`);
-      if (!(await s.p.$('#join-file'))) bad.push(`${n}: на экране нет формы просьбы`);
-      if (await s.tabsShown()) bad.push(`${n}: видны вкладки — экран просьбы не «только он»`);
-      if (await s.p.evaluate(() => !document.getElementById('back').hidden || window.__backShown === true))
-        bad.push(`${n}: есть «назад» — с экрана просьбы есть выход`);
+      if (t.includes('Активно')) bad.push(`${n}: на «Клубе» новичка плашка членства («Активно»)`);
+      if (await s.p.$('#view [data-go="pass"]')) bad.push(`${n}: у новичка дверь «Пропуск» (решение №45 — пропуска нет)`);
+      if (await s.p.$('#join-file')) bad.push(`${n}: у новичка форма просьбы о вступлении`);
+      if (!t.includes('Мои записи')) bad.push(`${n}: на «Клубе» новичка нет «Мои записи» — признак «Клуба» мёртв`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // ДВЕРЬ: член с оплаченным членством ничего не теряет (№38) — дом, вкладка «Клуб», плашка и «Пропуск» на месте
+    {
+      const n = 'dver-chlen';
+      const s = await joinCase(json(200, JOIN0), null, () => json(200, OWNER));
+      if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: член не на «Клубе»`);
+      const tabs = await s.p.$$eval('#tabs [data-go]', es => es.map(e => e.dataset.go));
+      if (!tabs.includes('home')) bad.push(`${n}: у члена нет вкладки «Клуб»`);
+      if (!(await s.view()).includes('Активно')) bad.push(`${n}: у члена пропала плашка членства`);
+      if (!(await s.p.$('#view [data-go="pass"]'))) bad.push(`${n}: у члена пропала дверь «Пропуск»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // ДВЕРЬ: выгнанный (допуск снят — сервер отвечает 403 «доступа нет») — по-прежнему noAccess, «О клубе» с него открывается
+    {
+      const n = 'dver-vygnan';
+      const s = await joinCase(json(200, JOIN0));
+      if (await s.p.evaluate(() => current) !== 'noAccess') bad.push(`${n}: выгнанный не на noAccess (${await s.p.evaluate(() => current)})`);
+      if (await s.tabsShown()) bad.push(`${n}: у выгнанного видны вкладки`);
+      await tap(s, '[data-action="join-about"]');
+      if (await s.p.evaluate(() => current) !== 'joinAbout') bad.push(`${n}: «О клубе» с noAccess не открылось`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
@@ -2239,9 +2266,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // комментарий координатора 30.10.2026 в Cafe13KPG#670); партнёру — нет (tabs-dva-partner-vyigral)
       ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'events', 'manage']],
       ['tabs-tolko-member', who('member', ['member']), ['home', 'guest', 'events']],
-      // без живого членства — экран просьбы и ничего больше (слово владельца 05.11.2026, 0.1 «Путь мастера»): вкладок нет;
-      // прежде здесь ждали ['guest', 'events']
-      ['tabs-gost', who(null, []), []],
+      // без живого членства — вкладки члена (фича 1 «ДВЕРЬ», Cafe13KPG#1009, рецепт dver/home): «Клуб» за членством не
+      // прячется. Прежде (0.1, слово владельца 05.11.2026) — экран просьбы без вкладок, ещё раньше ['guest', 'events']
+      ['tabs-gost', who(null, []), ['home', 'guest', 'events']],
       // было `tabs-vse-sem` («все семь»): до v72 вкладок было семь. Имя без числа нарочно —
       // число в имени проверки стареет на следующей вкладке (решение координатора 28.10.2026)
       ['tabs-vse', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
@@ -2927,7 +2954,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   const SAVED = { code: 'XIII-0042', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 };
   if (part(1)) for (const [name, reply, want, wiped] of [
-    ['pass-403', json(403, { detail: 'членство не активно' }), 'Членство не активно', true],
+    // фича 1 «ДВЕРЬ» (Cafe13KPG#1009, дополнение 2): причины «членство не активно» больше нет — отказ без её слов
+    ['pass-403', json(403, { detail: 'членство не активно' }), 'Сервер отказал в пропуске', true],
     ['pass-403-other', json(403, { detail: 'нужна роль' }), 'Сервер отказал в пропуске', true],
     ['pass-bad', json(200, { pass_code: '0042', level: 'member', lifelong: true }), 'Ответ сервера не разобран', false],
     ['pass-down', 'abort', 'Сервер не ответил', false]]) {
@@ -4380,6 +4408,147 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const v = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
       if (v !== 'нужна роль head') bad.push(`${n}: отказ «${v}», ждали словами сервера`);
       if (await card(s, 'Деньги клуба')) bad.push(`${n}: при 403 стоят числа`);
+      await s.ctx.close();
+    }
+  }
+  // ── шаг 32 (Cafe13KPG#563: ТЗ ред. 1, снимок формы api 65e62d8 — в карточке #563; рецепт
+  // `_docs/recept/ekran/32/artStats.md`): статистика арт-директора — «Управление» → группа «Ивенты» → «Статистика
+  // арт-директора». Клиентские ветви рецепта; `art-mastera-vse` (отбор по decided_by) и «наличные мимо Собрано» —
+  // СЕРВЕРА. Слова судятся ПО СЛОВАРЮ (SLOVA.ru со страницы), а не литералом: экран на ключах (№22), и «ключа нет»
+  // ловит и `slova-klyuchi`, и признак здесь — ключ в тексте экрана. Заглушки сверяет страж формы (`stats-art-*`).
+  const AS_RESP = x => {
+    x = x || {};
+    return { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
+      events: x.events || { count: 3, bookings: 7, collected: '2100.00' },
+      masters: x.masters || [{ member_id: 5, name: 'Мастер Б', payouts: 1, amount: '300.00' },
+                             { member_id: 6, name: 'Мастер А', payouts: 2, amount: '850.00' }],
+      money: { book: 'club_ledger', balance: x.balance || '120.00', accrued: x.accrued || '45.00', accrued_count: x.accrued === '0' ? 0 : 1,
+               expected: x.expected || '30.00', expected_events: x.expected_events === undefined ? 2 : x.expected_events } };
+  };
+  if (part(2)) {
+    const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
+    const asopen = (me, stats) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+      if (q.method() === 'GET' && u.startsWith('/stats/art')) return stats(new URL('https://x' + u).searchParams);
+      if (q.method() === 'GET' && u.startsWith('/stats/club')) return json(403, { detail: 'нужна роль head' });
+      return undefined;
+    });
+    const artCalls = s => s.calls.filter(c => c.method === 'GET' && /\/stats\/art/.test(c.url));
+    const W = async (s, k) => s.p.evaluate(k => SLOVA.ru[k], k);
+    const go32 = async (s, n) => {
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет вкладки «Управление»`));
+      await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="artStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери artStats`));
+      await s.p.waitForTimeout(400);
+    };
+    const card = async (s, title) => (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.startsWith(title))[0] || null;
+    const NOTES = ['artStats.events.cashNote', 'artStats.money.roleNote', 'artStats.period.clockNote', 'artStats.money.nowNote'];
+    {
+      // art-razrez: три разреза — три окна на одном дне; «Ивентов» и «Начислено» своего окна, «На счёте» и «Ожидается»
+      // одни и те же; три надписи N1–N3 и D2 стоят; кассы, бизнесов и членства на странице нет; ключей на экране нет
+      const n = 'art-razrez';
+      const CNT = { day: 1, week: 4, month: 9 }, ACC = { day: '5.00', week: '15.00', month: '45.00' };
+      const s = await asopen(ART, p => json(200, AS_RESP({ kind: p.get('period'), events: { count: CNT[p.get('period')], bookings: 2, collected: '400.00' },
+        accrued: ACC[p.get('period')] })));
+      await go32(s, n);
+      const ev = await W(s, 'artStats.events.title'), mo = await W(s, 'artStats.money.title');
+      if (!ev || !mo) bad.push(`${n}: на странице нет слов artStats в SLOVA.ru — судить не по чему`);
+      const money = {};
+      for (const p of ['month', 'week', 'day']) {
+        if (p !== 'month') { await s.p.click(`[data-action="as-period:${p}"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза ${p}`)); await s.p.waitForTimeout(400); }
+        const e = await card(s, ev), m = await card(s, mo), v = await s.view();
+        if (!e || !e.includes((await W(s, 'artStats.events.count')) + CNT[p])) bad.push(`${n}: ${p} — «Ивенты» не с числом своего окна: «${e}»`);
+        if (!m || !m.includes((await W(s, 'artStats.money.accrued')) + ACC[p].replace('.00', '') + ' ฿')) bad.push(`${n}: ${p} — «Начислено» не своего окна: «${m}»`);
+        money[p] = m && m.replace(/Начислено за период[^฿]*฿/, '');
+        let bare = v;
+        for (const k of NOTES) { const w = await W(s, k); if (!v.includes(w)) bad.push(`${n}: ${p} — нет надписи ${k}`); bare = bare.split(w).join(''); }
+        // N1 сама говорит «на кассе» — блоков кассы это не делает; судится текст без надписей
+        if (/касс|бизнес|членств/i.test(bare)) bad.push(`${n}: ${p} — на странице касса, бизнесы или членство`);
+        if (/artStats\.\w/.test(v)) bad.push(`${n}: ${p} — на экране ключ вместо слова: «${(v.match(/artStats\.[\w.]+/) || [''])[0]}»`);
+      }
+      if (new Set(Object.values(money)).size !== 1) bad.push(`${n}: «На счёте» и «Ожидается» менялись с разрезом: ${JSON.stringify(money)}`);
+      const q = artCalls(s).map(c => new URL(c.url).searchParams);
+      if (q.map(x => x.get('period')).join() !== 'month,week,day') bad.push(`${n}: разрезы ушли «${q.map(x => x.get('period')).join()}»`);
+      if (new Set(q.map(x => x.get('at'))).size !== 1) bad.push(`${n}: день разрезов не один`);
+      if (!(await s.p.$('[data-action="as-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await s.p.click('[data-action="as-prev"]'); await s.p.waitForTimeout(400);
+      const prev = artCalls(s).slice(-1).map(c => new URL(c.url).searchParams)[0];
+      if (!prev || prev.get('period') !== 'day' || prev.get('at') >= q[0].get('at')) bad.push(`${n}: ‹ не спросила предыдущий день`);
+      // мастера — от большей суммы (ВЫБОР рецепта), «Распределений: N» под именем
+      const pm = await card(s, await W(s, 'artStats.masters.title'));
+      if (!pm || pm.indexOf('Мастер А') < 0 || pm.indexOf('Мастер А') > pm.indexOf('Мастер Б')) bad.push(`${n}: мастера не от большей суммы: «${pm}»`);
+      if (!pm || !pm.includes('Распределений: 2')) bad.push(`${n}: нет «Распределений: N» у мастера: «${pm}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // art-pusto: ивентов нет (null) — E1, а не «0» из null; мастеров нет — P1; нераспределённых нет — D1, а не «0 ฿»;
+      // остаток 0 — числом, и N2 при нём стоит (art-schet-roli); N1 стоит и без ивентов (art-nalichnye, клиентская половина)
+      const n = 'art-pusto';
+      const s = await asopen(ART, () => json(200, AS_RESP({ events: { count: 0, bookings: null, collected: null }, masters: [],
+        balance: '0', accrued: '0', expected: '0', expected_events: 0 })));
+      await go32(s, n);
+      const v = await s.view();
+      const e = await card(s, await W(s, 'artStats.events.title')), m = await card(s, await W(s, 'artStats.money.title'));
+      if (!e || !e.includes(await W(s, 'artStats.events.none')) || e.includes(await W(s, 'artStats.events.bookings'))) bad.push(`${n}: ивентов нет — не E1: «${e}»`);
+      if (!e || !e.includes(await W(s, 'artStats.events.cashNote'))) bad.push(`${n}: без ивентов пропала N1`);
+      if (!v.includes(await W(s, 'artStats.masters.none'))) bad.push(`${n}: мастеров нет — нет P1`);
+      if (!m || !m.includes(await W(s, 'artStats.money.expectedNone'))) bad.push(`${n}: нераспределённых нет — нет D1: «${m}»`);
+      if (m && m.includes((await W(s, 'artStats.money.expected')) + '0 ฿')) bad.push(`${n}: «Ожидается» — «0 ฿» вместо D1`);
+      if (!m || !m.includes((await W(s, 'artStats.money.balance')) + '0 ฿')) bad.push(`${n}: остаток 0 не числом: «${m}»`);
+      if (!m || !m.includes(await W(s, 'artStats.money.roleNote'))) bad.push(`${n}: при остатке 0 нет N2`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // art-ne-art: глава без art_director — двери нет, ручку не спрашивают, прямой вход — отказ; арт-директору 403 — словами
+      // сервера; битый ответ — «не загрузилось» и «Повторить», а не пустые карточки
+      const n = 'art-ne-art';
+      const HEAD = clone(OWNER); HEAD.roles = [{ role: 'head', direction_id: null }];
+      let s = await asopen(HEAD, () => json(200, AS_RESP()));
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(300);
+      if (await s.p.$('#view [data-go="artStats"]')) bad.push(`${n}: у главы без art_director дверь artStats`);
+      if (!(await s.p.$('#view [data-go="clubStats"]'))) bad.push(`${n}: у главы нет «Статистики клуба» — признак «Управления» мёртв`);
+      await s.p.evaluate(() => go('artStats')); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes(await W(s, 'artStats.denyTitle')) || artCalls(s).length) bad.push(`${n}: экран открылся не-арт-директору или ручку спросили`);
+      await s.ctx.close();
+      s = await asopen(ART, () => json(403, { detail: 'нужна роль art_director' }));
+      await go32(s, n);
+      const vb = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (vb !== 'нужна роль art_director') bad.push(`${n}: отказ «${vb}», ждали словами сервера`);
+      await s.ctx.close();
+      let k = 0;
+      s = await asopen(ART, () => ++k === 1 ? json(200, { events: { count: 1 } }) : json(200, AS_RESP()));
+      await go32(s, n);
+      if (!(await s.view()).includes(await W(s, 'artStats.error'))) bad.push(`${n}: битый ответ — не «не загрузилось»`);
+      await s.p.click('[data-action="as-retry"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Повторить»`));
+      await s.p.waitForTimeout(400);
+      if (!(await card(s, await W(s, 'artStats.money.title')))) bad.push(`${n}: «Повторить» не перечитало`);
+      await s.ctx.close();
+    }
+    {
+      // art-pozdniy: ответ первого периода (месяц) задержан, второй (неделя) пришёл раньше — на экране числа недели.
+      // Держит защиту `gen !== AS.gen` в loadArtStats (мутант ревью #378 выжил без этого случая); образец — queue-late.
+      const n = 'art-pozdniy';
+      let landed = false;
+      const s = await asopen(ART, p => p.get('period') === 'month'
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, AS_RESP({ kind: 'month', events: { count: 77, bookings: 2, collected: '400.00' }, accrued: '777.00' }))); }, 1500))
+        : json(200, AS_RESP({ kind: p.get('period'), events: { count: 4, bookings: 2, collected: '400.00' }, accrued: '15.00' })));
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет вкладки «Управление»`));
+      await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="artStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери artStats`));
+      await s.p.waitForTimeout(100);
+      await s.p.click('[data-action="as-period:week"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза week`));
+      await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: ответ месяца пришёл раньше запроса недели — гонки не было, случай гарда не проверяет`);
+      if (artCalls(s).map(c => new URL(c.url).searchParams.get('period')).join() !== 'month,week') bad.push(`${n}: запросы ушли не «month,week»`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный ответ месяца так и не пришёл — гонки не было`);
+      const e = await card(s, await W(s, 'artStats.events.title')), m = await card(s, await W(s, 'artStats.money.title'));
+      if (!e || !e.includes((await W(s, 'artStats.events.count')) + '4')) bad.push(`${n}: на экране недели не её «Ивенты»: «${e}»`);
+      if (!m || m.includes('777') || !m.includes((await W(s, 'artStats.money.accrued')) + '15 ฿')) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${m}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
   }
@@ -6476,6 +6645,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const GOST = clone(OWNER);
     // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
+    // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009): новичок без членства теперь начинает с «Клуба» — предусловие случая («гость
+    // не с „Клуба“, вкладки „Клуб“ нет») держит только РАБОТНИК бизнеса без членства (его дом — «Услуги», решение №13)
+    GOST.roles = [{ role: 'worker', direction_id: 1 }];
     /* Фикстура своя, БЕЗ записей: общая `AFISHA` несёт уже записанное
        событие (id 4, `booked_by_me: true`), и на ней экран показал бы строку,
        а не пустое состояние — судить пустоту на фикстуре с записью значит
@@ -6528,6 +6700,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const GOST = clone(OWNER);
     // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
+    // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009): новичок без членства теперь начинает с «Клуба» — предусловие случая («гость
+    // не с „Клуба“, вкладки „Клуб“ нет») держит только РАБОТНИК бизнеса без членства (его дом — «Услуги», решение №13)
+    GOST.roles = [{ role: 'worker', direction_id: 1 }];
     const S_ZAPISYU = [
       EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
       EV({ id: 11, title: 'Через три дня', starts_at: atBkk(3, 18), duration_min: 90,
@@ -12842,7 +13017,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'withdraw-mine-club': { requests: [RA_REQ(40, 'club', 'pending')], balance: '3170.00' },
     // шаг 31 (Cafe13KPG#688): заглушки случаев `stats-*` против снимка api 61db38e
     'stats-club-month-2020-03': CS_RESP({ closed: CS_CLOSED }), 'stats-club-month-now': CS_RESP({ current: CS_CURRENT }),
-    'stats-club-empty-day': CS_RESP({ events: { count: 0, bookings: null, collected: null }, isNew: 0, arrivals: 0 }, 'day')
+    'stats-club-empty-day': CS_RESP({ events: { count: 0, bookings: null, collected: null }, isNew: 0, arrivals: 0 }, 'day'),
+    // шаг 32 (Cafe13KPG#563): заглушки случаев `art-*` против снимка api 65e62d8
+    'stats-art-month-2019-03': AS_RESP(),
+    'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] })
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
@@ -13773,6 +13951,52 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       }
       await s.ctx.close();
     }
+  }
+  // ── ключи перевода (решение владельца №22; шаг 32, Cafe13KPG#563; словарь js/00-slova.js) ──
+  // Краснеет: (1) вызов slovo('…') в клиенте с ключом, которого нет в SLOVA.ru или он пуст; (2) вызов не литералом —
+  // такой ключ прибору не проверить; (3) языков не th, my, en, ru; (4) отсутствующий ключ дал не сам себя (пустую
+  // строку, русский текст другого языка); (5) подстановка не подставилась или съела непереданное `{имя}`.
+  // Ключи берутся из ТЕКСТА клиента (склейка index.html), а словарь — со страницы: так сверяется то, что грузится.
+  if (part(1)) {
+    const n = 'slova-klyuchi';
+    const calls = [];
+    for (const f of KL.files) {
+      if (f.file === 'js/00-slova.js') continue;            // там пример вызова в пояснении, не вызов
+      const re = /\bslovo\(/g; let m;
+      while ((m = re.exec(f.text))) {
+        if (/function\s+$/.test(f.text.slice(Math.max(0, m.index - 12), m.index))) continue;
+        const lit = /^slovo\(\s*'([^'\\\n]+)'/.exec(f.text.slice(m.index));
+        const line = f.text.slice(0, m.index).split('\n').length;
+        if (!lit) bad.push(`${n}: ${f.file}:${line} — slovo() не с литералом ключа: прибору его не проверить`);
+        else calls.push({ key: lit[1], at: `${f.file}:${line}` });
+      }
+    }
+    if (!calls.length) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — в клиенте нет ни одного вызова slovo('…'), сверять нечего`);
+    const s = await open(true, true, json(200, OWNER));
+    const got = await s.p.evaluate(keys => {
+      if (typeof SLOVA === 'undefined' || typeof slovo !== 'function' || typeof LANGS === 'undefined') return null;
+      const r = { langs: LANGS.join(','), dict: Object.keys(SLOVA).join(','), lang: LANG,
+                  miss: keys.filter(k => !Object.prototype.hasOwnProperty.call(SLOVA.ru, k) || typeof SLOVA.ru[k] !== 'string' || SLOVA.ru[k] === '') };
+      const K = 'slova.proverka.obrazec', had = Object.prototype.hasOwnProperty.call(SLOVA.ru, K);
+      r.absent = slovo('slova.proverka.netTakogo');
+      SLOVA.ru[K] = 'до {a} и {b} после';
+      r.sub = slovo(K, { a: 1 }); r.plain = slovo(K);
+      const was = LANG; LANG = 'th'; r.th = slovo(K); LANG = was;
+      if (!had) delete SLOVA.ru[K];
+      return r;
+    }, [...new Set(calls.map(c => c.key))]);
+    if (!got) bad.push(`${n}: на странице нет SLOVA, LANGS или slovo() — словарь не загрузился`);
+    else {
+      if (got.langs !== 'th,my,en,ru' || got.dict !== 'th,my,en,ru') bad.push(`${n}: языки «${got.langs}», словари «${got.dict}», ждали th,my,en,ru`);
+      if (got.lang !== 'ru') bad.push(`${n}: язык по умолчанию «${got.lang}», ждали ru — выбора языка в клиенте нет`);
+      got.miss.forEach(k => bad.push(`${n}: ключа «${k}» нет в SLOVA.ru (${calls.filter(c => c.key === k).map(c => c.at).join(', ')}) — на экране встанет сам ключ`));
+      if (got.absent !== 'slova.proverka.netTakogo') bad.push(`${n}: отсутствующий ключ дал «${got.absent}», а не сам ключ (AGENTS §4)`);
+      if (got.sub !== 'до 1 и {b} после') bad.push(`${n}: подстановка дала «${got.sub}», ждали «до 1 и {b} после»`);
+      if (got.plain !== 'до {a} и {b} после') bad.push(`${n}: без подстановок дало «${got.plain}»`);
+      if (got.th !== 'slova.proverka.obrazec') bad.push(`${n}: ключа нет в th, а отдано «${got.th}» — подмена другим языком`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
   }
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──

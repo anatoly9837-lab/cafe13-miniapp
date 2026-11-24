@@ -33,7 +33,10 @@ Object.assign(SCREENS, {
     var art = mayMasters() || own ? '<div class="group"><span class="label">Ивенты</span>' +
       (mayMasters() ? '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
         '<span class="small">' + waitSub(MR.pending, 'Заявки в мастера, ивенты, слоты') + '</span></span>' +
-        waitMark(MR.pending) + svg(ICON.chev, 'chev') + '</button>' : '') + own + '</div>' : '';
+        waitMark(MR.pending) + svg(ICON.chev, 'chev') + '</button>' : '') + own +
+      // шаг 32 (рецепт 32/artStats, C0): статистика арт-директора — в группе его работы, у art_director и админа
+      (mayArtStats() ? '<button type="button" class="listitem" data-go="artStats"><span class="grow"><b>' + esc(slovo('artStats.door')) + '</b></span>' +
+        svg(ICON.chev, 'chev') + '</button>' : '') + '</div>' : '';
     // шаг 12 (кадр E46е, Cafe13KPG#877): «Бизнесы» — у операционного директора (и админа). Пометки ждущих нет:
     // ждать тут нечему до шага 13, его строка «Заявки в партнёры» ляжет в эту же группу
     var biz = mayOps() ? '<div class="group"><span class="label">Бизнесы</span>' +
@@ -596,5 +599,108 @@ Object.assign(SCREENS, {
     var T = '<div class="card"><b>Касса</b><div class="rows">' + row('Незнакомцев у кассы', s.arrivals) + '</div>' +
       '<span class="small">Те, кто нажал в боте «Я у кассы» за период.</span></div>';
     return seg + nav + D + M + E + B + T;
+  },
+});
+
+/* ── шаг 32: статистика арт-директора (ТЗ Cafe13KPG#563 ред. 1, рецепт `_docs/recept/ekran/32/artStats.md`, снимок формы
+   api 65e62d8 — в карточке Cafe13KPG#563) ── ПЕРВЫЙ экран на ключах перевода (решение владельца №22): ни одной
+   русской строки в разметке, только вызовы slovo с ключом artStats.*; словарь — js/00-slova.js. Слова сервера (detail отказа) — не
+   ключи. Родственник clubStats, но другой предмет и другая ручка: `GET /stats/art?period=&at=`. Разрез, ‹ › и окно —
+   те же функции шага 31 (csStart, csShift, csDay), даты экран не считает. `balance` и `expected` — состояние «сейчас»,
+   от периода не зависят (уточнение контракта #563); `accrued` — за окно. Пусто ≠ 0: `bookings`/`collected` = null при
+   count = 0 (E1), `expected_events` = 0 — «ждать нечего» (D1, а не «0 ฿»). Числа не кэшируются между периодами. */
+var AS = { period: 'month', at: '', data: null, fail: '', deny: '', gen: 0 };
+function mayArtStats() { return LIVE && (grant('art_director') || grant('admin')); }
+function asLabel(period, ymd) {
+  var s = csStart(period, ymd);
+  if (period === 'day') return slovo('artStats.period.dayLabel', { date: csDay(s) });
+  if (period === 'month') {
+    var w = bmMonth(Date.parse(s.slice(0, 8) + '15T12:00:00Z')).split(' ');
+    return slovo('artStats.period.monthLabel', { month: w[0], year: s.slice(0, 4) });
+  }
+  var e = csAdd(s, 6), a = s.split('-'), b = e.split('-');
+  return slovo('artStats.period.weekLabel', { from: Number(a[2]) + (a[1] === b[1] ? '' : ' ' + MONTHS[Number(a[1]) - 1]),
+                                             to: Number(b[2]) + ' ' + MONTHS[Number(b[1]) - 1] });
+}
+/* Одна битая часть — отказ целиком: страница с пропавшим блоком читалась бы полной. */
+function fromArtStats(d) {
+  if (!d || typeof d !== 'object') return null;
+  var e = d.events, ms = d.masters, m = d.money;
+  if (!e || typeof e !== 'object' || !Array.isArray(ms) || !m || typeof m !== 'object') return null;
+  if (!csCount(e.count)) return null;
+  var none = e.count === 0;
+  if (none ? e.bookings !== null || e.collected !== null : !csCount(e.bookings) || !isFinite(csMoney(e.collected))) return null;
+  var masters = [];
+  for (var i = 0; i < ms.length; i++) {
+    var x = ms[i];
+    if (!x || typeof x.name !== 'string' || !csCount(x.payouts) || !isFinite(csMoney(x.amount))) return null;
+    masters.push({ name: x.name, payouts: x.payouts, amount: csMoney(x.amount) });
+  }
+  // ВЫБОР рецепта: от большей суммы — арт-директор ищет, кому ушло больше; равные — по имени
+  masters.sort(function (a, b) { return b.amount - a.amount || a.name.localeCompare(b.name, 'ru'); });
+  var bal = csMoney(m.balance), acc = csMoney(m.accrued), exp = csMoney(m.expected);
+  if (!isFinite(bal) || !isFinite(acc) || !isFinite(exp) || !csCount(m.accrued_count) || !csCount(m.expected_events)) return null;
+  return { count: e.count, bookings: none ? null : e.bookings, collected: none ? null : csMoney(e.collected),
+           masters: masters, balance: bal, accrued: acc, expected: m.expected_events === 0 ? null : exp };
+}
+function loadArtStats() {
+  if (!mayArtStats()) return;
+  var gen = ++AS.gen, who = WHO;
+  AS.data = null; AS.fail = ''; AS.deny = '';
+  api('GET', '/stats/art?period=' + AS.period + '&at=' + AS.at).then(function (r) {
+    if (gen !== AS.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromArtStats(r.data) : null;
+    if (got) AS.data = got;
+    else if (r.status === 403) AS.deny = detailOf(r) || failText(r);
+    else AS.fail = failText(r);
+    if (current === 'artStats') render();
+  });
+}
+function asMove(dir) {
+  if (dir > 0 && csStart(AS.period, AS.at) >= csStart(AS.period, msToday())) return;   // › погашена на текущем
+  AS.at = csShift(AS.period, AS.at, dir); loadArtStats(); render();
+}
+
+Object.assign(SCREENS, {
+  artStats: function () {
+    if (!mayArtStats()) return '<div class="card quiet"><div class="col"><b>' + esc(slovo('artStats.denyTitle')) + '</b>' +
+      '<span class="small">' + esc(slovo('artStats.denyNote')) + '</span></div></div>';
+    // ключ — литералом у каждого разреза: склеенный из частей ключ прибору (slova-klyuchi) не проверить
+    var P = [['day', slovo('artStats.period.day')], ['week', slovo('artStats.period.week')], ['month', slovo('artStats.period.month')]];
+    var seg = '<div class="seg">' + P.map(function (x) {
+      return '<button type="button" data-action="as-period:' + x[0] + '" aria-pressed="' + (AS.period === x[0]) + '">' +
+        esc(x[1]) + '</button>';
+    }).join('') + '</div>';
+    var last = csStart(AS.period, AS.at) >= csStart(AS.period, msToday());
+    var nav = '<div class="row"><button type="button" class="btn ghost" data-action="as-prev" aria-label="' + esc(slovo('artStats.period.prev')) + '">‹</button>' +
+      '<b>' + esc(asLabel(AS.period, AS.at)) + '</b>' +
+      '<button type="button" class="btn ghost" data-action="as-next" aria-label="' + esc(slovo('artStats.period.next')) + '"' + (last ? ' disabled' : '') + '>›</button></div>' +
+      // N3 — всегда: ивент по дню ивента, деньги по дню распределения (ТЗ, «три надписи, без которых экран врёт»)
+      '<span class="small">' + esc(slovo('artStats.period.clockNote')) + '</span>';
+    if (AS.deny) return seg + nav + '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(AS.deny) + '</span></div>';
+    if (AS.fail) return seg + nav + '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('artStats.error')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="as-retry">' + esc(slovo('artStats.retry')) + '</button></div></div>';
+    if (!AS.data) return seg + nav + '<div class="card quiet"><span class="small">' + esc(slovo('artStats.loading')) + '</span></div>';
+    var s = AS.data;
+    var row = function (label, val) { return '<div><span class="small">' + esc(label) + '</span><b class="num">' + val + '</b></div>'; };
+    // E / E1, N1 — всегда (решение №30: наличные вне распределения, страница говорит это прямым текстом)
+    var E = '<div class="card"><b>' + esc(slovo('artStats.events.title')) + '</b><div class="rows">' + row(slovo('artStats.events.count'), s.count) +
+        (s.count === 0 ? '' : row(slovo('artStats.events.bookings'), s.bookings) + row(slovo('artStats.events.collected'), bmSum(s.collected))) + '</div>' +
+      (s.count === 0 ? '<span class="small">' + esc(slovo('artStats.events.none')) + '</span>' : '') +
+      '<span class="small">' + esc(slovo('artStats.events.cashNote')) + '</span></div>';
+    var M = '<div class="card"><b>' + esc(slovo('artStats.masters.title')) + '</b>' +
+      (s.masters.length ? '<div class="rows">' + s.masters.map(function (x) {
+          return '<div><span class="col"><span class="clamp1">' + esc(x.name) + '</span><span class="small">' +
+            esc(slovo('artStats.masters.payouts', { n: x.payouts })) + '</span></span><b class="num">' + bmSum(x.amount) + '</b></div>';
+        }).join('') + '</div>'
+        : '<span class="small">' + esc(slovo('artStats.masters.none')) + '</span>') + '</div>';
+    // D: balance и expected — «сейчас», accrued — за период (D2); D1 — строка, а не «0 ฿»; N2 — всегда (решение №31)
+    var D = '<div class="card"><b>' + esc(slovo('artStats.money.title')) + '</b><div class="rows">' +
+        row(slovo('artStats.money.balance'), bmSum(s.balance)) + row(slovo('artStats.money.accrued'), bmSum(s.accrued)) +
+        '<div><span class="small">' + esc(slovo('artStats.money.expected')) + '</span>' + (s.expected === null
+          ? '<span class="small">' + esc(slovo('artStats.money.expectedNone')) + '</span>' : '<b class="num">' + bmSum(s.expected) + '</b>') + '</div></div>' +
+      '<span class="small">' + esc(slovo('artStats.money.nowNote')) + '</span>' +
+      '<span class="small">' + esc(slovo('artStats.money.roleNote')) + '</span></div>';
+    return seg + nav + E + M + D;
   },
 });
