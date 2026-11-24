@@ -71,11 +71,11 @@
 | `master` | `sostav` | — | 4470 | 4 | 0 |
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
-| `odobrenie` | `sostav` | — | 4281 | 4 | 0 |
+| `odobrenie` | `sostav` | — | 4388 | 4 | 0 |
 | `popolnenie` | `noAccess` | — | 4185 | 3 | 6 |
 | `popolnenie` | `sostav` | — | 4762 | 4 | 0 |
 | `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
-| `popolnenie` | `topup` | — | 5429 | 3 | 0 |
+| `popolnenie` | `topup` | — | 5488 | 3 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
 - `Исключение, а не долг: чем они отличаются` — строк 7
