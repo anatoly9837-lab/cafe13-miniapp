@@ -72,7 +72,7 @@
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
 | `odobrenie` | `sostav` | — | 4388 | 4 | 0 |
-| `popolnenie` | `noAccess` | — | 4185 | 3 | 6 |
+| `popolnenie` | `noAccess` | — | 5852 | 3 | 7 |
 | `popolnenie` | `sostav` | — | 4762 | 4 | 0 |
 | `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
 | `popolnenie` | `topup` | — | 5488 | 3 | 0 |
