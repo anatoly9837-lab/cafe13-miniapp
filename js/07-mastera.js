@@ -529,8 +529,8 @@ function sendPayout(id) {
    владельца 20.11.2026: выводится весь остаток), держатель `admin` одобряет или отказывает. Шаг записывает факт,
    а не выплачивает. Остаток с суммой клиент НЕ сравнивает: «не в минус» проверяет сервер — на запросе и, под замком,
    на одобрении (остаток мог упасть между ними). Остаток после решения — только перечитанный `/me`. */
-var WD = { list: null, fail: '', gen: 0, busy: false, err: '', amount: '', who: -1 };
-var WQ = { list: null, pending: null, fail: '', gen: 0, busy: 0, err: {}, note: {}, done: '', who: -1 };
+var WD = { list: null, fail: '', deny: '', gen: 0, busy: false, err: '', amount: '', who: -1 };
+var WQ = { list: null, pending: null, fail: '', deny: '', gen: 0, busy: 0, err: {}, note: {}, done: '', who: -1 };
 // слова состояний — рецепта (W6–W9), а не `status_ru`: «одобрен — списано со счёта» говорит, что стало с деньгами
 var WD_WORD = { pending: 'ждёт решения', approved: 'одобрен — списано со счёта', rejected: 'отказан', cancelled: 'отменён' };
 var WD_PILL = { pending: ' gold', approved: ' on', rejected: '', cancelled: '' };
@@ -564,12 +564,14 @@ function loadWithdraw() {
   if (!mayWithdraw()) return;
   var gen = ++WD.gen, who = WHO;
   if (WD.who !== WHO) { WD.list = null; WD.amount = ''; WD.err = ''; WD.who = WHO; }
-  WD.fail = '';
+  WD.fail = ''; WD.deny = '';
   api('GET', '/withdraw/requests/mine').then(function (r) {
     if (gen !== WD.gen || who !== WHO) return;
     var got = r.status === 200 ? fromWithdrawMine(r.data) : null;
     // свои запросы с ЛИЧНОГО счёта: с шагов 26–30 тот же список несёт и запросы со счетов ролей и бизнеса
     if (got) WD.list = got.filter(function (q) { return q.account === 'personal'; });
+    // рецепт отказов (ekran/otkazy.md): 403 загрузки — отказ сервера его словами, без «Повторить»; не «не загрузилось»
+    else if (r.status === 403) { WD.list = null; WD.deny = wdServerWord(r); }
     else { WD.list = null; WD.fail = r.status === 200 ? failText(r) : wdServerWord(r); }
     if (current === 'withdraw') render();
   });
@@ -618,11 +620,12 @@ function loadWithdrawQueue() {
   if (!mayWithdrawQueue()) return;
   var gen = ++WQ.gen, who = WHO;
   if (WQ.who !== WHO) { WQ.list = null; WQ.pending = null; WQ.err = {}; WQ.note = {}; WQ.done = ''; WQ.who = WHO; }
-  WQ.fail = '';
+  WQ.fail = ''; WQ.deny = '';
   api('GET', '/withdraw/requests').then(function (r) {
     if (gen !== WQ.gen || who !== WHO) return;
     var got = r.status === 200 ? fromWithdrawQueue(r.data) : null;
     if (got) { WQ.list = got.list; WQ.pending = got.pending; }
+    else if (r.status === 403) { WQ.list = null; WQ.pending = null; WQ.deny = wdServerWord(r); }   // рецепт отказов: 403 — отказ
     else { WQ.list = null; WQ.pending = null; WQ.fail = r.status === 200 ? failText(r) : wdServerWord(r); }
     if (current === 'withdrawQueue' || current === 'manage') render();
   });
@@ -660,7 +663,7 @@ document.addEventListener('input', function (ev) {
 // роль → счёт и его слово (R1 и заголовок); у владельца `head` и `god_mentor` — одна роль, счёт клуба один
 var RA_ACC = { art_director: 'art_director', space_manager: 'space_manager', head: 'club' };
 var RA_WORD = { art_director: 'Счёт арт-директора', space_manager: 'Счёт управляющей пространством', club: 'Счёт клуба' };
-var RA = { acc: '', accs: null, mine: null, fail: '', gen: 0, busy: false, err: '', amount: '', who: -1 };
+var RA = { acc: '', accs: null, mine: null, fail: '', deny: '', gen: 0, busy: false, err: '', amount: '', who: -1 };
 function raAccounts() {
   return LIVE ? (DATA.roles || []).map(function (r) { return RA_ACC[r]; })
     .filter(function (a, i, all) { return a && all.indexOf(a) === i; }) : [];
@@ -682,23 +685,27 @@ function fromRaAccounts(d) {
 }
 function loadRoleAccount() {
   if (!mayRoleAccount(RA.acc)) return;
-  var gen = ++RA.gen, who = WHO, left = 2, accs, mine, fail = '';
+  var gen = ++RA.gen, who = WHO, left = 2, accs, mine, fail = '', deny = '';
   if (RA.who !== WHO) { RA.accs = null; RA.mine = null; RA.amount = ''; RA.err = ''; RA.who = WHO; }
-  RA.fail = '';
+  RA.fail = ''; RA.deny = '';
   var done = function () {
     if (--left || gen !== RA.gen || who !== WHO) return;
-    if (fail) { RA.accs = null; RA.mine = null; RA.fail = fail; }
+    // рецепт отказов: 403 любой из двух ручек — отказ сервера, он важнее сбоя второй
+    if (deny) { RA.accs = null; RA.mine = null; RA.deny = deny; }
+    else if (fail) { RA.accs = null; RA.mine = null; RA.fail = fail; }
     else { RA.accs = accs; RA.mine = mine; }
     if (current === 'roleAccount') render();
   };
   api('GET', '/withdraw/accounts').then(function (r) {
     accs = r.status === 200 ? fromRaAccounts(r.data) : null;
-    if (!accs && !fail) fail = r.status === 200 ? failText(r) : wdServerWord(r);
+    if (r.status === 403 && !deny) deny = wdServerWord(r);
+    else if (!accs && !fail) fail = r.status === 200 ? failText(r) : wdServerWord(r);
     done();
   });
   api('GET', '/withdraw/requests/mine').then(function (r) {
     var d = r.status === 200 ? fromWithdrawMine(r.data) : null;
     if (d) mine = d.filter(function (q) { return q.account === RA.acc; });
+    else if (r.status === 403) { if (!deny) deny = wdServerWord(r); }
     else if (!fail) fail = r.status === 200 ? failText(r) : wdServerWord(r);
     done();
   });

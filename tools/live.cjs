@@ -4192,6 +4192,35 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   // ── шаги 27, 29, 30 (Cafe13KPG#557: ТЗ, форма — ПРОЕКТ `backend-uvedomleniya-4e` до снимка; рецепт `_docs/recept/ekran/27/roleAccount.md`):
   // держатель роли со счётом в книге клуба видит остаток СВОЕЙ роли и просит вывод; решает admin в «Запросах на вывод» (шаг 25)
+  // ── рецепт отказов (`_docs/recept/ekran/otkazy.md`, Cafe13KPG#1009, miniapp#388): 403 при ЗАГРУЗКЕ вывода, очереди
+  //    вывода и счёта роли — отказ сервера его словами (.deny → .verbatim, дословно), БЕЗ «Повторить»: повтор дал бы тот же
+  //    отказ. Контроль на тех же экранах — 500: «не загрузилось» с «Повторить» остаётся (данные различают ветки) ──
+  if (part(2)) {
+    const n = 'otkaz-403-zagruzka';
+    const who = r => { const m = clone(OWNER); m.roles = [{ role: r, direction_id: null }]; return m; };
+    for (const [scr, arg, role, word, retry, gets] of [
+      ['withdraw', null, 'master', 'вывод денег чужими глазами не делается', 'wd-retry', ['/withdraw/requests/mine']],
+      ['withdrawQueue', null, 'admin', 'вывод денег одобряет администратор клуба', 'wq-retry', ['/withdraw/requests']],
+      ['roleAccount', 'art_director', 'art_director', 'счёт арт-директора выводит держатель этой роли', 'ra-retry', ['/withdraw/accounts', '/withdraw/requests/mine']]]) {
+      for (const code of [403, 500]) {
+        const s = await open(true, true, json(200, who(role)), null, null, null, q => {
+          const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+          if (q.method() === 'GET' && gets.includes(u)) return code === 403 ? json(403, { detail: word }) : json(500, {});
+          return undefined;
+        });
+        await s.p.evaluate(([x, y]) => go(x, y), [scr, arg]); await s.p.waitForTimeout(400);
+        const g = await s.p.evaluate(r => ({ v: (x => x ? x.textContent : null)(document.querySelector('#view .deny .verbatim')),
+          retry: !!document.querySelector(`#view [data-action="${r}"]`), t: document.getElementById('view').textContent }), retry);
+        if (code === 403) {
+          if (g.v !== word) bad.push(`${n} ${scr}: 403 загрузки — «${g.v}», ждали слова сервера дословно в .deny .verbatim`);
+          if (g.retry) bad.push(`${n} ${scr}: у отказа 403 есть «Повторить» — повтор даст тот же отказ`);
+          if (/не загрузил/.test(g.t)) bad.push(`${n} ${scr}: отказ 403 назван «не загрузилось»`);
+        } else if (!g.retry || g.v !== null) bad.push(`${n} ${scr}: ПРОВЕРКА НЕ РАЗЛИЧАЕТ — у сбоя 500 нет «Повторить» или есть .deny`);
+        if (s.errs.length) bad.push(`${n} ${scr}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+    }
+  }
   // заглушки счёта роли — по снимку api bdff63e (Cafe13KPG#557): их же сверяет страж формы (STUBS, `withdraw-accounts-role`, `withdraw-mine-club`)
   const RA_ACCROW = (account, balance, pending) => ({ account, book: 'club_ledger', direction_id: null, direction_title: null, balance, pending: pending || null });
   const RA_REQ = (id, account, st) => ({ id, role: account, book: 'club_ledger', account, direction_id: null, payout_id: null, amount: '400.00', status: st,
