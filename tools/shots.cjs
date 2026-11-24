@@ -216,7 +216,47 @@ const LIVE_SHOTS = [
    { '/withdraw/accounts': { accounts: [{ account: 'art_director', book: 'club_ledger', direction_id: null, direction_title: null,
                                           balance: '1200.00', pending: null }] },
      '/withdraw/requests/mine': { requests: [], balance: '3170.00' } }],
+  ['65-role-account-wait', 'roleAccount', 'art_director', 'Отменить запрос', 'Клуб · ответственность',
+   'Счёт роли с СВОИМ ждущим запросом (шаг 27, рецепт `_docs/recept/ekran/27/roleAccount.md`): строка запроса — сумма, ' +
+   '`.pill` состояния и «Отменить запрос» (R10, `.btn ghost`) в списке `.rows`. ⚠ Снимок ЖИВОГО режима на фикстуре; форма ' +
+   'ответа — по снимку api `withdraw-mine-club` (страж формы съёмки), числа — фикстура. Признак — «Отменить запрос»: кнопка ' +
+   'рисуется только у своего ждущего. Поле `pending` счёта — `null`: формы этого объекта в снимке api нет, и выдумывать её съёмка не вправе.',
+   ['art_director'],
+   { '/withdraw/accounts': { accounts: [{ account: 'art_director', book: 'club_ledger', direction_id: null, direction_title: null,
+                                          balance: '1200.00', pending: null }] },
+     '/withdraw/requests/mine': { requests: [{ id: 40, role: 'art_director', book: 'club_ledger', account: 'art_director',
+       direction_id: null, payout_id: null, amount: '400.00', status: 'pending', created_at: '2026-10-27T03:00:00+00:00',
+       decided_at: null, decision_note: null, ledger_id: null, status_ru: 'ждёт решения' }], balance: '3170.00' } }],
+  ['66-home-master', 'home', null, 'Ваши букинги', 'Мастер',
+   '«Клуб» члена со СВОИМ ждущим букингом (семья master, рецепт `_docs/recept/ekran/master/home.md`, строки H1–H2) и входом ' +
+   '«Забукать». ⚠ Снимок ЖИВОГО режима на фикстуре; форма ответов — по снимкам api `master-requests-mine-pending` и ' +
+   '`master-price` (страж формы съёмки), числа и названия — фикстура. Признак — «Ваши букинги»: заголовок рисуется только ' +
+   'по пришедшему непустому списку. Ручки партнёрства фикстуры не имеют (404) — их блок на снимке в виде отказа.',
+   [],
+   { '/master/requests/mine': { requests: [{ id: 821, title: 'Ждущий вечер', about: '', seats: 8, place_id: 1, place_name: 'Зал',
+       weekday: 4, weekday_ru: 'четверг', start_local: '19:00', hours: 2, hours_extra: 0, amount: '100', status: 'pending',
+       status_ru: 'ждёт решения', created_at: '2026-10-27T03:00:00+00:00', decided_at: null, decision_note: '',
+       paid_till: null, paid_until: null, starts_at: '2026-10-30T12:00:00+00:00' }] },
+     '/master/price': { amount: '100', hours: 2, hours_included: 2 } }],
 ];
+/* Страж формы живого съёма (координатор 24.11.2026: фикстура не должна стать ВТОРЫМ источником правды о сервере).
+   Каждая фикстура обязана совпасть ключами хотя бы с одним снимком api той же ручки (`tools/api-keys.json`, ответ 200):
+   те же ключи на каждом уровне; `null` снимка — лист (скаляр или null); пустой массив снимка формы элемента не знает. */
+const СНИМКИ_API = JSON.parse(fs.readFileSync(__dirname + '/api-keys.json', 'utf8'));
+const формаСошлась = (ф, с) => {
+  if (с === null) return ф === null || typeof ф !== 'object';
+  if (Array.isArray(с)) return Array.isArray(ф) && (ф.length === 0 || (с.length > 0 && ф.every(x => формаСошлась(x, с[0]))));
+  if (!ф || typeof ф !== 'object' || Array.isArray(ф)) return false;
+  const кф = Object.keys(ф).sort(), кс = Object.keys(с).sort();
+  return кф.join() === кс.join() && кф.every(к => формаСошлась(ф[к], с[к]));
+};
+const стражФормы = () => LIVE_SHOTS.flatMap(([имя, , , , , , , ручки]) => Object.keys(ручки).flatMap(ручка => {
+  const снимки = Object.entries(СНИМКИ_API).filter(([, v]) => v.status === 200 &&
+    v.request.split(' ')[0] === 'GET' && v.request.split(' ')[1].split('?')[0] === ручка);
+  if (!снимки.length) return [имя + ': у ручки ' + ручка + ' снимка api нет — форма фикстуры была бы выдумкой'];
+  return снимки.some(([, v]) => формаСошлась(ручки[ручка], v.shape)) ? []
+    : [имя + ': фикстура ' + ручка + ' не совпала формой ни с одним снимком api (' + снимки.map(([к]) => к).join(', ') + ')'];
+}));
 const DARK = [['30-home-dark', 'home', 'Пропуск', 'Ночная тема', 'Главный экран ночью. Тему даёт Telegram, не приложение.']];
 
 /* Опись обязана сниматься одинаково в любой день и у любого (Cafe13KPG#445).
@@ -555,6 +595,7 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
   /* живой съём — после демо, своим контекстом: демо-контекст не знает Telegram,
      и смешать их в одной странице значило бы снимать демо с подписью */
   if (LIVE_SHOTS.length) {
+    bad.push(...стражФормы());
     const KLL = klientLive('/app'), API_FILE = apiOnFile(KLL);
     const apiText = KLL.files.find(f => f.file === API_FILE).text;
     const INIT = 'query_id=AAE&user=%7B%22id%22%3A1%7D&auth_date=1760000000&hash=stub';
