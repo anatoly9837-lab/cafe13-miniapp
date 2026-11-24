@@ -94,7 +94,8 @@ Object.assign(SCREENS, {
       'доля вашего членского взноса и пополнения — счёт у них один.</span></div>';
     var bal = '<div class="row"><span class="small">На счёте:</span><b class="num">' + money(DATA.member.balance) + ' ฿</b></div>';
     // без списка своих запросов форма не показывается: мастер подал бы второй вслепую (рецепт, «не загрузилось»)
-    if (!WD.list) return '<div class="card">' + bal + '</div>' + w2 + (WD.fail
+    // рецепт отказов (ekran/otkazy.md): 403 загрузки — слова сервера .deny → .verbatim на месте списка, без «Повторить»
+    if (!WD.list) return '<div class="card">' + bal + '</div>' + w2 + (WD.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(WD.deny) + '</span></div>' : WD.fail
       ? '<div class="card quiet"><div class="col"><b>Запросы не загрузились.</b><span class="verbatim">' + esc(WD.fail) + '</span></div>' +
         '<button type="button" class="btn" data-action="wd-retry">Повторить</button></div>'
       : '<div class="card quiet"><span class="small">Загружаем запросы…</span></div>');
