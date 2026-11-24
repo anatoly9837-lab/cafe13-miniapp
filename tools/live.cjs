@@ -2099,9 +2099,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // «Вас приняли… Осталось войти», а «Войти» возвращало сюда же. Под ОБОИМИ входами на экран: 403 (исключённый)
     // и 200 без живого членства (слово владельца 05.11.2026 — такой человек видит только просьбу). Признак — форма
     // новой просьбы есть, ложных слов нет; «Войти» не нажимается, потому что кнопки нет
-    for (const [n, me] of [['join-petlya-403', json(403, { detail: 'доступа нет' })],
-                           ['join-petlya-bez-chlenstva', (() => { const g = clone(OWNER); g.membership_active = false;
-                             g.membership = null; g.memberships = []; g.roles = []; return json(200, g); })()]]) {
+    // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009): второй вход — «200 без живого членства» — снят: такой человек теперь начинает с
+    // «Клуба» (случай dver-dom), экрана просьбы у него нет. Остаётся выгнанный (403)
+    for (const [n, me] of [['join-petlya-403', json(403, { detail: 'доступа нет' })]]) {
       const s = await joinCase(json(200, withReq('approved')), null, () => me);
       const t = await s.view();
       if (await s.p.evaluate(() => current) !== 'noAccess') bad.push(`${n}: не на экране просьбы (${await s.p.evaluate(() => current)})`);
@@ -2109,21 +2109,48 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!(await s.p.$('#join-file'))) bad.push(`${n}: нет формы новой просьбы`);
       await s.ctx.close();
     }
-    // 0.1 «Путь мастера», слово владельца 05.11.2026: «человек без живого членства попадает на просьбу о вступлении
-    // и видит только её». Пара — без прав и держатель права (ответственный за пополнения): у второго «Управления»
-    // тоже нет, это названная цена решения. Признак «только её» — нет вкладок, нет «назад» ни нарисованной, ни
-    // системной; и не замороженные «Услуги» (прежний стартовый экран)
-    for (const [n, roles] of [['bez-chlenstva-prosba', []], ['bez-chlenstva-prosba-pravo', [{ role: 'topups', direction_id: null }]]]) {
+    // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009, рецепт `_docs/recept/ekran/dver/home.md`, api 5d79c84). Прежде здесь стоял случай
+    // «без членства — только просьба» (слово владельца 05.11.2026); рамка 24.11 его сняла: новичок без членства и без
+    // ролей начинает с «Клуба» (№24, №35), вкладки — как у члена, плашки членства и «Пропуска» нет (№45). Пара — без
+    // прав и держатель права без членства (ответственный за пополнения): у второго сверху «Управление» по праву.
+    // ⚠ «Я мастер» и запись на ивент новичку — после фич 3 и 5 (сервер 5d79c84 там ещё спрашивает членство): не здесь
+    for (const [n, roles, extra] of [['dver-dom', [], []], ['dver-dom-pravo', [{ role: 'topups', direction_id: null }], ['manage']]]) {
       const g = clone(OWNER); g.membership_active = false; g.membership = null; g.memberships = []; g.roles = roles;
       const s = await joinCase(json(200, JOIN0), null, () => json(200, g));
       const at = await s.p.evaluate(() => current);
-      if (at !== 'noAccess') bad.push(`${n}: стартовый экран «${at}», ждали «noAccess»`);
+      if (at !== 'home') bad.push(`${n}: стартовый экран «${at}», ждали «home» — новичок не на «Клубе»`);
+      const tabs = await s.p.$$eval('#tabs [data-go]', es => es.map(e => e.dataset.go));
+      const want = ['home', 'guest', 'events'].concat(extra);
+      if (tabs.join(',') !== want.join(',')) bad.push(`${n}: вкладки «${tabs.join(',')}», ждали «${want.join(',')}»`);
+      if (!(await s.tabsShown())) bad.push(`${n}: вкладки спрятаны — экран входа, а не «Клуб»`);
       const t = await s.view();
-      if (t.includes('временно недоступно')) bad.push(`${n}: стартовый экран — замороженный`);
-      if (!(await s.p.$('#join-file'))) bad.push(`${n}: на экране нет формы просьбы`);
-      if (await s.tabsShown()) bad.push(`${n}: видны вкладки — экран просьбы не «только он»`);
-      if (await s.p.evaluate(() => !document.getElementById('back').hidden || window.__backShown === true))
-        bad.push(`${n}: есть «назад» — с экрана просьбы есть выход`);
+      if (t.includes('Активно')) bad.push(`${n}: на «Клубе» новичка плашка членства («Активно»)`);
+      if (await s.p.$('#view [data-go="pass"]')) bad.push(`${n}: у новичка дверь «Пропуск» (решение №45 — пропуска нет)`);
+      if (await s.p.$('#join-file')) bad.push(`${n}: у новичка форма просьбы о вступлении`);
+      if (!t.includes('Мои записи')) bad.push(`${n}: на «Клубе» новичка нет «Мои записи» — признак «Клуба» мёртв`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // ДВЕРЬ: член с оплаченным членством ничего не теряет (№38) — дом, вкладка «Клуб», плашка и «Пропуск» на месте
+    {
+      const n = 'dver-chlen';
+      const s = await joinCase(json(200, JOIN0), null, () => json(200, OWNER));
+      if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: член не на «Клубе»`);
+      const tabs = await s.p.$$eval('#tabs [data-go]', es => es.map(e => e.dataset.go));
+      if (!tabs.includes('home')) bad.push(`${n}: у члена нет вкладки «Клуб»`);
+      if (!(await s.view()).includes('Активно')) bad.push(`${n}: у члена пропала плашка членства`);
+      if (!(await s.p.$('#view [data-go="pass"]'))) bad.push(`${n}: у члена пропала дверь «Пропуск»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // ДВЕРЬ: выгнанный (допуск снят — сервер отвечает 403 «доступа нет») — по-прежнему noAccess, «О клубе» с него открывается
+    {
+      const n = 'dver-vygnan';
+      const s = await joinCase(json(200, JOIN0));
+      if (await s.p.evaluate(() => current) !== 'noAccess') bad.push(`${n}: выгнанный не на noAccess (${await s.p.evaluate(() => current)})`);
+      if (await s.tabsShown()) bad.push(`${n}: у выгнанного видны вкладки`);
+      await tap(s, '[data-action="join-about"]');
+      if (await s.p.evaluate(() => current) !== 'joinAbout') bad.push(`${n}: «О клубе» с noAccess не открылось`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
@@ -2239,9 +2266,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // комментарий координатора 30.10.2026 в Cafe13KPG#670); партнёру — нет (tabs-dva-partner-vyigral)
       ['tabs-master-partner', who('organizer', ['organizer', 'partner']), ['home', 'guest', 'organizer', 'partner', 'events', 'manage']],
       ['tabs-tolko-member', who('member', ['member']), ['home', 'guest', 'events']],
-      // без живого членства — экран просьбы и ничего больше (слово владельца 05.11.2026, 0.1 «Путь мастера»): вкладок нет;
-      // прежде здесь ждали ['guest', 'events']
-      ['tabs-gost', who(null, []), []],
+      // без живого членства — вкладки члена (фича 1 «ДВЕРЬ», Cafe13KPG#1009, рецепт dver/home): «Клуб» за членством не
+      // прячется. Прежде (0.1, слово владельца 05.11.2026) — экран просьбы без вкладок, ещё раньше ['guest', 'events']
+      ['tabs-gost', who(null, []), ['home', 'guest', 'events']],
       // было `tabs-vse-sem` («все семь»): до v72 вкладок было семь. Имя без числа нарочно —
       // число в имени проверки стареет на следующей вкладке (решение координатора 28.10.2026)
       ['tabs-vse', who('partner', ['member', 'organizer', 'partner'], OWNER.roles), ALL]]) {
@@ -2927,7 +2954,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   const SAVED = { code: 'XIII-0042', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 };
   if (part(1)) for (const [name, reply, want, wiped] of [
-    ['pass-403', json(403, { detail: 'членство не активно' }), 'Членство не активно', true],
+    // фича 1 «ДВЕРЬ» (Cafe13KPG#1009, дополнение 2): причины «членство не активно» больше нет — отказ без её слов
+    ['pass-403', json(403, { detail: 'членство не активно' }), 'Сервер отказал в пропуске', true],
     ['pass-403-other', json(403, { detail: 'нужна роль' }), 'Сервер отказал в пропуске', true],
     ['pass-bad', json(200, { pass_code: '0042', level: 'member', lifelong: true }), 'Ответ сервера не разобран', false],
     ['pass-down', 'abort', 'Сервер не ответил', false]]) {
@@ -6476,6 +6504,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const GOST = clone(OWNER);
     // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
+    // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009): новичок без членства теперь начинает с «Клуба» — предусловие случая («гость
+    // не с „Клуба“, вкладки „Клуб“ нет») держит только РАБОТНИК бизнеса без членства (его дом — «Услуги», решение №13)
+    GOST.roles = [{ role: 'worker', direction_id: 1 }];
     /* Фикстура своя, БЕЗ записей: общая `AFISHA` несёт уже записанное
        событие (id 4, `booked_by_me: true`), и на ней экран показал бы строку,
        а не пустое состояние — судить пустоту на фикстуре с записью значит
@@ -6528,6 +6559,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const GOST = clone(OWNER);
     // memberships пуст: на сервере оба поля стоят на одном условии живого членства (/me, LIVE_MEMBERSHIPS_SQL)
     GOST.role = 'guest'; GOST.membership = null; GOST.membership_active = false; GOST.memberships = [];
+    // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009): новичок без членства теперь начинает с «Клуба» — предусловие случая («гость
+    // не с „Клуба“, вкладки „Клуб“ нет») держит только РАБОТНИК бизнеса без членства (его дом — «Услуги», решение №13)
+    GOST.roles = [{ role: 'worker', direction_id: 1 }];
     const S_ZAPISYU = [
       EV({ id: 4, taken: 1, seats_left: 11, booked_by_me: true, my_booking_id: 6 }),
       EV({ id: 11, title: 'Через три дня', starts_at: atBkk(3, 18), duration_min: 90,
