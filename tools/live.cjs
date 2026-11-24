@@ -4171,6 +4171,24 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         await s.ctx.close();
       }
     }
+    // счёт роли грузит ДВЕ ручки: 403 одной и 500 другой — отказ сервера, он важнее сбоя второй (рецепт otkazy.md);
+    // оба порядка, иначе перестановка deny/fail в done() не видна
+    const W = 'счёт арт-директора выводит держатель этой роли';
+    for (const [d403, d500] of [['/withdraw/accounts', '/withdraw/requests/mine'], ['/withdraw/requests/mine', '/withdraw/accounts']]) {
+      const s = await open(true, true, json(200, who('art_director')), null, null, null, q => {
+        const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+        if (q.method() !== 'GET') return undefined;
+        if (u === d403) return json(403, { detail: W });
+        if (u === d500) return json(500, {});
+        return undefined;
+      });
+      await s.p.evaluate(() => go('roleAccount', 'art_director')); await s.p.waitForTimeout(400);
+      const g = await s.p.evaluate(() => ({ v: (x => x ? x.textContent : null)(document.querySelector('#view .deny .verbatim')),
+        retry: !!document.querySelector('#view [data-action="ra-retry"]') }));
+      if (g.v !== W || g.retry) bad.push(`${n} roleAccount ${d403} 403 + ${d500} 500: «${g.v}», Повторить=${g.retry} — ждали отказ сервера без «Повторить»`);
+      if (s.errs.length) bad.push(`${n} roleAccount смешанный: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
   // заглушки счёта роли — по снимку api bdff63e (Cafe13KPG#557): их же сверяет страж формы (STUBS, `withdraw-accounts-role`, `withdraw-mine-club`)
   const RA_ACCROW = (account, balance, pending) => ({ account, book: 'club_ledger', direction_id: null, direction_title: null, balance, pending: pending || null });
