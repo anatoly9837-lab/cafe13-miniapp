@@ -250,7 +250,7 @@ var TITLES = {
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
   people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
-  tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: 'На счёт',
+  tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: slovo('tillTopup.title'),
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
   masterEvents: 'Ивенты', masterEvent: 'Ивент', masterList: 'Мастера', masterApply: 'Заявка в мастера',
@@ -818,7 +818,8 @@ function doAction(a) {
     if (a === 'tp-next') { tillReset(); TP.code = ''; go('staff'); return; }
     if (a === 'tp-arr') { tillArrival(Number(arg)); return; }
     if (a === 'tp-arr-reload') { loadArrivals(); render(); return; }
-    if (a === 'tp-open') { if (arg === 'topup' && (closed('tillTopup') || (TP.who && TP.who.arrival))) return; TP.done = null; tillOpen(arg); return; }
+    // фича 8: открывается только пополнение — членство не продаётся; пришедшему пополнение доступно (api #181)
+    if (a === 'tp-open') { if (arg !== 'topup' || closed('tillTopup')) return; TP.done = null; tillOpen(arg); return; }
     if (a === 'tp-level' && LEVEL[arg] && !TP.busy) { TP.level = arg; render(); return; }
     if (a === 'tp-method' && PAY_HOW[arg] && !TP.busy && (arg !== 'account' || TP.kind === 'membership')) { TP.method = arg; render(); return; }
     if (a === 'tp-send') { tillSend(); return; }
@@ -1256,6 +1257,13 @@ document.addEventListener('input', function (ev) {
 document.addEventListener('input', function (ev) {
   var t = ev.target, f = t && { 'tp-code': 'code', 'tp-months': 'months', 'tp-amount': 'amount' }[t.id];
   if (f) TP[f] = t.value;
+  // фича 8: кнопка пополнения называет сумму и гаснет без неё — без перерисовки (перерисовка сняла бы фокус с поля)
+  var b = f === 'amount' && current === 'tillTopup' ? document.getElementById('tp-send') : null;
+  if (b) {
+    var amt = topupAmount(TP.amount);
+    b.disabled = TP.busy || amt === null || !PAY_HOW[TP.method];
+    b.textContent = tpSendWord(amt);
+  }
 });
 
 document.addEventListener('change', function (ev) {

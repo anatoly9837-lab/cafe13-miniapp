@@ -324,19 +324,20 @@ function sendArrive() {
 }
 
 function sendJoin() {
-  if (JOIN.busy || !JOIN.file) return;
+  if (JOIN.busy) return;
   var said = document.getElementById('join-said');
   if (said) JOIN.said = said.value;
   JOIN.busy = true; JOIN.err = ''; render();
-  api('POST', '/join/request', { said: JOIN.said.trim(), pay_method: JOIN_PAY[JOIN.pay].method, receipt_mime: JOIN.file.mime,
-                                 receipt_base64: JOIN.file.b64 }).then(function (r) {
+  // фича 8 (api #182): просьба вернуться — только слова, без денег и чека; тело с деньгами сервер отвергает 410 (#183)
+  api('POST', '/join/request', { said: JOIN.said.trim() }).then(function (r) {
     JOIN.busy = false;
     if (r.status === 201 && r.data && typeof r.data.id === 'number') {
       // экран «ждёт ответа» рисует ответ сервера, а не наша догадка: перечитать
       JOIN.file = null; JOIN.said = ''; JOIN.again = false;
       loadJoin();
     } else {
-      JOIN.err = denyText(r);
+      // J5 и прочие отказы — слова сервера ЦЕЛИКОМ, как есть (рецепт noAccess): без своей заглавной и точки
+      JOIN.err = detailOf(r) || denyText(r);
       // «уже ждёт ответа» — состояние у сервера новее нашего
       if (r.status === 409) loadJoin();
     }
@@ -388,8 +389,9 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               // 0.2, витрина бара (Cafe13KPG#269, рецепты): оттаяна из FROZEN — вкладка «Услуги» (`guest`, носитель
               // двери в бар, план владельца 0.2.5 в Cafe13KPG#855), меню, позиция, рецепт, заказ, мой заказ
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1,
-              // шаг 24 (Cafe13KPG#555): путь взноса за членство на кассе — вкладка, карточка человека, форма взноса
-              staff: 1, tillPerson: 1, tillMembership: 1,
+              // шаг 24 (Cafe13KPG#555): касса — вкладка и карточка человека. Фича 8 (Cafe13KPG#1009, №38 «а», рецепт
+              // popolnenie/tillTopup): tillMembership УШЁЛ — членство не продаётся (api #179: 410); tillTopup оттаял (№47 «а»)
+              staff: 1, tillPerson: 1, tillTopup: 1,
               loading: 1, noSign: 1, noAccess: 1, apiDown: 1, joinAbout: 1 };
 /* Заморожено словом владельца 29.10.2026 (Cafe13KPG#510): «есть 2 роли, с которыми мы работаем —
    член клуба и я… все экраны кроме тех, с которыми мы работаем, сделать серыми и заблокировать у
@@ -398,9 +400,10 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
    тронуты. Только в живом режиме, как и сам `WIRED`: демонстрация и опись показывают всё. */
 // Шаг 24 (`Cafe13KPG#555`): сняты staff, tillPerson, tillMembership — РОВНО путь взноса за членство;
 // пополнение и день кассы остаются (рецепт 24, «размораживается ровно то, через что идёт взнос»).
+// Фича 8: tillTopup снят (№47 «а», после api #181 — пополнение закрывает приход); tillDay остаётся
 var FROZEN = { eventNew: 1,
                barMoney: 1, barDay: 1,
-               tillTopup: 1, tillDay: 1 };
+               tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
 // куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
 // по слову владельца серым гаснет всё, кроме двух ролей, а не только то, что было включено

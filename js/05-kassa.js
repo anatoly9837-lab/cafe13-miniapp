@@ -62,14 +62,17 @@ function tillLookup(who, done) {
    GET /till/arrivals — нажавшие «Я у кассы» за сутки, ещё без взноса. tg_user_id
    в ответе есть, из разбора он не выходит: в взнос идёт номер ПРИХОДА, человека
    по нему сервер находит сам. Просьб о вступлении здесь нет — их решает глава клуба. */
-var ARR = { list: null, fail: '', gen: 0 };
+// nf — выбранная строка, по которой сервер не нашёл человека (T13, фича 8): { id, deny } — слова сервера и совет
+var ARR = { list: null, fail: '', gen: 0, nf: null };
 function fromArrivals(d) {
   if (!d || typeof d !== 'object' || !Array.isArray(d.arrivals)) return null;
   var out = [];
   for (var i = 0; i < d.arrivals.length; i++) {
     var a = d.arrivals[i], at = a && typeof a.created_at === 'string' ? new Date(a.created_at) : null;
     if (!a || typeof a !== 'object' || !Number.isInteger(a.id) || typeof a.first_name !== 'string' || !at || isNaN(at)) return null;
-    out.push({ id: a.id,
+    // фича 8: номер человека нужен для карточки (`by-member`); в разметку он не идёт
+    if (!Number.isInteger(a.tg_user_id)) return null;
+    out.push({ id: a.id, uid: a.tg_user_id,
                name: [a.first_name, typeof a.last_name === 'string' ? a.last_name : ''].filter(Boolean).join(' ') || 'Без имени',
                time: at.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false }) });
   }
@@ -86,13 +89,21 @@ function loadArrivals() {
     if (current === 'staff') render();
   });
 }
-// выбранный пришедший — сразу к взносу: пополнять ему нечего, счёта у него ещё нет
+/* Фича 8 (рецепт popolnenie/tillTopup): выбранный пришедший → карточка по номеру (`GET /till/by-member/{tg_user_id}`) →
+   «Пополнить счёт». Номер прихода едет с карточкой: пополнение шлёт `arrival_id` и закрывает приход (api #181).
+   404 — человек нажал «Я у кассы», а приложение не открывал: T13, слова сервера и совет. */
 function tillArrival(id) {
   var a = (ARR.list || []).filter(function (x) { return x.id === id; })[0];
   if (!a || TP.busy) return;
-  tillReset();
-  TP.who = { id: null, arrival: a.id, name: a.name, code: '', at: a.time, level: '', until: null, lifelong: false, balance: null };
-  tillOpen('membership');
+  tillReset(); TP.busy = true; ARR.nf = null;
+  render();
+  tillLookup({ id: a.uid, at: a.time }, function (rec, r) {
+    TP.busy = false;
+    if (rec) { rec.arrival = a.id; TP.who = rec; haptic('ok'); go('tillPerson'); return; }
+    ARR.nf = { id: a.id, deny: r.status === 200 ? 'Ответ сервера не разобран.' : said(r), gone: r.status === 404 };
+    haptic('warn');
+    if (current === 'staff') render();
+  });
 }
 
 function tillFind(code) {
@@ -114,7 +125,8 @@ function tillPrep(kind) {
   TP.kind = kind === 'membership' ? 'membership' : 'topup';
   TP.months = ''; TP.amount = ''; TP.err = ''; TP.deny = '';
   TP.level = TP.who.level || 'member';
-  TP.method = 'cash';
+  // фича 8: у пополнения способ не выбран заранее (рецепт tillTopup) — кассир называет его сам
+  TP.method = TP.kind === 'topup' ? '' : 'cash';
 }
 function tillOpen(kind) {
   if (!TP.who) return;
@@ -152,11 +164,13 @@ function tillOdd(d, sent) {
 }
 
 function tillSend() {
-  if (TP.busy || !TP.who || (TP.who.arrival && TP.kind !== 'membership')) return;
+  // фича 8: членство не продаётся (410) — отправлять нечего; пополнение — пришедшему тоже (api #181)
+  if (TP.busy || !TP.who || TP.kind !== 'topup') return;
   var who = TP.who, kind = TP.kind, level = TP.level, method = TP.method, amt = topupAmount(TP.amount);
   var months = /^\d{1,2}$/.test(TP.months.trim()) ? Number(TP.months.trim()) : 0;
   TP.err = kind === 'membership' && (months < 1 || months > 24) ? 'Срок — целое число месяцев, от 1 до 24.'
-         : amt === null ? 'Сумма — число больше нуля, например 500.' : '';
+         : amt === null ? slovo('tillTopup.amountEmpty') : '';   // K3: проверка клиента до запроса
+  if (!TP.err && !PAY_HOW[method]) return;              // способ не выбран — кнопка погашена, запроса нет
   TP.deny = '';
   if (TP.err) { render(); return; }
   var body = who.arrival ? { kind: kind, amount: amt, method: method, arrival_id: who.arrival }
@@ -190,7 +204,8 @@ function tillSend() {
         }
         TP.who = now;
         var grew = kind !== 'topup' || !rec || Math.abs(rec.balance - who.balance - amt) < 0.005;
-        TP.done = { kind: kind, text: 'Принято ' + money(amt) + ' ฿ ' + PAY_HOW[method],
+        // K4 (фича 8): сумма — из ОТВЕТА сервера, не из поля
+        TP.done = { kind: kind, text: kind === 'topup' ? slovo('tillTopup.done', { amount: money(num(d.amount)) }) : 'Принято ' + money(amt) + ' ฿ ' + PAY_HOW[method],
                     /* Совет по виду строки и состоянию — четыре кадра (Cafe13KPG#374, #381, карточка
                        #373). В till.cancel привратник хозяина (409 «правки членства … нет») стоит
                        раньше субъектного: строку с членством в приложении не снимает никто — E34g,
@@ -251,7 +266,9 @@ function tillSend() {
         haptic('warn');
       }
       // принятый взнос остаётся на своём экране: итог T8–T10 — часть формы (рецепт 24)
-      if (ok && mem && current === 'tillMembership') render(); else go('tillPerson');
+      // K4: принятое пополнение остаётся на форме с итогом, поля очищены (рецепт tillTopup); неясный исход — на карточку
+      if (ok && kind === 'topup') { TP.amount = ''; TP.method = ''; if (current === 'tillTopup') render(); else go('tillTopup'); }
+      else if (ok && mem && current === 'tillMembership') render(); else go('tillPerson');
     });
   });
 }
@@ -261,6 +278,7 @@ function tillForm(kind, extra) {
   var w = TP.who;
   if (!w || TP.kind !== kind) return '<div class="card quiet"><span class="small">Человек не выбран.</span></div>' +
     '<button type="button" class="btn" data-go="staff">К скану пропуска</button>';
+  if (kind === 'topup') return tillTopupForm(w);
   var lock = TP.busy ? ' disabled' : '', mem = kind === 'membership';
   var seg = function (act, list, on) {
     return list.map(function (x) {
@@ -285,6 +303,34 @@ function tillForm(kind, extra) {
     '<button type="button" class="btn" data-action="tp-send"' + lock + '>' + (TP.busy ? 'Вносим…' : 'Внести') + '</button>' +
     (mem ? '' : '<div class="note">' + svg(ICON.info) + '<span>Перевести со счёта на счёт нельзя — только наличные или карта.</span></div>');
 }
+
+/* Фича 8 (рецепт `_docs/recept/ekran/popolnenie/tillTopup.md`): пополнение в кассе. K2 — всегда; сумма пустая и не
+   подставляется; способ не выбран заранее, «Со счёта» нет (сервер: 409); кнопка «Внести {amount} ฿» погашена, пока нет суммы
+   больше нуля и способа; K3 — проверка клиента до запроса; K4 — сумма из ответа; K5 — слова сервера. */
+function tillTopupForm(w) {
+  var lock = TP.busy ? ' disabled' : '', amt = topupAmount(TP.amount), d = TP.done;
+  var ways = [['cash', slovo('tillTopup.method.cash')], ['card', slovo('tillTopup.method.card')]];
+  var ready = amt !== null && !!PAY_HOW[TP.method] && TP.method !== 'account';
+  return (!LIVE && FLASH ? flash() : '') +
+    (d && d.kind === 'topup' && !d.unsure ? '<div class="card quiet"><div class="col"><b style="font-size:13px">' + esc(d.text) + '</b>' +
+        '<span class="small">' + esc(d.note) + '</span></div></div>' +
+      (d.warn ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(d.warn) + '</span></div>' : '') : '') +
+    '<div class="card quiet"><div class="col"><b>' + esc(w.name) + '</b>' +
+      (typeof w.balance === 'number' ? '<span class="small">' + esc(slovo('tillTopup.balance', { balance: money(w.balance) })) + '</span>' : '') +
+    '</div></div>' +
+    '<span class="small">' + esc(slovo('tillTopup.note')) + '</span>' +
+    '<div class="field"><label for="tp-amount">' + esc(slovo('tillTopup.amount')) + '</label>' +
+      '<input id="tp-amount" type="text" inputmode="decimal" autocomplete="off" value="' + esc(TP.amount) + '"' + lock + '>' +
+      (TP.err ? '<span class="small" id="tp-amount-err">' + esc(TP.err) + '</span>' : '') + '</div>' +
+    '<div class="seg">' + ways.map(function (x) {
+      return '<button type="button" data-action="tp-method:' + x[0] + '" aria-pressed="' + (TP.method === x[0]) + '"' + lock + '>' + esc(x[1]) + '</button>';
+    }).join('') + '</div>' +
+    (TP.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(TP.deny) + '</span></div>' : '') +
+    '<button type="button" class="btn" id="tp-send" data-action="tp-send"' + (TP.busy || !ready ? ' disabled' : '') + '>' +
+      esc(tpSendWord(amt)) + '</button>';
+}
+// один вызов ключа на две точки: разметка формы и живая правка кнопки при вводе суммы
+function tpSendWord(amt) { return slovo('tillTopup.send', { amount: amt === null ? '0' : money(amt) }); }
 
 function tillCard(w) {
   var ms = w.level ? (w.lifelong ? 'Пожизненно' : 'до ' + w.until) : 'нет';
