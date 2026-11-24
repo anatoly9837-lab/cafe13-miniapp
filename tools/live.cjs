@@ -6354,8 +6354,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // ── фича 4 (Cafe13KPG#1009, рецепт `_docs/recept/ekran/odobrenie/`; api #176 fc474be, миграция 040): одобрение ивентов ──
-  // Форма — код сервера на fc474be (`PENDING_APPROVAL_SQL`, `_decide_event`, `queries.py:636`); снимка формы ещё нет: он
-  // снимается после выкладки, тогда `approval`/`reject_note` лягут и в AFISHA. Слова — по словарю (SLOVA.ru со страницы).
+  // Форма — снимок api 410f240 (Cafe13KPG#1009, комментарий в карточке; случаи cafe13-api#187): `events-pending-approval`,
+  // `event-approve`, `event-reject` сверяются с PROW/DEC в STUBS. Слова — по словарю (SLOVA.ru со страницы).
   const ODOBR = (() => {
     const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
     const MEMB = clone(OWNER); MEMB.roles = []; MEMB.member.tg_user_id = 77;
@@ -13114,7 +13114,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'stats-club-empty-day': CS_RESP({ events: { count: 0, bookings: null, collected: null }, isNew: 0, arrivals: 0 }, 'day'),
     // шаг 32 (Cafe13KPG#563): заглушки случаев `art-*` против снимка api 65e62d8
     'stats-art-month-2019-03': AS_RESP(),
-    'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] })
+    'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] }),
+    // фича 4 (Cafe13KPG#1009): заглушки случаев `odobr-*` против снимка api 410f240 (cafe13-api#187)
+    'events-pending-approval': [ODOBR.PROW(41, 'Вечер работника')],
+    'event-approve': ODOBR.DEC(41, true), 'event-reject': ODOBR.DEC(41, false, 'не наш формат')
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
