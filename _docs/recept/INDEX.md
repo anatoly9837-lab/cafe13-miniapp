@@ -75,7 +75,7 @@
 | `popolnenie` | `noAccess` | — | 4185 | 3 | 6 |
 | `popolnenie` | `sostav` | — | 4762 | 4 | 0 |
 | `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
-| `popolnenie` | `topup` | — | 5898 | 3 | 0 |
+| `popolnenie` | `topup` | — | 6102 | 3 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
 - `Исключение, а не долг: чем они отличаются` — строк 7
