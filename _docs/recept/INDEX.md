@@ -45,7 +45,7 @@
 | `23` | `barOrder` | — | 9899 | 3 | 7 |
 | `23` | `sostav` | — | 4419 | 4 | 0 |
 | `24` | `sostav` | — | 5552 | 4 | 0 |
-| `24` | `tillMembership` | — | 15180 | 4 | 11 |
+| `24` | `tillMembership` | — | 15633 | 4 | 11 |
 | `25` | `sostav` | — | 5822 | 4 | 0 |
 | `25` | `withdraw` | — | 10193 | 8 | 19 |
 | `25` | `withdrawQueue` | — | 7909 | 7 | 13 |
@@ -72,6 +72,10 @@
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
 | `odobrenie` | `sostav` | — | 4281 | 4 | 0 |
+| `popolnenie` | `noAccess` | — | 4185 | 3 | 6 |
+| `popolnenie` | `sostav` | — | 4762 | 4 | 0 |
+| `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
+| `popolnenie` | `topup` | — | 4762 | 3 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
 - `Исключение, а не долг: чем они отличаются` — строк 7
