@@ -3293,5 +3293,69 @@
    }
   },
   "status": 200
+ },
+ "events-pending-approval": {
+  "request": "GET /events/pending-approval",
+  "shape": [
+   {
+    "duration_min": null,
+    "id": null,
+    "kind": null,
+    "organizer_first_name": null,
+    "organizer_id": null,
+    "organizer_last_name": null,
+    "place_id": null,
+    "price": null,
+    "seats": null,
+    "starts_at": null,
+    "title": null
+   }
+  ],
+  "status": 200
+ },
+ "event-approve": {
+  "request": "POST /events/N/approve",
+  "shape": {
+   "approval": null,
+   "approved_at": null,
+   "approved_by": null,
+   "id": null,
+   "reject_note": null,
+   "rejected_at": null
+  },
+  "status": 200
+ },
+ "event-reject": {
+  "request": "POST /events/N/reject",
+  "shape": {
+   "approval": null,
+   "approved_at": null,
+   "approved_by": null,
+   "id": null,
+   "reject_note": null,
+   "rejected_at": null
+  },
+  "status": 200
+ },
+ "events-pending-approval-403": {
+  "request": "GET /events/pending-approval",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "event-approve-again-409": {
+  "request": "POST /events/N/approve",
+  "shape": {
+   "detail": null
+  },
+  "status": 409
+ },
+ "event-reject-422-no-note": {
+  "request": "POST /events/N/reject",
+  "shape": {
+   "detail": null
+  },
+  "status": 422
  }
 }
