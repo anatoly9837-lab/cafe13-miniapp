@@ -85,7 +85,8 @@ Object.assign(SCREENS, {
       '<div class="card strong"><div class="row top">' +
         '<div class="col"><h2 class="clamp2">' + esc(DATA.bar.title) + '</h2>' +
           '<span class="small">' + (DATA.bar.open
-            ? 'Открыт до 23:00. Заказ уходит на бар сразу и оплачивается со счёта в клубе.'
+            // часов в демо нет (слово владельца 24.11.2026, Cafe13KPG#999 №9): постоянная обещала бы то, чего демо не знает
+            ? 'Заказ уходит на бар сразу и оплачивается со счёта в клубе.'
             : 'Сейчас закрыт — заказ не отправится.') + '</span></div>' +
         '<span class="pill' + (DATA.bar.open ? ' on' : '') + '">' +
           (DATA.bar.open ? 'открыт' : 'закрыт') + '</span>' +
