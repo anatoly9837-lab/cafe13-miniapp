@@ -1542,14 +1542,30 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
       }
-      // 2. гость блока не видит и ручки не спрашивает
+      // 2. фича 7 (№49 «а», рецепт 13/home): гость блок ВИДИТ и спрашивает цену, как член; вне Telegram блока нет
       {
         const n = 'partner-gost', G = clone(OWNER); G.membership = null; G.membership_active = false; G.memberships = [];
-        const o = { posted: [], decided: [] };
+        const o = { price: () => json(200, { amount: '2600.00' }), posted: [], decided: [] };
         const s = await open(true, true, json(200, G), null, null, null, partnerApi(o));
         await s.p.waitForTimeout(400);
-        if ((await s.view()).includes('Свой бизнес в клубе')) bad.push(`${n}: гость видит блок партнёрства`);
-        if (s.calls.some(c => /\/partner\//.test(c.url))) bad.push(`${n}: у гостя спрошены ручки партнёра: ${s.calls.filter(c => /\/partner\//.test(c.url)).map(c => c.url).join(', ')}`);
+        const t = await s.view(), b = await offer(s);
+        if (!t.includes('Свой бизнес в клубе')) bad.push(`${n}: гость не видит блок партнёрства`);
+        if (!b || b.txt !== 'Я партнёр' || !b.on) bad.push(`${n}: у гостя нет живой «Я партнёр»`);
+        if (!s.calls.some(c => /\/partner\/price$/.test(c.url))) bad.push(`${n}: у гостя не спрошена цена /partner/price`);
+        await s.p.evaluate(() => go('partnerApply')); await s.p.waitForTimeout(300);
+        const f = await s.view();
+        if (f.includes('Сюда нельзя') || !(await s.p.$('#pr-title'))) bad.push(`${n}: гостю вместо формы заявки заглушка`);
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      {
+        const n = 'partner-vne-tg', o = { price: () => json(200, { amount: '2600.00' }), posted: [], decided: [] };
+        const s = await open(false, true, json(200, OWNER), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(400);
+        const t = await s.view();
+        // блок целиком, а не заголовок: без `!LIVE` вне Telegram рисуется карточка «Заявки в партнёры не загрузились» без заголовка
+        if (t.includes('Свой бизнес в клубе') || t.includes('Заявки в партнёры') || await s.p.$('#view [data-action^="pr-"]')) bad.push(`${n}: вне Telegram виден блок партнёрства`);
+        if (s.calls.some(c => /\/partner\//.test(c.url))) bad.push(`${n}: вне Telegram спрошены ручки партнёра`);
         await s.ctx.close();
       }
       // 3. состояния блока: ждёт, отказали, согласовано (день МОМЕНТА по острову, без вычитания), нет поля → «не загрузились»
