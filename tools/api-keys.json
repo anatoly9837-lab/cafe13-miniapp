@@ -3377,5 +3377,146 @@
    "detail": null
   },
   "status": 422
+ },
+ "stats-master": {
+  "request": "GET /stats/master?period=month&at=N-N-N",
+  "shape": {
+   "events": {
+    "bookings": null,
+    "collected": null,
+    "count": null
+   },
+   "list": [
+    {
+     "bookings": null,
+     "collected": null,
+     "id": null,
+     "starts_at": null,
+     "title": null
+    }
+   ],
+   "money": {
+    "balance": null,
+    "book": null,
+    "expected": null,
+    "expected_events": null,
+    "withdrawable": null
+   },
+   "payouts": {
+    "amount": null,
+    "count": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   }
+  },
+  "status": 200
+ },
+ "stats-master-empty": {
+  "request": "GET /stats/master?period=month&at=N-N-N",
+  "shape": {
+   "events": {
+    "bookings": null,
+    "collected": null,
+    "count": null
+   },
+   "list": [],
+   "money": {
+    "balance": null,
+    "book": null,
+    "expected": null,
+    "expected_events": null,
+    "withdrawable": null
+   },
+   "payouts": {
+    "amount": null,
+    "count": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   }
+  },
+  "status": 200
+ },
+ "stats-event-full": {
+  "request": "GET /stats/event/N",
+  "shape": {
+   "bookings": {
+    "count": null,
+    "places": null,
+    "unlimited": null
+   },
+   "duration_min": null,
+   "full": null,
+   "id": null,
+   "money": {
+    "book": null,
+    "club": null,
+    "collected": null,
+    "distributed": null,
+    "master": null
+   },
+   "place": null,
+   "slot_fee": null,
+   "starts_at": null,
+   "state": null,
+   "title": null
+  },
+  "status": 200
+ },
+ "stats-event-undistributed": {
+  "request": "GET /stats/event/N",
+  "shape": {
+   "bookings": {
+    "count": null,
+    "places": null,
+    "unlimited": null
+   },
+   "duration_min": null,
+   "full": null,
+   "id": null,
+   "money": {
+    "book": null,
+    "club": null,
+    "collected": null,
+    "distributed": null,
+    "master": null
+   },
+   "place": null,
+   "slot_fee": null,
+   "starts_at": null,
+   "state": null,
+   "title": null
+  },
+  "status": 200
+ },
+ "stats-event-guest": {
+  "request": "GET /stats/event/N",
+  "shape": {
+   "bookings": {
+    "count": null,
+    "places": null,
+    "unlimited": null
+   },
+   "duration_min": null,
+   "full": null,
+   "id": null,
+   "place": null,
+   "starts_at": null,
+   "state": null,
+   "title": null
+  },
+  "status": 200
+ },
+ "stats-event-403": {
+  "request": "GET /stats/event/N",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
  }
 }

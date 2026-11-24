@@ -276,3 +276,176 @@ Object.assign(SCREENS, {
       : '<div class="note">' + svg(ICON.info) + '<span>Делить нечего: собранное ушло ' + esc(payDay(r.at, false)) + '.</span></div>');
   },
 });
+
+/* ── шаг 34: статистика мастера и отчёт по ивенту (Cafe13KPG#565, рецепты `_docs/recept/ekran/34/masterStats.md` и
+   `34/eventReport.md`, miniapp#400; форма — api#196, снимок на 4d3b5a4) ── Все слова — ключами masterStats.* и
+   eventReport.* (№22); слова сервера (`detail` отказа) — как есть. Слово владельца: «Числа нужны. Реальные. Если нули -
+   значит нули.» — каждое число на экране — поле ответа как есть, литерала числа в разметке нет; `0` печатается нулём;
+   `null` или нет поля — «нет данных» (msNum/erNum), и нулём оно не печатается никогда. Разрез и ‹ › — функции шага 31
+   (csStart, csShift, csDay); `money` — «сейчас», от периода не зависит. Отчёт по ивенту — ОДИН на все страницы
+   статистики: состав урезает сервер по роли (ключей `money` и `slot_fee` у зрителя нет — и карточек нет). */
+var MST = { period: 'month', at: '', data: null, fail: '', deny: '', gen: 0 };
+function mayMasterStats() { return LIVE && mayOwnEvents(); }
+// число сервера: null или нет поля → null («нет данных»); не число и не null → NaN (битый ответ)
+function stNum(v, money) {
+  if (v === null || v === undefined) return null;
+  var n = money ? csMoney(v) : csCount(v) ? v : NaN;
+  return isFinite(n) ? n : NaN;
+}
+function stBad(xs) { return xs.some(function (x) { return typeof x === 'number' && isNaN(x); }); }
+function msLabel(period, ymd) {
+  var s = csStart(period, ymd);
+  if (period === 'day') return slovo('masterStats.period.dayLabel', { date: csDay(s) });
+  if (period === 'month') {
+    var w = bmMonth(Date.parse(s.slice(0, 8) + '15T12:00:00Z')).split(' ');
+    return slovo('masterStats.period.monthLabel', { month: w[0], year: s.slice(0, 4) });
+  }
+  var e = csAdd(s, 6), a = s.split('-'), b = e.split('-');
+  return slovo('masterStats.period.weekLabel', { from: Number(a[2]) + (a[1] === b[1] ? '' : ' ' + MONTHS[Number(a[1]) - 1]),
+                                                 to: Number(b[2]) + ' ' + MONTHS[Number(b[1]) - 1] });
+}
+/* Битая часть — отказ целиком: страница с пропавшим блоком читалась бы полной. Ноль не подставляется нигде. */
+function fromMasterStats(d) {
+  if (!d || typeof d !== 'object') return null;
+  var e = d.events, p = d.payouts, m = d.money, l = d.list;
+  if (!e || typeof e !== 'object' || !p || typeof p !== 'object' || !m || typeof m !== 'object' || !Array.isArray(l)) return null;
+  var out = { count: stNum(e.count), bookings: stNum(e.bookings), collected: stNum(e.collected, true),
+              pCount: stNum(p.count), pAmount: stNum(p.amount, true),
+              balance: stNum(m.balance, true), withdrawable: stNum(m.withdrawable, true), expected: stNum(m.expected, true),
+              expectedEvents: stNum(m.expected_events), list: [] };
+  if (stBad([out.count, out.bookings, out.collected, out.pCount, out.pAmount, out.balance, out.withdrawable, out.expected, out.expectedEvents])) return null;
+  for (var i = 0; i < l.length; i++) {
+    var x = l[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.starts_at !== 'string') return null;
+    var at = new Date(x.starts_at);
+    if (isNaN(at.getTime())) return null;
+    // в строке списка числа всегда (форма api#196): bookings — число, collected — деньги; иначе отказ целиком
+    var r = { id: x.id, title: x.title, ymd: bkk(at).ymd, at: at.getTime(), bookings: x.bookings, collected: csMoney(x.collected) };
+    if (!csCount(r.bookings) || !isFinite(r.collected)) return null;
+    out.list.push(r);
+  }
+  out.list.sort(function (a, b) { return a.at - b.at; });   // ВЫБОР рецепта: от ранних к поздним
+  return out;
+}
+function loadMasterStats() {
+  if (!mayMasterStats()) return;
+  var gen = ++MST.gen, who = WHO;
+  MST.data = null; MST.fail = ''; MST.deny = '';
+  api('GET', '/stats/master?period=' + MST.period + '&at=' + MST.at).then(function (r) {
+    if (gen !== MST.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromMasterStats(r.data) : null;
+    if (got) MST.data = got;
+    else if (r.status === 403) MST.deny = detailOf(r) || failText(r);
+    else MST.fail = failText(r);
+    if (current === 'masterStats') render();
+  });
+}
+function mstMove(dir) {
+  if (dir > 0 && csStart(MST.period, MST.at) >= csStart(MST.period, msToday())) return;   // › погашена на текущем
+  MST.at = csShift(MST.period, MST.at, dir); loadMasterStats(); render();
+}
+// одно место печати числа экрана: null — «нет данных» словом, а не нулём
+function msNum(v, money) {
+  return v === null ? '<span class="small">' + esc(slovo('masterStats.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
+}
+
+var ER = { id: null, from: '', data: null, fail: '', deny: '', gen: 0 };
+/* Ключа нет — блока нет (третье состояние, не 0 и не null): has.money / has.slot у ответа зрителя false. */
+function fromEventReport(d) {
+  if (!d || typeof d !== 'object' || typeof d.id !== 'number' || typeof d.title !== 'string' || typeof d.starts_at !== 'string') return null;
+  var at = new Date(d.starts_at), b = d.bookings;
+  if (isNaN(at.getTime()) || !b || typeof b !== 'object' || typeof b.unlimited !== 'boolean') return null;
+  var k = bkk(at), out = { id: d.id, title: d.title, ymd: k.ymd, hm: k.hm, place: typeof d.place === 'string' && d.place ? d.place : null,
+    count: stNum(b.count), places: b.unlimited ? null : stNum(b.places), unlimited: b.unlimited,
+    hasMoney: Object.prototype.hasOwnProperty.call(d, 'money'), hasSlot: Object.prototype.hasOwnProperty.call(d, 'slot_fee') };
+  if (stBad([out.count, out.places])) return null;
+  if (out.hasMoney) {
+    var m = d.money;
+    if (!m || typeof m !== 'object' || typeof m.distributed !== 'boolean') return null;
+    out.collected = stNum(m.collected, true); out.distributed = m.distributed;
+    out.master = stNum(m.master, true); out.club = stNum(m.club, true);
+    if (stBad([out.collected, out.master, out.club])) return null;
+  }
+  if (out.hasSlot) { out.slot = stNum(d.slot_fee, true); if (stBad([out.slot])) return null; }
+  return out;
+}
+function loadEventReport() {
+  var gen = ++ER.gen, who = WHO, id = ER.id;
+  ER.data = null; ER.fail = ''; ER.deny = '';
+  if (typeof id !== 'number') { ER.fail = 'id'; return; }
+  api('GET', '/stats/event/' + id).then(function (r) {
+    if (gen !== ER.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromEventReport(r.data) : null;
+    if (got) ER.data = got;
+    else if (r.status === 403) ER.deny = detailOf(r) || failText(r);
+    else ER.fail = failText(r);
+    if (current === 'eventReport') render();
+  });
+}
+function erNum(v, money) {
+  return v === null ? '<span class="small">' + esc(slovo('eventReport.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
+}
+
+Object.assign(SCREENS, {
+  masterStats: function () {
+    if (!mayMasterStats()) return '<div class="card quiet"><div class="col"><b>' + esc(slovo('masterStats.denyTitle')) + '</b>' +
+      '<span class="small">' + esc(slovo('masterStats.denyNote')) + '</span></div></div>';
+    // ключ — литералом у каждого разреза: склеенный из частей ключ прибору (slova-klyuchi) не проверить
+    var P = [['day', slovo('masterStats.period.day')], ['week', slovo('masterStats.period.week')], ['month', slovo('masterStats.period.month')]];
+    var seg = '<div class="seg">' + P.map(function (x) {
+      return '<button type="button" data-action="mst-period:' + x[0] + '" aria-pressed="' + (MST.period === x[0]) + '">' + esc(x[1]) + '</button>';
+    }).join('') + '</div>';
+    var last = csStart(MST.period, MST.at) >= csStart(MST.period, msToday());
+    var nav = '<div class="row"><button type="button" class="icon-btn" data-action="mst-prev" aria-label="' + esc(slovo('masterStats.period.prev')) + '">‹</button>' +
+      '<b>' + esc(msLabel(MST.period, MST.at)) + '</b>' +
+      '<button type="button" class="icon-btn" data-action="mst-next" aria-label="' + esc(slovo('masterStats.period.next')) + '"' + (last ? ' disabled' : '') + '>›</button></div>' +
+      '<span class="small">' + esc(slovo('masterStats.period.clockNote')) + '</span>';
+    if (MST.deny) return seg + nav + '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(MST.deny) + '</span></div>';
+    if (MST.fail) return seg + nav + '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('masterStats.error')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="mst-retry">' + esc(slovo('masterStats.retry')) + '</button></div></div>';
+    if (!MST.data) return seg + nav + '<div class="card quiet"><span class="small">' + esc(slovo('masterStats.loading')) + '</span></div>';
+    var s = MST.data;
+    var row = function (label, html) { return '<div><span class="small">' + esc(label) + '</span>' + html + '</div>'; };
+    var E = '<div class="card"><b>' + esc(slovo('masterStats.events.title')) + '</b><div class="rows">' + row(slovo('masterStats.events.count'), msNum(s.count)) +
+        (s.count === 0 ? '' : row(slovo('masterStats.events.bookings'), msNum(s.bookings)) + row(slovo('masterStats.events.collected'), msNum(s.collected, true))) + '</div>' +
+      (s.count === 0 ? '<span class="small">' + esc(slovo('masterStats.events.none')) + '</span>' : '') +
+      '<span class="small">' + esc(slovo('masterStats.events.cashNote')) + '</span></div>';
+    var Pc = '<div class="card"><b>' + esc(slovo('masterStats.payouts.title')) + '</b>' + (s.pCount === 0
+        ? '<span class="small">' + esc(slovo('masterStats.payouts.none')) + '</span>'
+        : '<div class="rows">' + row(slovo('masterStats.payouts.amount'), msNum(s.pAmount, true)) + row(slovo('masterStats.payouts.count'), msNum(s.pCount)) + '</div>') + '</div>';
+    // D1 — строка, а не «0 ฿»: expected_events 0 — ждать нечего
+    var D = '<div class="card"><b>' + esc(slovo('masterStats.money.title')) + '</b><div class="rows">' +
+        row(slovo('masterStats.money.balance'), msNum(s.balance, true)) + row(slovo('masterStats.money.withdrawable'), msNum(s.withdrawable, true)) +
+        row(slovo('masterStats.money.expected'), s.expectedEvents === 0
+          ? '<span class="small">' + esc(slovo('masterStats.money.expectedNone')) + '</span>' : msNum(s.expected, true)) + '</div>' +
+      '<span class="small">' + esc(slovo('masterStats.money.nowNote')) + '</span></div>';
+    var L = s.count === 0 || !s.list.length ? '' : '<span class="label">' + esc(slovo('masterStats.list.title')) + '</span><div class="list">' +
+      s.list.map(function (x) {
+        return '<button type="button" class="listitem" data-action="mst-event:' + x.id + '"><span class="grow"><b class="clamp1">' + esc(x.title) + '</b>' +
+          '<span class="small">' + esc(slovo('masterStats.list.row', { date: msDate(x.ymd), bookings: x.bookings })) + '</span></span>' +
+          msNum(x.collected, true) + svg(ICON.chev, 'chev') + '</button>';
+      }).join('') + '</div>';
+    return seg + nav + E + Pc + D + L;
+  },
+  eventReport: function () {
+    if (ER.deny) return '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(ER.deny) + '</span></div>';
+    if (ER.fail) return '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('eventReport.error')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="er-retry">' + esc(slovo('eventReport.retry')) + '</button></div></div>';
+    if (!ER.data) return '<div class="card quiet"><span class="small">' + esc(slovo('eventReport.loading')) + '</span></div>';
+    var s = ER.data;
+    var row = function (label, html) { return '<div><span class="small">' + esc(label) + '</span>' + html + '</div>'; };
+    var R0 = '<span class="small">' + esc(s.place === null ? slovo('eventReport.whenNoPlace', { date: msDate(s.ymd), time: s.hm })
+      : slovo('eventReport.when', { date: msDate(s.ymd), time: s.hm, place: s.place })) + '</span>';
+    var B = '<div class="card"><b>' + esc(slovo('eventReport.bookings.title')) + '</b><div class="rows">' +
+      row(slovo('eventReport.bookings.count'), erNum(s.count)) +
+      row(slovo('eventReport.bookings.places'), s.unlimited ? '<span class="small">' + esc(slovo('eventReport.bookings.noLimit')) + '</span>' : erNum(s.places)) + '</div></div>';
+    // доли — числа сервера по факту распределения; до распределения M1, а не «0 ฿»
+    var M = !s.hasMoney ? '' : '<div class="card"><b>' + esc(slovo('eventReport.money.title')) + '</b><div class="rows">' +
+      row(slovo('eventReport.money.collected'), erNum(s.collected, true)) +
+      (s.distributed ? row(slovo('eventReport.money.master'), erNum(s.master, true)) + row(slovo('eventReport.money.club'), erNum(s.club, true)) : '') + '</div>' +
+      (s.distributed ? '' : '<span class="small">' + esc(slovo('eventReport.money.notYet')) + '</span>') +
+      '<span class="small">' + esc(slovo('eventReport.money.cashNote')) + '</span></div>';
+    var S = !s.hasSlot ? '' : '<div class="card"><div class="rows">' + row(slovo('eventReport.slot'), erNum(s.slot, true)) + '</div></div>';
+    return R0 + B + M + S;
+  },
+});

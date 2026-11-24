@@ -91,6 +91,61 @@ var SLOVA = {
     'eventApproval.loading': 'Загружаем очередь…',                        // клиент
     'eventApproval.denyTitle': 'Сюда нельзя',                             // клиент
     'eventApproval.denyNote': 'Ивенты одобряет арт-директор.',            // клиент
+    // шаг 34, masterStats — рецепт `_docs/recept/ekran/34/masterStats.md` (#400; форма — api#196, 4d3b5a4)
+    'masterStats.door': 'Статистика мастера',
+    'masterStats.title': 'Статистика мастера',
+    'masterStats.period.day': 'День',
+    'masterStats.period.week': 'Неделя',
+    'masterStats.period.month': 'Месяц',
+    'masterStats.period.dayLabel': '{date}',
+    'masterStats.period.weekLabel': 'Неделя {from}–{to}',
+    'masterStats.period.monthLabel': '{month} {year}',
+    'masterStats.period.prev': 'Предыдущий период',          // клиент
+    'masterStats.period.next': 'Следующий период',           // клиент
+    'masterStats.period.clockNote': 'Ивенты считаются по дню ивента, выплаты — по дню распределения: ивент 30-го, распределённый 2-го, попадёт в разные периоды.',
+    'masterStats.events.title': 'Мои ивенты',
+    'masterStats.events.count': 'Ивентов',
+    'masterStats.events.bookings': 'Записей',
+    'masterStats.events.collected': 'Собрано',
+    'masterStats.events.cashNote': 'В собранном только безналичные: оплата наличными на кассе сюда не входит.',
+    'masterStats.events.none': 'Ивентов в этом периоде не было.',
+    'masterStats.payouts.title': 'Выплачено мне',
+    'masterStats.payouts.amount': 'Выплачено',
+    'masterStats.payouts.count': 'Распределений',
+    'masterStats.payouts.none': 'Выплат в этом периоде не было.',
+    'masterStats.money.title': 'Мой счёт',
+    'masterStats.money.balance': 'На счёте',
+    'masterStats.money.withdrawable': 'Можно вывести',
+    'masterStats.money.expected': 'Ожидается',
+    'masterStats.money.expectedNone': 'Нераспределённых ивентов нет.',
+    'masterStats.money.nowNote': 'Счёт, вывод и ожидаемое — на сегодня, а не за период.',
+    'masterStats.list.title': 'Ивенты периода',
+    'masterStats.list.row': '{date} · Записей: {bookings}',
+    'masterStats.noData': 'нет данных',
+    'masterStats.error': 'Статистика не загрузилась.',
+    'masterStats.retry': 'Повторить',
+    'masterStats.loading': 'Загружаем статистику…',          // клиент
+    'masterStats.denyTitle': 'Сюда нельзя',                   // клиент
+    'masterStats.denyNote': 'Статистику мастера видит тот, кто ведёт свои ивенты.',   // клиент
+    // шаг 34, eventReport — рецепт `_docs/recept/ekran/34/eventReport.md` (#400): ОДИН отчёт на все страницы статистики
+    'eventReport.title': 'Отчёт по ивенту',                   // клиент: заголовок до ответа сервера
+    'eventReport.when': '{date}, {time} · {place}',
+    'eventReport.whenNoPlace': '{date}, {time}',              // клиент: place сервера null
+    'eventReport.bookings.title': 'Записи',
+    'eventReport.bookings.count': 'Записей',
+    'eventReport.bookings.places': 'Мест',
+    'eventReport.bookings.noLimit': 'без предела',
+    'eventReport.money.title': 'Деньги',
+    'eventReport.money.collected': 'Собрано',
+    'eventReport.money.master': 'Мастеру',
+    'eventReport.money.club': 'Клубу',
+    'eventReport.money.cashNote': 'Только безналичные: оплата наличными на кассе сюда не входит.',
+    'eventReport.money.notYet': 'Ещё не распределено — доли появятся после распределения.',
+    'eventReport.slot': 'Плата за слот',
+    'eventReport.noData': 'нет данных',
+    'eventReport.error': 'Отчёт не загрузился.',
+    'eventReport.retry': 'Повторить',
+    'eventReport.loading': 'Загружаем отчёт…',                // клиент
     'event.approval.pendingPill': 'Ждёт одобрения',
     'event.approval.pendingNote': 'Ивент видите вы и арт-директор. В афише для всех он появится после одобрения, записаться на него до этого нельзя.',
     'event.approval.toQueue': 'Ивенты на одобрение',                      // клиент: ссылка E1 арт-директору (рецепт event.md)

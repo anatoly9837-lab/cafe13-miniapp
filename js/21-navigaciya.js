@@ -252,7 +252,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), eventApproval: slovo('eventApproval.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), masterStats: slovo('masterStats.title'), eventReport: slovo('eventReport.title'), eventApproval: slovo('eventApproval.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: slovo('tillTopup.title'),
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
@@ -327,7 +327,9 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', eventApproval: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', masterStats: 'manage',
+  // отчёт по ивенту — назад на ту страницу статистики, откуда пришли (её период цел)
+  eventReport: function () { return ER.from || 'masterStats'; }, eventApproval: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
@@ -423,7 +425,9 @@ function render() {
     title.textContent = LIVE && current === 'demo' ? 'Просмотр'
       : current === 'bar' ? (LIVE ? (BAR && BAR.title) : DATA.bar.title) || 'Café XIII'
       // заголовок счёта роли — то же слово, что строка R1 (рецепт 27/roleAccount)
-      : current === 'roleAccount' && RA_WORD[param] ? RA_WORD[param] : TITLES[current] || 'Café XIII';
+      : current === 'roleAccount' && RA_WORD[param] ? RA_WORD[param]
+      // отчёт по ивенту — заголовком title ивента сервера
+      : current === 'eventReport' && ER.data ? ER.data.title : TITLES[current] || 'Café XIII';
     title.className = 'wordmark plain';
   }
   var right = document.getElementById('bar-right');
@@ -593,6 +597,9 @@ function go(screen, p) {
   // шаг 31 (рецепт «Перечитать на входе»): на каждый вход — месяц, в который попадает сегодня
   if (screen === 'clubStats' && current !== 'clubStats') { CS.period = 'month'; CS.at = msToday(); loadClubStats(); }
   if (screen === 'artStats' && current !== 'artStats') { AS.period = 'month'; AS.at = msToday(); loadArtStats(); }
+  // шаг 34: на вход с «Управления» — текущий месяц; назад из отчёта — тот же период, но перечитан
+  if (screen === 'masterStats' && current !== 'masterStats') { if (current !== 'eventReport') { MST.period = 'month'; MST.at = msToday(); } loadMasterStats(); }
+  if (screen === 'eventReport') { if (current !== 'eventReport') ER.from = current; ER.id = p; loadEventReport(); }
   // фича 4: очередь — на каждый вход; афиша — тоже, чтобы название в строке открывало свежую карточку ивента
   if (screen === 'eventApproval' && current !== 'eventApproval') { EA.list = null; EA.deny = ''; EA.no = 0; EA.note = ''; EA.empty = false; loadEventApproval(); if (LIVE && EVENTS_STATE !== 'loading') loadEvents(); }
   if ((screen === 'manage' || screen === 'withdrawQueue') && current !== screen && mayWithdrawQueue()) { WQ.done = ''; WQ.err = {}; loadWithdrawQueue(); }
@@ -1146,6 +1153,12 @@ function doAction(a) {
     if (a === 'as-prev') { asMove(-1); return; }
     if (a === 'as-next') { asMove(1); return; }
     if (a === 'as-retry') { loadArtStats(); render(); return; }
+    if (a === 'mst-period' && /^(day|week|month)$/.test(arg)) { if (MST.period !== arg) { MST.period = arg; loadMasterStats(); } render(); return; }
+    if (a === 'mst-prev') { mstMove(-1); return; }
+    if (a === 'mst-next') { mstMove(1); return; }
+    if (a === 'mst-retry') { loadMasterStats(); render(); return; }
+    if (a === 'mst-event' && /^\d+$/.test(arg)) { go('eventReport', Number(arg)); return; }
+    if (a === 'er-retry') { loadEventReport(); render(); return; }
     if (a === 'ea-retry') { loadEventApproval(); render(); return; }
     if (a === 'ea-yes') { decideEvent(Number(arg), true); return; }
     if (a === 'ea-ask') { EA.no = Number(arg); EA.note = ''; EA.empty = false; render(); return; }

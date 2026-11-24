@@ -29,7 +29,10 @@ Object.assign(SCREENS, {
     // «Ивенты», а не «Мероприятия» — слово владельца 29.10.2026 по прототипу: «Не мероприятия а ивенты»
     // шаг 4: «Свои ивенты» — в той же группе, у всякого, кто ведёт свои (мастер, организатор, работник)
     var own = mayOwnEvents() ? '<button type="button" class="listitem" data-go="organizer"><span class="grow"><b>Свои ивенты</b>' +
-        '<span class="small">Записавшиеся, места и описание</span></span>' + svg(ICON.chev, 'chev') + '</button>' : '';
+        '<span class="small">Записавшиеся, места и описание</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
+        // шаг 34 (рецепт 34/masterStats, M0): статистика мастера — сразу под «Свои ивенты», по тому же условию
+        '<button type="button" class="listitem" data-go="masterStats"><span class="grow"><b>' + esc(slovo('masterStats.door')) + '</b></span>' +
+        svg(ICON.chev, 'chev') + '</button>' : '';
     var art = mayMasters() || own ? '<div class="group"><span class="label">Ивенты</span>' +
       (mayMasters() ? '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
         '<span class="small">' + waitSub(MR.pending, 'Заявки в мастера, ивенты, слоты') + '</span></span>' +
