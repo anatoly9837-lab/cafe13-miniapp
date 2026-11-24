@@ -13080,6 +13080,72 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s2.ctx.close();
     }
     {
+      // ps-period: ‹ уходит запросом с `at` прошлого месяца при том же period и том же бизнесе, на экране продажи прошлого
+      // окна; › погашена на текущем, после ‹ — нет, и возвращает в текущий месяц (ревью #406 на все четыре страницы)
+      const n = 'ps-period';
+      let first = null;
+      const o = mk();
+      const s = await psEnter(o, p => { first = first || p.get('at');
+        return json(200, PS_RESP({ sales: p.get('at').slice(0, 7) === first.slice(0, 7) ? {} : { revenue: '610.00', opex: '200.00', net: '410.00' } })); }, n);
+      const st = await PW(s, 'partnerStats.sales.title');
+      const q = () => o.seen.filter(x => x.startsWith('GET /stats/partner?')).map(x => new URL('https://x' + x.slice(4)).searchParams);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(first || '')) bad.push(`${n}: первый запрос без дня at: «${first}»`);
+      if (!(await s.p.$('[data-action="ps-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await tap(s, n, '[data-action="ps-prev"]', '‹'); await s.p.waitForTimeout(400);
+      const prev = q().slice(-1)[0];
+      if (!prev || prev.get('period') !== 'month' || prev.get('direction_id') !== '7' || !(prev.get('at').slice(0, 7) < first.slice(0, 7))) bad.push(`${n}: ‹ не спросила прошлый месяц того же бизнеса: ${prev && prev.toString()}`);
+      const c1 = await pcard(s, st);
+      if (!c1 || !c1.includes(await psum(s, '610.00')) || c1.includes(await psum(s, '52340.00'))) bad.push(`${n}: после ‹ на экране не продажи прошлого окна: «${c1}»`);
+      if (await s.p.$('[data-action="ps-next"][disabled]')) bad.push(`${n}: › погашена на прошлом периоде`);
+      await tap(s, n, '[data-action="ps-next"]', '›'); await s.p.waitForTimeout(400);
+      const nx = q().slice(-1)[0], c2 = await pcard(s, st);
+      if (!nx || nx.get('at').slice(0, 7) !== first.slice(0, 7) || nx.get('period') !== 'month') bad.push(`${n}: › не вернула к текущему месяцу: ${nx && nx.toString()}`);
+      if (!c2 || !c2.includes(await psum(s, '52340.00'))) bad.push(`${n}: после › не продажи текущего окна: «${c2}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ps-pozdniy: ответ месяца задержан, неделя пришла раньше — на экране продажи недели (держит `gen !== PST.gen` в
+      // loadPartnerStats). ps-biz-pozdniy: список бизнесов первого входа задержан, назад и вход снова — поздний список
+      // [7, 9] не ложится на свежий [7] (держит `gen !== PST.gen` в loadPartnerBiz). Загрузчики разного вида — по случаю
+      const n = 'ps-pozdniy';
+      let landed = false;
+      const s = await psEnter(mk(), p => p.get('period') === 'month'
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, PS_RESP({ sales: { revenue: '77777.00' } }))); }, 1500))
+        : json(200, PS_RESP({ kind: p.get('period'), sales: { revenue: '4300.00', opex: '1900.00', net: '2400.00' }, shares: PS_OPEN })), n);
+      await tap(s, n, '[data-action="ps-period:week"]', 'разрез week'); await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: ответ месяца пришёл раньше запроса недели — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный ответ месяца так и не пришёл — гонки не было`);
+      const c = await pcard(s, await PW(s, 'partnerStats.sales.title'));
+      if (!c || c.includes(await psum(s, '77777.00')) || !c.includes(await psum(s, '4300.00'))) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${c}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'ps-biz-pozdniy';
+      let landed = false, calls = 0, armed = false;
+      const o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT))] });
+      const TWO = [Object.assign(BWDIR(7, true), W('14854.00', OCT)), Object.assign(BWDIR(9, true), W('333.00', OCT))];
+      const api = psApi(o, () => json(200, PS_RESP()));
+      const s = await open(true, true, json(200, pmMe()), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (q.method() === 'GET' && u === '/partner/directions' && armed && ++calls === 1)
+          return new Promise(r => setTimeout(() => { landed = true; r(json(200, { directions: TWO })); }, 1500));
+        return api(q);
+      });
+      await s.p.waitForTimeout(400); armed = true;   // список при запуске — мимо гонки: задержан первый запрос ВХОДА
+      await tap(s, n, '#view [data-go="partnerStats"]', 'дверь «Статистика бизнеса» на «Клубе»'); await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
+      await tap(s, n, '#view [data-go="partnerStats"]', 'дверь «Статистика бизнеса» снова'); await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: поздний список пришёл раньше второго входа — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed || calls < 2) bad.push(`${n}: гонки не было: поздний ${landed}, запросов списка ${calls}`);
+      if (await s.p.$('[data-action="ps-biz:9"]')) bad.push(`${n}: поздний список первого входа лёг на свежий — на экране бизнес 9`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
       // ps-dver: у не-партнёра (бизнесов нет) двери B0 нет; вне Telegram — нет; 403 — словами сервера
       const n = 'ps-dver';
       const s = await open(true, true, json(200, pmMe()), null, null, null, psApi(mk({ dirs: () => [], mine: [] }), () => json(200, PS_RESP())));
