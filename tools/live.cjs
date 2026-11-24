@@ -98,10 +98,11 @@ const CASES = [
     ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
   ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 6],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
-    ['Подпись не принята'], ['нет в списке'], 1],
+    ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
     // + GET /join: экран просьбы спрашивает сервер сам (Cafe13KPG#459); здесь /join тоже 403
-    ['Вас ещё нет в списке'], ['Подпись не принята', 'Член клуба'], 2],
+    // J0 (рецепт #397): шапка выгнанного — «Доступ снят»; слов новичка о списке нет
+    ['Доступ снят'], ['Подпись не принята', 'Член клуба', 'Вас ещё нет в списке', 'Попасть в список'], 2],
   ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], [], 1],
   ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], [], 1],
   ['html-200', true, true, { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
@@ -352,7 +353,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!(await s.view()).includes(stay)) bad.push(`${n}: переход data-go увёл с экрана отказа`);
     };
     for (const [n, me, stay] of [
-      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Вас ещё нет в списке'],
+      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Доступ снят'],
       ['vyhod-401', json(401, { detail: 'подпись не принята' }), 'Подпись не принята'],
       ['vyhod-500', json(500, { detail: 'x' }), 'Сервер клуба недоступен']]) {
       const s = await open(true, true, me);
@@ -1965,7 +1966,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open('nosign', true, json(401, { detail: 'подпись не принята' }));
     const t = await s.view();
     if (s.calls.length) bad.push(`${n}: без подписи ушло запросов к серверу: ${s.calls.length}`);
-    if (t.includes('Подпись не принята') || t.includes('нет в списке')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
+    if (t.includes('Подпись не принята') || t.includes('Доступ снят')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
     // признак витрины — срок демонстрационного члена («1 250» ушёл с главной в скрытую шапку, v87)
     if (!t.includes('Действует до 14 ноября')) bad.push(`${n}: без подписи нет витрины (демонстрационного срока)`);
     await s.ctx.close();
@@ -2937,7 +2938,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open(true, true, json(200, OWNER), null, json(403, { detail: 'доступа нет' }), SAVED);
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('Вас ещё нет в списке')) bad.push('pass-403-list: не экран «нет в списке»');
+    if (!(await s.view()).includes('Доступ снят')) bad.push('pass-403-list: не экран «Доступ снят»');
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('pass-403-list: запас не стёрт');
     await s.ctx.close();
   }
