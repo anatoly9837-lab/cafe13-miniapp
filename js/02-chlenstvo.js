@@ -354,6 +354,8 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               topupQueue: 1, topupReq: 1,
               // шаг 25: вывод денег мастера и очередь решений admin (ручки /withdraw/*, api 18bfcff, миграция 036)
               withdraw: 1, withdrawQueue: 1,
+              // шаг 31: статистика клуба у главы (`GET /stats/club`, api 61db38e, без миграции)
+              clubStats: 1,
               // шаги 27/29/30: счёт роли (форма — проект в Cafe13KPG#557, миграция 037)
               roleAccount: 1,
               // шаг 3 (v109): мастера на ручках сервера — бой `bbf09f8`, миграция 020 накачена

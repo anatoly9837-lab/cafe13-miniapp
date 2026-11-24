@@ -4252,6 +4252,137 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
   }
+  // ── шаг 31 (Cafe13KPG#688: ТЗ ред. 1, снимок формы api 61db38e; рецепт `_docs/recept/ekran/31/clubStats.md`): статистика
+  // клуба у главы — «Управление» → «Статистика клуба». Пять случаев клиента; шестая ветвь ТЗ (`ends_at = infinity` в «живых»)
+  // — тест СЕРВЕРА (`tests/test_api_stats_head.py`): клиент печатает `memberships.live` как есть (ответ designer-cf 24.11).
+  // Заглушки сверяет страж формы (STUBS, `stats-club-*` в api-keys.json).
+  const CS_RESP = (x, period) => {
+    x = x || {};
+    const ev = x.events || { count: 2, bookings: 5, collected: '1500.00' };
+    return { period: period || 'month', period_start: '2026-10-31T17:00:00+00:00', period_end: '2026-11-30T17:00:00+00:00',
+      club: { book: 'club_ledger', member: { amount: x.member || '4800.00', count: 2 }, master: { amount: '700.00', count: 1 },
+        event: { amount: '150.00', count: 2 }, partner: { amount: '0', count: 0 }, total: x.total || '5650.00', balance: '9170.00',
+        unknown_joins: { in_period: 0, all_time: 0, note: 'взнос неизвестен' } },
+      memberships: { book: 'memberships', new: x.isNew === undefined ? 3 : x.isNew, live: 17,
+        live_at: x.liveEnd ? '2026-11-30T17:00:00+00:00' : '2026-11-24T05:00:00+00:00' },
+      events: ev, till: { arrivals: x.arrivals === undefined ? 4 : x.arrivals },
+      business: { book: 'club_ledger', closed: x.closed === undefined ? null : x.closed, current: x.current === undefined ? null : x.current },
+      masters: { book: 'event_payouts', rows: [] },
+      roles: { art_director: { book: 'club_ledger', amount: '45.00', count: 1, balance: '45.00', holders: [{ member_id: 3, first_name: 'Арт', last_name: '' }] },
+               space_manager: { book: 'club_ledger', amount: '30.00', count: 1, balance: '30.00', holders: [{ member_id: 4, first_name: 'Простр', last_name: '' }] } },
+      head: [{ member_id: 1, first_name: 'Глава', last_name: '', club: { amount: '5650.00', book: 'club_ledger' }, mine: { amount: null, note: 'личных начислений нет' } }],
+      members: { book: 'ledger', outside_frame: 'бар и касса вне рамки', spent: { events: '0', donations: '0', master_status: '0' },
+                 topups: { request: '0', join_share: '0', master_payout: '0' } } };
+  };
+  const CS_CLOSED = { amount: '300.00', months: 1, note: 'доля клуба — число, а не деньги: на счёт клуба она не зачисляется' };
+  const CS_CURRENT = { period_start: '2026-10-31T17:00:00+00:00', closes_at: '2026-11-30T17:00:00+00:00', closes_on: '2026-12-01',
+    note: 'текущий месяц ещё не закрыт — доля считается при закрытии' };
+  const CS_B1 = 'Это расчёт доли клуба, а не деньги на его счёте: на счёт клуба она не зачисляется.';
+  if (part(2)) {
+    const csopen = (me, stats) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+      if (q.method() === 'GET' && u.startsWith('/stats/club')) return stats(new URL('https://x' + u).searchParams);
+      return undefined;
+    });
+    const statsCalls = s => s.calls.filter(c => c.method === 'GET' && /\/stats\/club/.test(c.url));
+    const go31 = async (s, n) => {
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет вкладки «Управление»`));
+      await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="clubStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери «Статистика клуба»`));
+      await s.p.waitForTimeout(400);
+    };
+    const card = async (s, title) => (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.startsWith(title))[0] || null;
+    {
+      // ветвь 1: три разреза — три окна на одном дне (`at` сохраняется), числа сервера своего окна; «посещ» нет ни в одном
+      const n = 'stats-razrez';
+      const NEW = { day: 1, week: 6, month: 23 };
+      // сервер мерит «живых» на конце окна у прошлого периода и «сейчас» у текущего (поправка рецепта 6a313fa)
+      let first = null;
+      const s = await csopen(OWNER, p => { first = first || p.get('at');
+        return json(200, CS_RESP({ isNew: NEW[p.get('period')], liveEnd: p.get('at') !== first }, p.get('period'))); });
+      await go31(s, n);
+      const seen = {};
+      for (const p of ['month', 'week', 'day']) {
+        if (p !== 'month') { await s.p.click(`[data-action="cs-period:${p}"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза ${p}`)); await s.p.waitForTimeout(400); }
+        const m = await card(s, 'Членство');
+        seen[p] = m;
+        if (!m || !m.includes('Новых за период' + NEW[p])) bad.push(`${n}: ${p} — «Членство» не с числом своего окна: «${m}»`);
+        if (!m || !m.includes('Живых сейчас17')) bad.push(`${n}: ${p} — текущий период не «Живых сейчас»: «${m}»`);
+        if (/посещ/i.test(await s.view())) bad.push(`${n}: ${p} — на экране «посещ…»`);
+      }
+      const q = statsCalls(s).map(c => new URL(c.url).searchParams);
+      const ps = q.map(x => x.get('period')), ats = new Set(q.map(x => x.get('at')));
+      if (ps.join() !== 'month,week,day') bad.push(`${n}: разрезы ушли «${ps.join()}», ждали month,week,day`);
+      if (ats.size !== 1 || !/^\d{4}-\d{2}-\d{2}$/.test([...ats][0])) bad.push(`${n}: день разрезов не один: ${[...ats].join()}`);
+      if (new Set(Object.values(seen)).size !== 3) bad.push(`${n}: три разреза дали одинаковый экран`);
+      if (!(await s.p.$('[data-action="cs-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await s.p.click('[data-action="cs-prev"]'); await s.p.waitForTimeout(400);
+      const prev = statsCalls(s).slice(-1).map(c => new URL(c.url).searchParams)[0];
+      if (!prev || prev.get('period') !== 'day' || prev.get('at') >= [...ats][0]) bad.push(`${n}: ‹ не спросила предыдущий день`);
+      const mp = await card(s, 'Членство');
+      if (!mp || !mp.includes('Живых на конец периода17') || /\d{4}/.test(mp)) bad.push(`${n}: прошлый период не «Живых на конец периода» или с датой: «${mp}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ветвь 3: ивент без записей — нули числами, карточка на месте; ивентов нет (`null`) — E1, а не «0» из null
+      const n = 'stats-ivent-nuli';
+      let ev = { count: 1, bookings: 0, collected: '0' };
+      const s = await csopen(OWNER, p => json(200, CS_RESP({ events: ev }, p.get('period'))));
+      await go31(s, n);
+      let e = await card(s, 'Ивенты');
+      if (!e || !e.includes('Записей0') || !e.includes('Собрано0 ฿')) bad.push(`${n}: ивент без записей не нулями: «${e}»`);
+      ev = { count: 0, bookings: null, collected: null };
+      await s.p.click('[data-action="cs-period:day"]'); await s.p.waitForTimeout(400);
+      e = await card(s, 'Ивенты');
+      if (!e || !e.includes('Ивентов0') || !e.includes('Ивентов в этом периоде не было.')) bad.push(`${n}: ивентов нет — без E1 или без карточки: «${e}»`);
+      if (e && /Записей|Собрано/.test(e)) bad.push(`${n}: ивентов нет, а строки записей и собранного стоят: «${e}»`);
+      await s.ctx.close();
+    }
+    {
+      // ветвь 4: закрытый месяц есть — число и B1; нет — B2 и B1
+      const n = 'stats-biznes-zakryt';
+      let closed = CS_CLOSED;
+      const s = await csopen(OWNER, p => json(200, CS_RESP({ closed }, p.get('period'))));
+      await go31(s, n);
+      let b = await card(s, 'Бизнес');
+      if (!b || !b.includes('Доля клуба с закрытых месяцев300 ฿') || !b.includes(CS_B1)) bad.push(`${n}: закрытый месяц не числом с B1: «${b}»`);
+      closed = null;
+      await s.p.click('[data-action="cs-period:week"]'); await s.p.waitForTimeout(400);
+      b = await card(s, 'Бизнес');
+      if (!b || !b.includes('Закрытых месяцев в этом периоде нет.') || !b.includes(CS_B1) || b.includes('300')) bad.push(`${n}: закрытых нет — не B2 с B1: «${b}»`);
+      await s.ctx.close();
+    }
+    {
+      // ветвь 5, отрицательный контроль §4: текущий месяц — честная строка с датой сервера, а не «0 ฿»
+      const n = 'stats-tekushiy-mesyac';
+      const s = await csopen(OWNER, p => json(200, CS_RESP({ current: CS_CURRENT }, p.get('period'))));
+      await go31(s, n);
+      const b = await card(s, 'Бизнес');
+      if (!b || !b.includes('Текущий месяц закроется 1 декабря 2026 — доля считается при закрытии.')) bad.push(`${n}: нет B3 с датой сервера: «${b}»`);
+      if (b && /\b0 ฿/.test(b)) bad.push(`${n}: у незакрытого месяца «0 ฿» вместо строки: «${b}»`);
+      if (b && b.includes('ещё не закрыт')) bad.push(`${n}: напечатан note сервера вместо слова рецепта`);
+      await s.ctx.close();
+    }
+    {
+      // ветвь 6, клиентская половина: без `head` двери нет и ручку не спрашивают; глава получил 403 — слово сервера
+      const n = 'stats-ne-glava';
+      const MST = clone(OWNER); MST.roles = [{ role: 'master', direction_id: null }];
+      let s = await csopen(MST, () => json(403, { detail: 'нужна роль head' }));
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => {});
+      await s.p.waitForTimeout(300);
+      if (await s.p.$('#view [data-go="clubStats"]')) bad.push(`${n}: у мастера без head строка «Статистика клуба»`);
+      await s.p.evaluate(() => go('clubStats')); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes('Сюда нельзя') || statsCalls(s).length) bad.push(`${n}: экран открылся не-главе или ручку спросили`);
+      await s.ctx.close();
+      s = await csopen(OWNER, () => json(403, { detail: 'нужна роль head' }));
+      await go31(s, n);
+      const v = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (v !== 'нужна роль head') bad.push(`${n}: отказ «${v}», ждали словами сервера`);
+      if (await card(s, 'Деньги клуба')) bad.push(`${n}: при 403 стоят числа`);
+      await s.ctx.close();
+    }
+  }
   // Фото не загрузилось — сказано явно, а не пустой кружок.
   if (part(1)) {
     const s = await open(true, true, json(200, BARMAN), null, null, null, queue());
@@ -12686,7 +12817,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'withdraw-request-business': WD_POSTED(12, WD_BIZ(7)), 'withdraw-decide-business': WD_DECIDED(12, 'approved', { ledger_id: null, payout_id: 55 }),
     // шаги 27/29/30 (Cafe13KPG#557): заглушки случаев `vyvod-rol-*` против снимка api bdff63e
     'withdraw-accounts-role': { accounts: [RA_ACCROW('art_director', '1200.00')] },
-    'withdraw-mine-club': { requests: [RA_REQ(40, 'club', 'pending')], balance: '3170.00' }
+    'withdraw-mine-club': { requests: [RA_REQ(40, 'club', 'pending')], balance: '3170.00' },
+    // шаг 31 (Cafe13KPG#688): заглушки случаев `stats-*` против снимка api 61db38e
+    'stats-club-month-2020-03': CS_RESP({ closed: CS_CLOSED }), 'stats-club-month-now': CS_RESP({ current: CS_CURRENT }),
+    'stats-club-empty-day': CS_RESP({ events: { count: 0, bookings: null, collected: null }, isNew: 0, arrivals: 0 }, 'day')
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }

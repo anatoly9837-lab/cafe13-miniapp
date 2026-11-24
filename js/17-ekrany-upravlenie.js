@@ -51,6 +51,9 @@ Object.assign(SCREENS, {
         waitMark(wait) + svg(ICON.chev, 'chev') + '</button>' +
       '<button type="button" class="listitem" data-go="people"><span class="grow"><b>Члены клуба</b>' +
         '<span class="small">Кто в клубе и с какими уровнями</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
+      // шаг 31 (рецепт 31/clubStats, C0): статистика клуба — у главы и админа, тот же предикат, что у группы
+      (mayClubStats() ? '<button type="button" class="listitem" data-go="clubStats"><span class="grow"><b>Статистика клуба</b></span>' +
+        svg(ICON.chev, 'chev') + '</button>' : '') +
     '</div>' + money_ + art + biz;
   },
 
@@ -467,5 +470,131 @@ Object.assign(SCREENS, {
           '<div><span>Партнёру · <span class="num">' + pct(b.shares.partner) + '</span> %</span></div></div>' +
         '<button type="button" class="btn quiet" data-action="doli-open:' + b.id + '"' + act + '>Изменить доли</button></div>';
     }
+  },
+});
+
+/* ── шаг 31: статистика клуба у главы (ТЗ Cafe13KPG#688 ред. 1, рецепт `_docs/recept/ekran/31/clubStats.md`,
+   снимок формы api 61db38e) ── Одна ручка на страницу: `GET /stats/club?period=&at=`. Пусто ≠ 0 (§4): счётчики
+   приходят числом всегда, а суммы ивентов по пустому периоду — `null`, и это НЕ ноль. Даты экран не считает:
+   закрытие текущего месяца — `business.current.closes_on`; дату `live_at` не печатает вовсе (поправка рецепта
+   6a313fa: конец окна — 00:00 следующего дня, «на 1 декабря» о ноябре читалось бы неверно). Посещений нет вовсе
+   (слово владельца 21.11.2026). Числа не кэшируются между периодами: каждая смена разреза — новый запрос. */
+var CS = { period: 'month', at: '', data: null, fail: '', deny: '', gen: 0 };
+function mayClubStats() { return LIVE && (grant('head') || grant('admin')); }
+// дата «ГГГГ-ММ-ДД» словами, без пересчёта пояса: «1 декабря 2026»
+function csDay(ymd) { var x = ymd.split('-'); return Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1] + ' ' + x[0]; }
+function csAdd(ymd, n) { return new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10); }
+// начало периода, в который попадает день: неделя ISO — с понедельника, как у сервера (`date_trunc('week')`)
+function csStart(period, ymd) {
+  if (period === 'month') return ymd.slice(0, 8) + '01';
+  if (period === 'week') return csAdd(ymd, -((new Date(ymd + 'T00:00:00Z').getUTCDay() + 6) % 7));
+  return ymd;
+}
+function csShift(period, ymd, dir) {
+  var s = csStart(period, ymd);
+  if (period === 'day') return csAdd(s, dir);
+  if (period === 'week') return csAdd(s, 7 * dir);
+  var y = Number(s.slice(0, 4)), m = Number(s.slice(5, 7)) - 1 + dir;
+  y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+  return y + '-' + (m < 9 ? '0' : '') + (m + 1) + '-01';
+}
+function csLabel(period, ymd) {
+  var s = csStart(period, ymd);
+  if (period === 'day') return csDay(s);
+  if (period === 'month') return bmMonth(Date.parse(s.slice(0, 8) + '15T12:00:00Z'));
+  var e = csAdd(s, 6), a = s.split('-'), b = e.split('-');
+  return 'Неделя ' + (a[1] === b[1] ? Number(a[2]) + '–' + Number(b[2]) + ' ' + MONTHS[Number(b[1]) - 1]
+    : Number(a[2]) + ' ' + MONTHS[Number(a[1]) - 1] + ' – ' + Number(b[2]) + ' ' + MONTHS[Number(b[1]) - 1]);
+}
+// деньги сервера: число или строка-число; минус законен (доля клуба с бизнеса — разность)
+function csMoney(v) { return typeof v === 'number' && isFinite(v) ? v : typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN; }
+function csCount(v) { return typeof v === 'number' && v >= 0 && v % 1 === 0; }
+/* Одна битая часть — отказ целиком: страница с пропавшим блоком читалась бы полной. Ноль вместо `null` не
+   подставляется нигде: у ивентов `null` значит «ивентов не было», и это слово E1, а не «0 ฿». */
+function fromClubStats(d) {
+  if (!d || typeof d !== 'object') return null;
+  var c = d.club, m = d.memberships, e = d.events, t = d.till, b = d.business;
+  if (!c || !m || !e || !t || !b || typeof c !== 'object' || typeof b !== 'object') return null;
+  var club = {};
+  var srcs = ['member', 'master', 'event', 'partner'];
+  for (var i = 0; i < srcs.length; i++) {
+    var x = c[srcs[i]];
+    if (!x || !isFinite(csMoney(x.amount))) return null;
+    club[srcs[i]] = csMoney(x.amount);
+  }
+  club.total = csMoney(c.total); club.balance = csMoney(c.balance);
+  if (!isFinite(club.total) || !isFinite(club.balance)) return null;
+  if (!csCount(m.new) || !csCount(m.live) || typeof m.live_at !== 'string' || isNaN(Date.parse(m.live_at))) return null;
+  if (typeof d.period_end !== 'string' || isNaN(Date.parse(d.period_end))) return null;
+  if (!csCount(e.count) || !csCount(t.arrivals)) return null;
+  // ивентов нет — суммы `null`; ивенты есть — числа (ивент без записей даёт 0, а не null)
+  var none = e.count === 0;
+  if (none ? e.bookings !== null || e.collected !== null : !csCount(e.bookings) || !isFinite(csMoney(e.collected))) return null;
+  var closed = b.closed, cur = b.current;
+  if (closed !== null && (!closed || typeof closed !== 'object' || !isFinite(csMoney(closed.amount)))) return null;
+  if (cur !== null && (!cur || typeof cur !== 'object' || typeof cur.closes_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(cur.closes_on))) return null;
+  return { club: club, isNew: m.new, live: m.live, // «на конец периода» — когда сервер мерил на конце окна; раньше конца — период текущий, мерил «сейчас»
+           liveEnd: Date.parse(m.live_at) === Date.parse(d.period_end),
+           count: e.count, bookings: none ? null : e.bookings, collected: none ? null : csMoney(e.collected),
+           arrivals: t.arrivals, closed: closed === null ? null : csMoney(closed.amount),
+           closesOn: cur === null ? null : cur.closes_on };
+}
+function loadClubStats() {
+  if (!mayClubStats()) return;
+  var gen = ++CS.gen, who = WHO;
+  CS.data = null; CS.fail = ''; CS.deny = '';
+  api('GET', '/stats/club?period=' + CS.period + '&at=' + CS.at).then(function (r) {
+    if (gen !== CS.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromClubStats(r.data) : null;
+    if (got) CS.data = got;
+    else if (r.status === 403) CS.deny = detailOf(r) || failText(r);
+    else CS.fail = failText(r);
+    if (current === 'clubStats') render();
+  });
+}
+function csMove(dir) {
+  if (dir > 0 && csStart(CS.period, CS.at) >= csStart(CS.period, msToday())) return;   // › погашена на текущем
+  CS.at = csShift(CS.period, CS.at, dir); loadClubStats(); render();
+}
+
+Object.assign(SCREENS, {
+  clubStats: function () {
+    if (!mayClubStats()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Статистику клуба видит глава клуба.</span></div></div>';
+    var P = [['day', 'День'], ['week', 'Неделя'], ['month', 'Месяц']];
+    var seg = '<div class="seg">' + P.map(function (x) {
+      return '<button type="button" data-action="cs-period:' + x[0] + '" aria-pressed="' + (CS.period === x[0]) + '">' + x[1] + '</button>';
+    }).join('') + '</div>';
+    var last = csStart(CS.period, CS.at) >= csStart(CS.period, msToday());
+    var nav = '<div class="row"><button type="button" class="btn ghost" data-action="cs-prev" aria-label="Предыдущий период">‹</button>' +
+      '<b>' + esc(csLabel(CS.period, CS.at)) + '</b>' +
+      '<button type="button" class="btn ghost" data-action="cs-next" aria-label="Следующий период"' + (last ? ' disabled' : '') + '>›</button></div>';
+    if (CS.deny) return seg + nav + '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(CS.deny) + '</span></div>';
+    if (CS.fail) return seg + nav + '<div class="card quiet"><div class="row"><span class="small">Статистика не загрузилась.</span>' +
+      '<button type="button" class="btn quiet" data-action="cs-retry">Повторить</button></div></div>';
+    if (!CS.data) return seg + nav + '<div class="card quiet"><span class="small">Загружаем статистику…</span></div>';
+    var s = CS.data;
+    var row = function (label, val) { return '<div><span class="small">' + label + '</span><b class="num">' + val + '</b></div>'; };
+    var D = '<div class="card"><b>Деньги клуба</b><div class="rows">' +
+        row('Членство', bmSum(s.club.member)) + row('Мастера', bmSum(s.club.master)) + row('Ивенты', bmSum(s.club.event)) +
+        row('Бизнесы', bmSum(s.club.partner)) + row('Итого', bmSum(s.club.total)) + row('Остаток счёта клуба', bmSum(s.club.balance)) +
+      '</div><span class="small">Остаток — на сегодня, а не за период.</span></div>';
+    var M = '<div class="card"><b>Членство</b><div class="rows">' +
+        row('Новых за период', s.isNew) + row(s.liveEnd ? 'Живых на конец периода' : 'Живых сейчас', s.live) + '</div></div>';
+    // E1: ивентов не было — строки записей и собранного не стоят вовсе; «0» из `null` солгал бы «был, но пустой»
+    var E = '<div class="card"><b>Ивенты</b><div class="rows">' + row('Ивентов', s.count) +
+        (s.count === 0 ? '' : row('Записей', s.bookings) + row('Собрано', bmSum(s.collected))) + '</div>' +
+      (s.count === 0 ? '<span class="small">Ивентов в этом периоде не было.</span>' : '') + '</div>';
+    // B: доля клуба — расчёт, а не поступление (замер шага 28, #559): B1 стоит при любом числе. B3 — строка, а не
+    // «0 ฿» у незакрытого месяца (§4); дата — сервера, словами
+    var B = '<div class="card"><b>Бизнес</b>' +
+      (s.closed === null ? '<span class="small">Закрытых месяцев в этом периоде нет.</span>'
+        : '<div class="rows">' + row('Доля клуба с закрытых месяцев', bmSum(s.closed)) + '</div>') +
+      '<span class="small">Это расчёт доли клуба, а не деньги на его счёте: на счёт клуба она не зачисляется.</span>' +
+      (s.closesOn === null ? '' : '<span class="small">Текущий месяц закроется ' + esc(csDay(s.closesOn)) + ' — доля считается при закрытии.</span>') +
+      '</div>';
+    var T = '<div class="card"><b>Касса</b><div class="rows">' + row('Незнакомцев у кассы', s.arrivals) + '</div>' +
+      '<span class="small">Те, кто нажал в боте «Я у кассы» за период.</span></div>';
+    return seg + nav + D + M + E + B + T;
   },
 });
