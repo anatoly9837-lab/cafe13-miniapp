@@ -67,7 +67,7 @@
 | `dver` | `home` | — | 10398 | 8 | 0 |
 | `dver` | `sostav` | — | 2456 | 4 | 0 |
 | `master` | `home` | — | 5756 | 8 | 9 |
-| `master` | `masterApply` | — | 13889 | 9 | 21 |
+| `master` | `masterApply` | — | 14357 | 9 | 22 |
 | `master` | `sostav` | — | 4463 | 4 | 0 |
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
