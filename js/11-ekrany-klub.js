@@ -31,6 +31,9 @@ var SCREENS = {
          владелец назвал календарём-афишей (#670), пятая вкладка спорила бы с тем же словом */
       (LIVE ? '<button type="button" class="listitem" data-go="bookings">' +
           '<span class="grow"><b>Мои записи</b></span>' + svg(ICON.chev, 'chev') + '</button>' : '') +
+      // шаг 36 (рецепт 36/myStats, Y0): «Моя статистика» — у любого вошедшего, гостя тоже (№42 «а»); вне Telegram пусто
+      (mayMyStats() ? '<button type="button" class="listitem" data-go="myStats"><span class="grow"><b>' + esc(slovo('myStats.door')) + '</b></span>' +
+        svg(ICON.chev, 'chev') + '</button>' : '') +
 
       // шаг 3: «Я мастер» — под карточкой членства (кадр E54); у гостя пусто
       masterOffer() +

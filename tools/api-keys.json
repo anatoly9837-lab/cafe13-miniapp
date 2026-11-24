@@ -3518,5 +3518,60 @@
    "detail": null
   },
   "status": 403
+ },
+ "stats-me": {
+  "request": "GET /stats/me?period=month&at=N-N-N",
+  "shape": {
+   "events": {
+    "count": null,
+    "spent": null
+   },
+   "list": [
+    {
+     "id": null,
+     "paid": null,
+     "starts_at": null,
+     "title": null
+    }
+   ],
+   "money": {
+    "balance": null,
+    "book": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   },
+   "topups": {
+    "amount": null,
+    "count": null
+   }
+  },
+  "status": 200
+ },
+ "stats-me-empty": {
+  "request": "GET /stats/me?period=month&at=N-N-N",
+  "shape": {
+   "events": {
+    "count": null,
+    "spent": null
+   },
+   "list": [],
+   "money": {
+    "balance": null,
+    "book": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   },
+   "topups": {
+    "amount": null,
+    "count": null
+   }
+  },
+  "status": 200
  }
 }
