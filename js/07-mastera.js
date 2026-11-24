@@ -289,7 +289,9 @@ function masterOffer() {
     var st = r.status === 'pending' ? 'wait' : r.status === 'approved' ? 'ok' : 'no';
     var sub = msWhen(r) + (r.at ? '' : ', каждую неделю') + ' · «' + r.title + '»';
     var tail = r.status === 'rejected' ? (r.note ? cap(r.note) + '. ' : '') + money(r.amount) + ' ฿ вернулись на счёт.'
-      : r.status === 'pending' ? 'Списано ' + money(r.amount) + ' ฿. Решает арт-директор; если откажет, деньги вернутся.' : '';
+      : r.status === 'pending' ? 'Списано ' + money(r.amount) + ' ฿. Решает арт-директор; если откажет, деньги вернутся.'
+      // H8 (рецепт master/home.md, №46 «б»): согласованный с датой — плата за слот остаётся клубу
+      : r.status === 'approved' && r.at ? slovo('home.masterBookings.slotFee', { amount: money(r.amount) }) : '';
     return '<div class="card quiet"><div class="row"><div class="col"><b>' + esc(sub) + '</b>' +
         (tail ? '<span class="small">' + esc(tail) + '</span>' : '') + '</div>' +
       '<span class="st ' + st + '">' + esc(r.word) + '</span></div></div>';
