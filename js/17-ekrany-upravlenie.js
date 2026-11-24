@@ -36,6 +36,9 @@ Object.assign(SCREENS, {
         waitMark(MR.pending) + svg(ICON.chev, 'chev') + '</button>' : '') + own +
       // шаг 32 (рецепт 32/artStats, C0): статистика арт-директора — в группе его работы, у art_director и админа
       (mayArtStats() ? '<button type="button" class="listitem" data-go="artStats"><span class="grow"><b>' + esc(slovo('artStats.door')) + '</b></span>' +
+        svg(ICON.chev, 'chev') + '</button>' : '') +
+      // фича 4 (рецепт odobrenie/eventApproval, A0): очередь одобрения — у art_director и админа; числа на двери нет (ВЫБОР рецепта)
+      (mayEventApproval() ? '<button type="button" class="listitem" data-go="eventApproval"><span class="grow"><b>' + esc(slovo('eventApproval.door')) + '</b></span>' +
         svg(ICON.chev, 'chev') + '</button>' : '') + '</div>' : '';
     // шаг 12 (кадр E46е, Cafe13KPG#877): «Бизнесы» — у операционного директора (и админа). Пометки ждущих нет:
     // ждать тут нечему до шага 13, его строка «Заявки в партнёры» ляжет в эту же группу
@@ -702,5 +705,89 @@ Object.assign(SCREENS, {
       '<span class="small">' + esc(slovo('artStats.money.nowNote')) + '</span>' +
       '<span class="small">' + esc(slovo('artStats.money.roleNote')) + '</span></div>';
     return seg + nav + E + M + D;
+  },
+});
+
+/* ── фича 4: одобрение ивентов арт-директором (Cafe13KPG#1009, рецепт `_docs/recept/ekran/odobrenie/eventApproval.md`;
+   api #176 fc474be, миграция 040) ── Очередь опубликованных, ещё не решённых ивентов; заявок мастеров здесь нет (их ивент
+   рождается одобренным согласием). Денег нет вовсе: ивент без заявки за слот не платил. Все слова — ключами (№22); слова
+   сервера (`detail` отказа) — как есть. Очередь перечитывается на каждый вход и после каждого решения: её решают двое. */
+var EA = { list: null, fail: '', deny: '', gen: 0, busy: 0, no: 0, note: '', empty: false };
+function mayEventApproval() { return LIVE && (grant('art_director') || grant('admin')); }
+/* Битая строка — отказ целиком: очередь с пропавшей строкой читалась бы полной. organizer_id в экран не идёт. */
+function fromEventApproval(d) {
+  if (!Array.isArray(d)) return null;
+  var out = [];
+  for (var i = 0; i < d.length; i++) {
+    var x = d[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || !x.title || typeof x.starts_at !== 'string') return null;
+    var at = new Date(x.starts_at);
+    if (isNaN(at.getTime())) return null;
+    var b = bkk(at);
+    out.push({ id: x.id, title: x.title, when: msDate(b.ymd) + ', ' + b.hm,
+               who: [x.organizer_first_name, x.organizer_last_name].filter(function (s) { return typeof s === 'string' && s; }).join(' ') });
+  }
+  return out;
+}
+function loadEventApproval() {
+  if (!mayEventApproval()) return;
+  var gen = ++EA.gen, who = WHO;
+  EA.fail = '';
+  api('GET', '/events/pending-approval').then(function (r) {
+    if (gen !== EA.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromEventApproval(r.data) : null;
+    if (got) EA.list = got;
+    else if (r.status === 403) { EA.list = null; EA.deny = detailOf(r) || failText(r); }
+    else { EA.list = null; EA.fail = failText(r); }
+    if (current === 'eventApproval') render();
+  });
+}
+function decideEvent(id, approve) {
+  if (EA.busy) return;
+  var note = EA.note.trim();
+  if (!approve && !note) { EA.empty = true; render(); return; }          // A6: без причины запроса нет
+  EA.busy = id; EA.empty = false; EA.deny = ''; render();
+  var who = WHO;
+  api('POST', '/events/' + id + (approve ? '/approve' : '/reject'), approve ? undefined : { note: note }).then(function (r) {
+    if (who !== WHO) return;
+    EA.busy = 0;
+    if (r.status === 200 && r.data && r.data.approval === (approve ? 'approved' : 'rejected')) { EA.no = 0; EA.note = ''; haptic('ok'); }
+    else { EA.deny = detailOf(r) || failText(r); haptic('warn'); }
+    // любое решение и любой отказ — очередь перечитывается: строку мог решить второй
+    loadEventApproval();
+    if (current === 'eventApproval') render();
+  });
+}
+document.addEventListener('input', function (ev) {
+  if (ev.target && ev.target.id === 'ea-note') { EA.note = ev.target.value; if (EA.empty && EA.note.trim()) { EA.empty = false; } }
+});
+
+Object.assign(SCREENS, {
+  eventApproval: function () {
+    if (!mayEventApproval()) return '<div class="card quiet"><div class="col"><b>' + esc(slovo('eventApproval.denyTitle')) + '</b>' +
+      '<span class="small">' + esc(slovo('eventApproval.denyNote')) + '</span></div></div>';
+    // A1 — всегда: очередь держит афишу, и арт-директор должен это знать
+    var head = '<span class="small">' + esc(slovo('eventApproval.note')) + '</span>' +
+      (EA.deny ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(EA.deny) + '</span></div>' : '');
+    if (EA.fail && !EA.list) return head + '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('eventApproval.error')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="ea-retry">' + esc(slovo('eventApproval.retry')) + '</button></div></div>';
+    if (!EA.list) return head + (EA.deny ? '' : '<div class="card quiet"><span class="small">' + esc(slovo('eventApproval.loading')) + '</span></div>');
+    if (!EA.list.length) return head + '<span class="small">' + esc(slovo('eventApproval.none')) + '</span>';
+    return head + '<div class="card"><div class="rows">' + EA.list.map(function (x) {
+      var off = EA.busy || EA.no === x.id ? ' disabled' : '';
+      return '<div><div class="col" style="flex:1 1 auto;min-width:0">' +
+          '<b class="clamp1" data-event="' + x.id + '">' + esc(x.title) + '</b>' +
+          '<span class="small clamp1">' + esc(x.when + (x.who ? ' · ' + x.who : '')) + '</span>' +
+          '<div class="row" style="justify-content:flex-start;gap:8px">' +
+            '<button type="button" class="btn ghost" data-action="ea-yes:' + x.id + '"' + off + '>' + esc(slovo('eventApproval.approve')) + '</button>' +
+            '<button type="button" class="btn ghost" data-action="ea-ask:' + x.id + '"' + off + '>' + esc(slovo('eventApproval.reject')) + '</button></div>' +
+          (EA.no === x.id ? '<div class="field"><label for="ea-note">' + esc(slovo('eventApproval.reason')) + '</label>' +
+              '<textarea id="ea-note" rows="3" maxlength="500">' + esc(EA.note) + '</textarea>' +
+              (EA.empty ? '<span class="small">' + esc(slovo('eventApproval.reasonEmpty')) + '</span>' : '') + '</div>' +
+            '<div class="row" style="justify-content:flex-start;gap:8px">' +
+              '<button type="button" class="btn" data-action="ea-no:' + x.id + '"' + (EA.busy ? ' disabled' : '') + '>' + esc(slovo('eventApproval.rejectSend')) + '</button>' +
+              '<button type="button" class="btn" data-action="ea-keep"' + (EA.busy ? ' disabled' : '') + '>' + esc(slovo('eventApproval.cancel')) + '</button></div>' : '') +
+        '</div></div>';
+    }).join('') + '</div></div>';
   },
 });

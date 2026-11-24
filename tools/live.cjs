@@ -1406,6 +1406,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       ['Ваши букинги', 'Ждущий вечер', 'ждёт решения', 'Согласованный вечер', 'согласовано', 'Отказанный вечер', 'Нет фото работ', 'вернулись на счёт',
        'Недельный слот', 'каждую неделю', 'Забукать'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: на «Клубе» нет «${w}»`); });
       if (t.includes('Прошедший вечер')) bad.push(`${n}: прошедший букинг стоит в списке`);
+      // H8 (рецепт master/home.md, №46 «б», фича 4): у согласованного С ДАТОЙ — плата за слот остаётся клубу; ровно у одного
+      // (недельный без даты её не несёт, прошедший скрыт)
+      const fee = await s.p.evaluate(() => SLOVA.ru['home.masterBookings.slotFee']);
+      const feeN = fee ? t.split(fee.replace('{amount} ฿', '').trim()).length - 1 : -1;
+      if (feeN !== 1) bad.push(`${n}: «плата за слот, они остаются клубу» стоит ${feeN} раз, ждали у одного согласованного с датой`);
       // порядок — по дате: ближайший первым
       const i1 = t.indexOf('Ждущий вечер'), i2 = t.indexOf('Согласованный вечер');
       if (i1 > -1 && i2 > -1 && i1 > i2) bad.push(`${n}: список не по дате — ближайший не первым`);
@@ -6409,7 +6414,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // важно их значение, задаёт его сам (`over`), как и прежде
     ask_donation: null, full_refund_until: null, my_may_thank: null,
     my_entry_paid: null, my_refund_now: null, my_donated: null,
-    my_booking_paid: null, my_amount_due: null
+    my_booking_paid: null, my_amount_due: null,
+    // фича 4 (api #176, снимок events-afisha* на 4428e6d): одобрение в строке ивента. По умолчанию — одобрен, как всё,
+    // что миграция 040 застала опубликованным; ждущий и отклонённый задают своё (`over`, случаи odobr-*)
+    approval: 'approved', reject_note: null
   }, over);
   const AFISHA = [
     EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
@@ -6459,6 +6467,206 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (can !== true) bad.push(`${n}: запись на мероприятие без ограничения мест закрыта (canBookEvent → ${JSON.stringify(can)})`);
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
+  }
+  // ── фича 4 (Cafe13KPG#1009, рецепт `_docs/recept/ekran/odobrenie/`; api #176 fc474be, миграция 040): одобрение ивентов ──
+  // Форма — код сервера на fc474be (`PENDING_APPROVAL_SQL`, `_decide_event`, `queries.py:636`); снимка формы ещё нет: он
+  // снимается после выкладки, тогда `approval`/`reject_note` лягут и в AFISHA. Слова — по словарю (SLOVA.ru со страницы).
+  const ODOBR = (() => {
+    const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
+    const MEMB = clone(OWNER); MEMB.roles = []; MEMB.member.tg_user_id = 77;
+    const PROW = (id, title, over) => Object.assign({ id, title, starts_at: atBkk(2, 19), duration_min: 90, seats: 10, kind: 'paid',
+      price: '400.00', place_id: null, organizer_id: 987654, organizer_first_name: 'Работник', organizer_last_name: 'Клуба' }, over);
+    const DEC = (id, ok, note) => ({ id, approved_at: ok ? '2026-12-02T01:00:00+00:00' : null, approved_by: ok ? 1 : null,
+      rejected_at: ok ? null : '2026-12-02T01:00:00+00:00', reject_note: ok ? null : note, approval: ok ? 'approved' : 'rejected' });
+    // o.queue() — ответ очереди на каждый GET; o.decide(q) — ответ решения; o.events — строки /events
+    const api = o => q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+      if (q.method() === 'GET' && u === '/events/pending-approval') return o.queue ? o.queue() : json(200, []);
+      if (q.method() === 'POST' && /^\/events\/\d+\/(approve|reject)$/.test(u)) return o.decide(q);
+      if (q.method() === 'GET' && u === '/events') return json(200, o.events || []);
+      return undefined;
+    };
+    const W = async (s, k) => s.p.evaluate(k => SLOVA.ru[k], k);
+    const toQueue = async (s, n) => {
+      await s.p.click('#tabs [data-go="manage"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет вкладки «Управление»`));
+      await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="eventApproval"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери «Ивенты на одобрение»`));
+      await s.p.waitForTimeout(400);
+    };
+    const decCalls = s => s.calls.filter(c => c.method === 'POST' && /\/events\/\d+\/(approve|reject)$/.test(c.url));
+    return { ART, MEMB, PROW, DEC, api, W, toQueue, decCalls };
+  })();
+  if (part(1)) {
+    // odobr-ochered: дверь только у арт-директора; A1 всегда; строка — название и «когда · кто», organizer_id в разметку не идёт;
+    // денег и возврата на экране нет (odobr-bez-deneg); «Одобрить» — POST без тела, строка уходит перечитыванием; пусто — A7
+    const n = 'odobr-ochered';
+    const { ART, PROW, DEC, api, W, toQueue, decCalls } = ODOBR;
+    let k = 0;
+    const o = { queue: () => json(200, ++k === 1 ? [PROW(41, 'Вечер работника'), PROW(42, 'Утро главы', { starts_at: atBkk(3, 10) })] : k === 2 ? [PROW(42, 'Утро главы', { starts_at: atBkk(3, 10) })] : []),
+                decide: q => json(200, DEC(Number(q.url().match(/(\d+)\/approve$/)[1]), true)) };
+    let s = await open(true, true, json(200, ART), null, null, null, api(o), null, NOWFIX);
+    await toQueue(s, n);
+    let v = await s.view();
+    if (!v.includes(await W(s, 'eventApproval.note'))) bad.push(`${n}: нет A1 над очередью`);
+    if (!v.includes('Вечер работника') || !v.includes('Утро главы')) bad.push(`${n}: в очереди нет ждущих ивентов: «${v.slice(0, 200)}»`);
+    if (!v.includes('Работник Клуба')) bad.push(`${n}: в строке нет имени организатора`);
+    if (v.indexOf('Вечер работника') > v.indexOf('Утро главы')) bad.push(`${n}: порядок не сервера (ближайшие первыми)`);
+    if (/฿|возвра/i.test(v)) bad.push(`${n}: на очереди деньги или возврат (odobr-bez-deneg)`);
+    if ((await s.p.$eval('#view', e => e.innerHTML)).includes('987654')) bad.push(`${n}: organizer_id в разметке`);
+    if (/eventApproval\.\w/.test(v)) bad.push(`${n}: на экране ключ вместо слова`);
+    await s.p.click('[data-action="ea-yes:41"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Одобрить» у строки`));
+    await s.p.waitForTimeout(500);
+    const d = decCalls(s);
+    if (d.length !== 1 || !/\/events\/41\/approve$/.test(d[0].url) || d[0].body) bad.push(`${n}: одобрение ушло не POST /events/41/approve без тела: ${JSON.stringify(d.map(c => c.url + ' ' + c.body))}`);
+    v = await s.view();
+    if (v.includes('Вечер работника') || !v.includes('Утро главы')) bad.push(`${n}: после одобрения очередь не перечитана`);
+    await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(200);
+    await s.p.click('#view [data-go="eventApproval"]', { timeout: 3000 }).catch(() => {});
+    await s.p.waitForTimeout(400);
+    v = await s.view();
+    if (!v.includes(await W(s, 'eventApproval.none')) || !v.includes(await W(s, 'eventApproval.note'))) bad.push(`${n}: пустая очередь — не A1 и A7`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+    // не арт-директор: двери нет, прямой вход — отказ без запроса. Мастер (членство organizer) — нарочно: «Управление» и
+    // группу «Ивенты» он видит («Свои ивенты»), и дверь, вставшая без своего условия, была бы видна; у члена без роли
+    // группы нет вовсе, у работника — всего «Управления» (мутант m9 выжил на члене без роли)
+    const STAFF = clone(ODOBR.MEMB); STAFF.memberships = [{ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }];
+    s = await open(true, true, json(200, STAFF), null, null, null, api(o), null, NOWFIX);
+    await s.p.evaluate(() => go('manage'));
+    await s.p.waitForTimeout(300);
+    if (!(await s.p.$('#view [data-go="organizer"]'))) bad.push(`${n}: у мастера нет «Своих ивентов» — граница группы мертва`);
+    if (await s.p.$('#view [data-go="eventApproval"]')) bad.push(`${n}: у мастера дверь «Ивенты на одобрение»`);
+    const before = s.calls.filter(c => /pending-approval/.test(c.url)).length;
+    await s.p.evaluate(() => go('eventApproval')); await s.p.waitForTimeout(300);
+    if (!(await s.view()).includes(await W(s, 'eventApproval.denyTitle')) || s.calls.filter(c => /pending-approval/.test(c.url)).length !== before)
+      bad.push(`${n}: очередь открылась не-арт-директору или ручку спросили`);
+    await s.ctx.close();
+  }
+  if (part(1)) {
+    // odobr-prichina: «Отклонить» открывает A5 и гасит кнопки строки; пустая причина — A6 и НИ ОДНОГО запроса; с причиной —
+    // POST reject {note}; отказ сервера (второй арт-директор успел) — словами сервера над очередью, очередь перечитана
+    const n = 'odobr-prichina';
+    const { ART, PROW, api, W, toQueue, decCalls } = ODOBR;
+    let k = 0;
+    const o = { queue: () => json(200, ++k === 1 ? [PROW(51, 'Спорный вечер')] : []),
+                decide: () => json(409, { detail: 'мероприятие уже одобрено' }) };
+    const s = await open(true, true, json(200, ART), null, null, null, api(o), null, NOWFIX);
+    await toQueue(s, n);
+    await s.p.click('[data-action="ea-ask:51"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Отклонить» у строки`));
+    await s.p.waitForTimeout(200);
+    if (!(await s.p.$('#ea-note'))) bad.push(`${n}: «Отклонить» не открыл поле причины`);
+    if ((await s.p.$eval('#ea-note', e => e.maxLength).catch(() => null)) !== 500) bad.push(`${n}: у причины нет предела 500`);
+    if (!(await s.p.$('[data-action="ea-yes:51"][disabled]'))) bad.push(`${n}: при открытой причине «Одобрить» строки не погашена`);
+    await s.p.click('[data-action="ea-no:51"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет кнопки отправки отказа`));
+    await s.p.waitForTimeout(200);
+    if (decCalls(s).length) bad.push(`${n}: отказ без причины ушёл на сервер`);
+    if (!(await s.view()).includes(await W(s, 'eventApproval.reasonEmpty'))) bad.push(`${n}: пустая причина — нет A6`);
+    await s.p.fill('#ea-note', '   ');
+    await s.p.click('[data-action="ea-no:51"]', { timeout: 3000 }).catch(() => {});
+    await s.p.waitForTimeout(200);
+    if (decCalls(s).length) bad.push(`${n}: причина из пробелов ушла на сервер`);
+    await s.p.fill('#ea-note', 'Пересекается с концертом');
+    await s.p.click('[data-action="ea-no:51"]', { timeout: 3000 }).catch(() => {});
+    await s.p.waitForTimeout(500);
+    const d = decCalls(s);
+    if (d.length !== 1 || !/\/events\/51\/reject$/.test(d[0].url) || JSON.parse(d[0].body || '{}').note !== 'Пересекается с концертом')
+      bad.push(`${n}: отказ ушёл не POST /events/51/reject с причиной: ${JSON.stringify(d.map(c => c.url + ' ' + c.body))}`);
+    const vb = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+    if (vb !== 'мероприятие уже одобрено') bad.push(`${n}: отказ «${vb}», ждали словами сервера`);
+    if (k < 2) bad.push(`${n}: после отказа сервера очередь не перечитана`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  if (part(1)) {
+    // odobr-metka / odobr-zapis / odobr-ne-otmena / odobr-bez-deneg (event.md): автору ждущий — E1 в строке афиши и на карточке,
+    // E2 под ней; отклонённый — E3 и E4 с причиной дословно; записи нет ни там, ни там; слов отмены у отклонённого нет; денег
+    // в метке нет. Одобренный — без метки (граница). Арт-директору у ждущего — ссылка в очередь, а E2 (слова автора) нет.
+    const n = 'odobr-metka';
+    const { ART, W } = ODOBR;
+    const ME = clone(ART); ME.roles = [];                           // автор — член без роли (uid 1 = organizer_id)
+    const evs = [EV({ id: 61, title: 'Мой ждущий', organizer_id: 1, approval: 'pending', reject_note: null, starts_at: atBkk(0, 18) }),
+                 EV({ id: 62, title: 'Мой отклонённый', organizer_id: 1, approval: 'rejected', reject_note: 'Пересекается с концертом', starts_at: atBkk(0, 19) }),
+                 EV({ id: 63, title: 'Чужой одобренный', approval: 'approved', reject_note: null, starts_at: atBkk(0, 20) })];
+    for (const [who, me] of [['автор', ME], ['арт-директор', ART]]) {
+      const list = who === 'автор' ? evs : evs.filter(e => e.approval !== 'rejected').map(e => Object.assign({}, e, { organizer_id: 500 }));
+      const s = await open(true, true, json(200, me), null, null, null, ODOBR.api({ events: list }), null, NOWFIX);
+      await s.p.waitForTimeout(400);
+      await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(400);
+      const pend = await W(s, 'event.approval.pendingPill'), rej = await W(s, 'event.approval.rejectedPill');
+      const row = async id => s.p.evaluate(id => { const b = document.querySelector(`#view [data-event="${id}"]`); return b ? b.textContent : null; }, id);
+      const r61 = await row(61), r63 = await row(63);
+      if (!r61 || !r61.includes(pend)) bad.push(`${n} (${who}): ждущий в афише без метки: «${r61}»`);
+      if (!r63 || r63.includes(pend) || r63.includes(rej)) bad.push(`${n} (${who}): у одобренного метка: «${r63}»`);
+      if (who === 'автор') { const r62 = await row(62); if (!r62 || !r62.includes(rej) || r62.includes(pend)) bad.push(`${n}: отклонённый в афише не «${rej}»: «${r62}»`); }
+      await s.p.evaluate(() => go('event', '61')); await s.p.waitForTimeout(300);
+      let v = await s.view();
+      if (!v.includes(pend)) bad.push(`${n} (${who}): на карточке ждущего нет E1`);
+      const e2 = await W(s, 'event.approval.pendingNote');
+      if ((who === 'автор') !== v.includes(e2)) bad.push(`${n} (${who}): E2 ${who === 'автор' ? 'нет у автора' : 'у не-автора'}`);
+      const link = !!(await s.p.$('#view [data-go="eventApproval"]'));
+      if ((who === 'арт-директор') !== link) bad.push(`${n} (${who}): ссылка в очередь ${link ? 'есть' : 'нет'}`);
+      if (await s.p.$('#view [data-action^="book"]')) bad.push(`${n} (${who}): на ждущем кнопка записи (odobr-zapis)`);
+      if (/฿ вернут|возвра|плата за слот/i.test(v)) bad.push(`${n} (${who}): у ждущего слова о деньгах слота (odobr-bez-deneg)`);
+      if (who === 'автор') {
+        await s.p.evaluate(() => go('event', '62')); await s.p.waitForTimeout(300);
+        v = await s.view();
+        if (!v.includes(rej) || !v.includes(await W(s, 'event.approval.rejectedNote'))) bad.push(`${n}: на карточке отклонённого нет E3/E4`);
+        const vb = await s.p.$eval('#view .verbatim', e => e.textContent).catch(() => null);
+        if (vb !== 'Пересекается с концертом') bad.push(`${n}: причина отказа «${vb}», ждали словами арт-директора`);
+        // слова СОСТОЯНИЯ отмены; кнопка автора «Отменить мероприятие» — прежний блок управления, она не о состоянии
+        if (/отмен(ён|ено|ена)/i.test(v)) bad.push(`${n}: у отклонённого слова отмены (odobr-ne-otmena): «${v.slice(0, 200)}»`);
+        if (await s.p.$('#view [data-action^="book"]')) bad.push(`${n}: на отклонённом кнопка записи (odobr-zapis)`);
+        if (/возвра|плата за слот/i.test(v)) bad.push(`${n}: у отклонённого слова о деньгах слота (odobr-bez-deneg)`);
+      }
+      // граница: одобренный — запись есть, метки нет (иначе гашение записи могло бы стоять у всех)
+      await s.p.evaluate(() => go('event', '63')); await s.p.waitForTimeout(300);
+      v = await s.view();
+      if (v.includes(pend) || v.includes(rej)) bad.push(`${n} (${who}): у одобренного метка на карточке`);
+      if (!(await s.p.$('#view [data-action^="book:63"]'))) bad.push(`${n} (${who}): у одобренного нет записи — признак записи мёртв`);
+      if (s.errs.length) bad.push(`${n} (${who}): ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+  if (part(1)) {
+    // odobr-pozdniy: ответ очереди прежнего входа задержан, второй вход ответил раньше — на экране очередь второго.
+    // Держит `gen !== EA.gen` в loadEventApproval (образец — art-pozdniy, queue-late)
+    const n = 'odobr-pozdniy';
+    const { ART, PROW, api, toQueue } = ODOBR;
+    let k = 0, landed = false;
+    const o = { queue: () => ++k === 1
+      ? new Promise(r => setTimeout(() => { landed = true; r(json(200, [PROW(81, 'qzx-прежний-qzx')])); }, 1500))
+      : json(200, [PROW(82, 'Свежий вечер')]) };
+    const s = await open(true, true, json(200, ART), null, null, null, api(o), null, NOWFIX);
+    await toQueue(s, n);
+    await s.p.evaluate(() => { go('manage'); go('eventApproval'); });
+    await s.p.waitForTimeout(300);
+    if (k < 2) bad.push(`${n}: второй вход не перечитал очередь (запросов ${k})`);
+    if (landed) bad.push(`${n}: прежний ответ пришёл раньше второго запроса — гонки не было, случай гарда не проверяет`);
+    await s.p.waitForTimeout(1600);
+    if (!landed) bad.push(`${n}: задержанный ответ так и не пришёл — гонки не было`);
+    const v = await s.view();
+    if (v.includes('qzx')) bad.push(`${n}: на экране очередь прежнего входа`);
+    else if (!v.includes('Свежий вечер')) bad.push(`${n}: свежей очереди на экране нет: ${v.slice(0, 160)}`);
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  if (part(1)) {
+    // odobr-vyhod: E5 — ивент работника рождается ждущим; выход создания говорит это вспышкой на карточке. Граница: тот же
+    // выход с одобренным (сервер до 040) — E5 нет
+    const n = 'odobr-vyhod';
+    const STAFF = clone(OWNER); STAFF.roles = [{ role: 'staff', direction_id: null }];
+    for (const appr of ['pending', 'approved']) {
+      const row = EV({ id: 71, title: 'Новый вечер', organizer_id: 1, kind: 'free', price: '0.00', seats: 8, seats_left: 8, approval: appr, reject_note: null });
+      const s = await open(true, true, json(200, STAFF), null, null, null, ODOBR.api({ events: [row] }), null, NOWFIX);
+      await s.p.waitForTimeout(300);
+      await s.p.evaluate(r => { go('eventNew'); afterEventCreate({ status: 201, data: { id: 71 } }, { title: r.title, seats: 8, kind: 'free', starts_at: r.starts_at, price: 0 }); }, row);
+      await s.p.waitForTimeout(500);
+      const v = await s.view(), e5 = await ODOBR.W(s, 'eventNew.done.pending');
+      if ((appr === 'pending') !== v.includes(e5)) bad.push(`${n}: ${appr} — E5 ${appr === 'pending' ? 'нет на выходе' : 'у одобренного'}`);
+      if (appr === 'pending' && !(await s.p.evaluate(() => current === 'event'))) bad.push(`${n}: выход создания не на карточке`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
   /* Места — форма и ЗНАЧЕНИЯ из снимка `places.json` (прогон координатора
      24.10.2026 на стволе api `6332425`, метка sha рядом с каталогом): четыре
