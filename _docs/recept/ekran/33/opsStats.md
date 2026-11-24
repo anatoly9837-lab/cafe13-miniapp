@@ -44,14 +44,18 @@ business, миграция 033; шаг 28 несёт миграцию, срок 
 | `C1`, `C2` | `opsStats.period.*` | как `masterStats.period.*` |
 | `N3` под `C2`, ВСЕГДА | `opsStats.period.clockNote` | `Продажи считаются по дню продажи, доли — по закрытию месяца.` |
 | `K` заголовок | `opsStats.biz.title` | `Бизнесы` |
-| `K` строка бизнеса | `opsStats.biz.row` | `title` (`.clamp1`); `.small` `Партнёр: {partner}`; справа `revenue` ฿ — ПРЕДПОЛОЖЕНИЕ |
+| `K` строка бизнеса | `opsStats.biz.row` | `title` (`.clamp1`); `.small` `Партнёр: {partner}`; справа `revenue` ฿ — ВЫБОР; `partner_id` в разметку НЕ кладётся |
+| `K2` партнёра нет | `opsStats.biz.noPartner` | `.small` `Партнёра нет` — при `partner: null` |
 | `K1` бизнесов нет | `opsStats.biz.none` | `Бизнесов в клубе пока нет.` |
 | `H` заголовок | `opsStats.shares.title` | `Доли` |
-| `H` строка бизнеса | `opsStats.shares.row` | `title`: `Клубу · {club_pct} %` и `Партнёру · {partner_pct} %` — проценты СЕРВЕРА (литерал — `#964`) |
+| `H` строка бизнеса | `opsStats.shares.row` | `title`: `Клубу · {share_club} %` и `Партнёру · {share_partner} %` — проценты СЕРВЕРА (`directions`, 0–100; литерал — `#964`) |
+| `H1` доли не назначены | `opsStats.shares.unset` | `title`: `Доли не назначены.` — при `share_club` или `share_partner` `null` (не `0 %`) |
 | `M` заголовок | `opsStats.months.title` | `Закрытые месяцы` |
-| `M` строки | `opsStats.months.row` | месяц словом из `period_start` в поясе клуба (не из `month`: `Cafe13KPG#961`); справа `club_share` ฿ — ПРЕДПОЛОЖЕНИЕ |
+| `M` строки | `opsStats.months.row` | месяц словом из `period_start` в поясе клуба (`Cafe13KPG#961`) и `title` бизнеса; справа `club` ฿ — доля клуба; под ним `.small` `Чистая {net_base} · Партнёру {partner} ({partner_pct} %) · Мне {ops}` — ВЫБОР дизайнера; `net_base` печатается как пришёл, и отрицательным |
+| `M2` строки опер-директора нет | `opsStats.months.opsNone` | вместо `Мне {ops}` — `Мне — нет данных` при `ops: null` (его строки за месяц нет; не `0`) |
 | `M1` закрытых нет | `opsStats.months.none` | `Закрытых месяцев в этом периоде нет.` |
 | `D` заголовок | `opsStats.money.title` | `Мои 3 %` — заголовок из слова владельца; процент в заголовке — `money.pct` СЕРВЕРА, не литерал |
+| `D3` доля не действует | `opsStats.money.titleNoPct` · `opsStats.money.pctNone` | заголовок `Моя доля`; `.small` `Доля сейчас не действует.` — при `money.pct: null` (доля на начало окна, `share_rules`) |
 | `D` строки | `opsStats.money.accrued` · `.balance` | `Начислено за период` — `money.accrued`; `На счёте роли` — `money.balance` — ПРЕДПОЛОЖЕНИЕ |
 | нет данных | `opsStats.noData` | `нет данных` |
 | не загрузилось | `opsStats.error` · `opsStats.retry` | `Статистика не загрузилась.` и `Повторить` |
@@ -72,18 +76,18 @@ business, миграция 033; шаг 28 несёт миграцию, срок 
 | `.seg` | `C1` | — |
 | `.row` | `C2` (‹ › — `.icon-btn`) | `period{start,end}` |
 | `.small` | `N3` | — |
-| `.card` + `.rows` | `K` или `K1` | `businesses[]{direction_id,title,partner,revenue}` |
-| `.card` + `.rows` | `H` | `businesses[]{club_pct,partner_pct}` |
-| `.card` + `.rows` | `M` или `M1` | `months[]{period_start,club_share}` |
-| `.card` + `.rows` | `D` — ТОЛЬКО при ключе `money` | `money{pct,accrued,balance}` — нет ключа до миграции шага 28 |
+| `.card` + `.rows` | `K` или `K1` | `businesses[]{id,title,partner,revenue}` (`partner_id` — не в разметку) |
+| `.card` + `.rows` | `H` или `H1` по строке | `businesses[]{share_club,share_partner}` |
+| `.card` + `.rows` | `M` или `M1` | `months[]{direction_id,title,period_start,net_base,partner_pct,partner,ops,club}` |
+| `.card` + `.rows` | `D` (`D3` при `pct: null`) — ТОЛЬКО при ключе `money` | `money{book,pct,accrued,accrued_count,balance}`; `book` и `accrued_count` не печатаются (ВЫБОР) |
 | `.deny` → `.verbatim` | отказ 403 | ответ сервера |
 
 ## Данные экрана
 
-- `GET /stats/ops?period=day|week|month&at=` — НОВАЯ ручка, право `_is_ops`;
+- `GET /stats/ops?period=day|week|month&at=` — ручка api#197 (`ce232e4`, `app/routers/stats.py:262`, ветка `backend/shag-35-stats-partner`, в main api ещё нет), право `_is_ops`; форма ниже — по коду сервера, не ПРЕДПОЛОЖЕНИЕ;
 - `businesses` — все активные бизнесы клуба (`is_active: false` — не идут, как шаг 12);
 - `months` — закрытые месяцы, попавшие в окно (вариант C шага 20);
-- `money` — счёт роли `ops_director`: ключа НЕТ, пока нет строки книги (шаг 28).
+- `money` — счёт роли `ops_director`: ключа НЕТ, пока в книге клуба нет ни одной его строки (шаг 28); `pct` — доля на НАЧАЛО окна.
 
 **Блока `L` «Ивенты в бизнесах» нет** — в базе нет связи место↔бизнес на 24.11.2026
 (`places`, миграция 012, без `direction_id`; сказал `backend-uvedomleniya-b0`), ключа
@@ -98,6 +102,7 @@ business, миграция 033; шаг 28 несёт миграцию, срок 
 | **числа есть** | `K`, `H`, `M`, `D`, `N3` |
 | **счёта роли нет** (ключа `money` нет) | карточки `D` нет — ни пустой, ни «нет данных», ни `0` |
 | **нули** | нули числами |
+| **доли не назначены** / **строки опер-директора нет** / **доля не действует** | `H1` / `M2` / `D3` — `null` словом, не `0` |
 | **нет данных** | `нет данных`, не `0` |
 | **бизнесов нет** | `K1`; `H` нет |
 | **закрытых месяцев нет** | `M1` |
@@ -129,6 +134,6 @@ business, миграция 033; шаг 28 несёт миграцию, срок 
 - `os-bez-scheta` — ответ без `money` → карточки `D` нет; с `money` → `D` с числами сервера;
 - `os-razrez` — день, неделя, месяц дают разные продажи; доли бизнесов — одни;
 - `os-mesyac-poyas` — граница `2026-10-31T17:00Z` подписана «Ноябрь», не «Октябрь»;
-- `os-nol-ne-pusto` — `0` → `0`; `null` → `нет данных`; литерала числа и процента нет;
+- `os-nol-ne-pusto` — `0` → `0`; `null` → `нет данных`; `share_*: null` → `H1`, `ops: null` → `M2`, `pct: null` → `D3`; литерала числа и процента нет;
 - `os-dver` — без `ops_director` и `admin` двери `O0` нет (отрицательный контроль);
 - `os-klyuchi` — каждый ключ экрана есть в словаре.
