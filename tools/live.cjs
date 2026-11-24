@@ -4585,6 +4585,18 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     return r;
   };
   // шаг 36: ответ /stats/me (форма api#195 на 396ce48) — общий случаям my-* и заглушкам формы
+  // шаг 33 (Cafe13KPG#564, рецепт 33/opsStats, #405; снимок api#197 — в карточке #564): статистика бизнесов опер-директора
+  const OS_BIZ = (id, title, o) => Object.assign({ id, title, partner_id: 9000 + id, partner: 'Анна Ли', share_club: '70.00', share_partner: '30.00', revenue: '4200.00' }, o || {});
+  const OS_MON = o => Object.assign({ direction_id: 3, title: 'Чайная', period_start: '2026-10-31T17:00:00+00:00', net_base: '3000.00', partner_pct: '30.00',
+    partner: '900.00', ops: '90.00', club: '2010.00' }, o || {});
+  const OS_RESP = x => {
+    x = x || {};
+    const r = { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
+      businesses: x.businesses || [OS_BIZ(3, 'Чайная'), OS_BIZ(4, 'Керамика', { partner: 'Иван Пак', share_club: '60.00', share_partner: '40.00', revenue: '1500.00' })],
+      months: x.months || [OS_MON()] };
+    if (x.money !== false) r.money = Object.assign({ book: 'club_ledger', pct: '3.00', accrued: '90.00', accrued_count: 1, balance: '270.00' }, x.money || {});
+    return r;
+  };
   const MY_RESP = x => {
     x = x || {};
     return { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
@@ -4909,6 +4921,119 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (await d.p.$('#view [data-go="myStats"]')) bad.push(`${n}: вне Telegram дверь «Моя статистика» стоит`);
       if (d.calls.some(c => /\/stats\/me/.test(c.url))) bad.push(`${n}: вне Telegram спрошена /stats/me`);
       await d.ctx.close();
+    }
+    // ── шаг 33: opsStats. Слово владельца: «Числа нужны. Реальные. Если нули - значит нули.» — на КАЖДОЕ число случай с ненулём
+    // и случай с null (урок мутантов тестирования 1 в #406/#411)
+    const OPS = clone(OWNER); OPS.roles = [{ role: 'ops_director', direction_id: null }];
+    const osopen = (me, stats) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+      if (q.method() === 'GET' && u.startsWith('/stats/ops')) return stats(new URL('https://x' + u).searchParams);
+      return undefined;
+    });
+    const go33 = async (s, n) => {
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="opsStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери opsStats`));
+      await s.p.waitForTimeout(400);
+    };
+    const W3 = async (s, k, v) => s.p.evaluate(([k, v]) => v ? slovo(k, v) : SLOVA.ru[k], [k, v]);
+    const card3 = async (s, title) => (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.startsWith(title))[0] || null;
+    const sum3 = async (s, v) => s.p.evaluate(v => bmSum(Number(v)), v);
+    {
+      // os-razrez + os-klyuchi + os-mesyac-poyas: разрезы дают свои продажи, доли одни; числа строк — сервера; месяц из period_start
+      // в поясе клуба (граница 2026-10-31T17:00Z — «Ноябрь»); ключа на экране нет; partner_id в разметке нет
+      const n = 'os-razrez';
+      const REV = { day: ['110.00', '20.00'], week: ['760.00', '340.00'], month: ['4200.00', '1500.00'] };
+      const s = await osopen(OPS, p => json(200, OS_RESP({ kind: p.get('period'), businesses: [OS_BIZ(3, 'Чайная', { revenue: REV[p.get('period')][0] }),
+        OS_BIZ(4, 'Керамика', { partner: 'Иван Пак', share_club: '60.00', share_partner: '40.00', revenue: REV[p.get('period')][1] })] })));
+      await go33(s, n);
+      const bt = await W3(s, 'opsStats.biz.title'), ht = await W3(s, 'opsStats.shares.title'), mt = await W3(s, 'opsStats.months.title'), dt = await W3(s, 'opsStats.money.title', { pct: '3' });
+      if (!bt || !ht || !mt) bad.push(`${n}: на странице нет слов opsStats в SLOVA.ru — судить не по чему`);
+      const shares = {};
+      for (const p of ['month', 'week', 'day']) {
+        if (p !== 'month') { await s.p.click(`[data-action="os-period:${p}"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза ${p}`)); await s.p.waitForTimeout(400); }
+        const k = await card3(s, bt), h = await card3(s, ht), v = await s.view();
+        for (const [i, who] of [[0, 'Анна Ли'], [1, 'Иван Пак']]) {
+          const r = await s.p.$eval(`#view [data-biz="${i + 3}"]`, e => e.textContent).catch(() => '');
+          if (!r.includes(await sum3(s, REV[p][i])) || !r.includes(await W3(s, 'opsStats.biz.row', { partner: who }))) bad.push(`${n}: ${p} — строка бизнеса ${i + 3} не числа сервера: «${r}»`);
+        }
+        shares[p] = h;
+        if (!h || !h.includes(await W3(s, 'opsStats.shares.row', { club: '70', partner: '30' })) || !h.includes(await W3(s, 'opsStats.shares.row', { club: '60', partner: '40' })))
+          bad.push(`${n}: ${p} — доли не числа сервера: «${h}»`);
+        if (!v.includes(await W3(s, 'opsStats.period.clockNote'))) bad.push(`${n}: ${p} — нет N3`);
+        if (/opsStats\.\w/.test(v)) bad.push(`${n}: ${p} — на экране ключ вместо слова (os-klyuchi)`);
+        if ((await s.p.$eval('#view', e => e.innerHTML)).includes('9003')) bad.push(`${n}: ${p} — partner_id в разметке`);
+      }
+      if (shares.month !== shares.week || shares.week !== shares.day) bad.push(`${n}: доли зависят от разреза`);
+      await s.p.click('[data-action="os-period:month"]').catch(() => {}); await s.p.waitForTimeout(400);
+      const m = await card3(s, mt), d = await card3(s, dt);
+      const det = await W3(s, 'opsStats.months.detail', { net: await sum3(s, '3000.00'), partner: await sum3(s, '900.00'), pct: '30', ops: await sum3(s, '90.00') });
+      if (!m || !m.includes(await W3(s, 'opsStats.months.row', { month: 'Ноябрь 2026', title: 'Чайная' })) || /Октябрь/.test(m)) bad.push(`${n}: месяц не из period_start в поясе клуба (os-mesyac-poyas): «${m}»`);
+      if (!m || !m.includes(det) || !m.includes(await sum3(s, '2010.00'))) bad.push(`${n}: строка месяца не числа сервера: «${m}»`);
+      if (!d || !d.includes((await W3(s, 'opsStats.money.accrued')) + (await sum3(s, '90.00'))) || !d.includes((await W3(s, 'opsStats.money.balance')) + (await sum3(s, '270.00'))))
+        bad.push(`${n}: «Мои 3 %» не числа сервера: «${d}»`);
+      const calls = s.calls.filter(c => c.method === 'GET' && /\/stats\/ops/.test(c.url));
+      if (calls.length !== 4) bad.push(`${n}: запросов /stats/ops ${calls.length}, ждали 4 (месяц, неделя, день, месяц)`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // os-bez-scheta + os-nol-ne-pusto: ключа money нет — карточки D нет; 0 — нулём; null — «нет данных», H1, M2, D3, K2
+      const n = 'os-nol-ne-pusto';
+      const s = await osopen(OPS, () => json(200, OS_RESP({ money: false, months: [] })));
+      await go33(s, n);
+      const v = await s.view();
+      if (v.includes(await W3(s, 'opsStats.money.titleNoPct')) || /Мои\s/.test(v) || v.includes(await W3(s, 'opsStats.money.accrued'))) bad.push(`${n}: без ключа money стоит карточка D (os-bez-scheta)`);
+      if (!v.includes(await W3(s, 'opsStats.months.none'))) bad.push(`${n}: закрытых месяцев нет — не M1`);
+      await s.ctx.close();
+      const nul = await osopen(OPS, () => json(200, OS_RESP({
+        businesses: [OS_BIZ(3, 'Чайная', { partner: null, partner_id: null, share_club: null, share_partner: null, revenue: null }), OS_BIZ(4, 'Керамика', { revenue: '0.00', share_partner: null })],
+        months: [OS_MON({ net_base: null, partner: null, partner_pct: null, ops: null, club: null }), OS_MON({ title: 'Керамика', net_base: '-50.00', partner: '0.00', ops: '0.00', club: '0.00' })],
+        money: { pct: null, accrued: null, balance: null } })));
+      await go33(nul, n);
+      const nd = await W3(nul, 'opsStats.noData'), r3 = await nul.p.$eval('#view [data-biz="3"]', e => e.textContent).catch(() => ''), r4 = await nul.p.$eval('#view [data-biz="4"]', e => e.textContent).catch(() => '');
+      if (!r3.includes(nd) || !r3.includes(await W3(nul, 'opsStats.biz.noPartner')) || /\d\s?฿/.test(r3)) bad.push(`${n}: revenue/partner null — не «нет данных» и K2: «${r3}»`);
+      if (!r4.includes(await sum3(nul, '0'))) bad.push(`${n}: revenue 0 — не нулём: «${r4}»`);
+      const h = await card3(nul, await W3(nul, 'opsStats.shares.title'));
+      if (!h || (h.match(new RegExp((await W3(nul, 'opsStats.shares.unset')).replace('.', '\\.'), 'g')) || []).length !== 2 || /0 %/.test(h)) bad.push(`${n}: share_* null — не H1 у обоих: «${h}»`);
+      const m = await card3(nul, await W3(nul, 'opsStats.months.title'));
+      const d1 = await W3(nul, 'opsStats.months.opsNone', { net: nd, partner: nd, pct: nd });
+      const d2 = await W3(nul, 'opsStats.months.detail', { net: await sum3(nul, '-50.00'), partner: await sum3(nul, '0'), pct: '30', ops: await sum3(nul, '0') });
+      if (!m || !m.includes(d1)) bad.push(`${n}: месяц с null — не «нет данных» и M2: «${m}»`);
+      if (!m || !m.includes(d2)) bad.push(`${n}: месяц с нулями и отрицательной чистой — не числами: «${m}»`);
+      const rows = await nul.p.$$eval('#view .card .rows > div', es => es.map(e => e.textContent));
+      const mr = rows.filter(t => t.includes('Чайная') && t.includes('Чистая'))[0] || '';
+      if (!mr.endsWith(nd)) bad.push(`${n}: club месяца null — не «нет данных»: «${mr}»`);
+      const D = await card3(nul, await W3(nul, 'opsStats.money.titleNoPct'));
+      if (!D || !D.includes(await W3(nul, 'opsStats.money.pctNone')) || !D.includes((await W3(nul, 'opsStats.money.accrued')) + nd) || !D.includes((await W3(nul, 'opsStats.money.balance')) + nd))
+        bad.push(`${n}: money с null — не D3 и «нет данных»: «${D}»`);
+      if (nul.errs.length) bad.push(`${n}: ошибки страницы (null) ${nul.errs.join('; ')}`);
+      await nul.ctx.close();
+      const z = await osopen(OPS, () => json(200, OS_RESP({ businesses: [], months: [], money: { pct: '3.00', accrued: '0.00', balance: '0.00' } })));
+      await go33(z, n);
+      const vz = await z.view(), Dz = await card3(z, await W3(z, 'opsStats.money.title', { pct: '3' }));
+      if (!vz.includes(await W3(z, 'opsStats.biz.none')) || vz.includes(await W3(z, 'opsStats.shares.title'))) bad.push(`${n}: бизнесов нет — не K1 или H стоит`);
+      if (!Dz || !Dz.includes((await W3(z, 'opsStats.money.accrued')) + (await sum3(z, '0'))) || !Dz.includes((await W3(z, 'opsStats.money.balance')) + (await sum3(z, '0')))) bad.push(`${n}: нули D — не нулями: «${Dz}»`);
+      await z.ctx.close();
+      const src = fs.readFileSync(ROOT + '/js/18-ekrany-mastera.js', 'utf8');
+      if (/Мои 3|70 %|30 %/.test(src) || /Мои 3/.test(fs.readFileSync(ROOT + '/js/00-slova.js', 'utf8'))) bad.push(`${n}: литерал процента в коде`);
+    }
+    {
+      // os-dver: без ops_director и admin двери O0 нет, прямой вход — «Сюда нельзя» без запроса; контроль — опер-директор (go33 выше)
+      const n = 'os-dver';
+      const M = clone(OWNER); M.roles = [{ role: 'art_director', direction_id: null }];
+      const s = await osopen(M, () => json(200, OS_RESP()));
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      if (await s.p.evaluate(() => mayOps())) bad.push(`${n}: фикстура без ops_director проходит mayOps — контроль не различает`);
+      if (await s.p.$('#view [data-go="opsStats"]')) bad.push(`${n}: дверь «Статистика бизнесов» без ops_director`);
+      await s.p.evaluate(() => go('opsStats')); await s.p.waitForTimeout(300);
+      if (s.calls.some(c => /\/stats\/ops/.test(c.url))) bad.push(`${n}: без права ручку спросили`);
+      await s.ctx.close();
+      const D = 'статистику бизнесов видит операционный директор';
+      const s2 = await osopen(OPS, () => json(403, { detail: D }));
+      await go33(s2, n);
+      const v = await s2.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (v !== D) bad.push(`${n}: отказ «${v}», ждали словами сервера`);
+      await s2.ctx.close();
     }
   }
   // ── Cafe13KPG#999 (слова владельца 24.11.2026): №11 — роль `staff` зовётся «Работник» везде; №9 — демо бара без часов ──
@@ -13515,6 +13640,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'stats-event-full': ER_RESP(), 'stats-event-undistributed': ER_RESP({ money: { book: 'club_ledger', collected: '1200.00', distributed: false, master: null, club: null } }),
     'stats-event-guest': ER_RESP({ guest: true }),
     // шаг 36 (Cafe13KPG#567): заглушки случаев `my-*` против снимка api 396ce48 (api#195)
+    'stats-ops': OS_RESP({ months: [] }), 'stats-ops-day': OS_RESP({ kind: 'day', months: [] }), 'stats-ops-month-closed': OS_RESP(),
     'stats-me': MY_RESP(), 'stats-me-empty': MY_RESP({ events: { count: 0, spent: null }, topups: { count: 0, amount: '0.00' }, list: [] }),
     // фича 4 (Cafe13KPG#1009): заглушки случаев `odobr-*` против снимка api 410f240 (cafe13-api#187)
     'events-pending-approval': [ODOBR.PROW(41, 'Вечер работника')],

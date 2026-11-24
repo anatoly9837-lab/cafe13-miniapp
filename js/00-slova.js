@@ -154,6 +154,39 @@ var SLOVA = {
     'myStats.error': 'Статистика не загрузилась.',
     'myStats.retry': 'Повторить',
     'myStats.loading': 'Загружаем статистику…',              // клиент
+    // шаг 33, opsStats — рецепт `_docs/recept/ekran/33/opsStats.md` (#405); форма — api#197 (`/stats/ops`)
+    'opsStats.door': 'Статистика бизнесов',
+    'opsStats.title': 'Статистика бизнесов',
+    'opsStats.period.day': 'День',
+    'opsStats.period.week': 'Неделя',
+    'opsStats.period.month': 'Месяц',
+    'opsStats.period.dayLabel': '{date}',
+    'opsStats.period.weekLabel': 'Неделя {from}–{to}',
+    'opsStats.period.monthLabel': '{month} {year}',
+    'opsStats.period.prev': 'Предыдущий период',             // клиент
+    'opsStats.period.next': 'Следующий период',              // клиент
+    'opsStats.period.clockNote': 'Продажи считаются по дню продажи, доли — по закрытию месяца.',
+    'opsStats.biz.title': 'Бизнесы',
+    'opsStats.biz.row': 'Партнёр: {partner}',
+    'opsStats.biz.noPartner': 'Партнёра нет',
+    'opsStats.biz.none': 'Бизнесов в клубе пока нет.',
+    'opsStats.shares.title': 'Доли',
+    'opsStats.shares.row': 'Клубу · {club} % · Партнёру · {partner} %',
+    'opsStats.shares.unset': 'Доли не назначены.',
+    'opsStats.months.title': 'Закрытые месяцы',
+    'opsStats.months.row': '{month} · {title}',
+    'opsStats.months.detail': 'Чистая {net} · Партнёру {partner} ({pct} %) · Мне {ops}',
+    'opsStats.months.opsNone': 'Чистая {net} · Партнёру {partner} ({pct} %) · Мне — нет данных',
+    'opsStats.months.none': 'Закрытых месяцев в этом периоде нет.',
+    'opsStats.money.title': 'Мои {pct} %',
+    'opsStats.money.titleNoPct': 'Моя доля',
+    'opsStats.money.pctNone': 'Доля сейчас не действует.',
+    'opsStats.money.accrued': 'Начислено за период',
+    'opsStats.money.balance': 'На счёте роли',
+    'opsStats.noData': 'нет данных',
+    'opsStats.error': 'Статистика не загрузилась.',
+    'opsStats.retry': 'Повторить',
+    'opsStats.loading': 'Загружаем статистику…',             // клиент
     'masterStats.denyTitle': 'Сюда нельзя',                   // клиент
     'masterStats.denyNote': 'Статистику мастера видит тот, кто ведёт свои ивенты.',   // клиент
     // шаг 34, eventReport — рецепт `_docs/recept/ekran/34/eventReport.md` (#400): ОДИН отчёт на все страницы статистики

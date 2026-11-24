@@ -3573,5 +3573,113 @@
    }
   },
   "status": 200
+ },
+ "stats-ops": {
+  "request": "GET /stats/ops?period=month&at=N-N-N",
+  "shape": {
+   "businesses": [
+    {
+     "id": null,
+     "partner": null,
+     "partner_id": null,
+     "revenue": null,
+     "share_club": null,
+     "share_partner": null,
+     "title": null
+    }
+   ],
+   "money": {
+    "accrued": null,
+    "accrued_count": null,
+    "balance": null,
+    "book": null,
+    "pct": null
+   },
+   "months": [],
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   }
+  },
+  "status": 200
+ },
+ "stats-ops-403": {
+  "request": "GET /stats/ops",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "stats-ops-day": {
+  "request": "GET /stats/ops?period=day",
+  "shape": {
+   "businesses": [
+    {
+     "id": null,
+     "partner": null,
+     "partner_id": null,
+     "revenue": null,
+     "share_club": null,
+     "share_partner": null,
+     "title": null
+    }
+   ],
+   "money": {
+    "accrued": null,
+    "accrued_count": null,
+    "balance": null,
+    "book": null,
+    "pct": null
+   },
+   "months": [],
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   }
+  },
+  "status": 200
+ },
+ "stats-ops-month-closed": {
+  "request": "GET /stats/ops?period=month&at=N-N-N",
+  "shape": {
+   "businesses": [
+    {
+     "id": null,
+     "partner": null,
+     "partner_id": null,
+     "revenue": null,
+     "share_club": null,
+     "share_partner": null,
+     "title": null
+    }
+   ],
+   "money": {
+    "accrued": null,
+    "accrued_count": null,
+    "balance": null,
+    "book": null,
+    "pct": null
+   },
+   "months": [
+    {
+     "club": null,
+     "direction_id": null,
+     "net_base": null,
+     "ops": null,
+     "partner": null,
+     "partner_pct": null,
+     "period_start": null,
+     "title": null
+    }
+   ],
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   }
+  },
+  "status": 200
  }
 }

@@ -428,6 +428,61 @@ function myMove(dir) {
 function myNum(v, money) {
   return v === null ? '<span class="small">' + esc(slovo('myStats.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
 }
+/* Шаг 33: статистика опер-директора (`/stats/ops`, api#197; рецепт 33/opsStats, #405). Право — `mayOps()`. Числа — как у
+   шага 34: null — «нет данных», 0 — нулём, битое — отказ целиком. Ключа `money` нет — карточки «Мои {pct} %» нет (до шага 28). */
+var OPS = { period: 'month', at: '', data: null, fail: '', deny: '', gen: 0 };
+function mayOpsStats() { return mayOps(); }
+function fromOpsStats(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.businesses) || !Array.isArray(d.months)) return null;
+  var out = { biz: [], months: [], hasMoney: Object.prototype.hasOwnProperty.call(d, 'money') }, i, x, r;
+  for (i = 0; i < d.businesses.length; i++) {
+    x = d.businesses[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string') return null;
+    r = { id: x.id, title: x.title, partner: typeof x.partner === 'string' && x.partner ? x.partner : null,
+          club: stNum(x.share_club, true), partnerPct: stNum(x.share_partner, true), revenue: stNum(x.revenue, true) };
+    if (stBad([r.club, r.partnerPct, r.revenue])) return null;
+    out.biz.push(r);
+  }
+  for (i = 0; i < d.months.length; i++) {
+    x = d.months[i];
+    var at = x && typeof x.period_start === 'string' ? Date.parse(x.period_start) : NaN;
+    if (!x || typeof x.title !== 'string' || !isFinite(at)) return null;
+    r = { title: x.title, at: at, club: stNum(x.club, true), net: stNum(x.net_base, true), partner: stNum(x.partner, true),
+          pct: stNum(x.partner_pct, true), ops: stNum(x.ops, true) };
+    if (stBad([r.club, r.net, r.partner, r.pct, r.ops])) return null;
+    out.months.push(r);
+  }
+  if (out.hasMoney) {
+    var m = d.money;
+    if (!m || typeof m !== 'object') return null;
+    out.pct = stNum(m.pct, true); out.accrued = stNum(m.accrued, true); out.balance = stNum(m.balance, true);
+    if (stBad([out.pct, out.accrued, out.balance])) return null;
+  }
+  return out;
+}
+function loadOpsStats() {
+  if (!mayOpsStats()) return;
+  var gen = ++OPS.gen, who = WHO;
+  OPS.data = null; OPS.fail = ''; OPS.deny = '';
+  api('GET', '/stats/ops?period=' + OPS.period + '&at=' + OPS.at).then(function (r) {
+    if (gen !== OPS.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromOpsStats(r.data) : null;
+    if (got) OPS.data = got;
+    else if (r.status === 403) OPS.deny = detailOf(r) || failText(r);
+    else OPS.fail = failText(r);
+    if (current === 'opsStats') render();
+  });
+}
+function opsMove(dir) {
+  if (dir > 0 && csStart(OPS.period, OPS.at) >= csStart(OPS.period, msToday())) return;
+  OPS.at = csShift(OPS.period, OPS.at, dir); loadOpsStats(); render();
+}
+// одно место печати числа экрана: null — «нет данных» словом, а не нулём
+// plain — текстом для подстановки в слово (строка месяца M)
+function osNum(v, money, plain) {
+  var t = v === null ? slovo('opsStats.noData') : money ? bmSum(v) : String(v);
+  return plain ? t : v === null ? '<span class="small">' + esc(t) + '</span>' : '<b class="num">' + esc(t) + '</b>';
+}
 function erNum(v, money) {
   return v === null ? '<span class="small">' + esc(slovo('eventReport.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
 }
@@ -472,6 +527,52 @@ Object.assign(SCREENS, {
           msNum(x.collected, true) + svg(ICON.chev, 'chev') + '</button>';
       }).join('') + '</div>';
     return seg + nav + E + Pc + D + L;
+  },
+  opsStats: function () {
+    if (!mayOpsStats()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+      '<span class="small">Статистику бизнесов видит операционный директор.</span></div></div>';
+    var P = [['day', slovo('opsStats.period.day')], ['week', slovo('opsStats.period.week')], ['month', slovo('opsStats.period.month')]];
+    var seg = '<div class="seg">' + P.map(function (x) {
+      return '<button type="button" data-action="os-period:' + x[0] + '" aria-pressed="' + (OPS.period === x[0]) + '">' + esc(x[1]) + '</button>';
+    }).join('') + '</div>';
+    var last = csStart(OPS.period, OPS.at) >= csStart(OPS.period, msToday()), v = stLabelVars(OPS.period, OPS.at);
+    var label = OPS.period === 'day' ? slovo('opsStats.period.dayLabel', v) : OPS.period === 'month' ? slovo('opsStats.period.monthLabel', v)
+      : slovo('opsStats.period.weekLabel', v);
+    var nav = '<div class="row"><button type="button" class="icon-btn" data-action="os-prev" aria-label="' + esc(slovo('opsStats.period.prev')) + '">‹</button>' +
+      '<b>' + esc(label) + '</b>' +
+      '<button type="button" class="icon-btn" data-action="os-next" aria-label="' + esc(slovo('opsStats.period.next')) + '"' + (last ? ' disabled' : '') + '>›</button></div>' +
+      '<span class="small">' + esc(slovo('opsStats.period.clockNote')) + '</span>';
+    if (OPS.deny) return seg + nav + '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(OPS.deny) + '</span></div>';
+    if (OPS.fail) return seg + nav + '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('opsStats.error')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="os-retry">' + esc(slovo('opsStats.retry')) + '</button></div></div>';
+    if (!OPS.data) return seg + nav + '<div class="card quiet"><span class="small">' + esc(slovo('opsStats.loading')) + '</span></div>';
+    var s = OPS.data;
+    var row = function (label, html) { return '<div><span class="small">' + esc(label) + '</span>' + html + '</div>'; };
+    var K = '<div class="card"><b>' + esc(slovo('opsStats.biz.title')) + '</b>' + (!s.biz.length
+        ? '<span class="small">' + esc(slovo('opsStats.biz.none')) + '</span>'
+        : '<div class="rows">' + s.biz.map(function (b) {
+          return '<div data-biz="' + b.id + '"><span class="grow"><b class="clamp1">' + esc(b.title) + '</b>' +
+            '<span class="small">' + esc(b.partner === null ? slovo('opsStats.biz.noPartner') : slovo('opsStats.biz.row', { partner: b.partner })) + '</span></span>' +
+            osNum(b.revenue, true) + '</div>';
+        }).join('') + '</div>') + '</div>';
+    var H = !s.biz.length ? '' : '<div class="card"><b>' + esc(slovo('opsStats.shares.title')) + '</b><div class="rows">' + s.biz.map(function (b) {
+      // H1 — словом, а не «0 %»: любой share_* null — доли не назначены
+      return row(b.title, '<span class="small">' + esc(b.club === null || b.partnerPct === null ? slovo('opsStats.shares.unset')
+        : slovo('opsStats.shares.row', { club: String(b.club), partner: String(b.partnerPct) })) + '</span>');
+    }).join('') + '</div></div>';
+    var M = '<div class="card"><b>' + esc(slovo('opsStats.months.title')) + '</b>' + (!s.months.length
+        ? '<span class="small">' + esc(slovo('opsStats.months.none')) + '</span>'
+        : '<div class="rows">' + s.months.map(function (m) {
+          // месяц — из period_start в поясе клуба (bmMonth), а не из `month` сервера (Cafe13KPG#961)
+          var det = { net: osNum(m.net, true, true), partner: osNum(m.partner, true, true), pct: osNum(m.pct, false, true), ops: osNum(m.ops, true, true) };
+          return '<div><span class="grow"><span class="small">' + esc(slovo('opsStats.months.row', { month: bmMonth(m.at), title: m.title })) + '</span>' +
+            '<span class="small">' + esc(m.ops === null ? slovo('opsStats.months.opsNone', det) : slovo('opsStats.months.detail', det)) + '</span></span>' +
+            osNum(m.club, true) + '</div>';
+        }).join('') + '</div>') + '</div>';
+    var D = !s.hasMoney ? '' : '<div class="card"><b>' + esc(s.pct === null ? slovo('opsStats.money.titleNoPct') : slovo('opsStats.money.title', { pct: String(s.pct) })) + '</b>' +
+      '<div class="rows">' + row(slovo('opsStats.money.accrued'), osNum(s.accrued, true)) + row(slovo('opsStats.money.balance'), osNum(s.balance, true)) + '</div>' +
+      (s.pct === null ? '<span class="small">' + esc(slovo('opsStats.money.pctNone')) + '</span>' : '') + '</div>';
+    return seg + nav + K + H + M + D;
   },
   myStats: function () {
     if (!mayMyStats()) return '';
