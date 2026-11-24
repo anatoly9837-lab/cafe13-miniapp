@@ -13808,6 +13808,52 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
   }
+  // ── ключи перевода (решение владельца №22; шаг 32, Cafe13KPG#563; словарь js/00-slova.js) ──
+  // Краснеет: (1) вызов slovo('…') в клиенте с ключом, которого нет в SLOVA.ru или он пуст; (2) вызов не литералом —
+  // такой ключ прибору не проверить; (3) языков не th, my, en, ru; (4) отсутствующий ключ дал не сам себя (пустую
+  // строку, русский текст другого языка); (5) подстановка не подставилась или съела непереданное `{имя}`.
+  // Ключи берутся из ТЕКСТА клиента (склейка index.html), а словарь — со страницы: так сверяется то, что грузится.
+  if (part(1)) {
+    const n = 'slova-klyuchi';
+    const calls = [];
+    for (const f of KL.files) {
+      if (f.file === 'js/00-slova.js') continue;            // там пример вызова в пояснении, не вызов
+      const re = /\bslovo\(/g; let m;
+      while ((m = re.exec(f.text))) {
+        if (/function\s+$/.test(f.text.slice(Math.max(0, m.index - 12), m.index))) continue;
+        const lit = /^slovo\(\s*'([^'\\\n]+)'/.exec(f.text.slice(m.index));
+        const line = f.text.slice(0, m.index).split('\n').length;
+        if (!lit) bad.push(`${n}: ${f.file}:${line} — slovo() не с литералом ключа: прибору его не проверить`);
+        else calls.push({ key: lit[1], at: `${f.file}:${line}` });
+      }
+    }
+    if (!calls.length) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — в клиенте нет ни одного вызова slovo('…'), сверять нечего`);
+    const s = await open(true, true, json(200, OWNER));
+    const got = await s.p.evaluate(keys => {
+      if (typeof SLOVA === 'undefined' || typeof slovo !== 'function' || typeof LANGS === 'undefined') return null;
+      const r = { langs: LANGS.join(','), dict: Object.keys(SLOVA).join(','), lang: LANG,
+                  miss: keys.filter(k => !Object.prototype.hasOwnProperty.call(SLOVA.ru, k) || typeof SLOVA.ru[k] !== 'string' || SLOVA.ru[k] === '') };
+      const K = 'slova.proverka.obrazec', had = Object.prototype.hasOwnProperty.call(SLOVA.ru, K);
+      r.absent = slovo('slova.proverka.netTakogo');
+      SLOVA.ru[K] = 'до {a} и {b} после';
+      r.sub = slovo(K, { a: 1 }); r.plain = slovo(K);
+      const was = LANG; LANG = 'th'; r.th = slovo(K); LANG = was;
+      if (!had) delete SLOVA.ru[K];
+      return r;
+    }, [...new Set(calls.map(c => c.key))]);
+    if (!got) bad.push(`${n}: на странице нет SLOVA, LANGS или slovo() — словарь не загрузился`);
+    else {
+      if (got.langs !== 'th,my,en,ru' || got.dict !== 'th,my,en,ru') bad.push(`${n}: языки «${got.langs}», словари «${got.dict}», ждали th,my,en,ru`);
+      if (got.lang !== 'ru') bad.push(`${n}: язык по умолчанию «${got.lang}», ждали ru — выбора языка в клиенте нет`);
+      got.miss.forEach(k => bad.push(`${n}: ключа «${k}» нет в SLOVA.ru (${calls.filter(c => c.key === k).map(c => c.at).join(', ')}) — на экране встанет сам ключ`));
+      if (got.absent !== 'slova.proverka.netTakogo') bad.push(`${n}: отсутствующий ключ дал «${got.absent}», а не сам ключ (AGENTS §4)`);
+      if (got.sub !== 'до 1 и {b} после') bad.push(`${n}: подстановка дала «${got.sub}», ждали «до 1 и {b} после»`);
+      if (got.plain !== 'до {a} и {b} после') bad.push(`${n}: без подстановок дало «${got.plain}»`);
+      if (got.th !== 'slova.proverka.obrazec') bad.push(`${n}: ключа нет в th, а отдано «${got.th}» — подмена другим языком`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.
