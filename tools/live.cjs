@@ -4652,6 +4652,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         bad.push(`${n}: нераспределённых нет — не D1 (ms-ozhidaetsya-net): «${m}»`);
       if (!e || !e.includes((await W(s, 'masterStats.events.count')) + '0') || !e.includes(await W(s, 'masterStats.events.none'))) bad.push(`${n}: ивентов 0 — не «Ивентов 0» и E1: «${e}»`);
       if (!py || !py.includes(await W(s, 'masterStats.payouts.none'))) bad.push(`${n}: выплат нет — не P1: «${py}»`);
+      if (!py || !py.includes((await W(s, 'masterStats.payouts.count')) + '0') || py.slice((await W(s, 'masterStats.payouts.title')).length).includes(await W(s, 'masterStats.payouts.amount'))) bad.push(`${n}: выплат 0 — счётчик не нулём или «Выплачено» стоит (пустой блок по счётчику): «${py}»`);
       if ((await s.view()).includes(await W(s, 'masterStats.list.title'))) bad.push(`${n}: ивентов нет, а список L стоит`);
       await s.ctx.close();
       const s2 = await msopen(MASTER, () => json(200, MS_RESP({ money: { withdrawable: '1234.50' } })));
