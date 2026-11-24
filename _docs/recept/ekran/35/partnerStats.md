@@ -37,7 +37,7 @@
 | `S` заголовок | `partnerStats.sales.title` | `Продажи` |
 | `S` строки | `partnerStats.sales.revenue` · `.opex` · `.net` | `Выручка` — `sales.revenue`; `Текущие затраты` — `sales.opex`; `Чистыми` — `sales.net` ฿ — ПРЕДПОЛОЖЕНИЕ |
 | `H` заголовок | `partnerStats.shares.title` | `Доли` |
-| `H` строки | `partnerStats.shares.partner` · `.club` | `Партнёру · {pct} %` — `shares.partner`; `Клубу · {pct} %` — `shares.club` ฿; проценты — числа сервера (`share_partner_pct`, `share_club_pct`), не литералы (урок «70/30», `#964`) — ПРЕДПОЛОЖЕНИЕ |
+| `H` строки | `partnerStats.shares.partner` · `.club` · `.ops` | `Партнёру · {share_partner_pct} %` — `shares.partner` ฿; `Клубу` — `shares.club` ฿, БЕЗ процента: процента клуба сервер не отдаёт, а `100 − partner − ops` — арифметика клиента (запрещено); `Опер-директору` — `shares.ops` ฿, строка ТОЛЬКО при `ops` не `null` (`null` — его строки за месяц нет, доля не действовала: это не «нет данных», строки нет вовсе) — ВЫБОР дизайнера. Процент партнёра — число сервера, не литерал (урок «70/30», `#964`). Форма — api `dff2b2d`, `stats.py:350` |
 | `H1` месяц не закрыт | `partnerStats.shares.open` | `Доли считаются при закрытии месяца.` — вместо строк долей |
 | `W` строка | `partnerStats.wallet` | `На кошельке бизнеса` — `wallet`, подпись `Зачислено по {wallet_through}` (как `../20/ostatok.md`) — без окна; ПРЕДПОЛОЖЕНИЕ |
 | нет данных | `partnerStats.noData` | `нет данных` |
@@ -59,7 +59,7 @@
 | `.row` | `C2` (‹ › — `.icon-btn`) | `period{start,end}` |
 | `.small` | `N3` | — |
 | `.card` + `.rows` | `S` | `sales{revenue,opex,net}` |
-| `.card` + `.rows` | `H` или `H1` | `shares{partner,partner_pct,club,club_pct,closed}` |
+| `.card` + `.rows` | `H` или `H1` | `shares{closed,partner,club,ops,share_partner_pct}` |
 | `.card` + `.rows` | `W` | `wallet`, `wallet_through` — без окна |
 | `.deny` → `.verbatim` | отказ 403 | ответ сервера |
 
