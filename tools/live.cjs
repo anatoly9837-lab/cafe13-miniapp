@@ -13226,6 +13226,23 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (/70 %|30 %/.test(src)) bad.push(`${n}: литерал процента в коде`);
     }
     {
+      // ps-zachisleno: «Зачислено по …» — месяц из `wallet_through` сервера (другого месяца, чем окно), а при
+      // `wallet_through: null` подписи нет вовсе (кошелёк числом остаётся) — мутанты k14 и k23 #413
+      const n = 'ps-zachisleno';
+      const s = await psEnter(mk(), () => json(200, PS_RESP({ through: '2026-09-30T17:00:00+00:00' })), n);
+      const pre = (await PW(s, 'partnerStats.walletThrough', { month: '@' })).split('@')[0].trim(), v = await s.view();
+      if (!pre) bad.push(`${n}: нет слова partnerStats.walletThrough — судить не по чему`);
+      if (!v.includes(await PW(s, 'partnerStats.walletThrough', { month: 'сентябрь 2026' })) || v.includes(await PW(s, 'partnerStats.walletThrough', { month: 'ноябрь 2026' })))
+        bad.push(`${n}: wallet_through сентября — подпись не «по сентябрь 2026»: «${v}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+      const z = await psEnter(mk(), () => json(200, PS_RESP({ through: null })), n), zv = await z.view();
+      if (!zv.includes((await PW(z, 'partnerStats.wallet')) + (await psum(z, '14854.00')))) bad.push(`${n}: through null — кошелёк не числом сервера: «${zv}»`);
+      if (!pre || zv.includes(pre) || /invalid date/i.test(zv)) bad.push(`${n}: through null — подпись «${pre} …» стоит: «${zv}»`);
+      if (z.errs.length) bad.push(`${n}: ошибки страницы ${z.errs.join('; ')}`);
+      await z.ctx.close();
+    }
+    {
       // ps-dva-biznesa: смена бизнеса меняет все числа и запрос; ответ чужого бизнеса под выбранным — отказ, не числа
       const n = 'ps-dva-biznesa';
       const o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT)), Object.assign(BWDIR(9, true), W('333.00', OCT))] });
