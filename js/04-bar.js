@@ -117,6 +117,13 @@ function detailOf(r) {
   var stock = (HTTP_PHRASE[r && r.status] || []).map(function (s) { return s.toLowerCase(); });
   return d && stock.indexOf(d.trim().replace(/\.$/, '').toLowerCase()) !== -1 ? '' : d;
 }
+/* Причина отказа — ПРИЗНАКОМ сервера `code`, а не текстом (Cafe13KPG#914): текст
+   `detail` показывается человеку как есть, но решений по нему клиент не принимает —
+   переформулированный отказ молча ронял бы выход из него. Признака нет — ''.
+   Известные: 'insufficient_funds' (409, не хватает на счёте), 'no_access' (403 привратника). */
+function codeOf(r) {
+  return r && r.data && typeof r.data.code === 'string' ? r.data.code : '';
+}
 
 /* Направление «Бар» — общее для меню и очереди. done(текст отказа | '') */
 /* WHO — поколение «под кого собрано»: растёт при смене человека в тестовом
