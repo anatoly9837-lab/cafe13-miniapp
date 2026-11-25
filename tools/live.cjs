@@ -13794,7 +13794,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         receipt_mime: 'image/webp', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00', pay_method: null, ledger_id: null,
         status: 'approved', status_ru: 'согласована', created_at: '2026-10-24T09:00:00+00:00', decided_at: '2026-10-24T12:00:00+00:00',
         decision_note: '' }] };
-    const JNOTE = 'Согласие одним действием впускает в приложение И создаёт членство.';
+    // Членства согласие не создаёт с фичи 8 (cafe13-api join.py в бою 410f240): допуск и, при способе оплаты, пополнение
+    // счёта. Прежняя подпись обещала членство — Cafe13KPG#1084; JLIE — её слова, которых на экране быть не должно
+    const JNOTE = 'Согласие одним действием впускает в приложение; членства оно не создаёт.';
+    const JLIE = /созда(ёт|ст) членство|вместе с чеком/;
     const JDECIDE = st => ({ id: 21, status: st, decided_at: '2026-10-27T13:00:00+00:00' });
     Object.assign(LATE_STUBS, { 'join-requests-head': JREQ, 'join-decide-rejected': JDECIDE('rejected') });
     const joinCase = (me, r = {}) => open(true, true, json(200, me), null, null, null, q => {
@@ -13859,7 +13862,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (posts(s, /\/decide$/).length) bad.push(`${n}: согласие ушло с первого нажатия — подтверждения нет (#413)`);
       if (!(await s.p.$('#view [data-action="j-yes:21"]'))) bad.push(`${n}: после «Согласиться» нет шага подтверждения`);
       // фраза E45d с v74 — новая: кнопка «Исключить» на «Членах клуба» появилась (до v74 обещала бы несуществующее)
-      for (const w of ['Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба', 'Не соглашаться', 'Точно согласиться'])
+      if (JLIE.test(await s.view())) bad.push(`${n}: вопрос согласия обещает членство, а сервер его не создаёт (#1084)`);
+      for (const w of ['Согласие впустит человека в приложение — одним действием; членства оно не создаёт.',
+                       'Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба', 'Не соглашаться', 'Точно согласиться'])
         if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (кадр E45d)`);
       // подпись под списком при раскрытом вопросе остаётся (E45d)
       if (!(await s.view()).includes(JNOTE)) bad.push(`${n}: подпись о согласии исчезла при раскрытом вопросе (кадр E45d)`);
@@ -13916,6 +13921,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await toJoin(s);
       const t = await s.view();
       if (!t.includes('Просьб нет') || !t.includes(JNOTE)) bad.push(`${n}: пустая очередь не по кадру E45b: ${t.slice(0, 120)}`);
+      if (JLIE.test(t)) bad.push(`${n}: пустая очередь обещает членство или чек, а просьба по 041 приходит без чека (#1084)`);
       await s.ctx.close();
       const n2 = 'join-decided', s2 = await joinCase(OWNER, { list: json(200, { requests: JREQ.requests.slice(2), pending: 0 }) });
       await toJoin(s2);

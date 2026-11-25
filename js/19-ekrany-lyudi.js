@@ -15,9 +15,10 @@ Object.assign(SCREENS, {
     var bad = JOINQ.bad.length ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' +
       esc('Не показаны просьбы, которые пришли с сервера неполными: ' + JOINQ.bad.map(function (b) {
         return (b.id === null ? 'без номера' : '№' + b.id) + ' (' + b.why + ')'; }).join(', ') + '.') + '</span></div>' : '';
-    var note = noteBox('Согласие одним действием впускает в приложение И создаёт членство. Отказ не отменяется: второго решения сервер не примет.');
+    // членства согласие не создаёт с фичи 8 (join.py в бою 410f240), а просьба по 041 приходит без чека — #1084
+    var note = noteBox('Согласие одним действием впускает в приложение; членства оно не создаёт. Отказ не отменяется: второго решения сервер не примет.');
     if (!wait.length && !past.length) return bad + '<div class="card quiet"><div class="col"><b>Просьб нет</b>' +
-      '<span class="small">Здесь появятся просьбы о доступе — от людей, которых в приложении ещё нет. Они приходят с экрана оплаты, вместе с чеком.</span></div></div>' + note;
+      '<span class="small">Здесь появятся просьбы о доступе — от людей, которых в приложении ещё нет.</span></div></div>' + note;
     return (JOINQ.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(JOINQ.err) + '</span></div>' : '') + bad +
       (wait.length ? '<div class="group"><span class="label">Ждут ответа · ' + wait.length + '</span>' + wait.map(joinCard).join('') + '</div>' + note : '') +
       (past.length ? '<div class="group"><span class="label">Решённые</span>' + past.map(joinRow).join('') + '</div>' : '');
