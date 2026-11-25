@@ -1559,7 +1559,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     // ── шаг 13: заявка в партнёры (Cafe13KPG#889, рецепт cafe13-miniapp#257, ручки cafe13-api#143) ──
-    // Цена — ТОЛЬКО `GET /partner/price` (ручки на 06.11 нет, Cafe13KPG#902). Пара `partner-cena-404`/`-200` —
+    // Цена — ТОЛЬКО `GET /partner/price` (Cafe13KPG#902; ручка в бою 410f240, partner.py:175). Пара `partner-cena-404`/`-200` —
     // отрицательный контроль заплатки: 404 гасит кнопку, 200 оживляет её суммой сервера без правки клиента
     {
       const flat = t => t.replace(/[\s  ]/g, '');
