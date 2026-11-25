@@ -2282,6 +2282,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    /* Приёмка arhitector-86 (возврат #439 на a13cde5): без цены был проверен только ЖДУЩИЙ, а отказ с причиной
+       (join-otkazano) шёл с ценой 3600 — мутант `note: … && num(d.amount_thb) > 0 ? … : ''` проходил и терял
+       причину у каждого отказанного, как только сервер уберёт цену. Тот же отказ — без цены и с '0.00'. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-otkaz (' + tag + ')';
+      const R = withReq('rejected', 'чек не читается');
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete R[k]);
+      if (price !== undefined) R.amount_thb = price;
+      const s = await joinCase(json(200, R));
+      const t = await s.view();
+      for (const w of ['Просьба отклонена', 'ОТКАЗАНО', '«чек не читается»'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      if (!(await s.p.$('[data-action="join-again"]'))) bad.push(`${n}: нет кнопки «Попросить снова»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
 
   // ── вкладки — по ВСЕМ живым членствам (Cafe13KPG#410, шаг 1a) ──
