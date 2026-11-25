@@ -958,8 +958,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     decision_note: '', direction_id: status === 'approved' ? 7 : null, paid_till: null, active: status === 'approved' }, extra || {});
   const qrow = (id, status, extra) => Object.assign(preq(id, status), { member_id: 200000011, first_name: 'Имя' + id, last_name: '', username: null }, extra || {});
   const PQUEUE = l => ({ requests: l, pending: l.filter(x => x.status === 'pending').length });
-  const PDECIDE = (id, decision) => ({ id, status: decision, decided_at: '2026-11-06T06:00:00+00:00', refund_ledger_id: null,
-    direction_id: decision === 'approved' ? 7 : null, status_ru: '' });
+  const PDECIDE = (id, decision) => Object.assign({ id, status: decision, decided_at: '2026-11-06T06:00:00+00:00', refund_ledger_id: null,
+    direction_id: decision === 'approved' ? 7 : null, status_ru: '' },
+    // согласие (api 1d7da4b, partner.py:303) отдаёт ещё title и paid_till — МОМЕНТ конца оплаченного; отказ их не несёт
+    decision === 'approved' ? { title: 'Кофейня', paid_till: '2026-12-01T17:00:00+00:00' } : {});
   // ── шаг 14: заглушки ручек работников — на уровне функции, как у шага 13: те же построители уходят в `STUBS`
   // (сверка с формой cafe13-api 9ad148e). `elsewhere` — число других бизнесов (без названий), `paid_till` — момент
   const BWDIR = (id, active) => ({ id, title: { 7: 'Кофейня', 9: 'Пекарня' }[id] || 'Бизнес ' + id, active,
@@ -3204,7 +3206,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const ORDER = { id: 5, number: '261018-01', state: 'new', sum: '70.00', created_at: '2026-10-18T12:00:00+00:00',
                   place: 'за стойку', pay_method: 'account', ledger_id: 41 };
   const row = st => { const r = Object.assign({}, ORDER, { state: st, member_id: 1, first_name: 'Тест', last_name: '',
-    photo_url: null, accepted_at: null, ready_at: null, served_at: null,
+    photo_url: null, accepted_at: null, ready_at: null, served_at: null, received_at: null,
     items: [{ product_id: 11, title: 'Эспрессо', price: '70.00', qty: 1 }] }); delete r.ledger_id; return r; };
   // id 7, а не 1: так видно, что он взят с сервера, а не угадан
   // гостю — без долей направления (их видит только куратор): так отдаёт сервер
@@ -3664,7 +3666,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── очередь на баре (шаг 5) ──
   // Работнику чужие строки приходят без sum и без items[].price (cafe13-api#11).
   const worker = (id, number, st, extra) => Object.assign({ id, number, state: st, place: 'к столу', pay_method: 'account',
-    created_at: '2026-10-18T12:0' + id + ':00+00:00', accepted_at: null, ready_at: null, served_at: null,
+    created_at: '2026-10-18T12:0' + id + ':00+00:00', accepted_at: null, ready_at: null, served_at: null, received_at: null,
     member_id: 50 + id, first_name: 'Гость' + id, last_name: '', photo_url: null,
     items: [{ product_id: 11, title: 'Эспрессо', qty: 2 }] }, extra);
   const QUEUE = [worker(3, '261018-03', 'new', { photo_url: 'https://t.me/i/userpic/320/x.jpg' }),
