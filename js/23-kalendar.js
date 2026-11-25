@@ -393,5 +393,5 @@ document.addEventListener('change', function (ev) {
   render();
 });
 /* Заголовок экрана зависит от режима: «Календарь» / «Время церемонии». */
-Object.defineProperty(TITLES, 'calendar', { configurable: true, enumerable: true,
-  get: function () { return (CAL.mode === 'pick' ? slovo('calendar.pick.title') : slovo('calendar.title')); } });
+function calTitle() { return CAL.mode === 'pick' ? slovo('calendar.pick.title') : slovo('calendar.title'); }
+Object.defineProperty(TITLES, 'calendar', { configurable: true, enumerable: true, get: calTitle });
