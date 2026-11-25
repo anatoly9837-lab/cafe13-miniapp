@@ -36,8 +36,6 @@ function teaDemo() {
 function teaList() { return LIVE ? (TEA_API ? null : []) : teaDemo(); }
 function teaCap() { return LIVE ? null : TEA_CAP_DEMO; }
 
-function calW(k, p) { return slovo('calendar.' + k, p); }
-
 /* Дни, которые занимает отметка: от дня начала до дня последней минуты — ивент 22:00 + 300 мин стоит в
    двух клетках (`cal-polnoch`). У демо-ивента даты нет — его день даёт evYmd(), и он однодневный. */
 function calDays(x) {
@@ -83,14 +81,14 @@ function calNote(d, ix) {
 /* L18 — строка церемонии. Частные и чужие ждущие строк НЕ получают: они сосчитаны в L19/L20. */
 function teaRow(c) {
   var s = bkk(new Date(c.at)), f = bkk(new Date(c.at + c.mins * 60000));
-  var seats = c.of === null || c.of === undefined ? calW('tea.seatsNoLimit') : calW('tea.seats', { free: c.free, of: c.of });
+  var seats = c.of === null || c.of === undefined ? slovo('calendar.tea.seatsNoLimit') : slovo('calendar.tea.seats', { free: c.free, of: c.of });
   return '<button type="button" class="listitem" data-action="cal-tea:' + esc(c.id) + '">' +
     '<span class="time"><b>' + esc(s.hm) + '</b><span>' + esc(f.hm) + '</span></span>' +
     '<span class="grow"><b class="clamp1">' + esc(s.hm + '–' + f.hm + ' · ' + c.title) + '</b>' +
-    '<span class="small">' + esc(calW('tea.host', { name: c.host }) + ' · ' + seats + ' · ' + calW('tea.price', { n: c.price })) + '</span></span>' +
+    '<span class="small">' + esc(slovo('calendar.tea.host', { name: c.host }) + ' · ' + seats + ' · ' + slovo('calendar.tea.price', { n: c.price })) + '</span></span>' +
     (c.vis === 'mine' ? '<span class="pill on">' + esc(slovo('event.approval.pendingPill')) + '</span>'
-      : c.booked ? '<span class="pill on">' + esc(calW('tea.booked')) + '</span>' : '') +
-    '<span class="pill tea">' + esc(calW('tea.pill')) + '</span>' +
+      : c.booked ? '<span class="pill on">' + esc(slovo('calendar.tea.booked')) + '</span>' : '') +
+    '<span class="pill tea">' + esc(slovo('calendar.tea.pill')) + '</span>' +
   '</button>';
 }
 
@@ -107,30 +105,30 @@ function calDayList(d, ix, dayView) {
     if (it.e) {
       var e = it.e, s = typeof e.at === 'number' ? bkk(new Date(e.at)) : null;
       var x = s ? s.ymd.split('-') : null;
-      return (s && s.ymd < d ? '<span class="small">' + esc(calW('day.since', { date: Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1], hm: s.hm })) + '</span>' : '') +
-        eventRow(e) + (dayView ? '<span class="small">' + esc(calW('day.noTeaDuringEvent')) + '</span>' : '');
+      return (s && s.ymd < d ? '<span class="small">' + esc(slovo('calendar.day.since', { date: Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1], hm: s.hm })) + '</span>' : '') +
+        eventRow(e) + (dayView ? '<span class="small">' + esc(slovo('calendar.day.noTeaDuringEvent')) + '</span>' : '');
     }
     var shown = it.tea.filter(function (c) { return c.vis === 'open' || c.vis === 'mine'; });
     var priv = it.tea.filter(function (c) { return c.vis === 'private'; }).length;
     var pend = it.tea.filter(function (c) { return c.vis === 'pending'; }).length;
     var head = it.tea.length > 1 || priv || pend
-      ? '<span class="small">' + esc(calW('tea.countNow', { k: it.tea.length, cap: cap })) + '</span>' : '';
-    var tail = [priv ? calW('tea.hiddenPrivate', { n: priv }) : '', pend ? calW('tea.hiddenPending', { n: pend }) : '']
+      ? '<span class="small">' + esc(slovo('calendar.tea.countNow', { k: it.tea.length, cap: cap })) + '</span>' : '';
+    var tail = [priv ? slovo('calendar.tea.hiddenPrivate', { n: priv }) : '', pend ? slovo('calendar.tea.hiddenPending', { n: pend }) : '']
       .filter(Boolean).join(' · ');
     return head + shown.map(teaRow).join('') + (tail ? '<span class="small">' + esc(tail) + '</span>' : '');
   }).join('');
 }
 
 function calSeg() {
-  return '<div class="seg">' + [['month', calW('view.month')], ['week', calW('view.week')], ['day', calW('view.day')]].map(function (v) {
+  return '<div class="seg">' + [['month', slovo('calendar.view.month')], ['week', slovo('calendar.view.week')], ['day', slovo('calendar.view.day')]].map(function (v) {
     return '<button type="button" data-action="cal-view:' + v[0] + '" aria-pressed="' + (CAL.view === v[0]) + '">' + esc(v[1]) + '</button>';
   }).join('') + '</div>';
 }
 function calNav(label, hasToday, canBack) {
-  return '<div class="wknav"><button type="button" class="round" data-action="cal-prev" aria-label="' + esc(calW('nav.prev')) + '"' + (canBack ? '' : ' disabled') + '>‹</button>' +
+  return '<div class="wknav"><button type="button" class="round" data-action="cal-prev" aria-label="' + esc(slovo('calendar.nav.prev')) + '"' + (canBack ? '' : ' disabled') + '>‹</button>' +
     '<b>' + esc(label) + '</b>' +
-    (hasToday ? '' : '<button type="button" class="btn quiet mini" data-action="cal-today">' + esc(calW('nav.today')) + '</button>') +
-    '<button type="button" class="round" data-action="cal-next" aria-label="' + esc(calW('nav.next')) + '">›</button></div>';
+    (hasToday ? '' : '<button type="button" class="btn quiet mini" data-action="cal-today">' + esc(slovo('calendar.nav.today')) + '</button>') +
+    '<button type="button" class="round" data-action="cal-next" aria-label="' + esc(slovo('calendar.nav.next')) + '">›</button></div>';
 }
 
 /* Прошлое: /events отдаёт только не кончившееся, поэтому пустой прошедший день был бы правдоподобной ложью — он
@@ -164,20 +162,20 @@ function calLook() {
     body = days.map(function (d) {
       var rows = d < today ? '' : calDayList(d, ix, false);
       return '<div class="group"><button type="button" class="daynote" data-action="cal-day:' + d + '">' + esc(calNote(d, ix)) + '</button>' +
-        (d < today ? '<span class="small">' + esc(calW('day.past')) + '</span>'
-          : rows || '<span class="small">' + esc(calW('week.emptyDay')) + '</span>') + '</div>';
+        (d < today ? '<span class="small">' + esc(slovo('calendar.day.past')) + '</span>'
+          : rows || '<span class="small">' + esc(slovo('calendar.week.emptyDay')) + '</span>') + '</div>';
     }).join('');
   } else {
     var dd = CAL.day;
     nav = calNav(calDayTitle(dd), dd === today, calCanBack(today));
     var rows2 = dd < today ? '' : calDayList(dd, ix, true);
     body = '<div class="daynote">' + esc(calNote(dd, ix)) + '</div>' +
-      (dd < today ? '<div class="card quiet"><span class="small">' + esc(calW('day.past')) + '</span></div>'
+      (dd < today ? '<div class="card quiet"><span class="small">' + esc(slovo('calendar.day.past')) + '</span></div>'
         : rows2 ? '<div class="group">' + rows2 + '</div>'
-        : '<div class="card quiet"><span class="small">' + esc(calW('day.empty')) + '</span></div>');
+        : '<div class="card quiet"><span class="small">' + esc(slovo('calendar.day.empty')) + '</span></div>');
   }
   return calSeg() + nav + body +
-    (empty ? '<div class="card quiet"><span class="small">' + esc(calW('empty')) + '</span></div>' : '');
+    (empty ? '<div class="card quiet"><span class="small">' + esc(slovo('calendar.empty')) + '</span></div>' : '');
 }
 
 SCREENS.calendar = function () { return calLook(); };

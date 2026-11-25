@@ -894,7 +894,7 @@ body.has-main .dup-main { display: none; }
 .month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .month .dw { font-size: 11px; color: var(--muted); text-align: center; }
 .month > button { min-width: 0; font: inherit; color: var(--ink); cursor: pointer; display: flex; flex-direction: column;
-                  justify-content: flex-start; border: 1px solid transparent; border-radius: 9px; padding: 6px 2px 7px;
+                  justify-content: flex-start; border: 1px solid transparent; border-radius: 9px; padding: 8px 4px;
                   background: var(--surface); min-height: 46px; }
 .month > button.on { border-color: var(--accent); }
 .month > button.today .n { color: var(--accent); }
