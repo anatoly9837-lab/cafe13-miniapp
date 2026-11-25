@@ -576,6 +576,30 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // предел чека — 2 МиБ = 2 * 1024 * 1024 байт (`RECEIPT_MAX`, потолок сервера), и отказ называет его ТЕМ ЖЕ словом,
+    // что подпись у чека (Cafe13KPG#584). Граница мерится по обе стороны: «2 МБ + 1 байт» больше 2 МБ в обиходе,
+    // но в предел входит; «2 МиБ + 1 байт» — на байт сверх него. Так слово отказа привязано к числу, а не к буквам
+    {
+      const n = 'tu-chek-predel', MIB2 = 2 * 1024 * 1024, MB2 = 2 * 1000 * 1000;
+      const s = await tuCase(() => json(200, hist([])));
+      await tap(s, '[data-action="tu-online"]');
+      if (!(await s.p.$('#tu-file'))) bad.push(`${n}: «Онлайн» не открыло форму с чеком`);
+      else {
+        await s.p.fill('#tu-amount', '1500');
+        const deny = () => s.p.evaluate(() => { const d = document.querySelector('#view .deny[role="alert"]'); return d ? d.textContent.trim() : null; });
+        await s.p.setInputFiles('#tu-file', pdf(MIB2 + 1), { timeout: 60000 });
+        await s.p.waitForTimeout(300);
+        const said = await deny();
+        if (said !== 'Чек больше 2 МиБ — приложите файл поменьше.') bad.push(`${n}: на чек «2 МиБ + 1 байт» отказ «${said}», ждали «Чек больше 2 МиБ — приложите файл поменьше.»`);
+        if (!(await s.p.$('#tu-send[disabled]'))) bad.push(`${n}: чек сверх предела принят — отправка доступна`);
+        await s.p.setInputFiles('#tu-file', pdf(MB2 + 1), { timeout: 60000 });
+        await s.p.waitForTimeout(300);
+        if (await deny() !== null) bad.push(`${n}: чек «2 МБ + 1 байт» (меньше 2 МиБ) отвергнут: «${await deny()}»`);
+        if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: с чеком в пределе 2 МиБ отправка недоступна`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
     // история: зачислено и отклонено — словами сервера, у отклонённой его причина дословно
     {
       const n = 'tu-istoriya';
