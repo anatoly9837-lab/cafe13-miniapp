@@ -2237,7 +2237,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     // фича 8: случай join-rekvizity снят — реквизитов на форме возврата нет (рецепт popolnenie/noAccess)
-    // ответ /join не разобран — так и сказано, и есть повтор; формы без цен нет
+    // ответ /join не разобран — так и сказано, и есть повтор. Битость — в about_token и you, НЕ в цене (Cafe13KPG#1075)
     {
       const n = 'join-ne-razobran';
       const s = await joinCase(json(200, { amount_thb: null }));
@@ -2245,6 +2245,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!t.includes('Ответ сервера не разобран.')) bad.push(`${n}: неразобранный /join не назван`);
       if (await s.p.$('#join-said')) bad.push(`${n}: форма показана по неразобранному ответу`);
       if (!(await s.p.$('[data-action="join-retry"]'))) bad.push(`${n}: нет «Попробовать снова»`);
+      await s.ctx.close();
+    }
+    /* Cafe13KPG#1075, клиент РАНЬШЕ сервера: /join без цены разбирается. Сервер уберёт amount_thb/amount_usd/
+       period_months (членство не продаётся, рамка 24.11) только после этого клиента в бою; прежнее `thb > 0` в fromJoin
+       сделало бы null каждый такой ответ — экран просьбы «не разобран» у всех. Выгнанный (403 на /me) стоит на noAccess,
+       и в JOIN.info обязан лечь разобранный ответ. Мутант — вернуть `thb > 0` (или требование currency) — краснит. */
+    {
+      const n = 'join-bez-ceny';
+      const BARE = clone(JOIN0);
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete BARE[k]);
+      const s = await joinCase(json(200, BARE));
+      const t = await s.view();
+      if (t.includes('Ответ сервера не разобран.')) bad.push(`${n}: /join без цены назван неразобранным`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.token === 'tok-проверка'))))
+        bad.push(`${n}: /join без цены не разобран — JOIN.info пуст`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
   }

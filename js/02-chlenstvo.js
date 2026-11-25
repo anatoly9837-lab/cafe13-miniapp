@@ -154,11 +154,12 @@ function joinWho() {
   if (!j || !j.name) return '';
   return '<span class="small">Вы входите как <b>' + esc(j.name) + (j.nick ? ' · ' + esc(j.nick) : '') + '</b></span>';
 }
-// Ответ GET /join → то, что рисует экран; null — не разобран целиком
+// Ответ GET /join → то, что рисует экран; null — не разобран целиком.
+// Цену (amount_thb/amount_usd/period_months/currency) НЕ требует и не читает (Cafe13KPG#1075): членство не продаётся
+// (рамка 24.11), просьба уходит без денег, а сервер уберёт цену из ответа ПОСЛЕ этого клиента в бою — с ценой и без
+// неё ответ разбирается одинаково. Прежнее `thb > 0` сделало бы null каждый ответ без цены — экран просьбы у всех.
 function fromJoin(d) {
   if (!d || typeof d !== 'object') return null;
-  var thb = num(d.amount_thb), usd = num(d.amount_usd);
-  if (!(thb > 0) || !(usd > 0) || d.currency !== 'THB') return null;
   if (typeof d.about_token !== 'string' || !d.about_token) return null;
   var y = d.you;
   if (!y || typeof y !== 'object' || typeof y.first_name !== 'string') return null;
@@ -169,7 +170,7 @@ function fromJoin(d) {
             note: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' };
   }
   return {
-    thb: thb, usd: usd, request: req, token: d.about_token,
+    request: req, token: d.about_token,
     name: [y.first_name, typeof y.last_name === 'string' ? y.last_name : ''].filter(Boolean).join(' '),
     nick: typeof y.username === 'string' && y.username ? '@' + y.username : ''
   };
