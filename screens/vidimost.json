@@ -1,19 +1,19 @@
 {
- "снято": "2026-11-25T10:04:54.753Z",
+ "снято": "2026-11-25T17:04:29.602Z",
  "слепки_страницы": {
-  "index.html": "454c3c0cee2c0169ec4a7780441e511a181adf2cbde75ace74653f93d8f1f06a",
+  "index.html": "5c3f76c22840fa4877624a81965947569e2845ae1588a5910bb68339355aceba",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
   "js/00-slova.js": "a7384918714292a5fd443f97492771e22e6643b49ee791bd153195e17a9d41e0",
-  "js/01-osnova.js": "de0f84c198608ac0851e7c4c1c80682b246f79ac583a6c8833031b5a18240d4f",
-  "js/02-chlenstvo.js": "bb54024caf382db42a333f0fa84def4b910a1d0d6eeb088edaa518fc018ad80c",
+  "js/01-osnova.js": "5859662a9c26beebee534e46fdb101edf74bbda4facb575d3246863ab5f864c3",
+  "js/02-chlenstvo.js": "736917f095f80e8b46e5095ed81bbff094c9b4887a7faba4c70c8553cafc7fd9",
   "js/03-propusk.js": "0e9d391b183db16970f99817e96ca9106d07d4f6b6983935a4f9e73d9a7840e4",
   "js/04-bar.js": "305f2bc3ae4cdf0a6f5fe9936888433af9861f015fbff8ca708ac411f72313da",
   "js/05-kassa.js": "df74902feec361fb210f8ba5873c76ac54cc6bf4b14dc567b7864ab25c29ae73",
-  "js/06-lyudi.js": "1ca754db45601c2da900c25218ffcb8899f437f5d08db7841bced4eb761b9262",
+  "js/06-lyudi.js": "1794c3e2096a829e6575099398d8b0e48be54e51bb6506ea28029046a5130b11",
   "js/07-mastera.js": "3ebf8c826889d379fb11f75952f1204d9f495473dec4d6d5f40345dad44c460b",
   "js/08-kartochki.js": "6de1be85dea847262e16af4619282c8286f03800bbffa6d7be99138911eac3d9",
   "js/09-afisha.js": "d14b734f60a29580621c36f3aa515f4d20d117416722484cc1c0d30b9e264039",
@@ -26,12 +26,12 @@
   "js/16-ekrany-bar.js": "630897d97611af4dd30fa6344d354c2d8c6132ecf5afe8f7a19a1182e57ab314",
   "js/17-ekrany-upravlenie.js": "f001df34e51b6146e3151002d7369608124fd629a30b129074c27063a620aed2",
   "js/18-ekrany-mastera.js": "418f984363f24f4d27ba891770eb944bd2655fa1df5f6c62894ccf4be6bad52f",
-  "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
+  "js/19-ekrany-lyudi.js": "8b1561bd88cb3070f158bf41a495e7e66aebd589b5542dced0f3ae902684bb55",
   "js/20-ekrany-sluzhebnye.js": "a0ba85da42addb3bd5db360b936456d5c59dd075c9ebc1a55ef4d2cbd3d96810",
   "js/21-navigaciya.js": "bd4977fe775a6f9712390fb69facd8d8cc76bdef3142c2ebdbb4cd3c5ffac691",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
  },
- "свод_слепков": "98aa703f1b2d1dd1b7567aa759ec37a7f368ffa161ab8a5ed20d6d48f56b60d8",
+ "свод_слепков": "3049a77e4d08b1d6aab94a1e8773a6b940efc65163d82613dca8b609f9615c74",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
@@ -146,7 +146,12 @@
        "masters"
       ]
      },
-     "при_данных": {},
+     "при_данных": {
+      "eventNew": [
+       "events",
+       "organizer"
+      ]
+     },
      "сбои": {},
      "длины": {
       "staff": 539,
@@ -172,7 +177,8 @@
       "partnerReqs": 17,
       "masterReqs": 17,
       "masterEvents": 17,
-      "masterList": 17
+      "masterList": 17,
+      "eventNew": 637
      },
      "проба_подействовала": true,
      "афиша_закрыта": false,
@@ -231,6 +237,10 @@
       ]
      },
      "при_данных": {
+      "eventNew": [
+       "events",
+       "organizer"
+      ],
       "organizer": [
        "events"
       ]
@@ -242,6 +252,7 @@
       "guest": 13,
       "events": 247,
       "bookings": 125,
+      "eventNew": 637,
       "organizer": 270
      },
      "проба_подействовала": true,
@@ -312,6 +323,10 @@
       ]
      },
      "при_данных": {
+      "eventNew": [
+       "events",
+       "organizer"
+      ],
       "organizer": [
        "events"
       ]
@@ -325,6 +340,7 @@
       "barCards": 19,
       "pass": 74,
       "bookings": 125,
+      "eventNew": 637,
       "organizer": 270
      },
      "проба_подействовала": true,
@@ -385,6 +401,10 @@
       ]
      },
      "при_данных": {
+      "eventNew": [
+       "events",
+       "organizer"
+      ],
       "organizer": [
        "events"
       ]
@@ -398,6 +418,7 @@
       "barCards": 19,
       "pass": 74,
       "bookings": 125,
+      "eventNew": 637,
       "organizer": 270
      },
      "проба_подействовала": true,

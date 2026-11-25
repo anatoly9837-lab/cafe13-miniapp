@@ -221,7 +221,9 @@ const LIVE_SHOTS = [
    'режима на фикстуре: право начинается с `LIVE`. Числа — фикстура съёмки (форма — по заглушкам `RA_ACCROW` в ' +
    '`tools/live.cjs`), не данные клуба. Признак — «На счёте:»: строка рисуется только когда пришли и счета, и свои запросы.',
    ['art_director'],
-   { '/withdraw/accounts': { accounts: [{ account: 'art_director', book: 'club_ledger', direction_id: null, direction_title: null,
+   { '/withdraw/accounts': { accounts: [{ account: 'personal', book: 'ledger', direction_id: null, direction_title: null,
+                                          balance: '0.00', pending: null, withdrawable: '0.00' },
+                                        { account: 'art_director', book: 'club_ledger', direction_id: null, direction_title: null,
                                           balance: '1200.00', pending: null }] },
      '/withdraw/requests/mine': { requests: [], balance: '3170.00' } }],
   ['65-role-account-wait', 'roleAccount', 'art_director', 'Отменить запрос', 'Клуб · ответственность',
@@ -230,7 +232,9 @@ const LIVE_SHOTS = [
    'ответа — по снимку api `withdraw-mine-club` (страж формы съёмки), числа — фикстура. Признак — «Отменить запрос»: кнопка ' +
    'рисуется только у своего ждущего. Поле `pending` счёта — `null`: формы этого объекта в снимке api нет, и выдумывать её съёмка не вправе.',
    ['art_director'],
-   { '/withdraw/accounts': { accounts: [{ account: 'art_director', book: 'club_ledger', direction_id: null, direction_title: null,
+   { '/withdraw/accounts': { accounts: [{ account: 'personal', book: 'ledger', direction_id: null, direction_title: null,
+                                          balance: '0.00', pending: null, withdrawable: '0.00' },
+                                        { account: 'art_director', book: 'club_ledger', direction_id: null, direction_title: null,
                                           balance: '1200.00', pending: null }] },
      '/withdraw/requests/mine': { requests: [{ id: 40, role: 'art_director', book: 'club_ledger', account: 'art_director',
        direction_id: null, payout_id: null, amount: '400.00', status: 'pending', created_at: '2026-10-27T03:00:00+00:00',
@@ -288,8 +292,13 @@ const формаСошлась = (ф, с) => {
   if (с === null) return ф === null || typeof ф !== 'object';
   if (Array.isArray(с)) return Array.isArray(ф) && (ф.length === 0 || (с.length > 0 && ф.every(x => формаСошлась(x, с[0]))));
   if (!ф || typeof ф !== 'object' || Array.isArray(ф)) return false;
-  const кф = Object.keys(ф).sort(), кс = Object.keys(с).sort();
-  return кф.join() === кс.join() && кф.every(к => формаСошлась(ф[к], с[к]));
+  /* `'?'` снимка — не ключ ответа, а список ключей, которые есть не в каждой строке
+     (`merge` в tools/keys.py): у /withdraw/accounts `withdrawable` есть только у личного
+     счёта. Такой ключ фикстура вправе не нести; прочие — обязаны, лишних — нет. */
+  const необяз = new Set(с['?'] || []);
+  const кф = Object.keys(ф), кс = Object.keys(с).filter(к => к !== '?');
+  return кф.every(к => кс.includes(к)) && кс.every(к => необяз.has(к) || кф.includes(к))
+    && кф.every(к => формаСошлась(ф[к], с[к]));
 };
 const стражФормы = () => LIVE_SHOTS.flatMap(([имя, , , , , , , ручки]) => Object.keys(ручки).flatMap(ручка => {
   const снимки = Object.entries(СНИМКИ_API).filter(([, v]) => v.status === 200 &&
