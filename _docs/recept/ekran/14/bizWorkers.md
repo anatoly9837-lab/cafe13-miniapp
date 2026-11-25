@@ -74,10 +74,10 @@
 
 | что нужно | ручка | состояние |
 |---|---|---|
-| мои бизнесы (`partner_id` = я) | `GET /partner/directions` | есть в стволе api и в бою (`workers.py:88`, бой 410f240) |
-| работники бизнеса | `GET /directions/{id}/workers` | есть в стволе api и в бою (`workers.py:117`); `/people` партнёру не отдаётся |
-| назначить | `POST /directions/{id}/workers` `{member_id}` | есть в стволе api и в бою (`workers.py:127`); `POST /roles` партнёру по-прежнему отказывает словами «роли выдаёт и снимает глава клуба» (`app/routers/roles.py:40`, право `GRANTS = ("head",)`), и расширять `_may_grant` наряд запрещает |
-| снять | `POST /directions/{id}/workers/{role_id}/revoke` | есть в стволе api и в бою (`workers.py:178`); `POST /roles/{id}/revoke` — по-прежнему право главы |
+| мои бизнесы (`partner_id` = я) | `GET /partner/directions` | есть в стволе api и в бою (`workers.py`, `my_directions`, бой 410f240) |
+| работники бизнеса | `GET /directions/{id}/workers` | есть в стволе api и в бою (`workers.py`, `list_workers`); `/people` партнёру не отдаётся |
+| назначить | `POST /directions/{id}/workers` `{member_id}` | есть в стволе api и в бою (`workers.py`, `assign`); `POST /roles` партнёру по-прежнему отказывает словами «роли выдаёт и снимает глава клуба» (`app/routers/roles.py:40`, право `GRANTS = ("head",)`), и расширять `_may_grant` наряд запрещает |
+| снять | `POST /directions/{id}/workers/{role_id}/revoke` | есть в стволе api и в бою (`workers.py`, `revoke`); `POST /roles/{id}/revoke` — по-прежнему право главы |
 | занят ли человек в другом бизнесе | то же поле списка | основание, что состояние законно: `roles_live_uniq` уникален по `(member_id, role, COALESCE(direction_id,0))` — одна живая роль на НАПРАВЛЕНИЕ |
 
 ⚠ **Слова отказов не придумываются и не копируются: они берутся печатью

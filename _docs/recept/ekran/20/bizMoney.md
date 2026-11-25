@@ -23,8 +23,8 @@
 1. **Остаток** — поля `wallet` и `wallet_through` в уже вызываемой
    `GET /partner/directions` (`fromMyBiz`, `js/06-lyudi.js:1004`), тот же
    источник, что у карточки на «Клубе»: у одного вопроса не два ответа. Поля
-   есть в стволе api и в бою (`workers.py:113`, `profile.py:308` —
-   `queries.wallet`, бой 410f240); «поля нет» остаётся запасным состоянием на
+   есть в стволе api и в бою (`workers.py`, `my_directions`; `profile.py`,
+   `directions` — оба через `queries.wallet`, бой 410f240); «поля нет» остаётся запасным состоянием на
    случай ответа без ключа;
 2. **Отчёт месяца** — `GET /bar/month?direction_id=<id>`, форма в теле
    `cafe13-api#153` (api `1cf4793`, отказ — `#154`, `8f0ab93`); девять
