@@ -53,6 +53,7 @@ business, миграция 033; шаг 28 несёт миграцию, срок 
 | `M` заголовок | `opsStats.months.title` | `Закрытые месяцы` |
 | `M` строки | `opsStats.months.row` | месяц словом из `period_start` в поясе клуба (`Cafe13KPG#961`) и `title` бизнеса; справа `club` ฿ — доля клуба; под ним `.small` `Чистая {net_base} · Партнёру {partner} ({partner_pct} %) · Мне {ops}` — ВЫБОР дизайнера; `net_base` печатается как пришёл, и отрицательным |
 | `M2` строки опер-директора нет | `opsStats.months.opsNone` | вместо `Мне {ops}` — `Мне — нет данных` при `ops: null` (его строки за месяц нет; не `0`) |
+| `M3` `null` в `net_base`, `partner`, `partner_pct` или `club` | `opsStats.error` | **НЕ БЫВАЕТ** — строки `M` сервер берёт только из записей `account = 'business'`, а для них CHECK `club_ledger_business_row` требует `net_base`, `partner_pct` (0 < … ≤ 100) и `amount` не `null` (api `migrations/039_ops_director_share.up.sql`, api main `facd88d`); `club` считается из них же. Пришёл `null` — форма сломана: отказ целиком, как битое число, а не «нет данных %» |
 | `M1` закрытых нет | `opsStats.months.none` | `Закрытых месяцев в этом периоде нет.` |
 | `D` заголовок | `opsStats.money.title` | `Мои 3 %` — заголовок из слова владельца; процент в заголовке — `money.pct` СЕРВЕРА, не литерал |
 | `D3` доля не действует | `opsStats.money.titleNoPct` · `opsStats.money.pctNone` | заголовок `Моя доля`; `.small` `Доля сейчас не действует.` — при `money.pct: null` (доля на начало окна, `share_rules`) |
@@ -134,6 +135,6 @@ business, миграция 033; шаг 28 несёт миграцию, срок 
 - `os-bez-scheta` — ответ без `money` → карточки `D` нет; с `money` → `D` с числами сервера;
 - `os-razrez` — день, неделя, месяц дают разные продажи; доли бизнесов — одни;
 - `os-mesyac-poyas` — граница `2026-10-31T17:00Z` подписана «Ноябрь», не «Октябрь»;
-- `os-nol-ne-pusto` — `0` → `0`; `null` → `нет данных`; `share_*: null` → `H1`, `ops: null` → `M2`, `pct: null` → `D3`; литерала числа и процента нет;
+- `os-nol-ne-pusto` — `0` → `0`; `null` → `нет данных`; `share_*: null` → `H1`, `ops: null` → `M2`, `pct: null` → `D3`; `partner_pct: null` в строке `M` → `M3`, отказ целиком; литерала числа и процента нет;
 - `os-dver` — без `ops_director` и `admin` двери `O0` нет (отрицательный контроль);
 - `os-klyuchi` — каждый ключ экрана есть в словаре.
