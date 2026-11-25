@@ -677,6 +677,14 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
               ', свод слепков ' + свод_слепков.slice(0, 12));
   console.log('шрифты из сети: ресурсов ' + Object.keys(шрифты).length + ' · ' +
               Object.keys(шрифты).sort().map(u => шрифты[u].слепок.slice(0, 8)).join(' '));
+  // ⚠ ФОРМУ ОТДАЧИ НАЗЫВАЕТ ОДИН ПРОГОН (Cafe13KPG#966): `/s/` — A (действующая,
+  //   на ней опись), `/l/font?kit=` — B. Правило то же, что `форма_отдачи` в
+  //   tools/sverka-razmetki.py; опись с формы B прибор описи не пересобирает.
+  const gst = Object.keys(шрифты).filter(u => u.includes('fonts.gstatic.com/'));
+  const форма = gst.some(u => u.includes('fonts.gstatic.com/l/font')) ? 'B'
+    : (gst.length && gst.every(u => u.includes('fonts.gstatic.com/s/')) ? 'A' : 'не названа');
+  console.log('форма отдачи шрифтов: ' + форма + (форма === 'A' ? ' (действующая)'
+    : ' — НЕ действующая (A), опись с этого съёма не пересобирается (Cafe13KPG#966)'));
 
   console.log(errs.length ? 'ОШИБКИ КОНСОЛИ:\n  ' + errs.join('\n  ') : '✓ ошибок консоли нет');
   console.log(bad.length ? '\nОТКАЗЫ (' + bad.length + '):\n  ' + bad.join('\n  ') : '\n✓ все ' + manifest.length + ' снимков прошли проверку признака');
