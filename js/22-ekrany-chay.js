@@ -16,7 +16,7 @@
    Деньги — строкой сервера, клиент не округляет: на экран — money(строка). Доля клуба и цена заявки — числа
    сервера; в демонстрации — TEA_DEMO, в разметке литерала нет. */
 
-var TEA_URL = { list: null, card: null, shot: null, mine: null, myBooks: null, book: null, apply: null, upload: null, hold: null, price: null };
+var TEA_URL = { list: null, card: null, shot: null, mine: null, myBooks: null, book: null, apply: null, hold: null, price: null };
 function teaLive(k) { return LIVE && typeof TEA_URL[k] === 'function'; }
 function teaW(k, p) { return slovo('tea.' + k, p); }
 
@@ -32,14 +32,15 @@ var TEA = { list: null, listFail: '', listGen: 0,
 /* ── разбор ───────────────────────────────────────────────────────────────────────────────────────────────── */
 function teaPrice(v) { return typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? v : null; }
 /* Карточка мастера: номер мастера, имя, описание, цена СТРОКОЙ, длительность в минутах, число кадров. Кадр — адрес
-   СЕРВЕРА клуба (teaShotUrl), file_id и путь файла Telegram сюда не попадают вовсе: из ответа берутся только
-   перечисленные поля, всё прочее отбрасывается. */
+   СЕРВЕРА клуба (teaShotUrl): из ответа берутся только перечисленные поля, всё прочее отбрасывается. Кадров
+   не больше TEA_SHOTS_MAX — галерея показывает три. */
+var TEA_SHOTS_MAX = 3;
 function teaCardFrom(d) {
   if (!d || typeof d !== 'object') return null;
   if (typeof d.master_id !== 'number' || typeof d.name !== 'string') return null;
   var price = teaPrice(d.price); if (price === null) return null;
   var mins = typeof d.duration_min === 'number' && d.duration_min > 0 ? d.duration_min : null;
-  var n = typeof d.shots === 'number' && d.shots >= 0 ? Math.floor(d.shots) : 0;
+  var n = typeof d.shots === 'number' && d.shots >= 0 ? Math.min(TEA_SHOTS_MAX, Math.floor(d.shots)) : 0;
   var shots = []; for (var i = 0; i < n; i++) shots.push(teaShotUrl(d.master_id, i + 1));
   return { id: d.master_id, name: d.name, about: typeof d.about === 'string' ? d.about : '', price: price, mins: mins,
            shots: shots, status: typeof d.status === 'string' ? d.status : 'approved',
@@ -147,9 +148,14 @@ function teaLoadPrice() {
     if (gen !== TEA.priceGen) return;
     var a = r.status === 200 && r.data ? teaPrice(r.data.amount) : null, s = r.status === 200 && r.data ? teaPrice(r.data.share) : null;
     if (a !== null && s !== null) { TEA.amount = Number(a); TEA.share = Number(s); } else TEA.priceFail = failText(r);
-    teaRerender({ teaHold: 1, teaApply: 1 });
+    teaRerender({ teaHold: 1, teaApply: 1, home: 1 });
   });
 }
+
+/* Стык с ЧАЙ-Б (H0 «Провести в клубе», js/07-mastera.js): цена заявки церемонии — число; null — не узнали;
+   undefined — грузится. Загрузка — та же, что у teaHold. */
+function teaHoldPrice() { return TEA.amount !== null ? TEA.amount : TEA.priceFail ? null : undefined; }
+function loadTeaHoldPrice() { teaLoadPrice(); }
 
 /* ── общие куски разметки ─────────────────────────────────────────────────────────────────────────────────── */
 function teaBal() { return DATA.member && typeof DATA.member.balance === 'number' ? DATA.member.balance : null; }
@@ -172,27 +178,20 @@ function teaRetry(text, act) {
   return '<div class="card quiet"><div class="col"><span class="small">' + esc(text) + '</span>' +
     '<button type="button" class="btn quiet" data-action="' + act + '">' + esc(teaW('retry')) + '</button></div></div>';
 }
-/* .album (новый класс, рецепт sostav.md): лента квадратных кадров с пролистыванием пальцем, под лентой точки «какой
-   из скольких». Один кадр — без точек, ноль — блока нет. Кадр не загрузился — пустой квадрат --surface. */
+/* .album — галерея 1–3 кадров, видна целиком: первый крупный сверху, второй и третий мелкими превью в ряд под
+   ним. Пролистывания и точек нет. Ноль кадров — блока нет. Кадр не загрузился — пустой квадрат --surface. */
 function teaAlbum(shots, edit) {
+  shots = shots.slice(0, TEA_SHOTS_MAX);
   if (!shots.length) return '';
-  return '<div class="album"><div class="album-track">' + shots.map(function (s, i) {
-      var src = typeof s === 'string' ? s : s.url;
-      return '<div class="album-frame">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy">' : '') +
-        (edit ? edit(s, i) : '') + '</div>';
-    }).join('') + '</div>' +
-    (shots.length > 1 ? '<div class="album-dots" aria-hidden="true">' + shots.map(function (s, i) {
-      return '<span' + (i === 0 ? ' class="on"' : '') + '></span>'; }).join('') + '</div>' : '') +
+  var frame = function (s, i) {
+    var src = typeof s === 'string' ? s : s.url;
+    return '<div class="album-frame' + (i ? ' small' : '') + '">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy">' : '') +
+      (edit ? edit(s, i) : '') + '</div>';
+  };
+  return '<div class="album">' + frame(shots[0], 0) +
+    (shots.length > 1 ? '<div class="album-thumbs">' + shots.slice(1).map(function (s, k) { return frame(s, k + 1); }).join('') + '</div>' : '') +
   '</div>';
 }
-// точки идут за пальцем: какая рамка ближе к левому краю ленты — та и «на»
-document.addEventListener('scroll', function (ev) {
-  var t = ev.target;
-  if (!t || !t.classList || !t.classList.contains('album-track')) return;
-  var i = Math.round(t.scrollLeft / Math.max(1, t.clientWidth));
-  var dots = t.parentNode.querySelectorAll('.album-dots span');
-  for (var k = 0; k < dots.length; k++) dots[k].className = k === i ? 'on' : '';
-}, true);
 // кадр не загрузился — прячем картинку, рамка остаётся пустым квадратом (лента не сжимается)
 document.addEventListener('error', function (ev) {
   var t = ev.target;
@@ -221,8 +220,8 @@ function teaVal(id) { var el = document.getElementById(id); return el ? el.value
 function teaApplyBlank(mine) {
   var c = mine && mine.card;
   return { about: c ? c.about : '', price: c ? String(c.price) : '', h: c && c.mins ? String(Math.floor(c.mins / 60)) : '',
-           m: c && c.mins ? String(c.mins % 60) : '', shots: c ? c.shots.map(function (u, i) { return { url: u, id: i + 1, state: 'ok' }; }) : [],
-           err: '', deny: '', busy: false, preview: false, botOnly: false };
+           m: c && c.mins ? String(c.mins % 60) : '', shots: c ? c.shots.slice(0, TEA_SHOTS_MAX).map(function (u, i) { return { url: u, id: i + 1, state: 'ok' }; }) : [],
+           err: '', deny: '', busy: false, preview: false };
 }
 var TAF = teaApplyBlank(null);
 var THF = { title: '', about: '', seats: '0', entry: '', err: '', deny: '', money: false, busy: false, stale: null };
@@ -323,7 +322,7 @@ function teaApplySend() {
   TAF.err = !TAF.about.trim() ? teaW('apply.noAbout')
     : !/^\d+(\.\d+)?$/.test(p) || typeof s === 'number' && Number(p) < s ? teaW('apply.priceLow', { share: typeof s === 'number' ? money(s) : '…' })
     : !(mins > 0) ? teaW('apply.noDur') : '';
-  if (TAF.err || TAF.busy || TAF.shots.some(function (x) { return x.state === 'loading'; })) { render(); return; }
+  if (TAF.err || TAF.busy) { render(); return; }
   if (!LIVE) {
     FLASH = { text: teaW('apply.done'), note: teaW('demoNote') }; TEA.mine = TEA_DEMO.mine = { status: 'pending', note: '', card: null };
     TAF = teaApplyBlank(null); haptic('ok'); go('home'); return;
@@ -337,35 +336,8 @@ function teaApplySend() {
     if (current === 'teaApply') render();
   });
 }
-/* Кадр с телефона: клиент отдаёт файл серверу клуба, тот пересылает в Telegram и хранит file_id у себя (№55 «а»).
-   Ручки приёма нет — в живом кадр не добавляется, A2 говорит «Пришлите фото боту». В демонстрации — предпросмотр
-   из файла, никуда не уходит. */
-var TEA_SHOTS_MAX = 10;
-function teaAddFiles(files) {
-  teaGrab();
-  [].slice.call(files || [], 0, Math.max(0, TEA_SHOTS_MAX - TAF.shots.length)).forEach(function (f) {
-    if (!LIVE) { TAF.shots.push({ url: URL.createObjectURL(f), id: 'd' + TAF.shots.length, state: 'ok' }); return; }
-    if (!teaLive('upload')) { TAF.botOnly = true; return; }
-    var s = { url: '', id: null, state: 'loading', file: f }; TAF.shots.push(s); teaUpload(s);
-  });
-  render();
-}
-function teaUpload(s) {
-  s.state = 'loading';
-  var fd = new FormData(); fd.append('file', s.file);
-  var opt = { method: 'POST', headers: { 'X-Telegram-Init-Data': tg.initData }, body: fd };
-  if (TEST.on) opt.headers['X-Test-Mode'] = '1';
-  if (TEST.on && TEST.as) opt.headers['X-Act-As'] = String(TEST.as.id);
-  fetch(API + TEA_URL.upload(), opt).then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); },
-    function () { return { status: 0 }; }).then(function (r) {
-    var n = r.status === 201 && r.data && typeof r.data.shot_id === 'number' ? r.data.shot_id : null;
-    if (n !== null) { s.id = n; s.url = typeof r.data.url === 'string' && r.data.url.charAt(0) === '/' ? API + r.data.url : ''; s.state = 'ok'; }
-    else if (r.status === 415 || r.status === 413) { TAF.shots.splice(TAF.shots.indexOf(s), 1); TAF.botOnly = true; }
-    else s.state = 'fail';
-    if (current === 'teaApply') { teaGrab(); render(); }
-  });
-}
-document.addEventListener('change', function (ev) { if (ev.target && ev.target.id === 'taf-file') teaAddFiles(ev.target.files); });
+/* Загрузки кадра нет: ручки приёма на сервере ещё нет, форма её появится отдельно. Форма показывает кадры, что
+   уже есть у карточки, — их можно убрать и переставить первым. */
 
 /* ── крючки навигации (вписаны ЧАЙ-Б в js/21-navigaciya.js) ──────────────────────────────────────────────── */
 function teaGo(screen, p) {
@@ -410,10 +382,8 @@ function teaAction(a, arg) {
   if (a === 'tea-price-retry') { teaGrab(); teaLoadPrice(); render(); return true; }
   if (a === 'tea-apply-send') { teaApplySend(); return true; }
   if (a === 'tea-apply-preview') { teaGrab(); TAF.preview = !TAF.preview; render(); return true; }
-  if (a === 'tea-apply-add') { var f = document.getElementById('taf-file'); if (f) f.click(); return true; }
   if (a === 'tea-shot-del') { teaGrab(); TAF.shots.splice(Number(arg), 1); render(); return true; }
   if (a === 'tea-shot-first') { teaGrab(); var i = Number(arg), s = TAF.shots.splice(i, 1)[0]; if (s) TAF.shots.unshift(s); render(); return true; }
-  if (a === 'tea-shot-retry') { var r = TAF.shots[Number(arg)]; if (r && r.file) { teaGrab(); teaUpload(r); render(); } return true; }
   return false;
 }
 
@@ -490,12 +460,8 @@ Object.assign(SCREENS, {
       teaCardHtml({ id: 0, name: '', about: TAF.about, price: String(TAF.price || '0'), mins: teaMins() || null,
                     shots: TAF.shots.filter(function (s) { return s.state === 'ok'; }).map(function (s) { return s.url; }) }, { book: false }) +
       '<button type="button" class="btn ghost" data-action="tea-apply-preview">' + esc(teaW('apply.previewBack')) + '</button>';
-    var loadingShot = TAF.shots.some(function (s) { return s.state === 'loading'; });
     var shotEdit = function (s, i) {
-      return s.state === 'loading' ? '<span class="small album-cap">' + esc(teaW('apply.shotLoading')) + '</span>'
-        : s.state === 'fail' ? '<span class="album-cap"><span class="small">' + esc(teaW('apply.shotFail')) + '</span>' +
-            '<button type="button" class="btn quiet mini" data-action="tea-shot-retry:' + i + '">' + esc(teaW('retry')) + '</button></span>'
-        : '<span class="album-cap">' +
+      return '<span class="album-cap">' +
             '<button type="button" class="btn quiet mini" data-action="tea-shot-del:' + i + '">' + esc(teaW('apply.shotDel')) + '</button>' +
             (i > 0 ? '<button type="button" class="btn quiet mini" data-action="tea-shot-first:' + i + '">' + esc(teaW('apply.shotFirst')) + '</button>' : '') +
           '</span>';
@@ -506,9 +472,6 @@ Object.assign(SCREENS, {
       '<div class="card"><div class="col"><span class="label">' + esc(teaW('apply.photo')) + '</span>' +
         '<span class="small">' + esc(teaW('apply.photoNote')) + '</span>' +
         teaAlbum(TAF.shots, shotEdit) +
-        (TAF.botOnly ? '<span class="small">' + esc(teaW('apply.botOnly')) + '</span>' : '') +
-        (TAF.shots.length < TEA_SHOTS_MAX ? '<button type="button" class="btn quiet" data-action="tea-apply-add">' + esc(teaW('apply.add')) + '</button>' +
-          '<input type="file" id="taf-file" accept="image/*" multiple hidden>' : '') +
       '</div></div>' +
       '<div class="card"><div class="col">' +
         '<div class="field"><label for="taf-about">' + esc(teaW('apply.about')) + '</label>' +
@@ -525,7 +488,7 @@ Object.assign(SCREENS, {
       '</div></div>' +
       '<button type="button" class="btn ghost" data-action="tea-apply-preview">' + esc(teaW('apply.preview')) + '</button>' +
       (TAF.err ? teaDeny(TAF.err) : '') + (TAF.deny ? teaDeny(TAF.deny, true) : '') +
-      '<button type="button" class="btn" data-action="tea-apply-send"' + (loadingShot || TAF.busy ? ' disabled aria-disabled="true"' : '') + '>' +
+      '<button type="button" class="btn" data-action="tea-apply-send"' + (TAF.busy ? ' disabled aria-disabled="true"' : '') + '>' +
         esc(TAF.busy ? teaW('sending') : edit ? teaW('apply.sendEdit') : teaW('apply.send')) + '</button>';
   },
 
