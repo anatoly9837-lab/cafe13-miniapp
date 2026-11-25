@@ -1,15 +1,15 @@
 {
- "снято": "2026-11-25T10:04:51.270Z",
+ "снято": "2026-11-25T11:32:00.679Z",
  "слепки_страницы": {
-  "index.html": "454c3c0cee2c0169ec4a7780441e511a181adf2cbde75ace74653f93d8f1f06a",
+  "index.html": "491dbe4f0cf10f201e1d63ada1839781b3d6155f6cb3c773dfd43f2bfc5229ee",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
   "js/00-slova.js": "a7384918714292a5fd443f97492771e22e6643b49ee791bd153195e17a9d41e0",
-  "js/01-osnova.js": "de0f84c198608ac0851e7c4c1c80682b246f79ac583a6c8833031b5a18240d4f",
-  "js/02-chlenstvo.js": "bb54024caf382db42a333f0fa84def4b910a1d0d6eeb088edaa518fc018ad80c",
+  "js/01-osnova.js": "65c44d56eefa9d824e81d20c9f5e350113ca7fd203c38559494ec750d49aa17a",
+  "js/02-chlenstvo.js": "54c2f099752f2001f784b5b602abd5a06d2bc4009467491548f78a8bdafd92f1",
   "js/03-propusk.js": "0e9d391b183db16970f99817e96ca9106d07d4f6b6983935a4f9e73d9a7840e4",
   "js/04-bar.js": "305f2bc3ae4cdf0a6f5fe9936888433af9861f015fbff8ca708ac411f72313da",
   "js/05-kassa.js": "df74902feec361fb210f8ba5873c76ac54cc6bf4b14dc567b7864ab25c29ae73",
@@ -53,7 +53,7 @@
    "слепок": "jkgjnakkehdemeac"
   }
  },
- "свод_слепков": "98aa703f1b2d1dd1b7567aa759ec37a7f368ffa161ab8a5ed20d6d48f56b60d8",
+ "свод_слепков": "ce52ec5dff59c0d2b7cb9880d034e2aaa461f79b7545df6ab6f0577a6ac5de54",
  "область": "вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает",
  "предел": "ОДИН снятый вид каждого экрана. Состояния рецепта (отказ, пусто, отправка, вспышка) опись не снимает, и класс, живущий только в них, сверке «не измерен», а не зелёный",
  "экраны": {
