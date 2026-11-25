@@ -1,5 +1,5 @@
 {
- "api_sha": "26aba16974b5d8bf3250426f3eeb5164759eef00",
+ "api_sha": "240ddc4159b2ede0f3dd9281fc95308c89244820",
  "источник": "migrations/032_worker.up.sql:16",
  "роли": [
   "admin",
