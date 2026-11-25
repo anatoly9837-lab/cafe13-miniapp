@@ -154,11 +154,12 @@ function joinWho() {
   if (!j || !j.name) return '';
   return '<span class="small">Вы входите как <b>' + esc(j.name) + (j.nick ? ' · ' + esc(j.nick) : '') + '</b></span>';
 }
-// Ответ GET /join → то, что рисует экран; null — не разобран целиком
+// Ответ GET /join → то, что рисует экран; null — не разобран целиком.
+// Цену (amount_thb/amount_usd/period_months/currency) НЕ требует и не читает (Cafe13KPG#1075): членство не продаётся
+// (рамка 24.11), просьба уходит без денег, а сервер уберёт цену из ответа ПОСЛЕ этого клиента в бою — с ценой и без
+// неё ответ разбирается одинаково. Прежнее `thb > 0` сделало бы null каждый ответ без цены — экран просьбы у всех.
 function fromJoin(d) {
   if (!d || typeof d !== 'object') return null;
-  var thb = num(d.amount_thb), usd = num(d.amount_usd);
-  if (!(thb > 0) || !(usd > 0) || d.currency !== 'THB') return null;
   if (typeof d.about_token !== 'string' || !d.about_token) return null;
   var y = d.you;
   if (!y || typeof y !== 'object' || typeof y.first_name !== 'string') return null;
@@ -169,7 +170,7 @@ function fromJoin(d) {
             note: typeof q.decision_note === 'string' ? q.decision_note.trim() : '' };
   }
   return {
-    thb: thb, usd: usd, request: req, token: d.about_token,
+    request: req, token: d.about_token,
     name: [y.first_name, typeof y.last_name === 'string' ? y.last_name : ''].filter(Boolean).join(' '),
     nick: typeof y.username === 'string' && y.username ? '@' + y.username : ''
   };
@@ -378,6 +379,9 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               // 0.2, витрина бара (Cafe13KPG#269, рецепты): оттаяна из FROZEN — вкладка «Услуги» (`guest`, носитель
               // двери в бар, план владельца 0.2.5 в Cafe13KPG#855), меню, позиция, рецепт, заказ, мой заказ
               guest: 1, bar: 1, drink: 1, barCart: 1, barOrder: 1, barRecipe: 1,
+              // Cafe13KPG#1078: «Новое мероприятие» оттаяло — заморозка 28.10 (#510) держалась на рамке членства, снятой 24.11.
+              // Право — mayCreateEvent(), сервер в бою 410f240 судит то же `_may_create` (events.py:191)
+              eventNew: 1,
               // шаг 24 (Cafe13KPG#555): касса — вкладка и карточка человека. Фича 8 (Cafe13KPG#1009, №38 «а», рецепт
               // popolnenie/tillTopup): tillMembership УШЁЛ — членство не продаётся (api #179: 410); tillTopup оттаял (№47 «а»)
               staff: 1, tillPerson: 1, tillTopup: 1,
@@ -390,8 +394,8 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
 // Шаг 24 (`Cafe13KPG#555`): сняты staff, tillPerson, tillMembership — РОВНО путь взноса за членство;
 // пополнение и день кассы остаются (рецепт 24, «размораживается ровно то, через что идёт взнос»).
 // Фича 8: tillTopup снят (№47 «а», после api #181 — пополнение закрывает приход); tillDay остаётся
-var FROZEN = { eventNew: 1,
-               barMoney: 1, barDay: 1,
+// Cafe13KPG#1078: eventNew снят — довод (слово 29.10, «две роли») снят рамкой владельца 24.11 «убрали все подписки»
+var FROZEN = { barMoney: 1, barDay: 1,
                tillDay: 1 };
 function frozen(screen) { return LIVE && !!FROZEN[screen]; }
 // куда в живом режиме не войти: замороженное И никогда не подключённое («Моё дело» партнёра, членство) —
@@ -414,5 +418,5 @@ var PROTO = {};
    согласованным букингом и ждущим вторым (Cafe13KPG#985): «Клуб» показывает список букингов.
    Форму E54b снимает опись своей фикстурой (`MR.mine = []`). */
 var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1,
-               payouts: 1, payout: 1, businesses: 1, partnerReqs: 1, partnerReq: 1 };
+               payouts: 1, payout: 1, businesses: 1, partnerReqs: 1, partnerReq: 1, manage: 1 };
 
