@@ -14423,6 +14423,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(200);
     if (!await s.p.$('#view [data-go="calendar"]')) bad.push(`${n}: на «Ивентах» нет кнопки календаря (V1)`);
     else {
+      const c0 = s.calls.length;   // запросы ДО календаря — запуск приложения, не его
       await tap('[data-go="calendar"]');
       const cells = () => s.p.evaluate(() => {
         const o = {};
@@ -14452,6 +14453,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const t2 = await s.view();
       if (!t2.includes('Часы клуба')) bad.push(`cal-chasy-kluba: в дне 2 декабря нет ивента «Часы клуба»`);
       if (/Чайн(ая|ых) церемони/.test(t2)) bad.push(`cal-tea-api: в живом при TEA_API=false в дне 2 декабря есть церемонии: «${t2.slice(0, 160)}»`);
+      // календарь своего запроса не добавляет: месяц и день — без сервера (ивенты уже в eventList())
+      const alien = s.calls.slice(c0);
+      if (alien.length) bad.push(`${n}: календарь звал сервер: ${alien.map(q => q.method + ' ' + q.url).join(', ')}`);
       // назад с event — в тот же вид и день (не сегодняшний: 3 декабря)
       await tap('[data-action="cal-view:month"]');
       await tap('[data-action="cal-day:2026-12-03"]');
@@ -14473,8 +14477,6 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!t9.includes('Прошедшие ивенты афиша не показывает') || /ни ивентов|свободно/.test(t9))
         bad.push(`cal-proshloe: прошедший день 30 ноября говорит «${t9.slice(0, 200)}» — ждали L9`);
     }
-    const alien = s.calls.filter(q => !/\/(me|events|pass)(\?|$)/.test(q.url.replace('https://api.cafe13.club', '')));
-    if (alien.length) bad.push(`${n}: календарь звал сервер мимо /events: ${alien.map(q => q.method + ' ' + q.url).join(', ')}`);
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
