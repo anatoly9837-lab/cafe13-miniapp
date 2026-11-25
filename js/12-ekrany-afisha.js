@@ -7,7 +7,10 @@ Object.assign(SCREENS, {
      «ивентов нет» там, где они были. «Сегодня» — только не на текущей неделе (E60d). */
   events: function () {
     var list = eventList();
-    if (!list) return eventsWait();
+    // шаг 43 (рецепт 43/events.md, V1): кнопка календаря ПЕРВОЙ строкой, над .seg — стоит всегда, и пока афиша
+    // грузится, и в пустой афише: пустоту объясняет календарь
+    var cal = '<button type="button" class="btn quiet" data-go="calendar">' + svg(ICON.cal) + esc(slovo('calendar.door')) + '</button>';
+    if (!list) return cal + eventsWait();
     var today = bkk(new Date()).ymd, mon = ymdAdd(ymdMonday(today), WK.off * 7);
     var days = [0, 1, 2, 3, 4, 5, 6].map(function (i) { return ymdAdd(mon, i); });
     var on = {}; list.forEach(function (e) { var k = evYmd(e); (on[k] = on[k] || []).push(e); });
@@ -33,7 +36,7 @@ Object.assign(SCREENS, {
     var x = sel.split('-'), note = DOW_SHORT[days.indexOf(sel)] + ', ' + Number(x[2]) + ' ' + MONTHS[Number(x[1]) - 1] +
       (mine.length ? ' · ' + mine.length + ' ' + (mine.length % 10 === 1 && mine.length % 100 !== 11 ? 'событие'
         : mine.length % 10 >= 2 && mine.length % 10 <= 4 && (mine.length % 100 < 10 || mine.length % 100 >= 20) ? 'события' : 'событий') : '');
-    return seg + nav + grid + '<div class="daynote">' + esc(note) + '</div>' +
+    return cal + seg + nav + grid + '<div class="daynote">' + esc(note) + '</div>' +
       (shown.length ? '<div class="group">' + shown.map(eventRow).join('') + '</div>'
         // пустая афиша ЦЕЛИКОМ — не пустой день: /events отдаёт всё будущее без диапазона (бой 455dcdd: условие
         // только «не кончилось»), значит клиент ЗНАЕТ, что листать нечего, и говорит это прежними словами

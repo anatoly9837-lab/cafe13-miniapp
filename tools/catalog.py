@@ -301,6 +301,8 @@ ABSENT = [
     # «Управлении» — у art_director и админа (`/stats/art`, require_role("art_director")). `дверь`: admin в фикстуре
     # у «владельца» — тот же путь, что у clubStats
     'artStats': 'дверь',
+    # шаг 43 (рецепт 43/events.md V1): кнопка «Календарь» на «Ивентах» — у всех, у кого вкладка «Ивенты»
+    'calendar': 'дверь',
     # фича 4 (Cafe13KPG#1009, рецепт odobrenie/eventApproval, A0): строка «Ивенты на одобрение» в группе «Ивенты» на
     # «Управлении» — у art_director и админа (`_may_distribute`, api #176). `дверь`: тот же путь, что у artStats
     'eventApproval': 'дверь',
@@ -1302,6 +1304,7 @@ TITLES = {
     'businesses': 'Бизнесы клуба',
     'clubStats': 'Статистика клуба',
     'artStats': 'Статистика арт-директора',
+    'calendar': 'Календарь',
     'eventApproval': 'Ивенты на одобрение',
     'partnerApply': 'Заявка в партнёры · подача', 'partnerReqs': 'Заявки в партнёры', 'partnerReq': 'Заявка в партнёры · решение',
     'bizWorkers': 'Работники бизнеса',
