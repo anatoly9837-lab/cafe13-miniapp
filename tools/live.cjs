@@ -709,12 +709,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // v108) — членство. Делим по СВОЙСТВУ тела экрана; прототип без известного привратника — «не выполнено»,
       // а не молча вне проверки (иначе следующий экран со своим привратником дал бы ложное красное или ничего)
       const split = await s.p.evaluate(() => {
-        const by = { masters: [], member: [], unknown: [] };
+        const by = { masters: [], member: [], own: [], unknown: [] };
         // с v109 PROTO пуст: экраны шага 3 берутся по СВОЙСТВУ имени (`master…`), а подключённость сверяется ниже
         Object.keys(SCREENS).filter(k => /^master/.test(k)).forEach(k => {
           const src = String(SCREENS[k]);
           if (/mayMasters\(\)/.test(src)) by.masters.push(k);
           else if (/DATA\.role === 'guest'/.test(src)) by.member.push(k);
+          // шаг 34: «Моя статистика» (masterStats) стережёт mayMasterStats — свои ивенты, не решение заявок мастеров;
+          // его дверь судит свой случай ms-dver, здесь экран вне проверки по НАЗВАННОМУ привратнику
+          else if (/mayMasterStats\(\)/.test(src)) by.own.push(k);
           else by.unknown.push(k);
         });
         return by;
