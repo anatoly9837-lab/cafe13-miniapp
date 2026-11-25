@@ -320,7 +320,8 @@ var BACK = {
   // прошедшее открывается из «Записей» — туда и назад; будущее — на афишу
   // шаг 43: открыт из календаря — назад в календарь, на тот же вид и день (CAL.ret, js/23-kalendar.js)
   event: function () { return LIVE && !(EVENTS || []).some(function (x) { return String(x.id) === String(param); }) && histById(param) ? 'bookings' : CAL.ret ? 'calendar' : 'events'; },
-  calendar: 'events',
+  // шаг 43: «смотреть» — на «Ивенты»; «выбрать» — на форму, откуда пришли (её время не меняется)
+  calendar: function () { return calBack(); },
   thanks: function () { return { s: 'event', p: TH.id }; },
   // В живом режиме форма открывается с афиши, в демонстрации — из кабинета.
   // Без этого «назад» уводило на демонстрационный кабинет, где лежат
@@ -549,7 +550,7 @@ var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-relo
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
-  calGo(screen);     // шаг 43: вход в календарь и возврат в него (js/23-kalendar.js)
+  calGo(screen, p);  // шаг 43: вход в календарь и возврат в него (js/23-kalendar.js)
   if (screen === 'eventEdit' && (current !== 'eventEdit' || EDT.id !== p)) {
     var ee = eventById(p); EDT = { id: p, seats: ee ? String(ee.unl ? 0 : ee.of) : '', about: ee ? ee.about : '',
                                    price: ee ? String(entryOf(ee)) : '', ask: ee ? ee.ask : null, busy: false, err: '' };

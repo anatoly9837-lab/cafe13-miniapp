@@ -903,4 +903,9 @@ body.has-main .dup-main { display: none; }
 .month .ev { display: block; height: 5px; border-radius: 3px; margin: 3px 3px 0; background: var(--gold-mark); }
 .month .ev.tea, .wk .ev.tea { background: transparent; border: 1px solid var(--sage); height: 5px; box-sizing: border-box; }
 .pill.tea { color: var(--sage); border-color: var(--sage); background: transparent; }
+.tband { display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+         border: 1px solid transparent; border-radius: 9px; padding: 12px; cursor: pointer; }
+.tband.on { border-color: var(--accent); }
+/* закрытая полоса — НЕ кнопка (цитата 10 владельца: занятое не выбирается), только причина */
+.tband.off { background: var(--paper); color: var(--muted); cursor: default; }
 button.daynote { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }

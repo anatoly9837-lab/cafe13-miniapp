@@ -122,7 +122,26 @@ var SLOVA = {
     'calendar.tea.booked': 'вы записаны',
     'calendar.tea.countNow': 'Чайных церемоний в это время: {k} из {cap}',
     'calendar.tea.hiddenPrivate': 'ещё {n} — частная бронь мастера',
-    'calendar.tea.hiddenPending': 'ещё {n} — ждёт согласования'
+    'calendar.tea.hiddenPending': 'ещё {n} — ждёт согласования',
+    'calendar.pick.title': 'Время церемонии',
+    'calendar.pick.noteHold': 'Выберите, с какого и до какого часа.',
+    'calendar.pick.noteBook': '{name} · церемония {dur}. Выберите начало.',
+    'calendar.pick.open': 'можно выбрать',
+    'calendar.pick.openTea': 'можно выбрать · церемоний {k} из {cap}',
+    'calendar.pick.whyEvent': 'занято ивентом «{title}»',
+    'calendar.pick.whyFull': 'церемоний в это время уже {k} из {cap}',
+    'calendar.pick.whyMaster': 'у мастера другая церемония',
+    'calendar.pick.whySelf': 'у вас другая церемония',
+    'calendar.pick.whyPast': 'уже прошло',
+    'calendar.pick.from': 'С',
+    'calendar.pick.to': 'До',
+    'calendar.pick.untilBook': 'до {hm}',
+    'calendar.pick.nextDay': 'заканчивается {date} в {hm}',
+    'calendar.pick.deny': '{span} — {why}. Выберите другое время.',
+    'calendar.pick.zero': 'Конец совпадает с началом.',
+    'calendar.pick.choose': 'Выбрать это время',
+    'calendar.pick.busyFail': 'Не удалось узнать, какое время занято.',
+    'calendar.pick.retry': 'Повторить'
   }
 };
 function slovo(key, vars) {
