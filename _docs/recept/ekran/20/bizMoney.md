@@ -149,7 +149,8 @@
 `python3 -I tools/v-oblasti.py js/17-ekrany-upravlenie.js bizMoney '30 %'`
 — **обязано стать 0** — процент литералом не печатается. Контроль нуля:
 область после сборки не пуста (признак «Чистая прибыль» = 1), а образец жив по
-дереву — `rg -o -F '30 %' js/ | wc -l` даёт **5**;
+дереву — `rg -o -F '30 %' js/ | wc -l` не ноль (**4** на 25.11.2026, после
+`Cafe13KPG#964`);
 `python3 -I tools/v-oblasti.py js/17-ekrany-upravlenie.js bizMoney 'раз в месяц'`
 — **обязано стать 1** — слово о зачислении стоит ВСЕГДА;
 `python3 -I tools/v-oblasti.py js/17-ekrany-upravlenie.js bizMoney 'Зачислено по'`

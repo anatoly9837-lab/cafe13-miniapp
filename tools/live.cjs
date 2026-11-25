@@ -12462,12 +12462,26 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── шаг 20: деньги бизнеса (Cafe13KPG#551, рецепты `_docs/recept/ekran/20/`, ручки cafe13-api#153 и #156).
   // Остаток — пара `wallet` + `wallet_through` в `/partner/directions` и `/directions` (договор `20/ostatok.md`),
   // отчёт месяца — `/bar/month`. Суммы фикстуры нарочно не круглые и не совпадают с долями из таблиц (70/30 от 21 220)
+  // ── Cafe13KPG#964: прототип «Моё дело» (`partner`) долей не печатает — один источник, дверь на bizMoney ──
+  // Литерал доли рядом с живым числом на глаз не отличить. Экран живёт только в демонстрации (в живом закрыт).
+  if (part(1)) {
+    const n = 'pm-proto-moe-delo';
+    const s = await open(false, true, json(200, clone(OWNER)));
+    await s.p.evaluate(() => go('partner'));
+    await s.p.waitForTimeout(200);
+    const t = await s.view();
+    if (/\d\s?%/.test(t)) bad.push(`${n}: прототип печатает процент литералом: ${(t.match(/[^\n]{0,20}\d\s?%/) || [''])[0]}`);
+    if (!(await s.p.$('#view [data-go="bizMoney"]'))) bad.push(`${n}: нет двери «Деньги бизнеса»`);
+    await s.ctx.close();
+  }
+
   if (part(1)) {
     const n0 = 'pm';
     const OCT = '2026-10-31T17:00:00+00:00';   // полночь 1 ноября по Пхангану: месяц момента — ноябрь, зачислено — по октябрь
     const MON = extra => Object.assign({ direction: 'Кофейня', month: '2026-10', period_start: OCT, period_end: '2026-11-30T17:00:00+00:00',
       revenue: '52340.00', opex: '31120.00', opex_paid: '30000.00', payroll_accrued: '1120.00', net: '21220.00', share_mode: 'net',
-      share_club_pct: '30.00', club_share: '6366.00', share_partner_pct: '70.00', partner_share: '14854.00',
+      // доли НАРОЧНО не 30/70 (Cafe13KPG#964): литерал «70 %» на месте числа сервера с такой фикстурой прошёл бы зелёным
+      share_club_pct: '35.00', club_share: '7427.00', share_partner_pct: '65.00', partner_share: '13793.00',
       invest: '0.00', invest_note: 'в чистую прибыль и долю клуба не входит (bar-unit.md §6.1)' }, extra || {});
     const W = (wallet, through) => ({ wallet, wallet_through: through });
     const pmMe = () => { const p = clone(OWNER); p.roles = []; p.balance = 9000; return p; };
@@ -12517,10 +12531,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if ((await s.p.evaluate(() => document.getElementById('title').textContent)) !== 'Деньги бизнеса') bad.push(`${n}: шапка не «Деньги бизнеса»`);
         const t = flat(await s.view());
         ['Ноябрь2026', 'Бизнес„Кофейня“·месяцпоПхангану', 'Итогмесяца', 'Выручка52340฿', 'Текущиезатраты31120฿', 'Чистаяприбыль21220฿',
-         'Какделится', 'Вашадоля·70%14854฿', 'Клубу·30%6366฿', 'Вашадолязачислитсянасчётпозакрытиюмесяца.', 'Обновить']
+         'Какделится', 'Вашадоля·65%13793฿', 'Клубу·35%7427฿', 'Вашадолязачислитсянасчётпозакрытиюмесяца.', 'Обновить']
           .forEach(w => { if (!t.includes(flat(w))) bad.push(`${n}: нет «${w}»`); });
         if (/Октябрь2026|2026-10/.test(t)) bad.push(`${n}: подпись месяца взята из ключа month (октябрь вместо ноября, Cafe13KPG#961)`);
-        if (/30\.00|70\.00|bar-unit|Вложения|шаг21/.test(t)) bad.push(`${n}: на экране процент с хвостом, invest_note, пустые вложения или номер шага`);
+        if (/35\.00|65\.00|bar-unit|Вложения|шаг21/.test(t)) bad.push(`${n}: на экране процент с хвостом, invest_note, пустые вложения или номер шага`);
         if (!o.seen.includes('GET /bar/month?direction_id=7')) bad.push(`${n}: отчёт месяца своего бизнеса не спрошен: ${o.seen.join(', ')}`);
         await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(250);
         if ((await s.p.evaluate(() => current)) !== 'home') bad.push(`${n}: «назад» ведёт не на «Клуб»`);
@@ -12533,7 +12547,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const { s, ok } = await enter(o, n);
       if (ok) {
         const t = flat(await body(s));
-        ['Чистаяприбыль−580฿', 'Вашадоля·70%0฿', 'Клубу·30%0฿', 'Замесяцприбылинет:долисчитаютсятолькосприбыли,поэтомуобепонулю.']
+        ['Чистаяприбыль−580฿', 'Вашадоля·65%0฿', 'Клубу·35%0฿', 'Замесяцприбылинет:долисчитаютсятолькосприбыли,поэтомуобепонулю.']
           .forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
       }
       await done(s, n);
@@ -12561,7 +12575,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const t = flat(await body(s));
         if (!t.includes('Вашадоляненазначена') || !t.includes('Долюпартнёрауэтогобизнесаещёненазначили.')) bad.push(`${n}: пустая доля не названа словами`);
         if (/Вашадоля[^К]*฿/.test(t)) bad.push(`${n}: в строке пустой доли — сумма`);
-        if (!t.includes('Клубу·30%6366฿')) bad.push(`${n}: доля клуба пропала`);
+        if (!t.includes('Клубу·35%7427฿')) bad.push(`${n}: доля клуба пропала`);
       }
       await done(s, n);
     }
