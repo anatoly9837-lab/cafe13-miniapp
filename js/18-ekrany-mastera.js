@@ -450,6 +450,8 @@ function fromOpsStats(d) {
     r = { title: x.title, at: at, club: stNum(x.club, true), net: stNum(x.net_base, true), partner: stNum(x.partner, true),
           pct: stNum(x.partner_pct, true), ops: stNum(x.ops, true) };
     if (stBad([r.club, r.net, r.partner, r.pct, r.ops])) return null;
+    // M3 (рецепт 33/opsStats): строки M — записи `account = 'business'`, их CHECK не даёт null; пришёл — форма сломана, отказ целиком
+    if (r.club === null || r.net === null || r.partner === null || r.pct === null) return null;
     out.months.push(r);
   }
   if (out.hasMoney) {
