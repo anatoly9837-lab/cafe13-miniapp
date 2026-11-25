@@ -231,6 +231,8 @@ function organizerLive() {
   // наполненность — только по ивентам С ограничением: у безлимитного доли от мест нет
   var signed = 0, seats = 0, signedLim = 0, dueIfPaid = 0, unl = false;
   mine.forEach(function (e) {
+    // числа — под заголовком «впереди»: кончившееся в них не входит, в списке ниже остаётся с пометкой (Cafe13KPG#361)
+    if (e.done) return;
     var t = takenOf(e);
     signed += t;
     if (e.unl) unl = true; else { seats += e.of; signedLim += t; }
@@ -239,7 +241,7 @@ function organizerLive() {
   return (FLASH ? flash() : '') +
     '<div class="group"><span class="label">Ваши мероприятия впереди</span>' +
       '<div class="rows">' +
-        '<div><span class="small">Событий</span><b class="num">' + mine.length + '</b></div>' +
+        '<div><span class="small">Событий</span><b class="num">' + mine.filter(function (e) { return !e.done; }).length + '</b></div>' +
         '<div><span class="small">Записалось</span><b class="num">' + signed + (unl ? '' : ' из ' + seats) + '</b></div>' +
         '<div><span class="small">Наполненность</span><b class="num">' +
           (seats ? Math.round(signedLim / seats * 100) + ' %' : unl ? '—' : '0 %') + '</b></div>' +
