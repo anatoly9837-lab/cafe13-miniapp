@@ -10,6 +10,10 @@
 целиком, иначе заглушка сверилась бы с ответом «нельзя».
 
   python3 -I tools/keys.py <DUMP_DIR> > tools/api-keys.json
+
+DUMP_DIR обязан нести `_api_sha` (cafe13-api пишет его в конце зелёного
+прогона, Cafe13KPG#479); sha переносится в КАЖДУЮ запись полем `api_sha`.
+Без него — код 2 и пустой вывод.
 """
 import json, os, re, sys
 
@@ -45,7 +49,36 @@ def merge(a, b):
     return a if a is not None else b
 
 
+SHA = re.compile(r'[0-9a-f]{40}')
+
+
+def api_sha(src):
+    """sha api, с которого снят DUMP_DIR, — из файла `_api_sha`, который
+    cafe13-api `tools/check-api.sh` пишет в конце ЗЕЛЁНОГО прогона.
+
+    ⚠ Без sha снимок нельзя отличить свежий от устаревшего (Cafe13KPG#479):
+    поле, которого нет ни в снимке, ни в заглушке, сверка формы принимает за
+    «сошлось». Поэтому нет sha — нет файла формы, код 2 («не выполнено»), а
+    не запись без sha. Пустая строка, `-dirty` и неполный sha — тоже отказ:
+    правдоподобное значение хуже отсутствия."""
+    p = os.path.join(src, '_api_sha')
+    if not os.path.isfile(p):
+        return None, ('в %s нет _api_sha — снимки не из зелёного прогона '
+                      'check-api.sh или сняты до Cafe13KPG#479' % src)
+    with open(p, encoding='utf-8') as f:
+        v = f.read().strip()
+    if v.endswith('-dirty'):
+        return None, '_api_sha %r: дерево api было грязным, образ собран не из коммита' % v
+    if not SHA.fullmatch(v):
+        return None, '_api_sha %r: не 40 знаков hex' % v
+    return v, None
+
+
 def main(src):
+    sha, why = api_sha(src)
+    if why:
+        sys.stderr.write('НЕ ВЫПОЛНЕНО: ' + why + '\n')
+        sys.exit(2)
     out, bad = {}, []
     for name in sorted(os.listdir(src)):
         if not name.endswith('.json'):
@@ -58,6 +91,7 @@ def main(src):
             continue
         req = d.get('request') or {}
         out[name[:-5]] = {
+            'api_sha': sha,
             'status': st,
             'request': '%s %s' % (req.get('method'), re.sub(r'\d+', 'N', str(req.get('path')))),
             'shape': shape(d.get('body')),
@@ -83,8 +117,8 @@ def main(src):
     # (`tools/live.cjs`: статус не 200/201 → «снимок — отказ»), поэтому
     # наличие отказов в файле её не ослабляет.
     otkazy = sorted(k for k, v in out.items() if v['status'] not in (200, 201))
-    sys.stderr.write('снимков %d: успешных %d, отказов %d%s\n' % (
-        len(out), len(out) - len(otkazy), len(otkazy),
+    sys.stderr.write('снимков %d с api %s: успешных %d, отказов %d%s\n' % (
+        len(out), sha[:7], len(out) - len(otkazy), len(otkazy),
         (' (' + ', '.join(otkazy) + ')') if otkazy else ''))
     json.dump(out, sys.stdout, ensure_ascii=False, indent=1, sort_keys=True)
     sys.stdout.write('\n')
