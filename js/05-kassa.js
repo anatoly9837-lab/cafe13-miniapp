@@ -247,7 +247,7 @@ function tillSend() {
            период, второе пополнение — деньги. Причину непрохождения ok при 201
            (тело не разобрано / не совпало) делит tillOdd (#351, E34k/E34l). */
         var odd = r.status === 201 ? tillOdd(d, { who: who.id, arrival: who.arrival, kind: kind, amt: amt, level: level }) : null;
-        var ms0 = who.level ? (who.lifelong ? 'членство пожизненно' : 'членство до ' + who.until) : 'членства нет';
+        var ms0 = who.level ? (who.lifelong ? 'членство пожизненно' : 'членство есть') : 'членства нет';
         // фича 8: у пришедшего остаток из карточки (by-member) — сверять есть с чем, как у всех
         var bal0 = ', остаток ' + money(who.balance) + ' ฿';
         TP.done = odd && odd.person
@@ -336,7 +336,7 @@ function tillTopupForm(w) {
 function tpSendWord(amt) { return slovo('tillTopup.send', { amount: amt === null ? '0' : money(amt) }); }
 
 function tillCard(w) {
-  var ms = w.level ? (w.lifelong ? 'Пожизненно' : 'до ' + w.until) : 'нет';
+  var ms = w.level ? (w.lifelong ? 'Пожизненно' : 'Есть') : 'нет';
   return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(w.name) + '</h2>' +
       '<span class="small num">' + (w.code ? 'Пропуск ' + esc(w.code) : 'У кассы с ' + esc(w.at || '—')) + '</span></div>' +
       '<span class="pill' + (w.level ? ' on' : '') + '">' + esc(w.level ? LEVEL[w.level] : 'Членства нет') + '</span></div>' +
