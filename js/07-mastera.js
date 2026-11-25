@@ -64,6 +64,8 @@ function msName(p) {
   return [p.first_name, p.last_name].filter(Boolean).join(' ') || (p.username ? '@' + p.username : 'Без имени');
 }
 function msHours(n) { return n % 10 === 1 && n % 100 !== 11 ? 'час' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'часа' : 'часов'; }
+// Длительность словом: дробная — с запятой и «часа» (1,5 часа), целая — по msHours (Cafe13KPG#707)
+function msHoursText(h) { return h % 1 ? String(h).replace('.', ',') + ' часа' : h + ' ' + msHours(h); }
 /* Момент сервера — ISO с поясом («2027-02-15T07:30:00+00:00»). Дата без часа и без пояса — не момент. */
 function msMoment(v) {
   return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:?\d\d)$/.test(v) && !isNaN(Date.parse(v));
@@ -288,7 +290,7 @@ function masterOffer() {
   var rows = list.length ? '<div class="group"><span class="label">Ваши букинги</span>' + list.map(function (r) {
     var st = r.status === 'pending' ? 'wait' : r.status === 'approved' ? 'ok' : 'no';
     var sub = msWhen(r) + (r.at ? '' : ', каждую неделю') + ' · «' + r.title + '»';
-    var tail = r.status === 'rejected' ? (r.note ? cap(r.note) + '. ' : '') + money(r.amount) + ' ฿ вернулись на счёт.'
+    var tail = r.status === 'rejected' ? (r.note ? sentence(r.note) + ' ' : '') + money(r.amount) + ' ฿ вернулись на счёт.'
       : r.status === 'pending' ? 'Списано ' + money(r.amount) + ' ฿. Решает арт-директор; если откажет, деньги вернутся.'
       // H8 (рецепт master/home.md, №46 «б»): согласованный с датой — плата за слот остаётся клубу
       : r.status === 'approved' && r.at ? slovo('home.masterBookings.slotFee', { amount: money(r.amount) }) : '';
