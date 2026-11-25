@@ -2264,7 +2264,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
-    /* Приёмка arhitector-cb (возврат 2a4a6e0, коммент 7163940273): просьба ПОДАНА, а в ответе /join цены нет или
+    /* Приёмка arhitector-cb (возврат #439 на 2a4a6e0): просьба ПОДАНА, а в ответе /join цены нет или
        она 0 — экран обязан показать поданную просьбу. Случай выше идёт с request: null, ждущий случай формы — с
        ценой 3600: мутант `request: num(d.amount_thb) > 0 ? req : null` проходил оба и терял просьбу молча. */
     for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
