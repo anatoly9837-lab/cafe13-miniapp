@@ -894,7 +894,7 @@ body.has-main .dup-main { display: none; }
 .month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .month .dw { font-size: 11px; color: var(--muted); text-align: center; }
 .month > button { min-width: 0; font: inherit; color: var(--ink); cursor: pointer; display: flex; flex-direction: column;
-                  justify-content: flex-start; border: 1px solid transparent; border-radius: 9px; padding: 6px 2px 7px;
+                  justify-content: flex-start; border: 1px solid transparent; border-radius: 9px; padding: 8px 4px;
                   background: var(--surface); min-height: 46px; }
 .month > button.on { border-color: var(--accent); }
 .month > button.today .n { color: var(--accent); }
@@ -904,7 +904,7 @@ body.has-main .dup-main { display: none; }
 .month .ev.tea, .wk .ev.tea { background: transparent; border: 1px solid var(--sage); height: 5px; box-sizing: border-box; }
 .pill.tea { color: var(--sage); border-color: var(--sage); background: transparent; }
 .tband { display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
-         border: 1px solid transparent; border-radius: 9px; padding: 11px 12px; cursor: pointer; }
+         border: 1px solid transparent; border-radius: 9px; padding: 12px; cursor: pointer; }
 .tband.on { border-color: var(--accent); }
 /* закрытая полоса — НЕ кнопка (цитата 10 владельца: занятое не выбирается), только причина */
 .tband.off { background: var(--paper); color: var(--muted); cursor: default; }
