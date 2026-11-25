@@ -717,7 +717,7 @@ Object.assign(SCREENS, {
         '<span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' + (c.mins ? ' · ' + c.mins + ' мин' : '') + (c.alcohol ? ' · алкоголь' : '') + '</span></div>' +
         '<span class="pill' + (c.state === 'active' ? ' on' : back ? ' warm' : '') + '">' + esc(STATE_WORDS[c.state]) + '</span></div>' +
         (c.about ? '<span class="small clamp2">' + esc(c.about) + '</span>' : '') +
-        (back ? '<div class="note">' + svg(ICON.info) + '<span>Вернул куратор: ' + esc(c.note) + '</span></div>' : '') +
+        (back ? '<div class="note">' + svg(ICON.info) + '<span>Вернули с замечанием: ' + esc(c.note) + '</span></div>' : '') +
         // правка — только у черновика; у прочих двери нет и слов об этом нет: отсутствие двери не объясняют
         (c.state === 'draft' && !po ? '<button type="button" class="btn ghost" data-action="c-edit:' + c.id + '"' + lock + '>Изменить карточку</button>' : '') +
       '</div>' + note + photoBlock(c) +
