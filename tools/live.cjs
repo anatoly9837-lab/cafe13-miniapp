@@ -2240,7 +2240,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     // фича 8: случай join-rekvizity снят — реквизитов на форме возврата нет (рецепт popolnenie/noAccess)
-    // ответ /join не разобран — так и сказано, и есть повтор; формы без цен нет
+    // ответ /join не разобран — так и сказано, и есть повтор. Битость — в about_token и you, НЕ в цене (Cafe13KPG#1075)
     {
       const n = 'join-ne-razobran';
       const s = await joinCase(json(200, { amount_thb: null }));
@@ -2248,6 +2248,78 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!t.includes('Ответ сервера не разобран.')) bad.push(`${n}: неразобранный /join не назван`);
       if (await s.p.$('#join-said')) bad.push(`${n}: форма показана по неразобранному ответу`);
       if (!(await s.p.$('[data-action="join-retry"]'))) bad.push(`${n}: нет «Попробовать снова»`);
+      await s.ctx.close();
+    }
+    /* Cafe13KPG#1075, клиент РАНЬШЕ сервера: /join без цены разбирается. Сервер уберёт amount_thb/amount_usd/
+       period_months (членство не продаётся, рамка 24.11) только после этого клиента в бою; прежнее `thb > 0` в fromJoin
+       сделало бы null каждый такой ответ — экран просьбы «не разобран» у всех. Выгнанный (403 на /me) стоит на noAccess,
+       и в JOIN.info обязан лечь разобранный ответ. Мутант — вернуть `thb > 0` (или требование currency) — краснит. */
+    {
+      const n = 'join-bez-ceny';
+      const BARE = clone(JOIN0);
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete BARE[k]);
+      const s = await joinCase(json(200, BARE));
+      const t = await s.view();
+      if (t.includes('Ответ сервера не разобран.')) bad.push(`${n}: /join без цены назван неразобранным`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.token === 'tok-проверка'))))
+        bad.push(`${n}: /join без цены не разобран — JOIN.info пуст`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Приёмка arhitector-cb (возврат #439 на 2a4a6e0): просьба ПОДАНА, а в ответе /join цены нет или
+       она 0 — экран обязан показать поданную просьбу. Случай выше идёт с request: null, ждущий случай формы — с
+       ценой 3600: мутант `request: num(d.amount_thb) > 0 ? req : null` проходил оба и терял просьбу молча. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-prosba (' + tag + ')';
+      const R = withReq('pending');
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete R[k]);
+      if (price !== undefined) R.amount_thb = price;
+      const s = await joinCase(json(200, R));
+      const t = await s.view();
+      if (!t.includes('Просьба у главы клуба. Ответ придёт сюда.') || !t.includes('ЖДЁТ ОТВЕТА'))
+        bad.push(`${n}: поданная просьба не показана — нет J4 и «ждёт ответа»`);
+      if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: у поданной просьбы снова форма отправки`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.request && JOIN.info.request.id === 7))))
+        bad.push(`${n}: просьба №7 не легла в JOIN.info`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Приёмка arhitector-86 (возврат #439 на a13cde5): без цены был проверен только ЖДУЩИЙ, а отказ с причиной
+       (join-otkazano) шёл с ценой 3600 — мутант `note: … && num(d.amount_thb) > 0 ? … : ''` проходил и терял
+       причину у каждого отказанного, как только сервер уберёт цену. Тот же отказ — без цены и с '0.00'. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-otkaz (' + tag + ')';
+      const R = withReq('rejected', 'чек не читается');
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete R[k]);
+      if (price !== undefined) R.amount_thb = price;
+      const s = await joinCase(json(200, R));
+      const t = await s.view();
+      for (const w of ['Просьба отклонена', 'ОТКАЗАНО', '«чек не читается»'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      if (!(await s.p.$('[data-action="join-again"]'))) bad.push(`${n}: нет кнопки «Попросить снова»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Приёмка arhitector-aa (#439 на 22c52ee): ждущая (cb) и отказ (86) без цены покрыты, а СОГЛАСИЕ шло только
+       через join-prinyali с ценой JOIN0 — мутант «request → null при approved без цены» проходил. Тот же путь
+       человека, который ждал (заглушка #853: согласию верят, только если просьбу видели ждущей), — без цены и с '0.00'. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-soglasie (' + tag + ')';
+      let st = 'pending';
+      const R = () => {
+        const r = withReq(st);
+        ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete r[k]);
+        if (price !== undefined) r.amount_thb = price;
+        return json(200, r);
+      };
+      const s = await joinCase(R, null, () => json(403, { detail: 'доступа нет' }));
+      if (!(await s.view()).includes('Просьба у главы клуба. Ответ придёт сюда.')) bad.push(`${n}: на старте нет ждущей просьбы`);
+      st = 'approved';
+      await s.p.evaluate(() => { go('joinAbout'); go('noAccess'); }); await s.p.waitForTimeout(200);
+      if (!(await s.view()).includes('Вас приняли в клуб')) bad.push(`${n}: согласие без цены не показано — нет «Вас приняли в клуб»`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.request && JOIN.info.request.status === 'approved'))))
+        bad.push(`${n}: согласие №7 не легло в JOIN.info`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
   }
