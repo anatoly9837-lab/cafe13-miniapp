@@ -215,7 +215,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const ASLEEP = {
     // шаг 22 (Cafe13KPG#553): «очередь на баре», «смена» и «вход в очередь по роли» проснулись вместе с `barQueue`
     'касса': ['2026-10-28', 'fcd2a09'], 'доход и расход бара': ['2026-10-28', 'fcd2a09'],
-    'отчёт за день': ['2026-10-28', 'fcd2a09'], 'завести мероприятие': ['2026-10-28', 'fcd2a09'],
+    'отчёт за день': ['2026-10-28', 'fcd2a09'],
+    // «завести мероприятие» проснулось с `eventNew` (Cafe13KPG#1078): довод заморозки снят рамкой владельца 24.11
     'пополнение из бара (бармен без права кассы)': ['2026-10-28', 'c72c2f3'],
     'запись в тестовом режиме через «Доход и расход» бара': ['2026-10-28', 'c72c2f3'],
     'отказ по праву на замороженных рабочих экранах': ['2026-10-28', '2c4cadd'],
@@ -2394,7 +2395,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
     // шаг 4 (Cafe13KPG#670) размораживает афишу; шаг 4, п.3 — «Свои ивенты» мастеру и правку недели; «Новое мероприятие» — нет.
     // Шаг 7, часть А (Cafe13KPG#755, решение координатора по слову владельца в #510): «Записи» разморожены — дверь к благодарности
-    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', false],
+    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', false], ['bookings', false],
                               ['guest', false], ['bar', false], ['barQueue', false], ['barMoney', true]]) {
       await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
       const said = (await s.view()).includes('временно недоступно');
@@ -8696,7 +8697,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Право даёт либо роль клуба, либо купленный уровень — две независимые
   // ветки, и у каждой свой случай: фикстура с одной ветвью оставила бы
   // мутацию, снявшую вторую, зелёной (так было с разбором баланса строкой).
-  if (part(2)) if (thawed('завести мероприятие')) {
+  if (part(2)) {
     const member = clone(OWNER); member.roles = [];                       // уровень member, ролей нет
     const levelOrg = clone(OWNER); levelOrg.roles = []; levelOrg.membership.level = 'organizer';
     const curatorOnly = clone(OWNER); curatorOnly.roles = [{ role: 'curator', direction_id: 1 }];
@@ -9291,7 +9292,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
      не открывал ни один прогон: строку можно было переписать любым
      словом, и батарея осталась бы зелёной. Сторож фикстуры здесь — сам
      факт, что открылся кабинет, и говорит он ОДИН. */
-  if (part(2)) if (thawed('завести мероприятие')) {
+  if (part(2)) {
     const s = await open(true, false, json(200, OWNER), null, null, null, null, null, NOWFIX);
     await s.p.evaluate(() => go('organizer'));
     await s.p.waitForTimeout(150);
@@ -9314,7 +9315,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
      строки: две свои (платная с двумя записями и бесплатная с одной) и одну
      ЧУЖУЮ — без чужой строки проверка «только свои» была бы зелёной при
      любом отборе, и это условие случая, а не украшение. */
-  if (part(2)) if (thawed('завести мероприятие')) {
+  if (part(2)) {
     const org = clone(OWNER); org.roles = []; org.membership.level = 'organizer';
     const MOI = [
       EV({ id: 21, title: 'Своё платное', organizer_id: 1, starts_at: atBkk(1, 19),
@@ -9409,7 +9410,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
 
      Случай судит ОБЕ стороны — есть у кончившегося и НЕТ у будущего: иначе
      пометка, прибитая ко всем строкам, прошла бы за верную. */
-  if (part(2)) if (thawed('завести мероприятие')) {
+  if (part(2)) {
     const org = clone(OWNER); org.roles = []; org.membership.level = 'organizer';
     const ROWS = [
       EV({ id: 41, title: 'Своё завтра', organizer_id: 1, starts_at: atBkk(1, 19),
