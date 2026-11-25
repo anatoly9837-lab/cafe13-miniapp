@@ -13972,14 +13972,25 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const free = Object.assign(clone(JREQ.requests[0]), { id: 30, tg_user_id: 805, first_name: 'Дарья', last_name: 'Вернувшаяся',
         said: 'хочу вернуться', receipt_mime: null, receipt_bytes: null, amount_thb: null, amount_usd: null });
       const junk = Object.assign(clone(JREQ.requests[0]), { id: 31, tg_user_id: 806, first_name: 'Ефим', last_name: 'Битый', amount_thb: 'много' });
-      q3.requests = [q3.requests[0], free, junk]; q3.pending = 3;
+      // приёмка возврата #445 на abf9321 (arhitector-86): битость в USDT и файл без типа — тоже названы, а не показаны
+      const junkUsd = Object.assign(clone(JREQ.requests[0]), { id: 33, tg_user_id: 807, first_name: 'Жанна', last_name: 'Битая', amount_usd: 'много' });
+      const junkMime = Object.assign(clone(JREQ.requests[0]), { id: 34, tg_user_id: 808, first_name: 'Зоя', last_name: 'Битая', receipt_mime: null, receipt_bytes: 5000 });
+      // и остальные виды битости, которые обещает тело PR, — каждый своей строкой и своим названием
+      const junkState = Object.assign(clone(JREQ.requests[0]), { id: 35, tg_user_id: 809, first_name: 'Ирина', last_name: 'Битая', status: 'zombie' });
+      const junkBytes = Object.assign(clone(JREQ.requests[0]), { id: 36, tg_user_id: 810, first_name: 'Кира', last_name: 'Битая', receipt_bytes: null });
+      const junkKind = Object.assign(clone(JREQ.requests[0]), { id: 37, tg_user_id: 811, first_name: 'Лев', last_name: 'Битый', receipt_mime: 'image/gif' });
+      const junkNoId = Object.assign(clone(JREQ.requests[0]), { tg_user_id: 812, first_name: 'Нина', last_name: 'Битая' }); delete junkNoId.id;
+      q3.requests = [q3.requests[0], free, junk, junkUsd, junkMime, junkState, junkBytes, junkKind, junkNoId]; q3.pending = 9;
       const s = await joinCase(OWNER, { list: json(200, q3) });
       await toJoin(s);
       const t = await s.view();
       if (t.includes('Просьбы не загрузились')) bad.push(`${n}: одна просьба погасила всю очередь`);
-      for (const w of ['Ада Доступова', 'Дарья Вернувшаяся', '«хочу вернуться»', 'Без взноса и без чека', '№31 (сумма не число)'])
+      for (const w of ['Ада Доступова', 'Дарья Вернувшаяся', '«хочу вернуться»', 'Без взноса и без чека', '№31 (сумма не число)',
+                       '№33 (сумма в USDT не число)', '№34 (чек без типа)', '№35 (неизвестное состояние)',
+                       '№36 (тип чека без файла)', '№37 (чек непонятного вида)', 'без номера (нет номера)'])
         if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
-      if (t.includes('Ефим')) bad.push(`${n}: битая просьба показана как годная`);
+      for (const [who, no] of [['Ефим Битый', 31], ['Жанна Битая', 33], ['Зоя Битая', 34], ['Ирина Битая', 35], ['Кира Битая', 36], ['Лев Битый', 37], ['Нина Битая', ' без номера']])
+        if (t.includes(who)) bad.push(`${n}: битая просьба №${no} показана как годная`);
       const card = await s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes('Дарья'))[0] || '');
       if (/฿|USDT|КБ|NaN|null/.test(card)) bad.push(`${n}: у просьбы без денег выдумана сумма или чек: «${card}»`);
       const btn = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="j-"]')].map(b => b.getAttribute('data-action')).sort());
