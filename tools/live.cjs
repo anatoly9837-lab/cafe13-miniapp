@@ -11683,7 +11683,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${name}: ошибки страницы ` + s.errs.join('; '));
       await s.ctx.close();
     }
-    // куратор возвращает: без причины — не уходит; с причиной — hidden + note.
+    // куратор возвращает: без причины — не уходит; с причиной — draft + note (Cafe13KPG#314: hidden — только снятие с меню).
     // Описание длинное нарочно: у короткой карточки поле причины и так в виду,
     // и случай не отличил бы прокрутку от её отсутствия (так и было: снятая
     // прокрутка оставалась зелёной; у designer-55 кнопки уходили за край, 23.10.2026).
@@ -11713,7 +11713,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (cposts(s, /state$/).length) bad.push('cards-return: возврат ушёл без причины');
       await put(s, '#c-reason', 'нет фото', 'cards'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/51\/state$/);
-      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'hidden', note: 'нет фото' })) bad.push('cards-return: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'draft', note: 'нет фото' })) bad.push('cards-return: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      // ответ сервера принят как возврат: слово успеха, а не плашка отказа
+      if (!(await s.view()).includes('Возвращено с причиной.')) bad.push('cards-return: после ответа нет «Возвращено с причиной.»');
       await s.ctx.close();
     }
     // отказ — текстом сервера, и список перечитан
@@ -12376,12 +12378,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const f = await st();
         if (f.off !== false || f.why || !f.last) bad.push(`${n}: замечание набрано — «Вернуть» погашена или нет «прежнее затрётся»: ${JSON.stringify(f)}`);
         if (await tapIf(s, n, '#view [data-action="c-back-send:82"]', '«Вернуть»')) await s.p.waitForTimeout(400);
-        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 82 && b[2].state === 'hidden' && b[2].note === 'нет фото')) bad.push(`${n}: возврат не ушёл с замечанием: ${JSON.stringify(o.bodies)}`);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 82 && b[2].state === 'draft' && b[2].note === 'нет фото')) bad.push(`${n}: возврат не ушёл черновиком с замечанием: ${JSON.stringify(o.bodies)}`);
+        if (o.bodies.some(b => b[0] === 'state' && b[2].state === 'hidden' && b[2].note)) bad.push(`${n}: ушло hidden с замечанием — сервер его запретит (Cafe13KPG#314): ${JSON.stringify(o.bodies)}`);
       }
       await s.p.evaluate(() => go('barCard', '83')); await s.p.waitForTimeout(300);
       if (await tapIf(s, n, '#view [data-action="c-hide-ask"]', '«Снять с меню»') && await tapIf(s, n, '#view [data-action="c-hide:83"]', '«Точно снять»')) {
         await s.p.waitForTimeout(400);
-        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 83 && b[2].state === 'hidden')) bad.push(`${n}: снятие не ушло: ${JSON.stringify(o.bodies)}`);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 83 && b[2].state === 'hidden' && !b[2].note)) bad.push(`${n}: снятие не ушло hidden без замечания: ${JSON.stringify(o.bodies)}`);
       }
       await s.p.evaluate(() => go('barCard', '81')); await s.p.waitForTimeout(300);
       await noEdit(81);
