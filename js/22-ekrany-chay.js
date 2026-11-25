@@ -257,10 +257,12 @@ document.addEventListener('input', function (ev) {
 });
 
 /* ── тела запросов: ни места, ни стола (цитаты 7, 8) ─────────────────────────────────────────────────────── */
-function teaBookBody(c, pick) { return { master_id: c.id, starts_at: new Date(pick.at).toISOString() }; }
+/* Время — как у POST /master/request на api main (NewMasterRequest): день starts_on (ГГГГ-ММ-ДД) и время
+   start_local (ЧЧ:ММ) по часам клуба — это ymd и from выбора календаря. Бронь мастера — та же пара (слово координатора: ведёт сервер). */
+function teaBookBody(c, pick) { return { master_id: c.id, starts_on: pick.ymd, start_local: pick.from }; }
 function teaHoldBody(pick) {
   return { occupancy: 'tea', title: THF.title.trim(), about: THF.about, seats: Number(THF.seats || 0), price: String(THF.entry).trim(),
-           starts_at: new Date(pick.at).toISOString(), duration_min: pick.mins };
+           starts_on: pick.ymd, start_local: pick.from, duration_min: pick.mins };
 }
 function teaApplyBody() {
   return { about: TAF.about, price: String(TAF.price).trim(), duration_min: teaMins(),
