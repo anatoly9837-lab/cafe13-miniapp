@@ -2264,6 +2264,24 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    /* Приёмка arhitector-cb (возврат 2a4a6e0, коммент 7163940273): просьба ПОДАНА, а в ответе /join цены нет или
+       она 0 — экран обязан показать поданную просьбу. Случай выше идёт с request: null, ждущий случай формы — с
+       ценой 3600: мутант `request: num(d.amount_thb) > 0 ? req : null` проходил оба и терял просьбу молча. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-prosba (' + tag + ')';
+      const R = withReq('pending');
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete R[k]);
+      if (price !== undefined) R.amount_thb = price;
+      const s = await joinCase(json(200, R));
+      const t = await s.view();
+      if (!t.includes('Просьба у главы клуба. Ответ придёт сюда.') || !t.includes('ЖДЁТ ОТВЕТА'))
+        bad.push(`${n}: поданная просьба не показана — нет J4 и «ждёт ответа»`);
+      if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: у поданной просьбы снова форма отправки`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.request && JOIN.info.request.id === 7))))
+        bad.push(`${n}: просьба №7 не легла в JOIN.info`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
 
   // ── вкладки — по ВСЕМ живым членствам (Cafe13KPG#410, шаг 1a) ──
