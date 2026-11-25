@@ -92,6 +92,17 @@ try {
       const sh = args => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', timeout: 30000, maxBuffer: 64 * 1024 * 1024 });
       const why = r => String(r.error ? r.error.message : r.stderr || '').trim().split('\n')[0];
       const f = sh(['fetch', '-q', 'origin', 'main']);
+      /* ствол — ЧЕЙ. `fetch origin` берёт тот `origin`, что стоит в клоне, а он бывает локальным деревом или
+         зеркалом: так ворота дважды уверенно напечатали «поднят над стволом v38» при живом стволе v112
+         (Cafe13KPG#652, замер arhitector-47). Ошибка выглядела здоровой — неверна была только база. Поэтому
+         (1) КАЖДЫЙ вердикт номера называет, с чем сверено: адрес `origin` и sha ствола; (2) `origin` не на
+         GitHub-репозиторий клиента — «не выполнено»: сверка с чужим стволом хуже, чем никакой. Копии без git
+         (мутации на `git archive`) и так дают «не выполнено» на `fetch` — законных запусков это не отнимает. */
+      const u = sh(['remote', 'get-url', 'origin']), url = u.status === 0 ? u.stdout.trim() : '';
+      const ours = /^(https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)anatoly9837-lab\/cafe13-miniapp(\.git)?\/?$/.test(url);
+      const tip = f.status === 0 ? sh(['rev-parse', '--short', 'origin/main']) : f;
+      const sayT = (rc, text) => say('ворота', 'номер версии', rc, text + ' [ствол: ' + (url || 'origin не прочитан') +
+        (tip.status === 0 ? ' main @' + tip.stdout.trim() : '') + ']');
       // клиент в ревизии — по ЕЁ index.html: до разбивки это app.js, после — файлы js/ (#806)
       const refClient = ref => {
         const ix = sh(['show', ref + ':index.html']);
@@ -100,11 +111,11 @@ try {
         const bad_ = parts.find(r => r.status !== 0);
         return bad_ || { status: 0, stdout: parts.map(r => r.stdout).join('') };
       };
-      const tApp = f.status === 0 ? refClient('origin/main') : f;
+      const tApp = !ours ? { status: 1, stderr: '`origin` ведёт не на GitHub-репозиторий клиента: ' + (url || why(u)) } : f.status === 0 ? refClient('origin/main') : f;
       const tm = tApp.status === 0 ? tApp.stdout.match(/var VERSION = 'v(\d+) · /) : null;
-      if (tApp.status !== 0) say('ворота', 'номер версии', 2,
+      if (tApp.status !== 0) sayT(2,
         'ствол origin/main не прочитан (' + why(tApp) + ') — поднят ли номер, сравнить не с чем');
-      else if (!tm) say('ворота', 'номер версии', 2, 'в клиенте ствола нет `var VERSION = \'vN · …\'` — номер ствола не прочитан');
+      else if (!tm) sayT(2, 'в клиенте ствола нет `var VERSION = \'vN · …\'` — номер ствола не прочитан');
       else {
         // изменённые строки клиента — от ТОЧКИ ОТВЕТВЛЕНИЯ (merge-base), а не от головы ствола: ветка, отставшая
         // от ушедшего вперёд ствола, иначе читала бы ЧУЖИЕ правки ствола своими и краснела бы, ничего в клиенте
@@ -124,14 +135,14 @@ try {
            пропуском. Цена ужесточения — комментарий со скобками требует номер: ошибка в сторону подъёма. */
         const prose = x => /^\s*$/.test(x) || /^\s*(\/\/|\/\*)/.test(x) || /^\s*\*(\s|\/|$)[^{};()=]*$/.test(x);
         const t = tm[1], b = bm && bm[1], seen = lines && lines.some(x => !prose(x));
-        if (!lines) say('ворота', 'номер версии', 2, 'дифф от точки ответвления не снят (' + why(d) + ') — поднят ли номер, сравнить не с чем');
-        else if (seen && Number(n) <= Number(t)) say('ворота', 'номер версии', 1,
+        if (!lines) sayT(2, 'дифф от точки ответвления не снят (' + why(d) + ') — поднят ли номер, сравнить не с чем');
+        else if (seen && Number(n) <= Number(t)) sayT(1,
           `клиент изменён против ствола (v${t}), а номер v${n} не поднят — владелец увидит старый файл из кэша`);
-        else if (!seen && n !== b) say('ворота', 'номер версии', 1,
+        else if (!seen && n !== b) sayT(1,
           `номер v${n} при v${b} в точке ответвления, а видимой правки в клиенте (app.js, js/) и styles.css нет — номер поднят без правки клиента`);
-        else if (!seen && lines.length) say('ворота', 'номер версии', 0,
+        else if (!seen && lines.length) sayT(0,
           `v${n} не тронут: изменены только комментарии и пустые строки (${lines.length}) — правка не видна человеку, номер не требуется`);
-        else say('ворота', 'номер версии', 0, `v${n} во всех местах (VERSION и ${vs.length + 1} \`?v=\`)` + (seen ? `, поднят над стволом v${t}`
+        else sayT(0, `v${n} во всех местах (VERSION и ${vs.length + 1} \`?v=\`)` + (seen ? `, поднят над стволом v${t}`
           : b === t ? ', как у ствола' : `: клиент не тронут, ствол ушёл на v${t} — при слиянии номер возьмётся стволовой`));
       }
     }
