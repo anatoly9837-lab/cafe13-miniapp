@@ -3681,5 +3681,102 @@
    }
   },
   "status": 200
+ },
+ "stats-partner-403": {
+  "request": "GET /stats/partner?direction_id=N&period=month",
+  "shape": {
+   "detail": null
+  },
+  "status": 403
+ },
+ "stats-partner-closed": {
+  "request": "GET /stats/partner?direction_id=N&period=month&at=N-N-N",
+  "shape": {
+   "business": {
+    "id": null,
+    "title": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   },
+   "sales": {
+    "book": null,
+    "net": null,
+    "opex": null,
+    "revenue": null
+   },
+   "shares": {
+    "closed": null,
+    "club": null,
+    "ops": null,
+    "partner": null,
+    "share_partner_pct": null
+   },
+   "wallet": null,
+   "wallet_through": null
+  },
+  "status": 200
+ },
+ "stats-partner-day": {
+  "request": "GET /stats/partner?direction_id=N&period=day",
+  "shape": {
+   "business": {
+    "id": null,
+    "title": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   },
+   "sales": {
+    "book": null,
+    "net": null,
+    "opex": null,
+    "revenue": null
+   },
+   "shares": {
+    "closed": null,
+    "club": null,
+    "ops": null,
+    "partner": null,
+    "share_partner_pct": null
+   },
+   "wallet": null,
+   "wallet_through": null
+  },
+  "status": 200
+ },
+ "stats-partner-open": {
+  "request": "GET /stats/partner?direction_id=N&period=month&at=N-N-N",
+  "shape": {
+   "business": {
+    "id": null,
+    "title": null
+   },
+   "period": {
+    "end": null,
+    "kind": null,
+    "start": null
+   },
+   "sales": {
+    "book": null,
+    "net": null,
+    "opex": null,
+    "revenue": null
+   },
+   "shares": {
+    "closed": null,
+    "club": null,
+    "ops": null,
+    "partner": null,
+    "share_partner_pct": null
+   },
+   "wallet": null,
+   "wallet_through": null
+  },
+  "status": 200
  }
 }

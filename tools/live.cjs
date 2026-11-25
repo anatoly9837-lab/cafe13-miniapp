@@ -4595,6 +4595,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const OS_BIZ = (id, title, o) => Object.assign({ id, title, partner_id: 9000 + id, partner: 'Анна Ли', share_club: '70.00', share_partner: '30.00', revenue: '4200.00' }, o || {});
   const OS_MON = o => Object.assign({ direction_id: 3, title: 'Чайная', period_start: '2026-10-31T17:00:00+00:00', net_base: '3000.00', partner_pct: '30.00',
     partner: '900.00', ops: '90.00', club: '2010.00' }, o || {});
+  // шаг 35 (Cafe13KPG#566, рецепт 35/partnerStats, #404; снимок api#198 — в карточке #566): статистика бизнеса партнёра
+  const PS_RESP = x => {
+    x = x || {};
+    return { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
+      business: { id: x.id || 7, title: x.title || 'Кофейня' },
+      sales: Object.assign({ book: 'ledger', revenue: '52340.00', opex: '31120.00', net: '21220.00' }, x.sales || {}),
+      shares: Object.assign({ closed: true, partner: '14854.00', club: '5730.00', ops: '636.00', share_partner_pct: '70.00' }, x.shares || {}),
+      wallet: 'wallet' in x ? x.wallet : '14854.00', wallet_through: 'through' in x ? x.through : '2026-11-30T17:00:00+00:00' };
+  };
   const OS_RESP = x => {
     x = x || {};
     const r = { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
@@ -13164,6 +13173,189 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const ok = await tap(s, n, '#view [data-go="bizMoney"]', 'дверь «Деньги бизнеса» на «Клубе»');
       return { s, ok, home };
     };
+    // ── шаг 35: partnerStats (рецепт 35/partnerStats, #404). На КАЖДОЕ число — случай с ненулём и случай с null
+    const PS_OPEN = { closed: false, partner: null, club: null, ops: null, share_partner_pct: null };
+    const psApi = (o, stats) => q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+      if (q.method() === 'GET' && u.startsWith('/stats/partner?')) { o.seen.push('GET ' + u); return stats(new URL('https://x' + u).searchParams); }
+      return pmApi(o)(q);
+    };
+    const psEnter = async (o, stats, n) => {
+      const s = await open(true, true, json(200, pmMe()), null, null, null, psApi(o, stats));
+      await s.p.waitForTimeout(400);
+      await tap(s, n, '#view [data-go="partnerStats"]', 'дверь «Статистика бизнеса» на «Клубе»');
+      return s;
+    };
+    const PW = async (s, k, v) => s.p.evaluate(([k, v]) => v ? slovo(k, v) : SLOVA.ru[k], [k, v]);
+    const pcard = async (s, title) => (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.startsWith(title))[0] || null;
+    const psum = async (s, v) => s.p.evaluate(v => bmSum(Number(v)), v);
+    {
+      // ps-razrez + ps-doli-mesyac + ps-klyuchi: разрезы — свои продажи, кошелёк один; день и неделя — H1, закрытый месяц — доли сервера
+      const n = 'ps-razrez';
+      const SL = { day: ['610.00', '200.00', '410.00'], week: ['4300.00', '1900.00', '2400.00'], month: ['52340.00', '31120.00', '21220.00'] };
+      const o = mk();
+      const s = await psEnter(o, p => json(200, PS_RESP({ kind: p.get('period'), sales: { revenue: SL[p.get('period')][0], opex: SL[p.get('period')][1], net: SL[p.get('period')][2] },
+        shares: p.get('period') === 'month' ? {} : PS_OPEN })), n);
+      const st = await PW(s, 'partnerStats.sales.title'), ht = await PW(s, 'partnerStats.shares.title');
+      if (!st || !ht) bad.push(`${n}: на странице нет слов partnerStats — судить не по чему`);
+      const wal = {};
+      for (const p of ['month', 'week', 'day']) {
+        if (p !== 'month') await tap(s, n, `[data-action="ps-period:${p}"]`, `разрез ${p}`);
+        const c = await pcard(s, st), h = await pcard(s, ht), v = await s.view();
+        for (const [i, k] of [[0, 'revenue'], [1, 'opex'], [2, 'net']])
+          if (!c || !c.includes((await PW(s, 'partnerStats.sales.' + k)) + (await psum(s, SL[p][i])))) bad.push(`${n}: ${p} — ${k} не число сервера своего окна: «${c}»`);
+        if (p === 'month') {
+          const want = [[await PW(s, 'partnerStats.shares.partner', { pct: '70' }), '14854.00'], [await PW(s, 'partnerStats.shares.club'), '5730.00'], [await PW(s, 'partnerStats.shares.ops'), '636.00']];
+          for (const [l, x] of want) if (!h || !h.includes(l + (await psum(s, x)))) bad.push(`${n}: закрытый месяц — «${l}» не ${x} сервера: «${h}»`);
+        } else if (!h || !h.includes(await PW(s, 'partnerStats.shares.open')) || /\d\s?฿/.test(h)) bad.push(`${n}: ${p} — не H1 (ps-doli-mesyac): «${h}»`);
+        wal[p] = (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.includes('кошельке'))[0] || null;
+        if (!wal[p] || !wal[p].includes((await PW(s, 'partnerStats.wallet')) + (await psum(s, '14854.00'))) || !wal[p].includes(await PW(s, 'partnerStats.walletThrough', { month: 'ноябрь 2026' })))
+          bad.push(`${n}: ${p} — кошелёк не число сервера или не «по ноябрь»: «${wal[p]}»`);
+        if (!v.includes(await PW(s, 'partnerStats.period.clockNote'))) bad.push(`${n}: ${p} — нет N3`);
+        if (/partnerStats\.\w/.test(v)) bad.push(`${n}: ${p} — ключ вместо слова (ps-klyuchi)`);
+      }
+      if (wal.month !== wal.week || wal.week !== wal.day) bad.push(`${n}: кошелёк зависит от разреза`);
+      if (o.seen.filter(x => /stats\/partner/.test(x)).some(x => !/direction_id=7&/.test(x))) bad.push(`${n}: запрос не своего бизнеса: ${o.seen.join(' ')}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ps-nol-ne-pusto: 0 — нулём; null — «нет данных»; share_partner_pct null — «Партнёру» без процента; ops null — строки нет
+      const n = 'ps-nol-ne-pusto';
+      const z = await psEnter(mk(), () => json(200, PS_RESP({ sales: { revenue: '0.00', opex: '0.00', net: '0.00' }, shares: { partner: '0.00', club: '0.00', ops: '0.00', share_partner_pct: '0.00' }, wallet: '0.00' })), n);
+      const zc = await pcard(z, await PW(z, 'partnerStats.sales.title')), zh = await pcard(z, await PW(z, 'partnerStats.shares.title')), zv = await z.view(), z0 = await psum(z, '0');
+      for (const k of ['revenue', 'opex', 'net']) if (!zc || !zc.includes((await PW(z, 'partnerStats.sales.' + k)) + z0)) bad.push(`${n}: ${k} 0 — не нулём: «${zc}»`);
+      for (const l of [await PW(z, 'partnerStats.shares.partner', { pct: '0' }), await PW(z, 'partnerStats.shares.club'), await PW(z, 'partnerStats.shares.ops')])
+        if (!zh || !zh.includes(l + z0)) bad.push(`${n}: доля 0 — не нулём у «${l}»: «${zh}»`);
+      if (!zv.includes((await PW(z, 'partnerStats.wallet')) + z0)) bad.push(`${n}: кошелёк 0 — не нулём`);
+      await z.ctx.close();
+      const s = await psEnter(mk(), () => json(200, PS_RESP({ sales: { revenue: null, opex: null, net: null }, shares: { partner: null, club: null, ops: null, share_partner_pct: null }, wallet: null, through: null })), n);
+      const nd = await PW(s, 'partnerStats.noData'), c = await pcard(s, await PW(s, 'partnerStats.sales.title')), h = await pcard(s, await PW(s, 'partnerStats.shares.title')), v = await s.view();
+      for (const k of ['revenue', 'opex', 'net']) if (!c || !c.includes((await PW(s, 'partnerStats.sales.' + k)) + nd)) bad.push(`${n}: ${k} null — не «нет данных»: «${c}»`);
+      if (!h || !h.includes((await PW(s, 'partnerStats.shares.partnerNoPct')) + nd) || !h.includes((await PW(s, 'partnerStats.shares.club')) + nd)) bad.push(`${n}: доли null — не «нет данных»: «${h}»`);
+      if (!h || h.includes(await PW(s, 'partnerStats.shares.ops')) || h.includes('%')) bad.push(`${n}: ops null — строка стоит или процент без числа: «${h}»`);
+      if (!v.includes((await PW(s, 'partnerStats.wallet')) + nd) || /\d\s?฿/.test(v)) bad.push(`${n}: кошелёк null — не «нет данных» или сумма на странице`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+      const src = fs.readFileSync(ROOT + '/js/18-ekrany-mastera.js', 'utf8');
+      if (/70 %|30 %/.test(src)) bad.push(`${n}: литерал процента в коде`);
+    }
+    {
+      // ps-zachisleno: «Зачислено по …» — месяц из `wallet_through` сервера (другого месяца, чем окно), а при
+      // `wallet_through: null` подписи нет вовсе (кошелёк числом остаётся) — мутанты k14 и k23 #413
+      const n = 'ps-zachisleno';
+      const s = await psEnter(mk(), () => json(200, PS_RESP({ through: '2026-09-30T17:00:00+00:00' })), n);
+      const pre = (await PW(s, 'partnerStats.walletThrough', { month: '@' })).split('@')[0].trim(), v = await s.view();
+      if (!pre) bad.push(`${n}: нет слова partnerStats.walletThrough — судить не по чему`);
+      if (!v.includes(await PW(s, 'partnerStats.walletThrough', { month: 'сентябрь 2026' })) || v.includes(await PW(s, 'partnerStats.walletThrough', { month: 'ноябрь 2026' })))
+        bad.push(`${n}: wallet_through сентября — подпись не «по сентябрь 2026»: «${v}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+      const z = await psEnter(mk(), () => json(200, PS_RESP({ through: null })), n), zv = await z.view();
+      if (!zv.includes((await PW(z, 'partnerStats.wallet')) + (await psum(z, '14854.00')))) bad.push(`${n}: through null — кошелёк не числом сервера: «${zv}»`);
+      if (!pre || zv.includes(pre) || /invalid date/i.test(zv)) bad.push(`${n}: through null — подпись «${pre} …» стоит: «${zv}»`);
+      if (z.errs.length) bad.push(`${n}: ошибки страницы ${z.errs.join('; ')}`);
+      await z.ctx.close();
+    }
+    {
+      // ps-dva-biznesa: смена бизнеса меняет все числа и запрос; ответ чужого бизнеса под выбранным — отказ, не числа
+      const n = 'ps-dva-biznesa';
+      const o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT)), Object.assign(BWDIR(9, true), W('333.00', OCT))] });
+      const s = await psEnter(o, p => { const id = Number(p.get('direction_id')); return json(200, id === 9
+        ? PS_RESP({ id: 9, title: 'Пекарня', sales: { revenue: '7700.00', opex: '3300.00', net: '4400.00' }, shares: { partner: '3080.00', club: '1188.00', ops: '132.00', share_partner_pct: '70.00' }, wallet: '333.00' })
+        : PS_RESP()); }, n);
+      await tap(s, n, '[data-action="ps-biz:9"]', 'выбор бизнеса «Пекарня»');
+      const c = await pcard(s, await PW(s, 'partnerStats.sales.title')), v = await s.view();
+      if (!c || !c.includes(await psum(s, '7700.00')) || c.includes(await psum(s, '52340.00'))) bad.push(`${n}: после смены — продажи не второго бизнеса: «${c}»`);
+      if (!v.includes(await psum(s, '3080.00')) || !v.includes((await PW(s, 'partnerStats.wallet')) + (await psum(s, '333.00'))) || v.includes(await psum(s, '14854.00'))) bad.push(`${n}: доли или кошелёк первого бизнеса под вторым`);
+      await s.ctx.close();
+      const s2 = await psEnter(mk(), () => json(200, PS_RESP({ id: 9 })), n);
+      if (!(await s2.view()).includes(await PW(s2, 'partnerStats.error'))) bad.push(`${n}: ответ о чужом бизнесе показан под своим`);
+      await s2.ctx.close();
+    }
+    {
+      // ps-period: ‹ уходит запросом с `at` прошлого месяца при том же period и том же бизнесе, на экране продажи прошлого
+      // окна; › погашена на текущем, после ‹ — нет, и возвращает в текущий месяц (ревью #406 на все четыре страницы)
+      const n = 'ps-period';
+      let first = null;
+      const o = mk();
+      const s = await psEnter(o, p => { first = first || p.get('at');
+        return json(200, PS_RESP({ sales: String(p.get('at')).slice(0, 7) === String(first).slice(0, 7) ? {} : { revenue: '610.00', opex: '200.00', net: '410.00' } })); }, n);
+      const st = await PW(s, 'partnerStats.sales.title');
+      const q = () => o.seen.filter(x => x.startsWith('GET /stats/partner?')).map(x => new URL('https://x' + x.slice(4)).searchParams);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(first || '')) bad.push(`${n}: первый запрос без дня at: «${first}»`);
+      if (!(await s.p.$('[data-action="ps-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await tap(s, n, '[data-action="ps-prev"]', '‹'); await s.p.waitForTimeout(400);
+      const prev = q().slice(-1)[0];
+      if (!prev || prev.get('period') !== 'month' || prev.get('direction_id') !== '7' || !(String(prev.get('at')).slice(0, 7) < String(first).slice(0, 7))) bad.push(`${n}: ‹ не спросила прошлый месяц того же бизнеса: ${prev && prev.toString()}`);
+      const c1 = await pcard(s, st);
+      if (!c1 || !c1.includes(await psum(s, '610.00')) || c1.includes(await psum(s, '52340.00'))) bad.push(`${n}: после ‹ на экране не продажи прошлого окна: «${c1}»`);
+      if (await s.p.$('[data-action="ps-next"][disabled]')) bad.push(`${n}: › погашена на прошлом периоде`);
+      await tap(s, n, '[data-action="ps-next"]', '›'); await s.p.waitForTimeout(400);
+      const nx = q().slice(-1)[0], c2 = await pcard(s, st);
+      if (!nx || String(nx.get('at')).slice(0, 7) !== String(first).slice(0, 7) || nx.get('period') !== 'month') bad.push(`${n}: › не вернула к текущему месяцу: ${nx && nx.toString()}`);
+      if (!c2 || !c2.includes(await psum(s, '52340.00'))) bad.push(`${n}: после › не продажи текущего окна: «${c2}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ps-pozdniy: ответ месяца задержан, неделя пришла раньше — на экране продажи недели (держит `gen !== PST.gen` в
+      // loadPartnerStats). ps-biz-pozdniy: список бизнесов первого входа задержан, назад и вход снова — поздний список
+      // [7, 9] не ложится на свежий [7] (держит `gen !== PST.gen` в loadPartnerBiz). Загрузчики разного вида — по случаю
+      const n = 'ps-pozdniy';
+      let landed = false;
+      const s = await psEnter(mk(), p => p.get('period') === 'month'
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, PS_RESP({ sales: { revenue: '77777.00' } }))); }, 1500))
+        : json(200, PS_RESP({ kind: p.get('period'), sales: { revenue: '4300.00', opex: '1900.00', net: '2400.00' }, shares: PS_OPEN })), n);
+      await tap(s, n, '[data-action="ps-period:week"]', 'разрез week'); await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: ответ месяца пришёл раньше запроса недели — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный ответ месяца так и не пришёл — гонки не было`);
+      const c = await pcard(s, await PW(s, 'partnerStats.sales.title'));
+      if (!c || c.includes(await psum(s, '77777.00')) || !c.includes(await psum(s, '4300.00'))) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${c}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'ps-biz-pozdniy';
+      let landed = false, calls = 0, armed = false;
+      const o = mk({ dirs: () => [Object.assign(BWDIR(7, true), W('14854.00', OCT))] });
+      const TWO = [Object.assign(BWDIR(7, true), W('14854.00', OCT)), Object.assign(BWDIR(9, true), W('333.00', OCT))];
+      const api = psApi(o, () => json(200, PS_RESP()));
+      const s = await open(true, true, json(200, pmMe()), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (q.method() === 'GET' && u === '/partner/directions' && armed && ++calls === 1)
+          return new Promise(r => setTimeout(() => { landed = true; r(json(200, { directions: TWO })); }, 1500));
+        return api(q);
+      });
+      await s.p.waitForTimeout(400); armed = true;   // список при запуске — мимо гонки: задержан первый запрос ВХОДА
+      await tap(s, n, '#view [data-go="partnerStats"]', 'дверь «Статистика бизнеса» на «Клубе»'); await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
+      await tap(s, n, '#view [data-go="partnerStats"]', 'дверь «Статистика бизнеса» снова'); await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: поздний список пришёл раньше второго входа — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed || calls < 2) bad.push(`${n}: гонки не было: поздний ${landed}, запросов списка ${calls}`);
+      if (await s.p.$('[data-action="ps-biz:9"]')) bad.push(`${n}: поздний список первого входа лёг на свежий — на экране бизнес 9`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ps-dver: у не-партнёра (бизнесов нет) двери B0 нет; вне Telegram — нет; 403 — словами сервера
+      const n = 'ps-dver';
+      const s = await open(true, true, json(200, pmMe()), null, null, null, psApi(mk({ dirs: () => [], mine: [] }), () => json(200, PS_RESP())));
+      await s.p.waitForTimeout(400);
+      if (await s.p.$('#view [data-go="partnerStats"]')) bad.push(`${n}: у не-партнёра дверь «Статистика бизнеса»`);
+      await s.ctx.close();
+      const d = await open(false, true, json(200, OWNER));
+      await d.p.waitForTimeout(300);
+      if (await d.p.$('#view [data-go="partnerStats"]')) bad.push(`${n}: вне Telegram дверь стоит`);
+      await d.ctx.close();
+      const D = 'статистику бизнеса видят его партнёр и операционный директор';
+      const s3 = await psEnter(mk(), () => json(403, { detail: D }), n);
+      const t = await s3.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (t !== D) bad.push(`${n}: отказ «${t}», ждали словами сервера`);
+      await s3.ctx.close();
+    }
     // тело экрана без шапки остатка и без блока «Вывод» шага 26 (`[data-bwd]`): в нём «฿» подписи поля, а не число отчёта
     const body = s => s.p.evaluate(() => { const v = document.getElementById('view').cloneNode(true); v.querySelectorAll('.card.strong, [data-bwd]').forEach(h => h.remove()); return v.textContent; });
     const done = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
@@ -13827,6 +14019,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'stats-event-full': ER_RESP(), 'stats-event-undistributed': ER_RESP({ money: { book: 'club_ledger', collected: '1200.00', distributed: false, master: null, club: null } }),
     'stats-event-guest': ER_RESP({ guest: true }),
     // шаг 36 (Cafe13KPG#567): заглушки случаев `my-*` против снимка api 396ce48 (api#195)
+    'stats-partner-closed': PS_RESP(), 'stats-partner-open': PS_RESP({ shares: { closed: false, partner: null, club: null, ops: null, share_partner_pct: null } }),
+    'stats-partner-day': PS_RESP({ kind: 'day', shares: { closed: false, partner: null, club: null, ops: null, share_partner_pct: null } }),
     'stats-ops': OS_RESP({ months: [] }), 'stats-ops-day': OS_RESP({ kind: 'day', months: [] }), 'stats-ops-month-closed': OS_RESP(),
     'stats-me': MY_RESP(), 'stats-me-empty': MY_RESP({ events: { count: 0, spent: null }, topups: { count: 0, amount: '0.00' }, list: [] }),
     // фича 4 (Cafe13KPG#1009): заглушки случаев `odobr-*` против снимка api 410f240 (cafe13-api#187)

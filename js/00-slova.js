@@ -155,6 +155,34 @@ var SLOVA = {
     'myStats.error': 'Статистика не загрузилась.',
     'myStats.retry': 'Повторить',
     'myStats.loading': 'Загружаем статистику…',              // клиент
+    // шаг 35, partnerStats — рецепт `_docs/recept/ekran/35/partnerStats.md` (#404); форма — api#198 (`/stats/partner`)
+    'partnerStats.door': 'Статистика бизнеса',
+    'partnerStats.title': 'Статистика бизнеса',
+    'partnerStats.period.day': 'День',
+    'partnerStats.period.week': 'Неделя',
+    'partnerStats.period.month': 'Месяц',
+    'partnerStats.period.dayLabel': '{date}',
+    'partnerStats.period.weekLabel': 'Неделя {from}–{to}',
+    'partnerStats.period.monthLabel': '{month} {year}',
+    'partnerStats.period.prev': 'Предыдущий период',         // клиент
+    'partnerStats.period.next': 'Следующий период',          // клиент
+    'partnerStats.period.clockNote': 'Продажи считаются по дню продажи, доли — по закрытию месяца.',
+    'partnerStats.sales.title': 'Продажи',
+    'partnerStats.sales.revenue': 'Выручка',
+    'partnerStats.sales.opex': 'Текущие затраты',
+    'partnerStats.sales.net': 'Чистыми',
+    'partnerStats.shares.title': 'Доли',
+    'partnerStats.shares.partner': 'Партнёру · {pct} %',
+    'partnerStats.shares.partnerNoPct': 'Партнёру',          // клиент: share_partner_pct null
+    'partnerStats.shares.club': 'Клубу',                     // клиент: процента клуба сервер не отдаёт (api#198)
+    'partnerStats.shares.ops': 'Опер-директору',             // клиент: shares.ops сервера; null — строки нет
+    'partnerStats.shares.open': 'Доли считаются при закрытии месяца.',
+    'partnerStats.wallet': 'На кошельке бизнеса',
+    'partnerStats.walletThrough': 'Зачислено по {month}',
+    'partnerStats.noData': 'нет данных',
+    'partnerStats.error': 'Статистика не загрузилась.',
+    'partnerStats.retry': 'Повторить',
+    'partnerStats.loading': 'Загружаем статистику…',         // клиент
     // шаг 33, opsStats — рецепт `_docs/recept/ekran/33/opsStats.md` (#405); форма — api#197 (`/stats/ops`)
     'opsStats.door': 'Статистика бизнесов',
     'opsStats.title': 'Статистика бизнесов',

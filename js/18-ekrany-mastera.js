@@ -485,6 +485,54 @@ function osNum(v, money, plain) {
   var t = v === null ? slovo('opsStats.noData') : money ? bmSum(v) : String(v);
   return plain ? t : v === null ? '<span class="small">' + esc(t) + '</span>' : '<b class="num">' + esc(t) + '</b>';
 }
+/* Шаг 35: статистика бизнеса партнёра (`/stats/partner`, api#198; рецепт 35/partnerStats, #404). Бизнесы — свои
+   (`/partner/directions`, BW.dirs); выбор — `.seg` при двух и более. Доли — только закрытого месяца (`shares.closed`),
+   клиент их не считает. Кошелёк — та же пара `wallet`/`wallet_through`, что у шага 20 (fromWallet). */
+var PST = { biz: null, period: 'month', at: '', data: null, fail: '', deny: '', gen: 0 };
+function mayPartnerStats() { return LIVE; }
+function fromPartnerStats(d, biz) {
+  if (!d || typeof d !== 'object' || !d.business || d.business.id !== biz || !d.sales || typeof d.sales !== 'object' ||
+      !d.shares || typeof d.shares !== 'object' || typeof d.shares.closed !== 'boolean') return null;
+  var s = d.sales, h = d.shares, w = fromWallet(d);
+  var out = { revenue: stNum(s.revenue, true), opex: stNum(s.opex, true), net: stNum(s.net, true), closed: h.closed,
+              partner: stNum(h.partner, true), club: stNum(h.club, true), ops: stNum(h.ops, true), pct: stNum(h.share_partner_pct, true),
+              wallet: w ? w.sum : null, through: w ? w.through : null };
+  if (w === null || stBad([out.revenue, out.opex, out.net, out.partner, out.club, out.ops, out.pct])) return null;
+  return out;
+}
+function loadPartnerStats() {
+  if (!mayPartnerStats() || PST.biz === null) return;
+  var gen = ++PST.gen, who = WHO, biz = PST.biz;
+  PST.data = null; PST.fail = ''; PST.deny = '';
+  api('GET', '/stats/partner?direction_id=' + biz + '&period=' + PST.period + '&at=' + PST.at).then(function (r) {
+    if (gen !== PST.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromPartnerStats(r.data, biz) : null;
+    if (got) PST.data = got;
+    else if (r.status === 403) PST.deny = detailOf(r) || failText(r);
+    else PST.fail = failText(r);
+    if (current === 'partnerStats') render();
+  });
+}
+// свои бизнесы — на каждом входе; один — выбран сам, при двух и более — первый, пока не выбран другой
+function loadPartnerBiz() {
+  if (!mayPartnerStats()) return;
+  var gen = ++PST.gen;
+  BW.dirs = null; BW.dirsFail = '';
+  api('GET', '/partner/directions').then(function (r) {
+    if (gen !== PST.gen) return;
+    var l = r.status === 200 ? fromMyBiz(r.data) : null;
+    BW.dirs = l; BW.dirsFail = l ? '' : denyText(r);
+    if (l && l.length) { if (!l.some(function (x) { return x.id === PST.biz; })) PST.biz = l[0].id; loadPartnerStats(); }
+    if (current === 'partnerStats') render();
+  });
+}
+function psMove(dir) {
+  if (dir > 0 && csStart(PST.period, PST.at) >= csStart(PST.period, msToday())) return;
+  PST.at = csShift(PST.period, PST.at, dir); loadPartnerStats(); render();
+}
+function psNum(v, money) {
+  return v === null ? '<span class="small">' + esc(slovo('partnerStats.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
+}
 function erNum(v, money) {
   return v === null ? '<span class="small">' + esc(slovo('eventReport.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
 }
@@ -530,6 +578,43 @@ Object.assign(SCREENS, {
           msNum(x.collected, true) + svg(ICON.chev, 'chev') + '</button>';
       }).join('') + '</div>';
     return seg + nav + E + Pc + D + L;
+  },
+  partnerStats: function () {
+    if (!mayPartnerStats()) return '';
+    var dirs = BW.dirs;
+    if (!dirs) return '<div class="card quiet"><span class="small">' + esc(BW.dirsFail || slovo('partnerStats.loading')) + '</span></div>';
+    if (!dirs.length) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b><span class="small">Статистику бизнеса видит его партнёр.</span></div></div>';
+    var pick = dirs.length < 2 ? '' : '<div class="seg">' + dirs.map(function (x) {
+      return '<button type="button" data-action="ps-biz:' + x.id + '" aria-pressed="' + (PST.biz === x.id) + '">' + esc(x.title) + '</button>';
+    }).join('') + '</div>';
+    var P = [['day', slovo('partnerStats.period.day')], ['week', slovo('partnerStats.period.week')], ['month', slovo('partnerStats.period.month')]];
+    var seg = pick + '<div class="seg">' + P.map(function (x) {
+      return '<button type="button" data-action="ps-period:' + x[0] + '" aria-pressed="' + (PST.period === x[0]) + '">' + esc(x[1]) + '</button>';
+    }).join('') + '</div>';
+    var last = csStart(PST.period, PST.at) >= csStart(PST.period, msToday()), v = stLabelVars(PST.period, PST.at);
+    var label = PST.period === 'day' ? slovo('partnerStats.period.dayLabel', v) : PST.period === 'month' ? slovo('partnerStats.period.monthLabel', v)
+      : slovo('partnerStats.period.weekLabel', v);
+    var nav = '<div class="row"><button type="button" class="icon-btn" data-action="ps-prev" aria-label="' + esc(slovo('partnerStats.period.prev')) + '">‹</button>' +
+      '<b>' + esc(label) + '</b>' +
+      '<button type="button" class="icon-btn" data-action="ps-next" aria-label="' + esc(slovo('partnerStats.period.next')) + '"' + (last ? ' disabled' : '') + '>›</button></div>' +
+      '<span class="small">' + esc(slovo('partnerStats.period.clockNote')) + '</span>';
+    if (PST.deny) return seg + nav + '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(PST.deny) + '</span></div>';
+    if (PST.fail) return seg + nav + '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('partnerStats.error')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="ps-retry">' + esc(slovo('partnerStats.retry')) + '</button></div></div>';
+    if (!PST.data) return seg + nav + '<div class="card quiet"><span class="small">' + esc(slovo('partnerStats.loading')) + '</span></div>';
+    var s = PST.data;
+    var row = function (label, html) { return '<div><span class="small">' + esc(label) + '</span>' + html + '</div>'; };
+    var S = '<div class="card"><b>' + esc(slovo('partnerStats.sales.title')) + '</b><div class="rows">' + row(slovo('partnerStats.sales.revenue'), psNum(s.revenue, true)) +
+      row(slovo('partnerStats.sales.opex'), psNum(s.opex, true)) + row(slovo('partnerStats.sales.net'), psNum(s.net, true)) + '</div></div>';
+    // H1 — словом вместо долей: день, неделя и незакрытый месяц (`closed: false`); клиент доли не считает
+    var H = '<div class="card"><b>' + esc(slovo('partnerStats.shares.title')) + '</b>' + (!s.closed
+        ? '<span class="small">' + esc(slovo('partnerStats.shares.open')) + '</span>'
+        : '<div class="rows">' + row(s.pct === null ? slovo('partnerStats.shares.partnerNoPct') : slovo('partnerStats.shares.partner', { pct: String(s.pct) }), psNum(s.partner, true)) +
+          row(slovo('partnerStats.shares.club'), psNum(s.club, true)) + (s.ops === null ? '' : row(slovo('partnerStats.shares.ops'), psNum(s.ops, true))) + '</div>') + '</div>';
+    // `wallet_through` — конец периода: месяц у мгновения перед ним (как шаг 20)
+    var W = '<div class="card"><div class="rows">' + row(slovo('partnerStats.wallet'), psNum(s.wallet, true)) + '</div>' +
+      (s.through ? '<span class="small">' + esc(slovo('partnerStats.walletThrough', { month: bmMonth(Date.parse(s.through) - 1).toLowerCase() })) + '</span>' : '') + '</div>';
+    return seg + nav + S + H + W;
   },
   opsStats: function () {
     if (!mayOpsStats()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
