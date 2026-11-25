@@ -23,16 +23,17 @@ function val(id) {
   var el = document.getElementById(id);
   return el ? el.value.trim() : '';
 }
+/* День из формы демо-ивента — «сегодня» и «завтра» по поясу клуба (bkk() из js/09-afisha.js), а не телефона
+   (Cafe13KPG#193): гость из другого пояса видел «Завтра» у ивента, который на острове сегодня. iso — день клуба;
+   полночь UTC этого дня на острове — 07:00 того же дня, поэтому bkk() отдаёт тот же день и его день недели. */
 function dayWord(iso) {
   if (!iso) return 'Скоро';
-  var d = new Date(iso + 'T00:00:00');
+  var d = new Date(iso + 'T00:00:00Z');
   if (isNaN(d)) return 'Скоро';
-  var days = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
-  var today = new Date(); today.setHours(0,0,0,0);
-  var diff = Math.round((d - today) / 86400000);
-  if (diff === 0) return 'Сегодня, ' + days[d.getDay()];
-  if (diff === 1) return 'Завтра, ' + days[d.getDay()];
-  return d.getDate() + '.' + (d.getMonth() + 1) + ', ' + days[d.getDay()];
+  var p = bkk(d), now = new Date(), x = p.ymd.split('-');
+  if (p.ymd === bkk(now).ymd) return 'Сегодня, ' + p.dow;
+  if (p.ymd === bkk(new Date(now.getTime() + 86400000)).ymd) return 'Завтра, ' + p.dow;
+  return Number(x[2]) + '.' + Number(x[1]) + ', ' + p.dow;
 }
 function partOf(t) {
   var h = parseInt((t || '19:00').split(':')[0], 10);
