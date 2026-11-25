@@ -104,7 +104,8 @@ function teaLoadCard(id) {
   });
 }
 /* Своя карточка (блок «Чайный мастер» на home у ЧАЙ-Б и форма teaApply): TEA.mine = null — не грузили или в пути;
-   {status: none|pending|approved|edit|rejected, note, card}. Без адреса ручки в живом — запроса нет, TEA.mineFail. */
+   {status: none|pending|approved|edit|rejected, note, card, live}: card — последняя подача, live — карточка в каталоге
+   (или null). Без адреса ручки в живом — запроса нет, TEA.mineFail. */
 function loadTeaMine() {
   if (!LIVE) { TEA.mine = TEA_DEMO.mine; TEA.mineFail = ''; return; }
   TEA.mine = null; TEA.mineFail = '';
@@ -115,9 +116,10 @@ function loadTeaMine() {
     var d = r.status === 200 && r.data ? r.data : null;
     var st = d && /^(none|pending|approved|edit|rejected)$/.test(d.status) ? d.status : null;
     var card = d && d.card ? teaCardFrom(d.card) : null;
-    if (st) TEA.mine = { status: st, note: typeof d.note === 'string' ? d.note : '', card: card };
+    var live = d && d.live ? teaCardFrom(d.live) : null;
+    if (st) TEA.mine = { status: st, note: typeof d.note === 'string' ? d.note : '', card: card, live: live };
     else TEA.mineFail = failText(r);
-    teaRerender({ home: 1, teaApply: 1 });
+    teaRerender({ home: 1, teaApply: 1, teaMaster: 1, teaBook: 1 });
   });
 }
 /* Свои брони у мастера (B11): [{at, mins, master: wait|ok|no, art: wait|ok|no, refund: строка|null}] */
@@ -204,7 +206,10 @@ document.addEventListener('error', function (ev) {
 
 /* Разметка карточки мастера: альбом, описание, цена. o.book — кнопка K5 (или K6 у своей); без неё — предпросмотр
    teaApply (A5) и согласование teaReq у ЧАЙ-Б. */
-function teaIsMine(c) { return LIVE && !!DATA.member && typeof DATA.member.uid === 'number' && c.id === DATA.member.uid; }
+/* Своя ли карточка: master_id — номер ПЕРВОЙ подачи мастера, а не Telegram id (api#228, tea.py:18), и он один у
+   всех подач мастера. Поэтому сверка — с номером из своей карточки (/tea/card/mine), а не с DATA.member.uid. */
+function teaMyId() { var m = TEA.mine, c = m && (m.live || m.card); return c ? c.id : null; }
+function teaIsMine(c) { var my = teaMyId(); return LIVE && my !== null && c.id === my; }
 function teaCardHtml(c, o) {
   o = o || {};
   var foot = !o.book ? '' : teaIsMine(c) ? '<span class="small">' + esc(teaW('card.mine')) + '</span>'
@@ -349,6 +354,7 @@ function teaApplySend() {
 /* ── крючки навигации (вписаны ЧАЙ-Б в js/21-navigaciya.js) ──────────────────────────────────────────────── */
 function teaGo(screen, p) {
   if (screen === 'teaMasters') teaLoadList();
+  if ((screen === 'teaMaster' || screen === 'teaBook') && LIVE && !TEA.mine && !TEA.mineFail) loadTeaMine();   // «своя» — по ней
   if (screen === 'teaMaster') { teaLoadCard(p); teaLoadBooks(p); }
   if (screen === 'teaBook') {
     var id = p !== undefined && p !== null ? p : TB.id;
