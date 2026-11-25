@@ -350,6 +350,8 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               masterStats: 1, eventReport: 1,
               // шаг 36 (Cafe13KPG#567, рецепт 36/myStats; api#195): «моя» статистика
               myStats: 1,
+              // шаг 33 (Cafe13KPG#564, рецепт 33/opsStats; api#197): статистика бизнесов опер-директора
+              opsStats: 1,
               // фича 4 (Cafe13KPG#1009, рецепт odobrenie/; api #176 fc474be, миграция 040): очередь одобрения ивентов
               eventApproval: 1,
               // шаги 27/29/30: счёт роли (форма — проект в Cafe13KPG#557, миграция 037)

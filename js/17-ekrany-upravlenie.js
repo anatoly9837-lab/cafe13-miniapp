@@ -52,7 +52,10 @@ Object.assign(SCREENS, {
       // строка есть, счётчика нет (счётчик не выдумывается)
       '<button type="button" class="listitem" data-go="partnerReqs"><span class="grow"><b>Заявки в партнёры</b>' +
         '<span class="small">' + waitSub(PR.pending, 'Кто просит бизнес в клубе') + '</span></span>' +
-        waitMark(PR.pending) + svg(ICON.chev, 'chev') + '</button></div>' : '';
+        waitMark(PR.pending) + svg(ICON.chev, 'chev') + '</button>' +
+      // шаг 33 (рецепт 33/opsStats, O0): «Статистика бизнесов» — под бизнесами, у того же mayOps()
+      (mayOpsStats() ? '<button type="button" class="listitem" data-go="opsStats"><span class="grow"><b>' + esc(slovo('opsStats.door')) + '</b></span>' +
+        svg(ICON.chev, 'chev') + '</button>' : '') + '</div>' : '';
     if (!mayPeople()) return money_ + art + biz;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +

@@ -252,7 +252,7 @@ var TITLES = {
   barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
-  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), masterStats: slovo('masterStats.title'), myStats: slovo('myStats.title'), eventReport: slovo('eventReport.title'), eventApproval: slovo('eventApproval.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
+  people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), masterStats: slovo('masterStats.title'), myStats: slovo('myStats.title'), opsStats: slovo('opsStats.title'), eventReport: slovo('eventReport.title'), eventApproval: slovo('eventApproval.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
   tillPerson: 'Карточка человека', tillMembership: 'Членство', tillTopup: slovo('tillTopup.title'),
   tillDay: 'День кассы',
   masters: 'Слоты и мастера', masterReqs: 'Заявки в мастера', masterReq: 'Заявка в мастера',
@@ -327,7 +327,7 @@ var BACK = {
   eventManage: 'organizer',
   // правка недели возвращает на ТУ ЖЕ карточку: экрану нужен номер, поэтому пара {s, p}
   eventEdit: function () { return { s: 'event', p: EDT.id }; },
-  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', masterStats: 'manage', myStats: 'home',
+  people: 'manage', joinQueue: 'manage', topupQueue: 'manage', withdraw: 'manage', withdrawQueue: 'manage', clubStats: 'manage', artStats: 'manage', masterStats: 'manage', myStats: 'home', opsStats: 'manage',
   // отчёт по ивенту — назад на ту страницу статистики, откуда пришли (её период цел)
   eventReport: function () { return ER.from || 'masterStats'; }, eventApproval: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
@@ -601,6 +601,8 @@ function go(screen, p) {
   if (screen === 'masterStats' && current !== 'masterStats') { if (current !== 'eventReport') { MST.period = 'month'; MST.at = msToday(); } loadMasterStats(); }
   if (screen === 'eventReport') { if (current !== 'eventReport') ER.from = current; ER.id = p; loadEventReport(); }
   // шаг 36: на вход с «Клуба» — текущий месяц; назад из отчёта — тот же период, перечитан
+  // шаг 33: вход с «Управления» — текущий месяц
+  if (screen === 'opsStats' && current !== 'opsStats') { OPS.period = 'month'; OPS.at = msToday(); loadOpsStats(); }
   if (screen === 'myStats' && current !== 'myStats') { if (current !== 'eventReport') { MY.period = 'month'; MY.at = msToday(); } loadMyStats(); }
   // фича 4: очередь — на каждый вход; афиша — тоже, чтобы название в строке открывало свежую карточку ивента
   if (screen === 'eventApproval' && current !== 'eventApproval') { EA.list = null; EA.deny = ''; EA.no = 0; EA.note = ''; EA.empty = false; loadEventApproval(); if (LIVE && EVENTS_STATE !== 'loading') loadEvents(); }
@@ -1161,6 +1163,10 @@ function doAction(a) {
     if (a === 'mst-retry') { loadMasterStats(); render(); return; }
     if (a === 'mst-event' && /^\d+$/.test(arg)) { go('eventReport', Number(arg)); return; }
     if (a === 'er-retry') { loadEventReport(); render(); return; }
+    if (a === 'os-period' && /^(day|week|month)$/.test(arg)) { if (OPS.period !== arg) { OPS.period = arg; loadOpsStats(); } render(); return; }
+    if (a === 'os-prev') { opsMove(-1); return; }
+    if (a === 'os-next') { opsMove(1); return; }
+    if (a === 'os-retry') { loadOpsStats(); render(); return; }
     if (a === 'my-period' && /^(day|week|month)$/.test(arg)) { if (MY.period !== arg) { MY.period = arg; loadMyStats(); } render(); return; }
     if (a === 'my-prev') { myMove(-1); return; }
     if (a === 'my-next') { myMove(1); return; }
