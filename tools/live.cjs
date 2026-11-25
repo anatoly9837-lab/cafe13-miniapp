@@ -14083,6 +14083,25 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (t.includes(deny)) bad.push(`demo-work ${scr}: в демонстрации отказ «${deny}» вместо экрана`);
         if (s.calls.length !== before) bad.push(`demo-work ${scr}: в демонстрации ушло запросов к серверу: ${s.calls.length - before}`);
       }
+      // «Управление» вне Telegram (Cafe13KPG#935): не отказ «Сюда нельзя», а группа «Бизнесы» на демо-наборе —
+      // строка «Заявки в партнёры» с чипом ждущих (в наборе ждёт одна, 921), под плашкой прототипа; других групп нет,
+      // к серверу не ходит. Живой отказ без прав держит случай manage-live-net ниже
+      {
+        const before = s.calls.length;
+        await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(60);
+        const m = await s.p.evaluate(() => {
+          const d = document.querySelector('#view [data-go="partnerReqs"]');
+          return { cur: current, cnt: d ? ((d.querySelector('.count') || {}).textContent || null) : 'нет строки',
+                   biz: !!document.querySelector('#view [data-go="businesses"]'), proto: !!document.querySelector('#view .proto-strip'),
+                   labels: [...document.querySelectorAll('#view .group > .label')].map(e => e.textContent) };
+        });
+        const t = await s.view();
+        if (m.cur !== 'manage' || t.includes('Сюда нельзя')) bad.push(`demo-work manage: вне Telegram отказ «Сюда нельзя» вместо экрана: ${JSON.stringify(m)}`);
+        if (m.cnt !== '1' || !m.biz) bad.push(`demo-work manage: нет «Бизнесы клуба» и «Заявки в партнёры» со счётчиком 1: ${JSON.stringify(m)}`);
+        if (JSON.stringify(m.labels) !== '["Бизнесы"]') bad.push(`demo-work manage: групп не одна «Бизнесы»: ${JSON.stringify(m.labels)}`);
+        if (!m.proto) bad.push('demo-work manage: нет плашки «Прототип» — примерные данные выданы за живые');
+        if (s.calls.length !== before) bad.push(`demo-work manage: в демонстрации ушло запросов к серверу: ${s.calls.length - before}`);
+      }
       // рецепт карточки — из данных демонстрации, а не пустое поле
       await s.p.evaluate(() => go('barCard', '305'));
       const rc = await s.p.evaluate(() => (document.getElementById('c-recipe') || {}).value);
@@ -14196,6 +14215,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (!t.includes(deny)) bad.push(`live-norights ${scr}: в живом режиме без прав нет отказа «${deny}» (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
         if (t.includes(mark)) bad.push(`live-norights ${scr}: в живом режиме без прав нарисован экран («${mark}»)`);
         if (/\[(имя члена|глава клуба|кассир)\]/.test(t)) bad.push(`live-norights ${scr}: в живой режим протекли люди демонстрации`);
+      }
+      // manage-live-net (Cafe13KPG#935): демо-вид «Управления» живёт только вне Telegram — в живом без прав прежний отказ
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(250);
+      {
+        const t = await s.view();
+        if (!t.includes('Сюда нельзя')) bad.push(`live-norights manage: в живом режиме без прав нет отказа «Сюда нельзя» (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
+        if (await s.p.$('#view [data-go="partnerReqs"]')) bad.push('live-norights manage: в живом режиме без прав нарисована «Заявки в партнёры» — демо протекло');
       }
       await s.ctx.close();
     }
