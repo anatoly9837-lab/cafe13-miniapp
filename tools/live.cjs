@@ -3127,13 +3127,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: запас не стёрт`);
     await s.ctx.close();
   }
-  // Конечный срок сохраняется в ISO и рисуется словами.
+  // Конечный срок сохраняется в ISO, а на экране его нет: слово владельца 25.11.2026, №79 «Даты убирай
+  // в обоих местах» (Cafe13KPG#1097). Прежде случай ждал «до 14 ноября 2026»; облик подписи судит bez-daty-propusk.
   if (part(1)) {
     const s = await open(true, true, json(200, finite), null,
       json(200, Object.assign({}, PASS, { lifelong: false, valid_until: '2026-11-14T10:00:00+07:00' })));
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('до 14 ноября 2026')) bad.push('pass-finite: срок не показан словами');
+    const t = await s.view();
+    if (!(await s.p.evaluate(() => !!document.querySelector('.pass')))) bad.push('pass-finite: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет');
+    else if (/14\s+ноябр|14\.11\.2026|\bдо\s+\d/i.test(t)) bad.push('pass-finite: срок членства показан на пропуске — снят словом владельца №79');
     const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
     if (!kept || kept.ends !== '2026-11-14T10:00:00+07:00') bad.push('pass-finite: срок сохранён не в ISO: ' + JSON.stringify(kept));
     await s.ctx.close();
