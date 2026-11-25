@@ -11,8 +11,9 @@
 
   python3 -I tools/keys.py <DUMP_DIR> > tools/api-keys.json
 
-DUMP_DIR обязан нести `_api_sha` (cafe13-api пишет его в конце зелёного
-прогона, Cafe13KPG#479); sha переносится в КАЖДУЮ запись полем `api_sha`.
+Рядом с DUMP_DIR обязан лежать `<DUMP_DIR>-SHA.txt` (cafe13-api пишет его в
+конце зелёного прогона, Cafe13KPG#479); sha переносится в КАЖДУЮ запись
+полем `api_sha`.
 Без него — код 2 и пустой вывод.
 """
 import json, os, re, sys
@@ -53,24 +54,26 @@ SHA = re.compile(r'[0-9a-f]{40}')
 
 
 def api_sha(src):
-    """sha api, с которого снят DUMP_DIR, — из файла `_api_sha`, который
-    cafe13-api `tools/check-api.sh` пишет в конце ЗЕЛЁНОГО прогона.
+    """sha api, с которого снят DUMP_DIR, — из файла `<DUMP_DIR>-SHA.txt`,
+    который cafe13-api `tools/check-api.sh` пишет в конце ЗЕЛЁНОГО прогона.
+    Файл лежит РЯДОМ с каталогом, а не внутри: страж цифр api склеивает цифры
+    каждого файла каталога, и sha стал бы «посторонним номером».
 
     ⚠ Без sha снимок нельзя отличить свежий от устаревшего (Cafe13KPG#479):
     поле, которого нет ни в снимке, ни в заглушке, сверка формы принимает за
     «сошлось». Поэтому нет sha — нет файла формы, код 2 («не выполнено»), а
     не запись без sha. Пустая строка, `-dirty` и неполный sha — тоже отказ:
     правдоподобное значение хуже отсутствия."""
-    p = os.path.join(src, '_api_sha')
+    p = os.path.normpath(src) + '-SHA.txt'
     if not os.path.isfile(p):
-        return None, ('в %s нет _api_sha — снимки не из зелёного прогона '
-                      'check-api.sh или сняты до Cafe13KPG#479' % src)
+        return None, ('нет %s — снимки не из зелёного прогона '
+                      'check-api.sh или сняты до Cafe13KPG#479' % p)
     with open(p, encoding='utf-8') as f:
         v = f.read().strip()
     if v.endswith('-dirty'):
-        return None, '_api_sha %r: дерево api было грязным, образ собран не из коммита' % v
+        return None, '%s = %r: дерево api было грязным, образ собран не из коммита' % (p, v)
     if not SHA.fullmatch(v):
-        return None, '_api_sha %r: не 40 знаков hex' % v
+        return None, '%s = %r: не 40 знаков hex' % (p, v)
     return v, None
 
 
