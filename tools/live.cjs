@@ -1498,6 +1498,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (t.includes('Без даты') || t.includes('каждую неделю')) bad.push(`${n}: строка без starts_at показана как букинг`);
       await s.ctx.close();
     }
+    // причина отказа — фраза человека: своя точка не удваивается, «!» и «?» не получают точку (Cafe13KPG#725)
+    {
+      const n = 'buking-otkaz-tochka';
+      const mine = [
+        mreq(841, 'rejected', { title: 'Отказ с точкой', starts_at: MAT(3), decision_note: 'возьмите вторник.' }),
+        mreq(842, 'rejected', { title: 'Отказ без точки', starts_at: MAT(4), decision_note: 'нет фото работ' }),
+        mreq(843, 'rejected', { title: 'Отказ с вопросом', starts_at: MAT(5), decision_note: 'а где смета?' })];
+      const o = { mine: () => mine, posted: [] };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      ['Возьмите вторник. ', 'Нет фото работ. ', 'А где смета? '].forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w.trim()}» перед возвратом`); });
+      for (const w of ['..', '?.', '!.']) if (t.includes(w)) bad.push(`${n}: в причине отказа «${w}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
     // продления нет (Cafe13KPG#985, ветвь 7): у мастера с согласованным букингом нет «Продлить», экрана нет, ручки
     // `/periods*` клиент не зовёт
     {
@@ -8303,6 +8319,25 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
 
+    // 1б. числа под «Ваши мероприятия впереди» — без кончившегося (Cafe13KPG#361); оно остаётся в списке с пометкой.
+    // Кончившиеся отличаются от живого каждым из четырёх чисел и вдобавок безлимитом: возврат любого числа к «всем» краснит
+    {
+      const n = 'organizer-vperedi';
+      const ago = NOWFIX - 9000e3;
+      const list = [MINE(), EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) }),
+        MINE({ id: 9, title: 'Мой прошедший', starts_at: new Date(ago).toISOString(), duration_min: 60, seats: 10, taken: 5, seats_left: 5 }),
+        MINE({ id: 10, title: 'Мой прошедший без мест', starts_at: new Date(ago).toISOString(), duration_min: 60, seats: 0, taken: 4, seats_left: null })];
+      const s = await openM(evReply(json(200, list)));
+      await s.p.evaluate(() => go('organizer')); await s.p.waitForTimeout(200);
+      const nums = await s.p.$$eval('#view .rows > div', d => d.map(x => [x.querySelector('.small').textContent, x.querySelector('b').textContent]));
+      const want = [['Событий', '1'], ['Записалось', '3 из 12'], ['Наполненность', '25 %'], ['Если все заплатят', '1 200 ฿']];
+      if (JSON.stringify(nums) !== JSON.stringify(want)) bad.push(`${n}: числа «впереди» ${JSON.stringify(nums)}, ждали ${JSON.stringify(want)}`);
+      const t = await s.view();
+      if (!t.includes('Мой прошедший') || !t.includes('завершилось')) bad.push(`${n}: кончившееся пропало из списка или без пометки «завершилось»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
     // 2. кнопка правки — только на СВОЁМ и не кончившемся; над отменой (необратимое последним, E55k)
     {
       const n = 'edt-knopka';
@@ -8454,7 +8489,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
 
     // 5. витрина вне Telegram (Cafe13KPG#691): экран правки, а не отказ «не ваше»; длительность демо считается
-    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1.5»: охрана `h > 0` глотает NaN молча;
+    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1,5 часа»: охрана `h > 0` глотает NaN молча;
+    // дробная длительность — словом и с запятой, не «· 1.5» (Cafe13KPG#707);
     // «Сохранить» в сеть не ходит. Живой режим (чужое — отказ, своё — форма) держат edt-knopka и edt-200
     {
       const n = 'edt-vitrina';
@@ -8465,7 +8501,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       else {
         if (t.includes('Править это мероприятие может его ведущий.')) bad.push(`${n}: вне Telegram вместо экрана правки отказ «не ваше»`);
         if (!(await s.p.$('#edt-seats')) || !(await s.p.$('[data-action="edt-save"]'))) bad.push(`${n}: вне Telegram нет формы правки`);
-        if (!t.includes('Сегодня, четверг · 19:00 · 1.5')) bad.push(`${n}: в строке мероприятия нет длительности «· 1.5» (из 19:00–20:30)`);
+        if (!t.includes('Сегодня, четверг · 19:00 · 1,5 часа')) bad.push(`${n}: в строке мероприятия нет длительности «· 1,5 часа» (из 19:00–20:30)`);
+        if (/· \d+\.\d/.test(t)) bad.push(`${n}: дробная длительность числом с точкой (Cafe13KPG#707)`);
         if (/NaN/.test(t)) bad.push(`${n}: на экране NaN`);
         const before = s.calls.length;
         if (await s.p.$('[data-action="edt-save"]')) { await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300); }
