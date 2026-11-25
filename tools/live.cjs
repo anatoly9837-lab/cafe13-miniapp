@@ -11314,6 +11314,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (await s.p.$(sel)) { await s.p.fill(sel, v); return true; }
       bad.push(`${name}: нет поля ${sel}`); return false;
     };
+    // то же для чтения: голый inputValue по пропавшему полю ждал 30 с и обрывал батарею раньше сводки,
+    // вместо того чтобы покраснеть своим текстом (Cafe13KPG#424)
+    const val = async (s, sel, name) => {
+      if (await s.p.$(sel)) return s.p.inputValue(sel);
+      bad.push(`${name}: нет поля ${sel}`); return null;
+    };
 
     // список: hidden запрошен явно, группы — экраном, причина возврата в строке
     {
@@ -11604,10 +11610,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await openCard(s, 53); await s.p.waitForTimeout(200);
-      if ((await s.p.inputValue('#c-recipe')) !== 'старый рецепт') bad.push('cards-recipe: прежний рецепт RU не в поле');
+      const ru = await val(s, '#c-recipe', 'cards-recipe');
+      if (ru !== null && ru !== 'старый рецепт') bad.push('cards-recipe: прежний рецепт RU не в поле');
       if (!(await s.view()).includes('Заменить рецепт (RU)')) bad.push('cards-recipe: у RU с рецептом нет «Заменить»');
       await click(s, 'c-lang:th'); await s.p.waitForTimeout(200);
-      if ((await s.p.inputValue('#c-recipe')) !== '') bad.push('cards-recipe: в поле TH чужой текст');
+      const th = await val(s, '#c-recipe', 'cards-recipe');
+      if (th !== null && th !== '') bad.push('cards-recipe: в поле TH чужой текст');
       if (!(await s.view()).includes('Сохранить рецепт (TH)')) bad.push('cards-recipe: у TH без рецепта нет «Сохранить»');
       await put(s, '#c-recipe', 'สูตร', 'cards'); await click(s, 'c-recipe:53'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/53\/recipe$/);
