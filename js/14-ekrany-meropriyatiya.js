@@ -216,7 +216,7 @@ Object.assign(SCREENS, {
     var mins = typeof e.mins === 'number' ? e.mins : hmMin(e.until) - hmMin(e.time);
     var h = Math.round(mins / 60 * 10) / 10;
     return '<div class="card quiet"><div class="col"><b>' + esc(e.title) + '</b>' +
-        '<span class="small">' + esc(e.day + ' · ' + e.time + (h > 0 ? ' · ' + (h % 1 ? h : h + ' ' + msHours(h)) : '') + (e.place ? ' · ' + e.place : '')) + '</span>' +
+        '<span class="small">' + esc(e.day + ' · ' + e.time + (h > 0 ? ' · ' + msHoursText(h) : '') + (e.place ? ' · ' + e.place : '')) + '</span>' +
         '<span class="small">Название, время, длительность и место мероприятия здесь не меняются.</span></div></div>' +
       '<div class="field"><label for="edt-seats">Мест</label><input id="edt-seats" type="number" inputmode="numeric" min="0" max="500" value="' + esc(EDT.seats) + '">' +
         '<span class="small">0 — без ограничения</span></div>' +
