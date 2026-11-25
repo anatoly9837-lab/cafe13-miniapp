@@ -1,5 +1,5 @@
 {
- "снято": "2026-11-25T04:04:36.900Z",
+ "снято": "2026-11-25T04:41:16.788Z",
  "слепки_страницы": {
   "index.html": "c6f7f077eaef0a4202f3095489afbd345e288bbd0a8a9e96519b81ba18c76d61",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
@@ -62,7 +62,8 @@
       "mayBook": true,
       "mayPeople": true,
       "canTopup": true,
-      "mayTopups": true
+      "mayTopups": true,
+      "mayMasters": true
      },
      "barSide": true,
      "достижимо": {
@@ -205,7 +206,8 @@
       "mayBook": false,
       "mayPeople": false,
       "canTopup": true,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": false,
      "достижимо": {
@@ -277,7 +279,8 @@
       "mayBook": true,
       "mayPeople": false,
       "canTopup": false,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": true,
      "достижимо": {
@@ -349,7 +352,8 @@
       "mayBook": true,
       "mayPeople": false,
       "canTopup": false,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": true,
      "достижимо": {
@@ -429,7 +433,8 @@
       "mayBook": false,
       "mayPeople": false,
       "canTopup": false,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": true,
      "достижимо": {
@@ -495,7 +500,8 @@
       "mayBook": false,
       "mayPeople": false,
       "canTopup": false,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": false,
      "достижимо": {
