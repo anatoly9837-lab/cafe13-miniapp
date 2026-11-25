@@ -2300,6 +2300,28 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    /* Приёмка arhitector-aa (#439 на 22c52ee): ждущая (cb) и отказ (86) без цены покрыты, а СОГЛАСИЕ шло только
+       через join-prinyali с ценой JOIN0 — мутант «request → null при approved без цены» проходил. Тот же путь
+       человека, который ждал (заглушка #853: согласию верят, только если просьбу видели ждущей), — без цены и с '0.00'. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-soglasie (' + tag + ')';
+      let st = 'pending';
+      const R = () => {
+        const r = withReq(st);
+        ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete r[k]);
+        if (price !== undefined) r.amount_thb = price;
+        return json(200, r);
+      };
+      const s = await joinCase(R, null, () => json(403, { detail: 'доступа нет' }));
+      if (!(await s.view()).includes('Просьба у главы клуба. Ответ придёт сюда.')) bad.push(`${n}: на старте нет ждущей просьбы`);
+      st = 'approved';
+      await s.p.evaluate(() => { go('joinAbout'); go('noAccess'); }); await s.p.waitForTimeout(200);
+      if (!(await s.view()).includes('Вас приняли в клуб')) bad.push(`${n}: согласие без цены не показано — нет «Вас приняли в клуб»`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.request && JOIN.info.request.status === 'approved'))))
+        bad.push(`${n}: согласие №7 не легло в JOIN.info`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
 
   // ── вкладки — по ВСЕМ живым членствам (Cafe13KPG#410, шаг 1a) ──
