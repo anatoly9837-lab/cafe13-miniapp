@@ -9,7 +9,7 @@ let reply = null;   // ответ подменённого api на GET /tea/car
 const ctx = { console, Date, Math, JSON, Object, Number, String, Array, RegExp, isNaN, parseInt,
   document: { addEventListener() {}, getElementById() { return null; } }, window: {},
   SCREENS: {}, TITLES: {}, LIVE: true, current: 'teaMaster', haptic() {}, render() {}, go() {}, svg: () => '',
-  failText: r => 'код ' + r.status, DATA: { member: { uid: 200000969 } }, API: '',
+  failText: r => 'код ' + r.status, DATA: { member: { uid: 4242 } }, API: '',
   api(m, u) { calls.push(m + ' ' + u); return { then(f) { f(reply); } }; } };
 vm.createContext(ctx);
 for (const f of ['js/00-slova.js', 'js/10-utility.js']) vm.runInContext(fs.readFileSync(root + '/' + f, 'utf8'), ctx, { filename: f });
@@ -41,10 +41,10 @@ R(`TEA.mine = null; TEA.mineFail = ''`); calls.length = 0;
 reply = { status: 200, data: { status: 'approved', note: '', card: card(1, 'approved'), live: card(1, 'approved') } };
 R(`teaGo('teaMaster', 1)`);
 check('С1 вход на карточку читает /tea/card/mine', calls.includes('GET /tea/card/mine') ? 'да' : 'нет', 'да');
-// С2: мастер (Telegram 200000969, master_id 1) на своей карточке — «это ваша», без записи
+// С2: мастер (Telegram 4242, master_id 1) на своей карточке — «это ваша», без записи
 check('С2 своя (master_id 1) у мастера', foot(1), 'своя');
 // С3: чужая карточка, чей master_id случайно равен Telegram id смотрящего — запись есть
-check('С3 чужая с master_id = Telegram id смотрящего', foot(200000969), 'запись');
+check('С3 чужая с master_id = Telegram id смотрящего', foot(4242), 'запись');
 // С4: правка ждёт (status edit): card и live — одного мастера, своя узнаётся
 reply = { status: 200, data: { status: 'edit', note: '', card: card(1, 'pending'), live: card(1, 'approved') } }; R(`loadTeaMine()`);
 check('С4 правка ждёт — своя узнаётся', foot(1), 'своя');
