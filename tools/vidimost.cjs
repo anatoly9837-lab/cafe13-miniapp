@@ -36,6 +36,7 @@ const { chromium } = require('/usr/lib/node_modules/playwright');
 const fs = require('fs');
 const { FIXED_NOW } = require('./chasy-opisi.cjs');   /* ОДИН источник часов описи */
 const { slepkiStranicy, svod, chitatelDereva, NeVypolneno } = require('./klient.cjs');
+const apiRoli = require('./api-roles.cjs');   /* перечень ролей api — Cafe13KPG#788 */
 
 /* ⚠ РОЛИ, А НЕ ИМЕНА, И ЭТО НЕ ОСТОРОЖНОСТЬ, А ГРАНИЦА РЕПОЗИТОРИЯ.
  * Репозиторий клиента ПУБЛИЧНЫЙ. Настоящие имена живых людей клуба, как и
@@ -353,14 +354,36 @@ function не_выполнено(текст) {
       ' — слепки поставить нечем, и файл видимости без них нельзя сверить со клиентом');
   }
 
+  /* ⚠ РОЛИ, КОТОРЫХ НЕТ У ЛЮДЕЙ ОБХОДА, НАЗЫВАЮТСЯ, а не выдумываются
+     (Cafe13KPG#788). Люди — живые из замера club_test, и это смысл прибора
+     (правило #871 выше: строку о человеке ставит только замер). Чего у них
+     нет, о том опись молчала — теперь печатает перечнем против CHECK api
+     (снимок tools/api-roles.json, sha api в нём). Снимок битый, отпечаток
+     пуст или у людей роль, которой в api нет, — НЕ ВЫПОЛНЕНО: сверять нечем. */
+  let роли_api;
+  try {
+    роли_api = apiRoli.proverit(
+      apiRoli.prochest(require('path').join(__dirname, 'api-roles.json')), ЛЮДИ);
+  } catch (e) {
+    if (!(e instanceof apiRoli.NeVypolneno)) throw e;
+    не_выполнено(e.message);
+  }
+
   fs.writeFileSync('/work/vidimost.json', JSON.stringify({
     снято: new Date().toISOString(),
     слепки_страницы: слепки,
     свод_слепков: свод_слепков,
     предел: 'вывод по коду клиента, не наблюдение под человеком',
-    роли_откуда: 'club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение',
+    роли_откуда: 'люди club_test по замеру devops5 27.10.2026 06:29:59 UTC (только ' +
+                 'чтение), НЕ ПЕРЕМЕРЕНЫ: роли и членство — как были в тот день, ' +
+                 'а не сегодня (Cafe13KPG#788)',
+    роли_api: { api_sha: роли_api.api_sha, источник: роли_api.источник, всего: роли_api.всего },
+    роли_не_обойдены: роли_api.не_обойдены,
     люди: вышло
   }, null, 1));
+  console.log(`роли api: не обойдены ${роли_api.не_обойдены.length} из ${роли_api.всего} — ` +
+    (роли_api.не_обойдены.join(', ') || 'все обойдены') +
+    ` (CHECK api ${роли_api.api_sha.slice(0, 12)}, ${роли_api.источник})`);
   for (const ч of вышло) {
     console.log(ч.имя.padEnd(10), ч.виды.map((в) => в.уровень + ': ' + в.вкладки.join(' · ')).join('   |   '),
       '   права:', Object.entries(ч.виды[0].права).filter(([, v]) => v).map(([k]) => k).join(',') || '—');

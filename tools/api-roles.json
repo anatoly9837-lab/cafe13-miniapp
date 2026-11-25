@@ -1,0 +1,20 @@
+{
+ "api_sha": "26aba16974b5d8bf3250426f3eeb5164759eef00",
+ "источник": "migrations/032_worker.up.sql:16",
+ "роли": [
+  "admin",
+  "director",
+  "staff",
+  "head",
+  "curator",
+  "bar",
+  "god_mentor",
+  "god",
+  "art_director",
+  "ops_director",
+  "topups",
+  "master",
+  "space_manager",
+  "worker"
+ ]
+}
