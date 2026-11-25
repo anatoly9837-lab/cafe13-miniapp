@@ -13943,7 +13943,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (c.includes('Чек не загрузился') || !(await s.p.$('#view img[alt="Чек"]'))) bad.push(`${n}: после «Повторить» чек не показан`);
       await s.ctx.close();
     }
-    // список не загрузился — форма близнеца E42; одна битая строка — отказ целиком
+    // список не загрузился — форма близнеца E42. Битая строка (Cafe13KPG#1084) выпадает ОДНА и названа:
+    // прежде она гасила главе всю очередь
     {
       const n = 'join-fail', s = await joinCase(OWNER, { list: json(500, { detail: 'x' }) });
       await toJoin(s);
@@ -13953,8 +13954,39 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const s2 = await joinCase(OWNER, { list: json(200, broken) });
       await toJoin(s2);
       const t2 = await s2.view();
-      if (!t2.includes('Просьбы не загрузились') || t2.includes('Ада Доступова')) bad.push(`${n}: битая строка не отвергла ответ целиком`);
+      if (t2.includes('Просьбы не загрузились') || !t2.includes('Ада Доступова')) bad.push(`${n}: битая строка погасила всю очередь (#1084)`);
+      if (!t2.includes('№22 (тип чека без файла)')) bad.push(`${n}: битая строка выпала молча — номера и причины на экране нет`);
+      if (t2.includes('Борис')) bad.push(`${n}: битая строка показана как годная`);
       await s2.ctx.close();
+    }
+    // Cafe13KPG#1084, приёмка: три просьбы — обычная, по 041 без денег и чека (законна: просьба выгнанного
+    // вернуться) и битая. Видны две, у просьбы без денег — кнопки решения, битая названа номером
+    {
+      const n = 'join-bez-deneg', q3 = clone(JREQ);
+      const free = Object.assign(clone(JREQ.requests[0]), { id: 30, tg_user_id: 805, first_name: 'Дарья', last_name: 'Вернувшаяся',
+        said: 'хочу вернуться', receipt_mime: null, receipt_bytes: null, amount_thb: null, amount_usd: null });
+      const junk = Object.assign(clone(JREQ.requests[0]), { id: 31, tg_user_id: 806, first_name: 'Ефим', last_name: 'Битый', amount_thb: 'много' });
+      q3.requests = [q3.requests[0], free, junk]; q3.pending = 3;
+      const s = await joinCase(OWNER, { list: json(200, q3) });
+      await toJoin(s);
+      const t = await s.view();
+      if (t.includes('Просьбы не загрузились')) bad.push(`${n}: одна просьба погасила всю очередь`);
+      for (const w of ['Ада Доступова', 'Дарья Вернувшаяся', '«хочу вернуться»', 'Без взноса и без чека', '№31 (сумма не число)'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      if (t.includes('Ефим')) bad.push(`${n}: битая просьба показана как годная`);
+      const card = await s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes('Дарья'))[0] || '');
+      if (/฿|USDT|КБ|NaN|null/.test(card)) bad.push(`${n}: у просьбы без денег выдумана сумма или чек: «${card}»`);
+      const btn = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="j-"]')].map(b => b.getAttribute('data-action')).sort());
+      if (JSON.stringify(btn) !== JSON.stringify(['j-ask:21', 'j-ask:30', 'j-ok:21', 'j-ok:30']))
+        bad.push(`${n}: кнопки решения ${JSON.stringify(btn)}, ждали у 21 и 30`);
+      const shots = gets(s, /\/receipt$/).map(c => c.url.replace(/.*requests\//, ''));
+      if (JSON.stringify(shots) !== JSON.stringify(['21/receipt'])) bad.push(`${n}: чеки спрошены так: ${JSON.stringify(shots)}, ждали только 21`);
+      await press(s, n, 'j-ok:30'); await press(s, n, 'j-yes:30');
+      const pp = posts(s, /\/join\/requests\/30\/decide$/);
+      if (pp.length !== 1 || JSON.parse(pp[0].body).decision !== 'approved') bad.push(`${n}: решение по просьбе без денег не ушло`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.p.screenshot({ path: `${OUT}/live-join-bez-deneg.png` });
+      await s.ctx.close();
     }
     // Подпись вкладки не переносится в две строки на УЗКОМ окне, 360 px. Перенос на 390 px
     // уже ловит `tabs-vse` (#410, прежде `tabs-vse-sem`) — мутация `white-space: nowrap` → `normal` краснит и его,
