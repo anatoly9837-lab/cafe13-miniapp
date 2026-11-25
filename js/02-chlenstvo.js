@@ -417,5 +417,5 @@ var PROTO = {};
    согласованным букингом и ждущим вторым (Cafe13KPG#985): «Клуб» показывает список букингов.
    Форму E54b снимает опись своей фикстурой (`MR.mine = []`). */
 var MS_DEMO = { masters: 1, masterList: 1, masterReqs: 1, masterReq: 1, masterEvents: 1, masterEvent: 1, masterApply: 1,
-               payouts: 1, payout: 1, businesses: 1, partnerReqs: 1, partnerReq: 1 };
+               payouts: 1, payout: 1, businesses: 1, partnerReqs: 1, partnerReq: 1, manage: 1 };
 
