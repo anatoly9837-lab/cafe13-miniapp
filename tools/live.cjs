@@ -13660,13 +13660,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (tqGets(s, /\/32\/receipt$/).length) bad.push(`${n}: байты PDF спрошены — показать их нечем`);
       await s.ctx.close();
     }
-    // решил другой (409): отказ словами сервера, очередь перечитана, итога «Зачислено» нет
+    // решил другой (409): отказ словами сервера, очередь перечитана, итога «Зачислено» нет.
+    // Фраза — api#203 (Cafe13KPG#587): женский род у «заявки», `status_ru` истории остался «зачислено»
     {
-      const n = 'tq-409', s = await tqCase(OWNER, { decide: json(409, { detail: 'заявка уже зачислено' }) });
+      const n = 'tq-409', s = await tqCase(OWNER, { decide: json(409, { detail: 'заявка уже зачислена' }) });
       await toReq(s, 31);
       await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(500);
       const deny = await s.p.$eval('#view .deny', e => e.textContent).catch(() => '');
-      if (!deny.includes('Заявка уже зачислено')) bad.push(`${n}: нет отказа словами сервера: «${deny}»`);
+      if (!deny.includes('Заявка уже зачислена')) bad.push(`${n}: нет отказа словами сервера: «${deny}»`);
       if ((await s.view()).includes('Зачислено 1 000')) bad.push(`${n}: отказ показан успехом`);
       if (tqGets(s, /\/topup\/requests$/).length < 2) bad.push(`${n}: после отказа очередь не перечитана`);
       await s.ctx.close();
