@@ -885,7 +885,9 @@ function doAction(a) {
       if (a === 'c-hide') { cardState(Number(arg), 'hidden'); return; }
       if (a === 'c-back-send') {
         if (!CARD.reason.trim()) { CARD.err = ''; CARD.deny = 'Напишите причину — её прочтёт бар.'; haptic('warn'); render(); return; }
-        cardState(Number(arg), 'hidden', CARD.reason.trim()); return;
+        // возврат автору — `draft` с замечанием, а не `hidden`: снятие с меню и возврат — разные
+        // события, и данные несут смысл сами, не по соглашению «hidden с замечанием» (Cafe13KPG#314)
+        cardState(Number(arg), 'draft', CARD.reason.trim()); return;
       }
       if (a === 'c-group') { CARD.v['c-group'] = arg; CARD.groupAsk = ''; }
       if (a === 'c-alcohol') CARD.alcohol = !CARD.alcohol;

@@ -98,10 +98,11 @@ const CASES = [
     ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
   ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 6],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
-    ['Подпись не принята'], ['нет в списке'], 1],
+    ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
     // + GET /join: экран просьбы спрашивает сервер сам (Cafe13KPG#459); здесь /join тоже 403
-    ['Вас ещё нет в списке'], ['Подпись не принята', 'Член клуба'], 2],
+    // J0 (рецепт #397): шапка выгнанного — «Доступ снят»; слов новичка о списке нет
+    ['Доступ снят'], ['Подпись не принята', 'Член клуба', 'Вас ещё нет в списке', 'Попасть в список'], 2],
   ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], [], 1],
   ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], [], 1],
   ['html-200', true, true, { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
@@ -352,7 +353,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!(await s.view()).includes(stay)) bad.push(`${n}: переход data-go увёл с экрана отказа`);
     };
     for (const [n, me, stay] of [
-      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Вас ещё нет в списке'],
+      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Доступ снят'],
       ['vyhod-401', json(401, { detail: 'подпись не принята' }), 'Подпись не принята'],
       ['vyhod-500', json(500, { detail: 'x' }), 'Сервер клуба недоступен']]) {
       const s = await open(true, true, me);
@@ -571,6 +572,30 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const t = await s.view();
         // после отправки — история (E52v) с «ждёт проверки» из перечитанного ответа сервера
         if (!t.includes('ждёт проверки')) bad.push(`${n}: после отправки нет «ждёт проверки» из истории`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // предел чека — 2 МиБ = 2 * 1024 * 1024 байт (`RECEIPT_MAX`, потолок сервера), и отказ называет его ТЕМ ЖЕ словом,
+    // что подпись у чека (Cafe13KPG#584). Граница мерится по обе стороны: «2 МБ + 1 байт» больше 2 МБ в обиходе,
+    // но в предел входит; «2 МиБ + 1 байт» — на байт сверх него. Так слово отказа привязано к числу, а не к буквам
+    {
+      const n = 'tu-chek-predel', MIB2 = 2 * 1024 * 1024, MB2 = 2 * 1000 * 1000;
+      const s = await tuCase(() => json(200, hist([])));
+      await tap(s, '[data-action="tu-online"]');
+      if (!(await s.p.$('#tu-file'))) bad.push(`${n}: «Онлайн» не открыло форму с чеком`);
+      else {
+        await s.p.fill('#tu-amount', '1500');
+        const deny = () => s.p.evaluate(() => { const d = document.querySelector('#view .deny[role="alert"]'); return d ? d.textContent.trim() : null; });
+        await s.p.setInputFiles('#tu-file', pdf(MIB2 + 1), { timeout: 60000 });
+        await s.p.waitForTimeout(300);
+        const said = await deny();
+        if (said !== 'Чек больше 2 МиБ — приложите файл поменьше.') bad.push(`${n}: на чек «2 МиБ + 1 байт» отказ «${said}», ждали «Чек больше 2 МиБ — приложите файл поменьше.»`);
+        if (!(await s.p.$('#tu-send[disabled]'))) bad.push(`${n}: чек сверх предела принят — отправка доступна`);
+        await s.p.setInputFiles('#tu-file', pdf(MB2 + 1), { timeout: 60000 });
+        await s.p.waitForTimeout(300);
+        if (await deny() !== null) bad.push(`${n}: чек «2 МБ + 1 байт» (меньше 2 МиБ) отвергнут: «${await deny()}»`);
+        if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: с чеком в пределе 2 МиБ отправка недоступна`);
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
@@ -1473,6 +1498,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (t.includes('Без даты') || t.includes('каждую неделю')) bad.push(`${n}: строка без starts_at показана как букинг`);
       await s.ctx.close();
     }
+    // причина отказа — фраза человека: своя точка не удваивается, «!» и «?» не получают точку (Cafe13KPG#725)
+    {
+      const n = 'buking-otkaz-tochka';
+      const mine = [
+        mreq(841, 'rejected', { title: 'Отказ с точкой', starts_at: MAT(3), decision_note: 'возьмите вторник.' }),
+        mreq(842, 'rejected', { title: 'Отказ без точки', starts_at: MAT(4), decision_note: 'нет фото работ' }),
+        mreq(843, 'rejected', { title: 'Отказ с вопросом', starts_at: MAT(5), decision_note: 'а где смета?' })];
+      const o = { mine: () => mine, posted: [] };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      ['Возьмите вторник. ', 'Нет фото работ. ', 'А где смета? '].forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w.trim()}» перед возвратом`); });
+      for (const w of ['..', '?.', '!.']) if (t.includes(w)) bad.push(`${n}: в причине отказа «${w}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
     // продления нет (Cafe13KPG#985, ветвь 7): у мастера с согласованным букингом нет «Продлить», экрана нет, ручки
     // `/periods*` клиент не зовёт
     {
@@ -1965,7 +2006,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open('nosign', true, json(401, { detail: 'подпись не принята' }));
     const t = await s.view();
     if (s.calls.length) bad.push(`${n}: без подписи ушло запросов к серверу: ${s.calls.length}`);
-    if (t.includes('Подпись не принята') || t.includes('нет в списке')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
+    if (t.includes('Подпись не принята') || t.includes('Доступ снят')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
     // признак витрины — срок демонстрационного члена («1 250» ушёл с главной в скрытую шапку, v87)
     if (!t.includes('Действует до 14 ноября')) bad.push(`${n}: без подписи нет витрины (демонстрационного срока)`);
     await s.ctx.close();
@@ -2093,7 +2134,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // «без членства — только просьба» (слово владельца 05.11.2026); рамка 24.11 его сняла: новичок без членства и без
     // ролей начинает с «Клуба» (№24, №35), вкладки — как у члена, плашки членства и «Пропуска» нет (№45). Пара — без
     // прав и держатель права без членства (ответственный за пополнения): у второго сверху «Управление» по праву.
-    // ⚠ «Я мастер» и запись на ивент новичку — после фич 3 и 5 (сервер 5d79c84 там ещё спрашивает членство): не здесь
+    // ⚠ «Я мастер» новичку — после фичи 3; запись без членства — фича 5, случаи dver-zapis*
     for (const [n, roles, extra] of [['dver-dom', [], []], ['dver-dom-pravo', [{ role: 'topups', direction_id: null }], ['manage']]]) {
       const g = clone(OWNER); g.membership_active = false; g.membership = null; g.memberships = []; g.roles = roles;
       const s = await joinCase(json(200, JOIN0), null, () => json(200, g));
@@ -2937,7 +2978,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open(true, true, json(200, OWNER), null, json(403, { detail: 'доступа нет' }), SAVED);
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('Вас ещё нет в списке')) bad.push('pass-403-list: не экран «нет в списке»');
+    if (!(await s.view()).includes('Доступ снят')) bad.push('pass-403-list: не экран «Доступ снят»');
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('pass-403-list: запас не стёрт');
     await s.ctx.close();
   }
@@ -4148,6 +4189,53 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
   // ── шаги 27, 29, 30 (Cafe13KPG#557: ТЗ, форма — ПРОЕКТ `backend-uvedomleniya-4e` до снимка; рецепт `_docs/recept/ekran/27/roleAccount.md`):
   // держатель роли со счётом в книге клуба видит остаток СВОЕЙ роли и просит вывод; решает admin в «Запросах на вывод» (шаг 25)
+  // ── рецепт отказов (`_docs/recept/ekran/otkazy.md`, Cafe13KPG#1009, miniapp#388): 403 при ЗАГРУЗКЕ вывода, очереди
+  //    вывода и счёта роли — отказ сервера его словами (.deny → .verbatim, дословно), БЕЗ «Повторить»: повтор дал бы тот же
+  //    отказ. Контроль на тех же экранах — 500: «не загрузилось» с «Повторить» остаётся (данные различают ветки) ──
+  if (part(2)) {
+    const n = 'otkaz-403-zagruzka';
+    const who = r => { const m = clone(OWNER); m.roles = [{ role: r, direction_id: null }]; return m; };
+    for (const [scr, arg, role, word, retry, gets] of [
+      ['withdraw', null, 'master', 'вывод денег чужими глазами не делается', 'wd-retry', ['/withdraw/requests/mine']],
+      ['withdrawQueue', null, 'admin', 'вывод денег одобряет администратор клуба', 'wq-retry', ['/withdraw/requests']],
+      ['roleAccount', 'art_director', 'art_director', 'счёт арт-директора выводит держатель этой роли', 'ra-retry', ['/withdraw/accounts', '/withdraw/requests/mine']]]) {
+      for (const code of [403, 500]) {
+        const s = await open(true, true, json(200, who(role)), null, null, null, q => {
+          const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+          if (q.method() === 'GET' && gets.includes(u)) return code === 403 ? json(403, { detail: word }) : json(500, {});
+          return undefined;
+        });
+        await s.p.evaluate(([x, y]) => go(x, y), [scr, arg]); await s.p.waitForTimeout(400);
+        const g = await s.p.evaluate(r => ({ v: (x => x ? x.textContent : null)(document.querySelector('#view .deny .verbatim')),
+          retry: !!document.querySelector(`#view [data-action="${r}"]`), t: document.getElementById('view').textContent }), retry);
+        if (code === 403) {
+          if (g.v !== word) bad.push(`${n} ${scr}: 403 загрузки — «${g.v}», ждали слова сервера дословно в .deny .verbatim`);
+          if (g.retry) bad.push(`${n} ${scr}: у отказа 403 есть «Повторить» — повтор даст тот же отказ`);
+          if (/не загрузил/.test(g.t)) bad.push(`${n} ${scr}: отказ 403 назван «не загрузилось»`);
+        } else if (!g.retry || g.v !== null) bad.push(`${n} ${scr}: ПРОВЕРКА НЕ РАЗЛИЧАЕТ — у сбоя 500 нет «Повторить» или есть .deny`);
+        if (s.errs.length) bad.push(`${n} ${scr}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+    }
+    // счёт роли грузит ДВЕ ручки: 403 одной и 500 другой — отказ сервера, он важнее сбоя второй (рецепт otkazy.md);
+    // оба порядка, иначе перестановка deny/fail в done() не видна
+    const W = 'счёт арт-директора выводит держатель этой роли';
+    for (const [d403, d500] of [['/withdraw/accounts', '/withdraw/requests/mine'], ['/withdraw/requests/mine', '/withdraw/accounts']]) {
+      const s = await open(true, true, json(200, who('art_director')), null, null, null, q => {
+        const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+        if (q.method() !== 'GET') return undefined;
+        if (u === d403) return json(403, { detail: W });
+        if (u === d500) return json(500, {});
+        return undefined;
+      });
+      await s.p.evaluate(() => go('roleAccount', 'art_director')); await s.p.waitForTimeout(400);
+      const g = await s.p.evaluate(() => ({ v: (x => x ? x.textContent : null)(document.querySelector('#view .deny .verbatim')),
+        retry: !!document.querySelector('#view [data-action="ra-retry"]') }));
+      if (g.v !== W || g.retry) bad.push(`${n} roleAccount ${d403} 403 + ${d500} 500: «${g.v}», Повторить=${g.retry} — ждали отказ сервера без «Повторить»`);
+      if (s.errs.length) bad.push(`${n} roleAccount смешанный: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
   // заглушки счёта роли — по снимку api bdff63e (Cafe13KPG#557): их же сверяет страж формы (STUBS, `withdraw-accounts-role`, `withdraw-mine-club`)
   const RA_ACCROW = (account, balance, pending) => ({ account, book: 'club_ledger', direction_id: null, direction_title: null, balance, pending: pending || null });
   const RA_REQ = (id, account, st) => ({ id, role: account, book: 'club_ledger', account, direction_id: null, payout_id: null, amount: '400.00', status: st,
@@ -6354,8 +6442,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
   // ── фича 4 (Cafe13KPG#1009, рецепт `_docs/recept/ekran/odobrenie/`; api #176 fc474be, миграция 040): одобрение ивентов ──
-  // Форма — код сервера на fc474be (`PENDING_APPROVAL_SQL`, `_decide_event`, `queries.py:636`); снимка формы ещё нет: он
-  // снимается после выкладки, тогда `approval`/`reject_note` лягут и в AFISHA. Слова — по словарю (SLOVA.ru со страницы).
+  // Форма — снимок api 410f240 (Cafe13KPG#1009, комментарий в карточке; случаи cafe13-api#187): `events-pending-approval`,
+  // `event-approve`, `event-reject` сверяются с PROW/DEC в STUBS. Слова — по словарю (SLOVA.ru со страницы).
   const ODOBR = (() => {
     const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
     const MEMB = clone(OWNER); MEMB.roles = []; MEMB.member.tg_user_id = 77;
@@ -7645,20 +7733,23 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
 
-  // ── записываются только члены клуба (слово владельца 30.10.2026 «записываться пока не нужно», Cafe13KPG#670;
-  // кадр E37k, текст designer-55) ──
-  // Запрет КЛИЕНТСКИЙ: сервер (`POST /bookings`) членства не спрашивает, и фикстура нарочно отвечает 201 — зелёное
-  // здесь значит «держит клиент», а не «отказал сервер». Пара — член клуба на той же строке афиши: без неё прошёл бы
-  // и «запрет всем». Серверные отказы записи — свои случаи (book-409, book-201-pusto), сюда они не смешиваются.
-  // Гость, УЖЕ записанный, — «Отменить запись»: словом владельца не покрыто, вопрос координатору, ожидания нет.
+  // ── запись без членства (фича 5, Cafe13KPG#1009, №39; рамка владельца 24.11 «членство для ивента не нужно») ──
+  // Прежде здесь держался клиентский запрет E37k «записываются только члены клуба» (Cafe13KPG#670); фича 5 его сняла:
+  // сервер (`POST /bookings`, бой 410f240) спрашивает только дверь. Пара — член клуба на той же строке афиши.
   if (part(2)) {
     const GUEST = clone(OWNER);
     GUEST.membership = null; GUEST.membership_active = false; GUEST.memberships = [];
-    for (const [n, me, guest] of [['book-gost-zapret', GUEST, true], ['book-chlen-mozhet', OWNER, false]]) {
+    // ФИЧА 5 (Cafe13KPG#1009, №39; api #175, бой 410f240 — запись спрашивает только дверь): новичок без членства
+    // записывается так же, как член клуба. Прежний случай book-gost-zapret (E37k «только члены клуба») снят вместе с запретом.
+    // dver-zapis-409: отказ по деньгам — словами сервера (клиент остатка хватает, сервер считает иначе)
+    const NO_MONEY = 'на счёте 0, а вход 400: не хватает 400';
+    for (const [n, me, guest, refuse] of [['dver-zapis', GUEST, true, false], ['dver-zapis-409', GUEST, true, true],
+                                          ['book-chlen-mozhet', OWNER, false, false]]) {
       const posts = [];
       const s = await open(true, true, json(200, me), null, null, null, q => {
         const u = q.url();
-        if (u.endsWith('/bookings')) { posts.push(1); return json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00' }); }
+        if (u.endsWith('/bookings')) { posts.push(1); return refuse ? json(409, { detail: NO_MONEY }) :
+          json(201, { id: 6, event_id: 4, state: 'booked', amount_due: '400.00', ledger_id: 31 }); }
         if (u.endsWith('/events')) return json(200, [freeRow()]);
         return undefined;
       }, null, NOWFIX);
@@ -7668,7 +7759,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         await s.ctx.close(); continue;
       }
       await openRow(s, '4'); await s.p.waitForTimeout(120);
-      // у члена клуба на платном кнопка «Записаться за 400 ฿» (E62), у гостя — погашенная «Записаться» (E37k)
+      // у члена клуба на платном кнопка «Записаться за 400 ฿» (E62), у новичка — та же живая (фича 5)
       const btn = () => s.p.evaluate(() => {
         const b = [...document.querySelectorAll('#view button')].find(x => x.textContent.trim().startsWith('Записаться'));
         return b ? { off: b.disabled, aria: b.getAttribute('aria-disabled'), act: b.getAttribute('data-action') } : null;
@@ -7677,19 +7768,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const main = await s.p.evaluate(() => window.__main !== null);
       if (!b) bad.push(`${n}: кнопки «Записаться» на карточке нет`);
       if (guest) {
-        if (b && (b.off !== true || b.aria !== 'true')) bad.push(`${n}: у гостя «Записаться» не погашена (disabled ${b.off}, aria-disabled ${b.aria})`);
-        if (b && b.act) bad.push(`${n}: у погашенной «Записаться» осталось действие «${b.act}»`);
-        if (main) bad.push(`${n}: у гостя главная кнопка Telegram есть — запись уйдёт мимо погашенной кнопки на экране`);
-        if (!t.includes('Пока записываются только члены клуба.')) bad.push(`${n}: причина не названа (ждали «Пока записываются только члены клуба.»)`);
-        if (t.includes(FRAZA_748) || t.includes(FRAZA_0)) bad.push(`${n}: у гостя подсказка о деньгах — она про то, что будет после нажатия, а нажатия нет (designer-55)`);
-        // обе дороги в обход экрана: снятый disabled и сам обработчик записи
-        await s.p.evaluate(() => {
-          const x = [...document.querySelectorAll('#view button')].find(y => y.textContent.trim() === 'Записаться');
-          if (x) { x.disabled = false; x.click(); }
-          bookEvent('4');
-        });
-        await s.p.waitForTimeout(400);
-        if (posts.length) bad.push(`${n}: запись гостя ушла на сервер (${posts.length}) — сервер её примет, держать некому`);
+        if (!b || b.off) bad.push(`${n}: у новичка «Записаться» нет или погашена — членство больше не условие (№39)`);
+        if (!main) bad.push(`${n}: у новичка нет главной кнопки Telegram`);
+        if (t.includes('Пока записываются только члены клуба.') || /член(ы|ам) клуба/.test(t)) bad.push(`${n}: запись новичку объяснена членством`);
+        if (main) { await s.p.evaluate(() => window.__main()); await s.p.waitForTimeout(500); }
+        if (posts.length !== 1) bad.push(`${n}: запись новичка ушла ${posts.length} раз, ждали 1`);
+        const t2 = await s.view();
+        if (refuse && !t2.includes('На счёте 0, а вход 400: не хватает 400.')) bad.push(`${n}: отказ 409 по деньгам не словами сервера`);
       } else {
         if (b && b.off) bad.push(`${n}: у члена клуба «Записаться» погашена — запрет «всем», а не гостю`);
         if (!main) bad.push(`${n}: у члена клуба нет главной кнопки Telegram`);
@@ -8234,6 +8319,25 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
 
+    // 1б. числа под «Ваши мероприятия впереди» — без кончившегося (Cafe13KPG#361); оно остаётся в списке с пометкой.
+    // Кончившиеся отличаются от живого каждым из четырёх чисел и вдобавок безлимитом: возврат любого числа к «всем» краснит
+    {
+      const n = 'organizer-vperedi';
+      const ago = NOWFIX - 9000e3;
+      const list = [MINE(), EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) }),
+        MINE({ id: 9, title: 'Мой прошедший', starts_at: new Date(ago).toISOString(), duration_min: 60, seats: 10, taken: 5, seats_left: 5 }),
+        MINE({ id: 10, title: 'Мой прошедший без мест', starts_at: new Date(ago).toISOString(), duration_min: 60, seats: 0, taken: 4, seats_left: null })];
+      const s = await openM(evReply(json(200, list)));
+      await s.p.evaluate(() => go('organizer')); await s.p.waitForTimeout(200);
+      const nums = await s.p.$$eval('#view .rows > div', d => d.map(x => [x.querySelector('.small').textContent, x.querySelector('b').textContent]));
+      const want = [['Событий', '1'], ['Записалось', '3 из 12'], ['Наполненность', '25 %'], ['Если все заплатят', '1 200 ฿']];
+      if (JSON.stringify(nums) !== JSON.stringify(want)) bad.push(`${n}: числа «впереди» ${JSON.stringify(nums)}, ждали ${JSON.stringify(want)}`);
+      const t = await s.view();
+      if (!t.includes('Мой прошедший') || !t.includes('завершилось')) bad.push(`${n}: кончившееся пропало из списка или без пометки «завершилось»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
     // 2. кнопка правки — только на СВОЁМ и не кончившемся; над отменой (необратимое последним, E55k)
     {
       const n = 'edt-knopka';
@@ -8385,7 +8489,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
 
     // 5. витрина вне Telegram (Cafe13KPG#691): экран правки, а не отказ «не ваше»; длительность демо считается
-    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1.5»: охрана `h > 0` глотает NaN молча;
+    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1,5 часа»: охрана `h > 0` глотает NaN молча;
+    // дробная длительность — словом и с запятой, не «· 1.5» (Cafe13KPG#707);
     // «Сохранить» в сеть не ходит. Живой режим (чужое — отказ, своё — форма) держат edt-knopka и edt-200
     {
       const n = 'edt-vitrina';
@@ -8396,7 +8501,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       else {
         if (t.includes('Править это мероприятие может его ведущий.')) bad.push(`${n}: вне Telegram вместо экрана правки отказ «не ваше»`);
         if (!(await s.p.$('#edt-seats')) || !(await s.p.$('[data-action="edt-save"]'))) bad.push(`${n}: вне Telegram нет формы правки`);
-        if (!t.includes('Сегодня, четверг · 19:00 · 1.5')) bad.push(`${n}: в строке мероприятия нет длительности «· 1.5» (из 19:00–20:30)`);
+        if (!t.includes('Сегодня, четверг · 19:00 · 1,5 часа')) bad.push(`${n}: в строке мероприятия нет длительности «· 1,5 часа» (из 19:00–20:30)`);
+        if (/· \d+\.\d/.test(t)) bad.push(`${n}: дробная длительность числом с точкой (Cafe13KPG#707)`);
         if (/NaN/.test(t)) bad.push(`${n}: на экране NaN`);
         const before = s.calls.length;
         if (await s.p.$('[data-action="edt-save"]')) { await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300); }
@@ -11255,9 +11361,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // Плашка состояния: глина — только у возврата (ждёт действия автора); «Снята»
     // спокойная — решение куратора принято и закрыто (словарь облика, E39b)
     for (const [id, want, not, pill, warm] of [
-      [58, ['Возвращена', 'Вернул куратор: нет тайского рецепта', 'Отправить на утверждение'], ['Черновик'], 'Возвращена', true],
-      [53, ['Черновик', 'Отправить на утверждение'], ['Возвращена', 'Вернул куратор'], 'Черновик', false],
-      [55, ['Снята'], ['Возвращена', 'Вернул куратор'], 'Снята', false]]) {
+      [58, ['Возвращена', 'Вернули с замечанием: нет тайского рецепта', 'Отправить на утверждение'], ['Черновик'], 'Возвращена', true],
+      [53, ['Черновик', 'Отправить на утверждение'], ['Возвращена', 'Вернули с замечанием'], 'Черновик', false],
+      [55, ['Снята'], ['Возвращена', 'Вернули с замечанием'], 'Снята', false]]) {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await openCard(s, id);
       const t = await s.view();
@@ -11577,7 +11683,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${name}: ошибки страницы ` + s.errs.join('; '));
       await s.ctx.close();
     }
-    // куратор возвращает: без причины — не уходит; с причиной — hidden + note.
+    // куратор возвращает: без причины — не уходит; с причиной — draft + note (Cafe13KPG#314: hidden — только снятие с меню).
     // Описание длинное нарочно: у короткой карточки поле причины и так в виду,
     // и случай не отличил бы прокрутку от её отсутствия (так и было: снятая
     // прокрутка оставалась зелёной; у designer-55 кнопки уходили за край, 23.10.2026).
@@ -11607,7 +11713,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (cposts(s, /state$/).length) bad.push('cards-return: возврат ушёл без причины');
       await put(s, '#c-reason', 'нет фото', 'cards'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/51\/state$/);
-      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'hidden', note: 'нет фото' })) bad.push('cards-return: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'draft', note: 'нет фото' })) bad.push('cards-return: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      // ответ сервера принят как возврат: слово успеха, а не плашка отказа
+      if (!(await s.view()).includes('Возвращено с причиной.')) bad.push('cards-return: после ответа нет «Возвращено с причиной.»');
       await s.ctx.close();
     }
     // отказ — текстом сервера, и список перечитан
@@ -12156,7 +12264,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           if (JSON.stringify(p) !== JSON.stringify([['patch', 81, { price: 200 }]])) bad.push(`${n}: PATCH ${JSON.stringify(p)}, ждали только { price: 200 }`);
           const t2 = await s.view();
           if (!t2.includes('Изменения сохранены.')) bad.push(`${n}: нет «Изменения сохранены.»`);
-          if (!t2.includes('Вернул куратор: цена выше соседних')) bad.push(`${n}: замечание куратора пропало после правки`);
+          if (!t2.includes('Вернули с замечанием: цена выше соседних')) bad.push(`${n}: замечание пропало после правки`);
           if (!t2.includes('200 ฿')) bad.push(`${n}: на карточке не новая цена`);
           if (await s.p.$('#view #c-price')) bad.push(`${n}: после сохранения форма правки не закрылась`);
         }
@@ -12270,12 +12378,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const f = await st();
         if (f.off !== false || f.why || !f.last) bad.push(`${n}: замечание набрано — «Вернуть» погашена или нет «прежнее затрётся»: ${JSON.stringify(f)}`);
         if (await tapIf(s, n, '#view [data-action="c-back-send:82"]', '«Вернуть»')) await s.p.waitForTimeout(400);
-        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 82 && b[2].state === 'hidden' && b[2].note === 'нет фото')) bad.push(`${n}: возврат не ушёл с замечанием: ${JSON.stringify(o.bodies)}`);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 82 && b[2].state === 'draft' && b[2].note === 'нет фото')) bad.push(`${n}: возврат не ушёл черновиком с замечанием: ${JSON.stringify(o.bodies)}`);
+        if (o.bodies.some(b => b[0] === 'state' && b[2].state === 'hidden' && b[2].note)) bad.push(`${n}: ушло hidden с замечанием — сервер его запретит (Cafe13KPG#314): ${JSON.stringify(o.bodies)}`);
       }
       await s.p.evaluate(() => go('barCard', '83')); await s.p.waitForTimeout(300);
       if (await tapIf(s, n, '#view [data-action="c-hide-ask"]', '«Снять с меню»') && await tapIf(s, n, '#view [data-action="c-hide:83"]', '«Точно снять»')) {
         await s.p.waitForTimeout(400);
-        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 83 && b[2].state === 'hidden')) bad.push(`${n}: снятие не ушло: ${JSON.stringify(o.bodies)}`);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 83 && b[2].state === 'hidden' && !b[2].note)) bad.push(`${n}: снятие не ушло hidden без замечания: ${JSON.stringify(o.bodies)}`);
       }
       await s.p.evaluate(() => go('barCard', '81')); await s.p.waitForTimeout(300);
       await noEdit(81);
@@ -12417,12 +12526,26 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── шаг 20: деньги бизнеса (Cafe13KPG#551, рецепты `_docs/recept/ekran/20/`, ручки cafe13-api#153 и #156).
   // Остаток — пара `wallet` + `wallet_through` в `/partner/directions` и `/directions` (договор `20/ostatok.md`),
   // отчёт месяца — `/bar/month`. Суммы фикстуры нарочно не круглые и не совпадают с долями из таблиц (70/30 от 21 220)
+  // ── Cafe13KPG#964: прототип «Моё дело» (`partner`) долей не печатает — один источник, дверь на bizMoney ──
+  // Литерал доли рядом с живым числом на глаз не отличить. Экран живёт только в демонстрации (в живом закрыт).
+  if (part(1)) {
+    const n = 'pm-proto-moe-delo';
+    const s = await open(false, true, json(200, clone(OWNER)));
+    await s.p.evaluate(() => go('partner'));
+    await s.p.waitForTimeout(200);
+    const t = await s.view();
+    if (/\d\s?%/.test(t)) bad.push(`${n}: прототип печатает процент литералом: ${(t.match(/[^\n]{0,20}\d\s?%/) || [''])[0]}`);
+    if (!(await s.p.$('#view [data-go="bizMoney"]'))) bad.push(`${n}: нет двери «Деньги бизнеса»`);
+    await s.ctx.close();
+  }
+
   if (part(1)) {
     const n0 = 'pm';
     const OCT = '2026-10-31T17:00:00+00:00';   // полночь 1 ноября по Пхангану: месяц момента — ноябрь, зачислено — по октябрь
     const MON = extra => Object.assign({ direction: 'Кофейня', month: '2026-10', period_start: OCT, period_end: '2026-11-30T17:00:00+00:00',
       revenue: '52340.00', opex: '31120.00', opex_paid: '30000.00', payroll_accrued: '1120.00', net: '21220.00', share_mode: 'net',
-      share_club_pct: '30.00', club_share: '6366.00', share_partner_pct: '70.00', partner_share: '14854.00',
+      // доли НАРОЧНО не 30/70 (Cafe13KPG#964): литерал «70 %» на месте числа сервера с такой фикстурой прошёл бы зелёным
+      share_club_pct: '35.00', club_share: '7427.00', share_partner_pct: '65.00', partner_share: '13793.00',
       invest: '0.00', invest_note: 'в чистую прибыль и долю клуба не входит (bar-unit.md §6.1)' }, extra || {});
     const W = (wallet, through) => ({ wallet, wallet_through: through });
     const pmMe = () => { const p = clone(OWNER); p.roles = []; p.balance = 9000; return p; };
@@ -12472,10 +12595,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if ((await s.p.evaluate(() => document.getElementById('title').textContent)) !== 'Деньги бизнеса') bad.push(`${n}: шапка не «Деньги бизнеса»`);
         const t = flat(await s.view());
         ['Ноябрь2026', 'Бизнес„Кофейня“·месяцпоПхангану', 'Итогмесяца', 'Выручка52340฿', 'Текущиезатраты31120฿', 'Чистаяприбыль21220฿',
-         'Какделится', 'Вашадоля·70%14854฿', 'Клубу·30%6366฿', 'Вашадолязачислитсянасчётпозакрытиюмесяца.', 'Обновить']
+         'Какделится', 'Вашадоля·65%13793฿', 'Клубу·35%7427฿', 'Вашадолязачислитсянасчётпозакрытиюмесяца.', 'Обновить']
           .forEach(w => { if (!t.includes(flat(w))) bad.push(`${n}: нет «${w}»`); });
         if (/Октябрь2026|2026-10/.test(t)) bad.push(`${n}: подпись месяца взята из ключа month (октябрь вместо ноября, Cafe13KPG#961)`);
-        if (/30\.00|70\.00|bar-unit|Вложения|шаг21/.test(t)) bad.push(`${n}: на экране процент с хвостом, invest_note, пустые вложения или номер шага`);
+        if (/35\.00|65\.00|bar-unit|Вложения|шаг21/.test(t)) bad.push(`${n}: на экране процент с хвостом, invest_note, пустые вложения или номер шага`);
         if (!o.seen.includes('GET /bar/month?direction_id=7')) bad.push(`${n}: отчёт месяца своего бизнеса не спрошен: ${o.seen.join(', ')}`);
         await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(250);
         if ((await s.p.evaluate(() => current)) !== 'home') bad.push(`${n}: «назад» ведёт не на «Клуб»`);
@@ -12488,7 +12611,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const { s, ok } = await enter(o, n);
       if (ok) {
         const t = flat(await body(s));
-        ['Чистаяприбыль−580฿', 'Вашадоля·70%0฿', 'Клубу·30%0฿', 'Замесяцприбылинет:долисчитаютсятолькосприбыли,поэтомуобепонулю.']
+        ['Чистаяприбыль−580฿', 'Вашадоля·65%0฿', 'Клубу·35%0฿', 'Замесяцприбылинет:долисчитаютсятолькосприбыли,поэтомуобепонулю.']
           .forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
       }
       await done(s, n);
@@ -12516,7 +12639,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const t = flat(await body(s));
         if (!t.includes('Вашадоляненазначена') || !t.includes('Долюпартнёрауэтогобизнесаещёненазначили.')) bad.push(`${n}: пустая доля не названа словами`);
         if (/Вашадоля[^К]*฿/.test(t)) bad.push(`${n}: в строке пустой доли — сумма`);
-        if (!t.includes('Клубу·30%6366฿')) bad.push(`${n}: доля клуба пропала`);
+        if (!t.includes('Клубу·35%7427฿')) bad.push(`${n}: доля клуба пропала`);
       }
       await done(s, n);
     }
@@ -13114,7 +13237,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'stats-club-empty-day': CS_RESP({ events: { count: 0, bookings: null, collected: null }, isNew: 0, arrivals: 0 }, 'day'),
     // шаг 32 (Cafe13KPG#563): заглушки случаев `art-*` против снимка api 65e62d8
     'stats-art-month-2019-03': AS_RESP(),
-    'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] })
+    'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] }),
+    // фича 4 (Cafe13KPG#1009): заглушки случаев `odobr-*` против снимка api 410f240 (cafe13-api#187)
+    'events-pending-approval': [ODOBR.PROW(41, 'Вечер работника')],
+    'event-approve': ODOBR.DEC(41, true), 'event-reject': ODOBR.DEC(41, false, 'не наш формат')
   };
   const checkShapes = stubs => Object.keys(stubs).forEach(name => {
     if (!REAL[name]) { bad.push(`shape ${name}: снимка нет в api-keys.json`); return; }
@@ -13612,13 +13738,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (tqGets(s, /\/32\/receipt$/).length) bad.push(`${n}: байты PDF спрошены — показать их нечем`);
       await s.ctx.close();
     }
-    // решил другой (409): отказ словами сервера, очередь перечитана, итога «Зачислено» нет
+    // решил другой (409): отказ словами сервера, очередь перечитана, итога «Зачислено» нет.
+    // Фраза — api#203 (Cafe13KPG#587): женский род у «заявки», `status_ru` истории остался «зачислено»
     {
-      const n = 'tq-409', s = await tqCase(OWNER, { decide: json(409, { detail: 'заявка уже зачислено' }) });
+      const n = 'tq-409', s = await tqCase(OWNER, { decide: json(409, { detail: 'заявка уже зачислена' }) });
       await toReq(s, 31);
       await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(500);
       const deny = await s.p.$eval('#view .deny', e => e.textContent).catch(() => '');
-      if (!deny.includes('Заявка уже зачислено')) bad.push(`${n}: нет отказа словами сервера: «${deny}»`);
+      if (!deny.includes('Заявка уже зачислена')) bad.push(`${n}: нет отказа словами сервера: «${deny}»`);
       if ((await s.view()).includes('Зачислено 1 000')) bad.push(`${n}: отказ показан успехом`);
       if (tqGets(s, /\/topup\/requests$/).length < 2) bad.push(`${n}: после отказа очередь не перечитана`);
       await s.ctx.close();
