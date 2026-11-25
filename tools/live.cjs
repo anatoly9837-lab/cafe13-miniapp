@@ -91,12 +91,14 @@ const msNoEnd = clone(OWNER); msNoEnd.memberships.push({ level: 'organizer', sta
 const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
     // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
-    ['Пожизненно', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
+    // «Пожизненно» с «Клуба» ушло вместе с плашкой (Cafe13KPG#1096): разбор /me судит RAZBOR ниже
+    ['Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
     // 4 = /me, /events и два запроса блока букинга на «Клубе»: /master/requests/mine и /master/price?hours=2 (цена
     // от часов не зависит — Cafe13KPG#985, второй цены блок не спрашивает); 6 — плюс два запроса блока
     // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера)
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 6],
+    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
+  // кабинет — дверью (HAS_CABINET), срок «14 ноября 2026» — разбором (RAZBOR); на «Клубе» срока нет (#1096)
+  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 6],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -116,8 +118,9 @@ const CASES = [
   ['network-down', true, true, 'abort', ['Сервер не ответил'], [], 1],
   ['outside-telegram', false, true, json(200, OWNER),
     // «1 250» (демо-остаток) ушёл с главной в скрытую шапку (v87); витрину держат срок и афиша демонстрации
-    ['Действует до 14 ноября', 'Звуковая практика'], ['Пожизненно'], 0],
-  ['api-off', true, false, json(200, OWNER), ['Действует до 14 ноября'], ['Пожизненно'], 0]
+    // витрину держит афиша демонстрации; демонстрационного срока на «Клубе» больше нет (#1096)
+    ['Звуковая практика'], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 0],
+  ['api-off', true, false, json(200, OWNER), ['Звуковая практика'], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 0]
 ];
 
 // Экраны отказа — списком, а не регуляркой по имени: регулярка молча
@@ -132,6 +135,11 @@ const CABINET = '#view [data-go="pass"]';
 const NO_CABINET = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200', 'html-200', 'finite-without-end',
   'memberships-none', 'memberships-object', 'memberships-alien', 'memberships-lifelong-str', 'memberships-noend', 'network-down']);
 const HAS_CABINET = new Set(['owner-lifelong', 'finite', 'outside-telegram', 'api-off']);
+/* Разбор /me (пожизненное ↔ срок) прежде судился строками плашки на «Клубе». Плашку сняли (Cafe13KPG#1096), а экран
+   «Членство» в живом закрыт (нет в WIRED — случай membership-off), и срок /me больше не показывает НИ ОДИН открытый
+   в живом экран. Поэтому судья — то, что разбор отдаёт экранам: DATA.member. [пожизненно, срок начинается с] */
+const RAZBOR = { 'owner-lifelong': [true, null], 'finite': [false, '14 ноября 2026'] };
+Object.keys(RAZBOR).forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('RAZBOR: нет случая ' + n); });
 [...NO_CABINET, ...HAS_CABINET].forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('CABINET: нет случая ' + n); });
 
 // выключатель ищется в любом положении: тест сам ставит нужное. Не один —
@@ -335,6 +343,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (REFUSAL.has(name) && await s.tabsShown())
       bad.push(`${name}: на экране отказа видны вкладки`);
     if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+    if (RAZBOR[name]) {
+      const [life, till] = RAZBOR[name];
+      const got = await s.p.evaluate(() => DATA.member ? { lifelong: DATA.member.lifelong, until: DATA.member.until } : null);
+      if (!got) bad.push(`${name}: разбор /me не отдал члена`);
+      else {
+        if (got.lifelong !== life) bad.push(`${name}: разбор /me: пожизненно ${got.lifelong}, ждали ${life}`);
+        if (till === null ? got.until !== null : !(typeof got.until === 'string' && got.until.startsWith(till)))
+          bad.push(`${name}: разбор /me: срок «${got.until}», ждали ${till === null ? 'нет срока' : '«' + till + '…»'}`);
+      }
+    }
     await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
     await s.ctx.close();
   }
@@ -382,7 +400,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         bad.push(`${n}: после входа на «Пропуске» нет системной «назад»`);
       await s.p.evaluate(() => window.__back && window.__back());
       await s.p.waitForTimeout(150);
-      if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «назад» после входа не вернула в кабинет`);
+      if (await s.p.evaluate(() => current) !== 'home' || !(await s.p.$(CABINET))) bad.push(`${n}: «назад» после входа не вернула в кабинет`);
       await s.ctx.close();
     }
     // витрина вне Telegram: демонстрация работает как прежде, нарисованная «назад» жива
@@ -2019,8 +2037,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const t = await s.view();
     if (s.calls.length) bad.push(`${n}: без подписи ушло запросов к серверу: ${s.calls.length}`);
     if (t.includes('Подпись не принята') || t.includes('Доступ снят')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
-    // признак витрины — срок демонстрационного члена («1 250» ушёл с главной в скрытую шапку, v87)
-    if (!t.includes('Действует до 14 ноября')) bad.push(`${n}: без подписи нет витрины (демонстрационного срока)`);
+    // признак витрины — афиша демонстрации: срок демонстрационного члена ушёл с «Клуба» вместе с плашкой (#1096)
+    if (!t.includes('Звуковая практика')) bad.push(`${n}: без подписи нет витрины (демонстрационной афиши)`);
     await s.ctx.close();
   }
 
@@ -2125,7 +2143,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       me = json(200, OWNER);
       await tap(s, '[data-action="retry"]');
       await s.p.waitForTimeout(200);
-      if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
+      if (!(await s.p.$(CABINET))) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
       await s.ctx.close();
     }
     // ПЕТЛЯ (Cafe13KPG#853): /join отдаёт ДАВНО согласованную просьбу тому, кого в клубе нет. Прежде экран рисовал
@@ -2169,17 +2187,54 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
-    // ДВЕРЬ: член с оплаченным членством ничего не теряет (№38) — дом, вкладка «Клуб», плашка и «Пропуск» на месте
+    // ДВЕРЬ: член с оплаченным членством ничего не теряет (№38) — дом, вкладка «Клуб», «Пропуск» на месте. Плашки членства
+    // нет и у него: Cafe13KPG#1096 (слово владельца 25.11.2026), дверь «Пропуск» осталась строкой — случаи bez-plashki-* ниже
     {
       const n = 'dver-chlen';
       const s = await joinCase(json(200, JOIN0), null, () => json(200, OWNER));
       if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: член не на «Клубе»`);
       const tabs = await s.p.$$eval('#tabs [data-go]', es => es.map(e => e.dataset.go));
       if (!tabs.includes('home')) bad.push(`${n}: у члена нет вкладки «Клуб»`);
-      if (!(await s.view()).includes('Активно')) bad.push(`${n}: у члена пропала плашка членства`);
+      if ((await s.view()).includes('Активно')) bad.push(`${n}: у члена плашка членства («Активно») — снята #1096`);
       if (!(await s.p.$('#view [data-go="pass"]'))) bad.push(`${n}: у члена пропала дверь «Пропуск»`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
+    }
+    /* Cafe13KPG#1096 (слово владельца 25.11.2026: «мы пока отменили членство и это устаревшее штука»): плашки членства —
+       вид, «Активно», срок — на «Клубе» нет у ВСЕХ видов людей, а не у одного. Срок ищется СТРОКОЙ по всей разметке
+       страницы (текст и атрибуты: подсказки title/aria-label, всплывающее), а не глазом на снимке. Дверь «Пропуск» —
+       у кого пропуск есть (№38), у новичка и истёкшего её нет (№45). Признак плашки — три слова и заголовок-уровень
+       (`#view h2` с текстом из LEVEL); пара присутствия — «Мои записи» в живом и афиша в демонстрации */
+    {
+      const ms = (lvl, ends) => ({ level: lvl, starts_at: '2026-10-01T00:00:00+00:00', ends_at: ends, lifelong: !ends });
+      const srok = clone(OWNER); srok.membership = ms('member', '2026-11-14T10:00:00+07:00'); srok.memberships = [srok.membership];
+      const istek = clone(OWNER); istek.membership_active = false; istek.memberships = []; istek.roles = [];
+      istek.membership = ms('member', '2026-11-01T10:00:00+07:00');
+      const bez = clone(OWNER); bez.membership_active = false; bez.membership = null; bez.memberships = []; bez.roles = [];
+      for (const [n, me, pass, dates, anchor] of [
+        ['bez-plashki-pozhiznenno', OWNER, true, [], 'Мои записи'],
+        ['bez-plashki-srok', srok, true, ['14 ноября', '2026-11-14', '14.11.2026'], 'Мои записи'],
+        ['bez-plashki-istekshee', istek, false, ['1 ноября', '2026-11-01', '01.11.2026'], 'Мои записи'],
+        ['bez-plashki-bez', bez, false, [], 'Мои записи'],
+        ['bez-plashki-vitrina', null, true, ['14 ноября'], 'Звуковая практика']]) {
+        const s = me ? await joinCase(json(200, JOIN0), null, () => json(200, me)) : await open(false, true, json(200, OWNER));
+        if (!me) await s.p.waitForTimeout(150);
+        const at = await s.p.evaluate(() => current), t = await s.view();
+        if (at !== 'home' || !t.includes(anchor)) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — не «Клуб» (${at}) или нет «${anchor}»`);
+        else {
+          const html = await s.p.evaluate(() => document.body.innerHTML);
+          ['Активно', 'АКТИВНО', 'Действует до', 'Пожизненно', 'пожизненно'].concat(dates).forEach(x => {
+            if (html.includes(x)) bad.push(`${n}: на «Клубе» осталось «${x}» — плашка членства или её срок (#1096)`);
+          });
+          const lvl = await s.p.evaluate(() => [...document.querySelectorAll('#view h2')].map(e => e.textContent.trim())
+            .filter(x => Object.keys(LEVEL).some(k => LEVEL[k] === x)));
+          if (lvl.length) bad.push(`${n}: на «Клубе» заголовок-уровень «${lvl.join('», «')}» — плашка членства (#1096)`);
+          const door = !!(await s.p.$('#view [data-go="pass"]'));
+          if (door !== pass) bad.push(`${n}: дверь «Пропуск» ${door ? 'есть' : 'пропала'}, ждали ${pass ? 'есть' : 'нет'}`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
     }
     // ДВЕРЬ: выгнанный (допуск снят — сервер отвечает 403 «доступа нет») — по-прежнему noAccess, «О клубе» с него открывается
     {
@@ -2840,7 +2895,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (post.length !== 1 || !post[0].url.endsWith('/me/consent') || post[0].body !== '{"data":true}')
       bad.push('consent: POST /me/consent не ушёл как {"data":true}: ' + JSON.stringify(post));
     const t = await s.view();
-    if (!t.includes('Согласие принято') || !t.includes('Пожизненно')) bad.push('consent: после согласия не кабинет');
+    if (!t.includes('Согласие принято') || !(await s.p.$(CABINET))) bad.push('consent: после согласия не кабинет');
     await s.ctx.close();
   }
   if (part(1)) {
@@ -2859,7 +2914,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     up = true;
     await s.p.click('[data-action="retry"]');
     await s.p.waitForTimeout(150);
-    if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
+    if (!(await s.p.$(CABINET))) bad.push('retry: после повтора не кабинет');
     // + два запроса блока букинга на «Клубе» (/master/requests/mine, /master/price?hours=2)
     // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
     if (s.calls.length !== 7) bad.push(`retry: запросов ${s.calls.length}, ждали 7 (/me, /me, /events, /master/requests/mine, /master/price, /partner/requests/mine, /partner/price)`);
