@@ -10808,10 +10808,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       });
       if (!r['2'] || !r['2'].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${r['2'] && r['2'].till}»`);
       if (r['2'] && r['2'].soon) bad.push(`${n}: бессрочное покраснело`);
-      // красное снято и в стилях: правило `.till.soon` не должно жить без зова
-      const cssSoon = await s.p.evaluate(() => [...document.styleSheets].some(sh => {
-        try { return [...sh.cssRules].some(r => /\.till\.soon/.test(r.selectorText || '')); } catch (e) { return false; } }));
-      if (cssSoon) bad.push(`${n}: в стилях живёт .till.soon — покраснение снято словом владельца`);
+      /* красное снято и в стилях: правило `.till.soon` не должно жить без зова. Судим ПОВЕДЕНИЕМ — цвет
+         пробных `.till` и `.till.soon` рядом: чтение `cssRules` ослепло (мутант b7 «вернуть правило» прошёл
+         зелёным), а цвет различает правило, кто бы его ни дописал. */
+      const cvet = await s.p.evaluate(() => {
+        const box = document.createElement('div'), a = document.createElement('span'), b = document.createElement('span');
+        a.className = 'till'; b.className = 'till soon'; box.append(a, b); document.body.append(box);
+        const r = [getComputedStyle(a).color, getComputedStyle(b).color]; box.remove(); return r; });
+      if (cvet[0] !== cvet[1]) bad.push(`${n}: .till.soon красит иначе, чем .till (${cvet[1]} против ${cvet[0]}) — покраснение снято словом владельца`);
       await s.ctx.close();
     }
 
