@@ -277,7 +277,7 @@ function attachReceipt(file, box, screen) {
     });
   }).catch(function (e) {
     box.file = null;
-    box.fileErr = e && e.message === 'big' ? 'Чек больше 2 МБ — приложите файл поменьше.' : 'Чек не прочитался — приложите его снова.';
+    box.fileErr = e && e.message === 'big' ? 'Чек больше 2 МиБ — приложите файл поменьше.' : 'Чек не прочитался — приложите его снова.';
   }).then(function () {
     if (current === screen) render();
   });
