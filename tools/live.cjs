@@ -5100,7 +5100,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     {
-      // os-bez-scheta + os-nol-ne-pusto: ключа money нет — карточки D нет; 0 — нулём; null — «нет данных», H1, M2, D3, K2
+      // os-bez-scheta + os-nol-ne-pusto: ключа money нет — карточки D нет; 0 — нулём; null — «нет данных», H1, M2, D3, K2;
+      // null в net_base/partner/partner_pct/club строки M — M3, отказ целиком (рецепт #405 646c090)
       const n = 'os-nol-ne-pusto';
       const s = await osopen(OPS, () => json(200, OS_RESP({ money: false, months: [] })));
       await go33(s, n);
@@ -5110,7 +5111,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
       const nul = await osopen(OPS, () => json(200, OS_RESP({
         businesses: [OS_BIZ(3, 'Чайная', { partner: null, partner_id: null, share_club: null, share_partner: null, revenue: null }), OS_BIZ(4, 'Керамика', { revenue: '0.00', share_partner: null })],
-        months: [OS_MON({ net_base: null, partner: null, partner_pct: null, ops: null, club: null }), OS_MON({ title: 'Керамика', net_base: '-50.00', partner: '0.00', ops: '0.00', club: '0.00' })],
+        months: [OS_MON({ ops: null }), OS_MON({ title: 'Керамика', net_base: '-50.00', partner: '0.00', ops: '0.00', club: '0.00' })],
         money: { pct: null, accrued: null, balance: null } })));
       await go33(nul, n);
       const nd = await W3(nul, 'opsStats.noData'), r3 = await nul.p.$eval('#view [data-biz="3"]', e => e.textContent).catch(() => ''), r4 = await nul.p.$eval('#view [data-biz="4"]', e => e.textContent).catch(() => '');
@@ -5119,18 +5120,27 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const h = await card3(nul, await W3(nul, 'opsStats.shares.title'));
       if (!h || (h.match(new RegExp((await W3(nul, 'opsStats.shares.unset')).replace('.', '\\.'), 'g')) || []).length !== 2 || /0 %/.test(h)) bad.push(`${n}: share_* null — не H1 у обоих: «${h}»`);
       const m = await card3(nul, await W3(nul, 'opsStats.months.title'));
-      const d1 = await W3(nul, 'opsStats.months.opsNone', { net: nd, partner: nd, pct: nd });
+      const d1 = await W3(nul, 'opsStats.months.opsNone', { net: await sum3(nul, '3000.00'), partner: await sum3(nul, '900.00'), pct: '30' });
       const d2 = await W3(nul, 'opsStats.months.detail', { net: await sum3(nul, '-50.00'), partner: await sum3(nul, '0'), pct: '30', ops: await sum3(nul, '0') });
-      if (!m || !m.includes(d1)) bad.push(`${n}: месяц с null — не «нет данных» и M2: «${m}»`);
+      if (!m || !m.includes(d1)) bad.push(`${n}: месяц с ops null — не M2 при числах строки: «${m}»`);
       if (!m || !m.includes(d2)) bad.push(`${n}: месяц с нулями и отрицательной чистой — не числами: «${m}»`);
       const rows = await nul.p.$$eval('#view .card .rows > div', es => es.map(e => e.textContent));
       const mr = rows.filter(t => t.includes('Чайная') && t.includes('Чистая'))[0] || '';
-      if (!mr.endsWith(nd)) bad.push(`${n}: club месяца null — не «нет данных»: «${mr}»`);
+      if (!mr.endsWith(await sum3(nul, '2010.00'))) bad.push(`${n}: club месяца при ops null — не число сервера: «${mr}»`);
       const D = await card3(nul, await W3(nul, 'opsStats.money.titleNoPct'));
       if (!D || !D.includes(await W3(nul, 'opsStats.money.pctNone')) || !D.includes((await W3(nul, 'opsStats.money.accrued')) + nd) || !D.includes((await W3(nul, 'opsStats.money.balance')) + nd))
         bad.push(`${n}: money с null — не D3 и «нет данных»: «${D}»`);
       if (nul.errs.length) bad.push(`${n}: ошибки страницы (null) ${nul.errs.join('; ')}`);
       await nul.ctx.close();
+      // M3: каждое из четырёх полей строки M null по отдельности — отказ целиком, чисел и «нет данных» нет
+      for (const k of ['net_base', 'partner', 'partner_pct', 'club']) {
+        const e = await osopen(OPS, () => json(200, OS_RESP({ months: [OS_MON({ [k]: null })] })));
+        await go33(e, n);
+        const ve = await e.view();
+        if (!ve.includes(await W3(e, 'opsStats.error')) || ve.includes(await W3(e, 'opsStats.noData')) || /\d\s?฿/.test(ve)) bad.push(`${n}: ${k} null в строке M — не M3 (отказ целиком): «${ve}»`);
+        if (e.errs.length) bad.push(`${n}: ошибки страницы (M3 ${k}) ${e.errs.join('; ')}`);
+        await e.ctx.close();
+      }
       // ноль — не «нет данных»: доля клуба 0 (партнёру 100) — «0 %», а не H1; pct 0 — «Мои 0 %», а не D3
       const z0 = await osopen(OPS, () => json(200, OS_RESP({ businesses: [OS_BIZ(3, 'Чайная', { share_club: '0.00', share_partner: '100.00' })], months: [],
         money: { pct: '0.00', accrued: '90.00', balance: '270.00' } })));
