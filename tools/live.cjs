@@ -1722,9 +1722,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         await s.p.click('#tabs [data-go="manage"]'); await s.p.waitForTimeout(250);
         const g = await opsGroups(s);
         // кадр E46е (#882): ровно одна группа «Бизнесы»; прав главы, пополнений и мастеров у него нет.
-        // Шаг 13 (рецепт `_docs/recept/ekran/13/manage.md`, R3): в той же группе под «Бизнесами клуба» — «Заявки в партнёры»
-        if (JSON.stringify(g) !== JSON.stringify([{ label: 'Бизнесы', items: ['Бизнесы клуба', 'Заявки в партнёры'] }]))
-          bad.push(`${n}: на «Управлении» у операционного директора ${JSON.stringify(g)}, ждали одну группу «Бизнесы» → «Бизнесы клуба», «Заявки в партнёры» (кадр E46е, рецепт 13/manage)`);
+        // Шаг 13 (рецепт `_docs/recept/ekran/13/manage.md`, R3): в той же группе под «Бизнесами клуба» — «Заявки в партнёры»;
+        // шаг 33 (рецепт 33/opsStats, O0): под ними — «Статистика бизнесов» (слово opsStats.door)
+        const door = await s.p.evaluate(() => slovo('opsStats.door'));
+        if (JSON.stringify(g) !== JSON.stringify([{ label: 'Бизнесы', items: ['Бизнесы клуба', 'Заявки в партнёры', door] }]))
+          bad.push(`${n}: на «Управлении» у операционного директора ${JSON.stringify(g)}, ждали одну группу «Бизнесы» → «Бизнесы клуба», «Заявки в партнёры», «${door}» (кадр E46е, рецепты 13/manage и 33/opsStats)`);
         if ((await s.view()).includes('Сюда нельзя')) bad.push(`${n}: «Управление» отказало операционному директору`);
         await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
       }
