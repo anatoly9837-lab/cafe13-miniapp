@@ -1,14 +1,14 @@
 {
- "снято": "2026-11-25T06:03:33.351Z",
+ "снято": "2026-11-25T09:32:15.369Z",
  "слепки_страницы": {
-  "index.html": "b6acf620a07af686895f68106e0fbc9bcb5857b995679c56b71dcb58ce92710b",
+  "index.html": "be470a512af941f3850a33b7093fc11bada647e5898ef1966b3f6df0214e09b1",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
   "js/00-slova.js": "a7384918714292a5fd443f97492771e22e6643b49ee791bd153195e17a9d41e0",
-  "js/01-osnova.js": "b83aecbe7fc3a34e3761d81c72543b1416cfacb5a603893beed999380f9a5234",
+  "js/01-osnova.js": "9025d6de5d8e0bda5941d326f72c0479332aec75ea669fb7a4cb7c64d03f281f",
   "js/02-chlenstvo.js": "2cd9fa1d89fdb883268de16a1baa6a9c1df77189656875cd845f73bfdd83955e",
   "js/03-propusk.js": "0e9d391b183db16970f99817e96ca9106d07d4f6b6983935a4f9e73d9a7840e4",
   "js/04-bar.js": "305f2bc3ae4cdf0a6f5fe9936888433af9861f015fbff8ca708ac411f72313da",
@@ -28,10 +28,10 @@
   "js/18-ekrany-mastera.js": "418f984363f24f4d27ba891770eb944bd2655fa1df5f6c62894ccf4be6bad52f",
   "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
   "js/20-ekrany-sluzhebnye.js": "a0ba85da42addb3bd5db360b936456d5c59dd075c9ebc1a55ef4d2cbd3d96810",
-  "js/21-navigaciya.js": "a27f1881751acfe16e80ce7485ff57183ed90c5ca0d3a233dca3e1525ac6db61",
+  "js/21-navigaciya.js": "bd4977fe775a6f9712390fb69facd8d8cc76bdef3142c2ebdbb4cd3c5ffac691",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
  },
- "свод_слепков": "502ca6fb12cfd2b16eda51f188d97b9f6507603d2f62186888863be5e3557b27",
+ "свод_слепков": "3f05260b9d4300cf0290d024e7ec96d7323c6cd5a5b33aeca4381d08dcdb67b0",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
