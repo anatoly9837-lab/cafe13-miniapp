@@ -13982,7 +13982,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const junkBytes = Object.assign(clone(JREQ.requests[0]), { id: 36, tg_user_id: 810, first_name: 'Кира', last_name: 'Битая', receipt_bytes: null });
       const junkKind = Object.assign(clone(JREQ.requests[0]), { id: 37, tg_user_id: 811, first_name: 'Лев', last_name: 'Битый', receipt_mime: 'image/gif' });
       const junkNoId = Object.assign(clone(JREQ.requests[0]), { tg_user_id: 812, first_name: 'Нина', last_name: 'Битая' }); delete junkNoId.id;
-      q3.requests = [q3.requests[0], free, junk, junkUsd, junkMime, junkState, junkBytes, junkKind, junkNoId]; q3.pending = 9;
+      // приёмка arhitector-aa: по 041 сумма и чек независимы (связана только пара тип↔байты), законных сочетаний
+      // четыре. №21 — всё есть, №30 — ничего; №38 — сумма без чека, №39 — чек без суммы. Обе — полноправные строки
+      const sumOnly = Object.assign(clone(JREQ.requests[0]), { id: 38, tg_user_id: 813, first_name: 'Олег', last_name: 'Безчека',
+        receipt_mime: null, receipt_bytes: null, amount_thb: '2222.00', amount_usd: null });
+      const shotOnly = Object.assign(clone(JREQ.requests[0]), { id: 39, tg_user_id: 814, first_name: 'Полина', last_name: 'Безсуммы',
+        amount_thb: null, amount_usd: null });
+      q3.requests = [q3.requests[0], free, junk, junkUsd, junkMime, junkState, junkBytes, junkKind, junkNoId, sumOnly, shotOnly]; q3.pending = 11;
       const s = await joinCase(OWNER, { list: json(200, q3) });
       await toJoin(s);
       const t = await s.view();
@@ -13995,11 +14001,18 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (t.includes(who)) bad.push(`${n}: битая просьба №${no} показана как годная`);
       const card = await s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes('Дарья'))[0] || '');
       if (/฿|USDT|КБ|NaN|null/.test(card)) bad.push(`${n}: у просьбы без денег выдумана сумма или чек: «${card}»`);
+      const cardOf = who => s.p.evaluate(w => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes(w))[0] || '', who);
+      const c38 = await cardOf('Олег');
+      if (!c38.includes('Без чека · просили по заявке:') || !c38.includes('2 222 ฿')) bad.push(`${n}: у суммы без чека нет «Без чека · просили по заявке: 2 222 ฿»: «${c38}»`);
+      if (/Без взноса|КБ|NaN|null/.test(c38)) bad.push(`${n}: сумма без чека названа «без взноса» или с чеком: «${c38}»`);
+      const c39 = await cardOf('Полина');
+      if (!c39.includes('Суммы в просьбе нет')) bad.push(`${n}: у чека без суммы нет «Суммы в просьбе нет»: «${c39}»`);
+      if (/฿|NaN|null|Без взноса/.test(c39)) bad.push(`${n}: у чека без суммы выдумана сумма: «${c39}»`);
       const btn = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="j-"]')].map(b => b.getAttribute('data-action')).sort());
-      if (JSON.stringify(btn) !== JSON.stringify(['j-ask:21', 'j-ask:30', 'j-ok:21', 'j-ok:30']))
-        bad.push(`${n}: кнопки решения ${JSON.stringify(btn)}, ждали у 21 и 30`);
-      const shots = gets(s, /\/receipt$/).map(c => c.url.replace(/.*requests\//, ''));
-      if (JSON.stringify(shots) !== JSON.stringify(['21/receipt'])) bad.push(`${n}: чеки спрошены так: ${JSON.stringify(shots)}, ждали только 21`);
+      if (JSON.stringify(btn) !== JSON.stringify(['j-ask:21', 'j-ask:30', 'j-ask:38', 'j-ask:39', 'j-ok:21', 'j-ok:30', 'j-ok:38', 'j-ok:39']))
+        bad.push(`${n}: кнопки решения ${JSON.stringify(btn)}, ждали у 21, 30, 38, 39`);
+      const shots = gets(s, /\/receipt$/).map(c => c.url.replace(/.*requests\//, '')).sort();
+      if (JSON.stringify(shots) !== JSON.stringify(['21/receipt', '39/receipt'])) bad.push(`${n}: чеки спрошены так: ${JSON.stringify(shots)}, ждали у 21 и 39`);
       await press(s, n, 'j-ok:30'); await press(s, n, 'j-yes:30');
       const pp = posts(s, /\/join\/requests\/30\/decide$/);
       if (pp.length !== 1 || JSON.parse(pp[0].body).decision !== 'approved') bad.push(`${n}: решение по просьбе без денег не ушло`);
