@@ -12,18 +12,10 @@ Object.assign(SCREENS, {
           '</div><div class="row"><span class="small">Цена</span><b class="num">' + esc(x.price) + '</b></div></div>';
         }).join('') : '<div class="card quiet"><span class="small">Пока ни одной.</span></div>') +
       '</div>' +
-      '<div class="group"><span class="label">Отчётность направления</span>' +
-        '<div class="rows">' +
-          '<div><span class="small">Выручка за месяц</span><b class="num">[сумма]</b></div>' +
-          '<div><span class="small">Расходы и закуп</span><b class="num">[сумма]</b></div>' +
-          '<div><span class="small">Чистая прибыль</span><b class="num">[сумма]</b></div>' +
-          '<div><span class="small">Ваши 70 %</span><b class="num">[сумма]</b></div>' +
-          '<div><span class="small">Клубу 30 %</span><b class="num">[сумма]</b></div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="note">' + svg(ICON.info) +
-        '<span>Суммы собираются из кассы: каждая строка внесена работником и может быть отменена, но не исправлена задним числом.</span>' +
-      '</div>';
+      // Cafe13KPG#964: отчётность — НЕ здесь. Прототип печатал доли литералом рядом с живым
+      // bizMoney, а литерал рядом с живым числом на глаз не отличить. Один источник — дверь на bizMoney.
+      '<button type="button" class="listitem" data-go="bizMoney"><span class="grow"><b>Деньги бизнеса</b>' +
+        '<span class="small">Чистая, ваша доля и доля клуба — за месяц</span></span>' + svg(ICON.chev, 'chev') + '</button>';
   },
 
   serviceNew: function () {

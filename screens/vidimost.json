@@ -1,37 +1,37 @@
 {
- "снято": "2026-11-24T18:08:21.697Z",
+ "снято": "2026-11-25T06:03:33.351Z",
  "слепки_страницы": {
-  "index.html": "51e16ddf0b1041730cc4bebf656c821a331f22aa59cccb4c6f7cb0f7c2702f17",
+  "index.html": "b6acf620a07af686895f68106e0fbc9bcb5857b995679c56b71dcb58ce92710b",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "7050292381bc76cd9b6929d4fea4d05b6ab9a398ce3e10418d0e2564f0f03ff3",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/00-slova.js": "d50767751202b4fd3530f1b1059a1f9dc38d94af49940b98ad9c5e1f310dc124",
-  "js/01-osnova.js": "7de085a56430fd16980a71fcbdf0e120799e2d190f06574636539edc04b4db5a",
-  "js/02-chlenstvo.js": "512acc2ab98463f86724bb874add85624deddf6ba6be91c5a84a36d5cffa8c71",
+  "js/00-slova.js": "a7384918714292a5fd443f97492771e22e6643b49ee791bd153195e17a9d41e0",
+  "js/01-osnova.js": "b83aecbe7fc3a34e3761d81c72543b1416cfacb5a603893beed999380f9a5234",
+  "js/02-chlenstvo.js": "2cd9fa1d89fdb883268de16a1baa6a9c1df77189656875cd845f73bfdd83955e",
   "js/03-propusk.js": "0e9d391b183db16970f99817e96ca9106d07d4f6b6983935a4f9e73d9a7840e4",
   "js/04-bar.js": "305f2bc3ae4cdf0a6f5fe9936888433af9861f015fbff8ca708ac411f72313da",
   "js/05-kassa.js": "df74902feec361fb210f8ba5873c76ac54cc6bf4b14dc567b7864ab25c29ae73",
   "js/06-lyudi.js": "1ca754db45601c2da900c25218ffcb8899f437f5d08db7841bced4eb761b9262",
-  "js/07-mastera.js": "7f1ee661489d9e09cada1197332c37d6db8a3ae2d8edc025a8fbfd69e9f58f2a",
+  "js/07-mastera.js": "3ebf8c826889d379fb11f75952f1204d9f495473dec4d6d5f40345dad44c460b",
   "js/08-kartochki.js": "6de1be85dea847262e16af4619282c8286f03800bbffa6d7be99138911eac3d9",
-  "js/09-afisha.js": "8f30b40d314f52fb0712526b13afae706e4d79f538ebc086f6938de5f0777c5e",
-  "js/10-utility.js": "089f9695e558301b8b1298e14fc0ae8ae06fe660662ad93286cf0d7558058228",
+  "js/09-afisha.js": "d14b734f60a29580621c36f3aa515f4d20d117416722484cc1c0d30b9e264039",
+  "js/10-utility.js": "12932696b39af831ef5ce4d61a95debf668999d803852634fd75c2876954a57e",
   "js/11-ekrany-klub.js": "f7c46f1726ffaed96dc50c842e4ab286aad2c86d878ca270bd143c64a28099ca",
   "js/12-ekrany-afisha.js": "025aeecffc85b0ad2b4f25d57c13ea0c00cdc3dbd961e25e58c0139e1785a5e9",
   "js/13-ekrany-kassa.js": "2bc86afc2624e458fd8d2a58783d832cba89fc796350217ab7502b076b019af3",
-  "js/14-ekrany-meropriyatiya.js": "59e862061b446e7b48b9339813189357a28fc467ea9d000230dce62890b24b2a",
-  "js/15-ekrany-partner-soglasie.js": "f6ec7b568c6dc8f7bdc8e272f3ec2830ab379b065e5263bc17f6da37403a5815",
-  "js/16-ekrany-bar.js": "d2332cf5163033e6d90f82320c0eb1d3f4eb36f1797bd9680950f4e02c9b6bba",
-  "js/17-ekrany-upravlenie.js": "a27dcf2f6be9a1f6baae1f03abf023c7e60063d5cdfd11b17b08266485addb00",
-  "js/18-ekrany-mastera.js": "9d91b90a2181cf37bd42c495e9050b3083e9747803ec118f74856ffe6ab80437",
+  "js/14-ekrany-meropriyatiya.js": "1a9188567238a562a2007f1cadadafc007d007e20e967f3a722018c634ffc20e",
+  "js/15-ekrany-partner-soglasie.js": "0737612312e6cc7d89f1d0dd0418d6f2ce82b1a10eb2045c87b31c5fa05aeffd",
+  "js/16-ekrany-bar.js": "630897d97611af4dd30fa6344d354c2d8c6132ecf5afe8f7a19a1182e57ab314",
+  "js/17-ekrany-upravlenie.js": "494725c098e13594d489fd1217facc27b31a1a03693f27bbab87e3e41195d605",
+  "js/18-ekrany-mastera.js": "418f984363f24f4d27ba891770eb944bd2655fa1df5f6c62894ccf4be6bad52f",
   "js/19-ekrany-lyudi.js": "06b37725d895ea0183d0a2c5dd2f8746fbcd395af14e6e9699060cf4f114b45a",
-  "js/20-ekrany-sluzhebnye.js": "598c5adfc01f67f7e723dcb773a23adbb14ab1399417300e7aa16cf3948072e1",
+  "js/20-ekrany-sluzhebnye.js": "a0ba85da42addb3bd5db360b936456d5c59dd075c9ebc1a55ef4d2cbd3d96810",
   "js/21-navigaciya.js": "a27f1881751acfe16e80ce7485ff57183ed90c5ca0d3a233dca3e1525ac6db61",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
  },
- "свод_слепков": "235c41c8b840f5e13bf78b10274bf375f4fa643023ca8aa65877bdd5d2cd6fcc",
+ "свод_слепков": "502ca6fb12cfd2b16eda51f188d97b9f6507603d2f62186888863be5e3557b27",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "club_test, замер devops5 27.10.2026 06:29:59 UTC, только чтение",
  "люди": [
@@ -62,7 +62,8 @@
       "mayBook": true,
       "mayPeople": true,
       "canTopup": true,
-      "mayTopups": true
+      "mayTopups": true,
+      "mayMasters": true
      },
      "barSide": true,
      "достижимо": {
@@ -205,7 +206,8 @@
       "mayBook": false,
       "mayPeople": false,
       "canTopup": true,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": false,
      "достижимо": {
@@ -277,7 +279,8 @@
       "mayBook": true,
       "mayPeople": false,
       "canTopup": false,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": true,
      "достижимо": {
@@ -349,7 +352,8 @@
       "mayBook": true,
       "mayPeople": false,
       "canTopup": false,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": true,
      "достижимо": {
@@ -429,7 +433,8 @@
       "mayBook": false,
       "mayPeople": false,
       "canTopup": false,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": true,
      "достижимо": {
@@ -495,7 +500,8 @@
       "mayBook": false,
       "mayPeople": false,
       "canTopup": false,
-      "mayTopups": false
+      "mayTopups": false,
+      "mayMasters": false
      },
      "barSide": false,
      "достижимо": {
