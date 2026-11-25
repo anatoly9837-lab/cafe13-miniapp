@@ -888,3 +888,19 @@ body.has-main .dup-main { display: none; }
 .wk .ev { display: block; height: 5px; border-radius: 3px; margin: 4px 3px 0; background: var(--gold-mark); }
 .wk .no { display: block; height: 5px; margin: 4px 3px 0; }
 .daynote { font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* шаг 43, календарь (рецепт 43/sostav.md): сетка месяца — семь колонок Пн–Вс, клетка = число и до трёх полосок.
+   Ивент — залитая .ev (та же метка, что в неделе «Ивентов»), церемония — ПОЛАЯ .ev.tea: отличие формой, не только
+   цветом. Названий в клетке нет по построению (колонка ≈47 px, размен E60). */
+.month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.month .dw { font-size: 11px; color: var(--muted); text-align: center; }
+.month > button { min-width: 0; font: inherit; color: var(--ink); cursor: pointer; display: flex; flex-direction: column;
+                  justify-content: flex-start; border: 1px solid transparent; border-radius: 9px; padding: 8px 4px;
+                  background: var(--surface); min-height: 46px; }
+.month > button.on { border-color: var(--accent); }
+.month > button.today .n { color: var(--accent); }
+.month > button.past .n { color: var(--muted); }
+.month .n { display: block; font-size: 14px; font-weight: 600; text-align: center; }
+.month .ev { display: block; height: 5px; border-radius: 3px; margin: 3px 3px 0; background: var(--gold-mark); }
+.month .ev.tea, .wk .ev.tea { background: transparent; border: 1px solid var(--sage); height: 5px; box-sizing: border-box; }
+.pill.tea { color: var(--sage); border-color: var(--sage); background: transparent; }
+button.daynote { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }

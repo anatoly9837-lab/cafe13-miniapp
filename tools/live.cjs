@@ -14456,6 +14456,85 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
+  // ── шаг 43: календарь «смотреть» в живом режиме (miniapp#451; случаи по ревью arhitector-38) ──
+  // Часы фиксированы: остров — вторник 1 декабря 2026, 10:00 (03:00Z). Пояс телефона — Нью-Йорк, где ещё 30 ноября:
+  // день клетки обязан считаться по острову (bkk), а не по телефону. Ивенты — живым ответом /events, тем же
+  // списком, что «Ивенты» (eventList()). Мутанты, которые случай обязан ловить: день по телефону (cal-chasy-kluba),
+  // однодневность (cal-polnoch), снятое «- 1» в calDays (m451a arhitector-38: конец ровно в 00:00 встаёт во второй
+  // день — cal-polnoch-rovno), пустой прошедший день (L9), «назад» с event на «Ивенты», церемонии демо в живом.
+  if (part(2)) {
+    const n = 'calendar';
+    const NOW43 = Date.parse('2026-12-01T03:00:00Z');
+    const CAL_EV = [
+      // 18:30Z 1 декабря — 01:30 2 декабря острова; в Нью-Йорке 13:30 1 декабря
+      EV({ id: 31, title: 'Часы клуба', starts_at: '2026-12-01T18:30:00Z', duration_min: 60 }),
+      // 22:00 3 декабря острова + 300 мин — до 03:00 4 декабря: две клетки
+      EV({ id: 32, title: 'Через полночь', starts_at: '2026-12-03T15:00:00Z', duration_min: 300 }),
+      // 22:00 5 декабря острова + 120 мин — кончается РОВНО в 00:00 6 декабря: одна клетка
+      EV({ id: 33, title: 'До полуночи', starts_at: '2026-12-05T15:00:00Z', duration_min: 120 })
+    ];
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, CAL_EV)), 'America/New_York', NOW43);
+    const tap = async sel => { await s.p.click('#view ' + sel); await s.p.waitForTimeout(150); };
+    await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(200);
+    if (!await s.p.$('#view [data-go="calendar"]')) bad.push(`${n}: на «Ивентах» нет кнопки календаря (V1)`);
+    else {
+      const c0 = s.calls.length;   // запросы ДО календаря — запуск приложения, не его
+      await tap('[data-go="calendar"]');
+      const cells = () => s.p.evaluate(() => {
+        const o = {};
+        document.querySelectorAll('#view .month [data-action^="cal-day:"]').forEach(b => {
+          o[b.dataset.action.slice(8)] = { ev: b.querySelectorAll('.ev').length, tea: b.querySelectorAll('.ev.tea').length };
+        });
+        return o;
+      });
+      const pressed = () => s.p.evaluate(() => { const b = document.querySelector('#view .seg [aria-pressed="true"]'); return b ? b.textContent : null; });
+      const note = () => s.p.evaluate(() => { const d = document.querySelector('#view .daynote'); return d ? d.textContent : ''; });
+      const c = await cells();
+      const ev = d => (c[d] || { ev: -1 }).ev;
+      if (!Object.keys(c).length) bad.push(`${n}: календарь открылся не месяцем — клеток дней нет`);
+      // cal-chasy-kluba
+      if (ev('2026-12-02') !== 1 || ev('2026-12-01') !== 0)
+        bad.push(`cal-chasy-kluba: 18:30Z 1 декабря — это 2 декабря острова; меток в клетке 1-го ${ev('2026-12-01')}, 2-го ${ev('2026-12-02')} (ждали 0 и 1)`);
+      // cal-polnoch
+      if (ev('2026-12-03') !== 1 || ev('2026-12-04') !== 1)
+        bad.push(`cal-polnoch: 22:00 + 300 мин стоит в клетках 3-го ${ev('2026-12-03')}, 4-го ${ev('2026-12-04')} (ждали 1 и 1)`);
+      // cal-polnoch-rovno — m451a
+      if (ev('2026-12-05') !== 1 || ev('2026-12-06') !== 0)
+        bad.push(`cal-polnoch-rovno: 22:00 + 120 мин кончается в 00:00 — клетки 5-го ${ev('2026-12-05')}, 6-го ${ev('2026-12-06')} (ждали 1 и 0)`);
+      // TEA_API=false: в живом церемоний нет вовсе
+      const tea = Object.values(c).reduce((a, x) => a + x.tea, 0);
+      if (tea) bad.push(`cal-tea-api: в живом при TEA_API=false меток церемоний в месяце ${tea}, ждали 0`);
+      await tap('[data-action="cal-day:2026-12-02"]');
+      const t2 = await s.view();
+      if (!t2.includes('Часы клуба')) bad.push(`cal-chasy-kluba: в дне 2 декабря нет ивента «Часы клуба»`);
+      if (/Чайн(ая|ых) церемони/.test(t2)) bad.push(`cal-tea-api: в живом при TEA_API=false в дне 2 декабря есть церемонии: «${t2.slice(0, 160)}»`);
+      // календарь своего запроса не добавляет: месяц и день — без сервера (ивенты уже в eventList())
+      const alien = s.calls.slice(c0);
+      if (alien.length) bad.push(`${n}: календарь звал сервер: ${alien.map(q => q.method + ' ' + q.url).join(', ')}`);
+      // назад с event — в тот же вид и день (не сегодняшний: 3 декабря)
+      await tap('[data-action="cal-view:month"]');
+      await tap('[data-action="cal-day:2026-12-03"]');
+      if (!await s.p.$('#view [data-event="32"]')) bad.push(`cal-nazad: в дне 3 декабря нет строки ивента 32`);
+      else {
+        await tap('[data-event="32"]');
+        await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(250);
+        const pv = await pressed(), nt = await note();
+        if (pv !== 'День' || !nt.includes('3 декабря'))
+          bad.push(`cal-nazad: «назад» с event — вид «${pv}», подпись «${nt}» (ждали «День» и 3 декабря)`);
+      }
+      // L9: прошлое — не «пусто», а «афиша прошлого не показывает»; дальше прошлого месяца назад не листается
+      await tap('[data-action="cal-view:month"]');
+      await tap('[data-action="cal-prev"]');
+      const back2 = await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="cal-prev"]'); return b ? b.disabled : null; });
+      if (back2 !== true) bad.push(`cal-proshloe: на ноябре (весь в прошлом) ‹ не погашена: ${back2}`);
+      await tap('[data-action="cal-day:2026-11-30"]');
+      const t9 = await s.view();
+      if (!t9.includes('Прошедшие ивенты афиша не показывает') || /ни ивентов|свободно/.test(t9))
+        bad.push(`cal-proshloe: прошедший день 30 ноября говорит «${t9.slice(0, 200)}» — ждали L9`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.

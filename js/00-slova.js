@@ -98,7 +98,31 @@ var SLOVA = {
     'event.approval.rejectedPill': 'Отклонён',
     'event.approval.rejectedNote': 'Арт-директор отклонил ивент, в афишу он не попадёт. Причина:',
     'eventNew.done.pending': 'Ивент создан и ждёт одобрения арт-директора. До одобрения его видите только вы и арт-директор.',
-    'home.masterBookings.slotFee': '{amount} ฿ — плата за слот, они остаются клубу.'
+    'home.masterBookings.slotFee': '{amount} ฿ — плата за слот, они остаются клубу.',
+    // шаг 43, calendar — рецепт `_docs/recept/ekran/43/calendar.md` (черновик miniapp#449 e6c59f2); ⚠ «клиент» — вне таблицы
+    'calendar.title': 'Календарь',
+    'calendar.door': 'Календарь',                                         // V1 на «Ивентах» (43/events.md)
+    'calendar.view.month': 'Месяц',
+    'calendar.view.week': 'Неделя',
+    'calendar.view.day': 'День',
+    'calendar.nav.today': 'Сегодня',
+    'calendar.nav.prev': 'Предыдущий период',                             // клиент: подпись ‹ для чтения с экрана
+    'calendar.nav.next': 'Следующий период',                              // клиент: подпись › для чтения с экрана
+    'calendar.week.emptyDay': 'Ни ивентов, ни церемоний',
+    'calendar.day.since': 'Идёт с {date} {hm}',
+    'calendar.day.noTeaDuringEvent': 'В это время чайных церемоний нет',
+    'calendar.day.empty': 'В этот день ни ивентов, ни чайных церемоний нет.',
+    'calendar.day.past': 'Прошедшие ивенты афиша не показывает. Свои — в «Моих записях».',
+    'calendar.empty': 'В календаре пока ничего нет.',
+    'calendar.tea.pill': 'Чайная церемония',
+    'calendar.tea.host': 'Проводит {name}',
+    'calendar.tea.seats': 'мест {free} из {of}',
+    'calendar.tea.seatsNoLimit': 'мест без ограничения',
+    'calendar.tea.price': 'вход {n} ฿',
+    'calendar.tea.booked': 'вы записаны',
+    'calendar.tea.countNow': 'Чайных церемоний в это время: {k} из {cap}',
+    'calendar.tea.hiddenPrivate': 'ещё {n} — частная бронь мастера',
+    'calendar.tea.hiddenPending': 'ещё {n} — ждёт согласования'
   }
 };
 function slovo(key, vars) {
