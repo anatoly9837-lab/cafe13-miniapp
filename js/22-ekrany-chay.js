@@ -22,7 +22,6 @@
 var TEA_URL = { list: null, card: null, shot: null, mine: null, myBooks: null, book: null, apply: null,
                 hold: function () { return '/master/request'; }, price: function () { return '/master/price'; } };
 function teaLive(k) { return LIVE && typeof TEA_URL[k] === 'function'; }
-function teaW(k, p) { return slovo('tea.' + k, p); }
 
 // демонстрация: доля клуба 100, заявка 100 — так говорит владелец; в живом — только сервер
 var TEA_DEMO = { share: 100, amount: 100, mine: { status: 'none', note: '', card: null } };
@@ -175,14 +174,14 @@ function teaWhen(at, mins) {
   var a = bkk(new Date(at)), z = bkk(new Date(at + mins * 60000));
   if (a.ymd === z.ymd) return teaDay(a.ymd) + ' · ' + a.hm + '–' + z.hm;
   var y = z.ymd.split('-');
-  return teaDay(a.ymd) + ' · ' + a.hm + ' — ' + teaW('when.until', { hm: z.hm, day: Number(y[2]) + ' ' + MONTHS[Number(y[1]) - 1] });
+  return teaDay(a.ymd) + ' · ' + a.hm + ' — ' + slovo('tea.when.until', { hm: z.hm, day: Number(y[2]) + ' ' + MONTHS[Number(y[1]) - 1] });
 }
 function teaDeny(t, verbatim) {
   return '<div class="deny" role="alert">' + svg(ICON.info) + '<span' + (verbatim ? ' class="verbatim"' : '') + '>' + esc(t) + '</span></div>';
 }
 function teaRetry(text, act) {
   return '<div class="card quiet"><div class="col"><span class="small">' + esc(text) + '</span>' +
-    '<button type="button" class="btn quiet" data-action="' + act + '">' + esc(teaW('retry')) + '</button></div></div>';
+    '<button type="button" class="btn quiet" data-action="' + act + '">' + esc(slovo('tea.retry')) + '</button></div></div>';
 }
 /* .album — галерея 1–3 кадров, видна целиком: первый крупный сверху, второй и третий мелкими превью в ряд под
    ним. Пролистывания и точек нет. Ноль кадров — блока нет. Кадр не загрузился — пустой квадрат --surface. */
@@ -212,15 +211,15 @@ function teaMyId() { var m = TEA.mine, c = m && (m.live || m.card); return c ? c
 function teaIsMine(c) { var my = teaMyId(); return LIVE && my !== null && c.id === my; }
 function teaCardHtml(c, o) {
   o = o || {};
-  var foot = !o.book ? '' : teaIsMine(c) ? '<span class="small">' + esc(teaW('card.mine')) + '</span>'
-    : '<button type="button" class="btn" data-action="tea-book:' + esc(c.id) + '">' + esc(teaW('card.book')) + '</button>';
+  var foot = !o.book ? '' : teaIsMine(c) ? '<span class="small">' + esc(slovo('tea.card.mine')) + '</span>'
+    : '<button type="button" class="btn" data-action="tea-book:' + esc(c.id) + '">' + esc(slovo('tea.card.book')) + '</button>';
   return teaAlbum(c.shots || []) +
-    '<div class="card"><div class="col"><span class="label">' + esc(teaW('card.aboutLabel')) + '</span>' +
+    '<div class="card"><div class="col"><span class="label">' + esc(slovo('tea.card.aboutLabel')) + '</span>' +
       '<p style="font-size:14px;white-space:pre-line;margin:0">' + esc(c.about) + '</p></div></div>' +
     '<div class="card"><div class="col">' +
-      '<div class="row"><span class="small">' + esc(teaW('card.priceLabel', { dur: c.mins ? teaHm(c.mins) : '—' })) + '</span>' +
+      '<div class="row"><span class="small">' + esc(slovo('tea.card.priceLabel', { dur: c.mins ? teaHm(c.mins) : '—' })) + '</span>' +
         '<b class="num">' + esc(money(c.price)) + ' ฿</b></div>' +
-      '<span class="small">' + esc(teaW('card.priceNote')) + '</span>' + foot +
+      '<span class="small">' + esc(slovo('tea.card.priceNote')) + '</span>' + foot +
     '</div></div>';
 }
 
@@ -245,23 +244,23 @@ function teaGrab() {
 }
 function teaMins() { var h = Number(TAF.h || 0), m = Number(TAF.m || 0); return Math.floor(h) === h && Math.floor(m) === m && h >= 0 && m >= 0 ? h * 60 + m : NaN; }
 // доля клуба под ценой/входом: ВСЕГДА при цене ≥ доли; ниже — отказ у поля до нажатия (teaHold C4/C5, teaApply A4c/A12)
-function teaShareLine(v, low) {
+function teaShareLine(v, low) {   // low: 'hold' — грань входа заявки, 'apply' — грань цены карточки
   var s = TEA.share, n = Number(v);
   if (typeof s !== 'number') return '';
-  if (v === '' || !/^\d+(\.\d+)?$/.test(String(v)) || n < s) return teaDeny(teaW(low, { share: money(s) }));
-  return '<span class="small">' + esc(teaW('share', { share: money(s), rest: money(Math.round((n - s) * 100) / 100) })) + '</span>';
+  if (v === '' || !/^\d+(\.\d+)?$/.test(String(v)) || n < s) return teaDeny(low === 'hold' ? slovo('tea.hold.entryLow', { share: money(s) }) : slovo('tea.apply.priceLow', { share: money(s) }));
+  return '<span class="small">' + esc(slovo('tea.share', { share: money(s), rest: money(Math.round((n - s) * 100) / 100) })) + '</span>';
 }
 // ввод без перерисовки: строка доли и погашенность кнопки идут за набором, фокус не теряется
 document.addEventListener('input', function (ev) {
   var t = ev.target; if (!t || !t.id) return;
   if (t.id === 'thf-entry') {
     THF.entry = t.value;
-    var box = document.getElementById('thf-share'); if (box) box.innerHTML = teaShareLine(THF.entry, 'hold.entryLow');
+    var box = document.getElementById('thf-share'); if (box) box.innerHTML = teaShareLine(THF.entry, 'hold');
     var b = document.getElementById('thf-send'); if (b) { b.disabled = !teaHoldReady(); b.setAttribute('aria-disabled', String(b.disabled)); }
   }
   if (t.id === 'taf-price') {
     TAF.price = t.value;
-    var bx = document.getElementById('taf-share'); if (bx) bx.innerHTML = teaShareLine(TAF.price, 'apply.priceLow');
+    var bx = document.getElementById('taf-share'); if (bx) bx.innerHTML = teaShareLine(TAF.price, 'apply');
   }
 });
 
@@ -284,13 +283,13 @@ function teaBookSend() {
   var c = TEA.card, pick = teaPick('teaBook', TB.stale), bal = teaBal();
   if (TB.busy || !c || !pick || teaIsMine(c) || bal !== null && Number(c.price) > bal) return;
   if (!LIVE) {
-    FLASH = { text: teaW('book.done'), note: teaW('demoNote') }; haptic('ok'); go('teaMaster', c.id); return;
+    FLASH = { text: slovo('tea.book.done'), note: slovo('tea.demoNote') }; haptic('ok'); go('teaMaster', c.id); return;
   }
-  if (!teaLive('book')) { TB.err = teaW('noApi'); render(); return; }
+  if (!teaLive('book')) { TB.err = slovo('tea.noApi'); render(); return; }
   TB.busy = true; TB.err = ''; render();
   api('POST', TEA_URL.book(), teaBookBody(c, pick)).then(function (r) {
     TB.busy = false; refreshMe();
-    if (r.status === 200 || r.status === 201) { FLASH = teaW('book.done'); haptic('ok'); go('teaMaster', c.id); return; }
+    if (r.status === 200 || r.status === 201) { FLASH = slovo('tea.book.done'); haptic('ok'); go('teaMaster', c.id); return; }
     TB.err = denyText(r); haptic('warn');
     if (current === 'teaBook') render();
   });
@@ -306,19 +305,19 @@ function teaHoldSend() {
   teaGrab();
   var pick = teaPick('teaHold', THF.stale);
   THF.deny = ''; THF.money = false;
-  THF.err = !THF.title.trim() ? teaW('hold.noTitle') : '';
+  THF.err = !THF.title.trim() ? slovo('tea.hold.noTitle') : '';
   if (THF.err || !teaHoldReady()) { render(); return; }
   if (!LIVE) {
-    FLASH = { text: teaW('hold.done'), note: teaW('demoNote') }; haptic('ok'); go('home'); return;
+    FLASH = { text: slovo('tea.hold.done'), note: slovo('tea.demoNote') }; haptic('ok'); go('home'); return;
   }
-  if (!teaLive('hold')) { THF.deny = teaW('noApi'); render(); return; }
+  if (!teaLive('hold')) { THF.deny = slovo('tea.noApi'); render(); return; }
   THF.busy = true; render();
   var amount = TEA.amount;
   api('POST', TEA_URL.hold(), teaHoldBody(pick)).then(function (r) {
     THF.busy = false; refreshMe();
     if (typeof loadMineMaster === 'function') loadMineMaster();   // строка в «Ваших букингах» на home
     if (r.status === 200 || r.status === 201) {
-      FLASH = { text: teaW('hold.done'), note: teaW('hold.doneNote', { amount: money(amount) }) };
+      FLASH = { text: slovo('tea.hold.done'), note: slovo('tea.hold.doneNote', { amount: money(amount) }) };
       THF = { title: '', about: '', seats: '0', entry: '', err: '', deny: '', money: false, busy: false, stale: pick };
       haptic('ok'); go('home'); return;
     }
@@ -331,19 +330,19 @@ function teaApplySend() {
   teaGrab();
   TAF.deny = '';
   var s = TEA.share, p = String(TAF.price).trim(), mins = teaMins();
-  TAF.err = !TAF.about.trim() ? teaW('apply.noAbout')
-    : !/^\d+(\.\d+)?$/.test(p) || typeof s === 'number' && Number(p) < s ? teaW('apply.priceLow', { share: typeof s === 'number' ? money(s) : '…' })
-    : !(mins > 0) ? teaW('apply.noDur') : '';
+  TAF.err = !TAF.about.trim() ? slovo('tea.apply.noAbout')
+    : !/^\d+(\.\d+)?$/.test(p) || typeof s === 'number' && Number(p) < s ? slovo('tea.apply.priceLow', { share: typeof s === 'number' ? money(s) : '…' })
+    : !(mins > 0) ? slovo('tea.apply.noDur') : '';
   if (TAF.err || TAF.busy) { render(); return; }
   if (!LIVE) {
-    FLASH = { text: teaW('apply.done'), note: teaW('demoNote') }; TEA.mine = TEA_DEMO.mine = { status: 'pending', note: '', card: null };
+    FLASH = { text: slovo('tea.apply.done'), note: slovo('tea.demoNote') }; TEA.mine = TEA_DEMO.mine = { status: 'pending', note: '', card: null };
     TAF = teaApplyBlank(null); haptic('ok'); go('home'); return;
   }
-  if (!teaLive('apply')) { TAF.deny = teaW('noApi'); render(); return; }
+  if (!teaLive('apply')) { TAF.deny = slovo('tea.noApi'); render(); return; }
   TAF.busy = true; render();
   api('POST', TEA_URL.apply(), teaApplyBody()).then(function (r) {
     TAF.busy = false;
-    if (r.status === 200 || r.status === 201) { FLASH = teaW('apply.done'); TAF = teaApplyBlank(null); loadTeaMine(); haptic('ok'); go('home'); return; }
+    if (r.status === 200 || r.status === 201) { FLASH = slovo('tea.apply.done'); TAF = teaApplyBlank(null); loadTeaMine(); haptic('ok'); go('home'); return; }
     TAF.deny = denyText(r); haptic('warn');
     if (current === 'teaApply') render();
   });
@@ -416,9 +415,9 @@ function teaJoinEvent(id) {
 Object.assign(SCREENS, {
 
   teaMasters: function () {
-    if (TEA.listFail) return teaRetry(teaW('list.fail'), 'tea-list-retry');
-    if (!TEA.list) return '<span class="small">' + esc(teaW('list.loading')) + '</span>';
-    if (!TEA.list.length) return '<div class="card quiet"><span class="small">' + esc(teaW('list.empty')) + '</span></div>';
+    if (TEA.listFail) return teaRetry(slovo('tea.list.fail'), 'tea-list-retry');
+    if (!TEA.list) return '<span class="small">' + esc(slovo('tea.list.loading')) + '</span>';
+    if (!TEA.list.length) return '<div class="card quiet"><span class="small">' + esc(slovo('tea.list.empty')) + '</span></div>';
     return '<div class="group">' + TEA.list.map(function (c) {
       var first = c.shots && c.shots[0];
       return '<button type="button" class="listitem" data-action="tea-open:' + esc(c.id) + '">' +
@@ -430,123 +429,123 @@ Object.assign(SCREENS, {
   },
 
   teaMaster: function () {
-    if (TEA.cardGone) return '<div class="card quiet"><div class="col"><span class="small">' + esc(teaW('card.gone')) + '</span>' +
-      '<button type="button" class="btn quiet" data-action="tea-to-list">' + esc(teaW('card.toList')) + '</button></div></div>';
-    if (TEA.cardFail) return teaRetry(teaW('card.fail'), 'tea-card-retry');
-    if (!TEA.card) return '<span class="small">' + esc(teaW('card.loading')) + '</span>';
+    if (TEA.cardGone) return '<div class="card quiet"><div class="col"><span class="small">' + esc(slovo('tea.card.gone')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="tea-to-list">' + esc(slovo('tea.card.toList')) + '</button></div></div>';
+    if (TEA.cardFail) return teaRetry(slovo('tea.card.fail'), 'tea-card-retry');
+    if (!TEA.card) return '<span class="small">' + esc(slovo('tea.card.loading')) + '</span>';
     return (FLASH ? flash() : '') + teaCardHtml(TEA.card, { book: true });
   },
 
   teaBook: function () {
     var c = TEA.card;
     if (TEA.cardGone) return SCREENS.teaMaster();
-    if (TEA.cardFail) return teaRetry(teaW('card.fail'), 'tea-card-retry');
-    if (!c) return '<span class="small">' + esc(teaW('card.loading')) + '</span>';
+    if (TEA.cardFail) return teaRetry(slovo('tea.card.fail'), 'tea-card-retry');
+    if (!c) return '<span class="small">' + esc(slovo('tea.card.loading')) + '</span>';
     var pick = teaPick('teaBook', TB.stale), bal = teaBal(), price = Number(c.price);
     var short = LIVE && bal !== null && price > bal ? Math.round((price - bal) * 100) / 100 : 0;
     var books = (TEA.books[c.id] || []).map(function (b) {
-      var mw = { wait: 'book.stWait', ok: 'book.stMasterOk', no: 'book.stNo' }, aw = { wait: 'book.stWait', ok: 'book.stArtOk', no: 'book.stNo' };
+      var mw = { wait: slovo('tea.book.stWait'), ok: slovo('tea.book.stMasterOk'), no: slovo('tea.book.stNo') }, aw = { wait: slovo('tea.book.stWait'), ok: slovo('tea.book.stArtOk'), no: slovo('tea.book.stNo') };
       return '<div class="card quiet"><div class="col"><b>' + esc(teaWhen(b.at, b.mins)) + '</b>' +
-        '<div class="row"><span class="small">' + esc(teaW('book.master')) + '</span><span class="st ' + b.master + '">' + esc(teaW(mw[b.master])) + '</span></div>' +
-        '<div class="row"><span class="small">' + esc(teaW('book.art')) + '</span><span class="st ' + b.art + '">' + esc(teaW(aw[b.art])) + '</span></div>' +
-        (b.master === 'no' && b.refund ? '<span class="small">' + esc(teaW('book.refund', { sum: money(b.refund) })) + '</span>' : '') +
+        '<div class="row"><span class="small">' + esc(slovo('tea.book.master')) + '</span><span class="st ' + b.master + '">' + esc(mw[b.master]) + '</span></div>' +
+        '<div class="row"><span class="small">' + esc(slovo('tea.book.art')) + '</span><span class="st ' + b.art + '">' + esc(aw[b.art]) + '</span></div>' +
+        (b.master === 'no' && b.refund ? '<span class="small">' + esc(slovo('tea.book.refund', { sum: money(b.refund) })) + '</span>' : '') +
       '</div></div>';
     }).join('');
-    return '<span class="small">' + esc(c.name) + ' · ' + esc(teaW('book.sub')) + ' <span class="num">' + esc(money(c.price)) + ' ฿</span></span>' +
+    return '<span class="small">' + esc(c.name) + ' · ' + esc(slovo('tea.book.sub')) + ' <span class="num">' + esc(money(c.price)) + ' ฿</span></span>' +
       books +
-      '<div class="card"><div class="col"><span class="label">' + esc(teaW('time')) + '</span>' +
-        (pick ? '<div class="row"><b>' + esc(pick.label) + '</b><button type="button" class="btn quiet mini" data-action="tea-book-cal">' + esc(teaW('timeChange')) + '</button></div>'
-              : '<button type="button" class="btn quiet" data-action="tea-book-cal">' + esc(teaW('timePick')) + '</button>') +
+      '<div class="card"><div class="col"><span class="label">' + esc(slovo('tea.time')) + '</span>' +
+        (pick ? '<div class="row"><b>' + esc(pick.label) + '</b><button type="button" class="btn quiet mini" data-action="tea-book-cal">' + esc(slovo('tea.timeChange')) + '</button></div>'
+              : '<button type="button" class="btn quiet" data-action="tea-book-cal">' + esc(slovo('tea.timePick')) + '</button>') +
       '</div></div>' +
       '<div class="card"><div class="col">' +
-        (pick ? '<div class="row"><span class="small">' + esc(teaW('willCharge')) + '</span><b class="num">' + esc(money(c.price)) + ' ฿</b></div>' : '') +
-        (short ? '<span class="small">' + esc(teaW('book.short', { n: money(short) })) + '</span>' : '') +
+        (pick ? '<div class="row"><span class="small">' + esc(slovo('tea.willCharge')) + '</span><b class="num">' + esc(money(c.price)) + ' ฿</b></div>' : '') +
+        (short ? '<span class="small">' + esc(slovo('tea.book.short', { n: money(short) })) + '</span>' : '') +
         '<button type="button" class="btn" data-action="tea-book-send"' + (!pick || short || TB.busy || teaIsMine(c) ? ' disabled aria-disabled="true"' : '') + '>' +
-          esc(TB.busy ? teaW('sending') : teaW('book.send')) + '</button>' +
+          esc(TB.busy ? slovo('tea.sending') : slovo('tea.book.send')) + '</button>' +
       '</div></div>' +
       (TB.err ? teaDeny(TB.err, true) : '');
   },
 
   teaApply: function () {
     var m = TEA.mine, edit = m && m.status === 'approved', back = m && m.status === 'rejected';
-    if (TAF.preview) return '<span class="small">' + esc(teaW('apply.previewNote')) + '</span>' +
+    if (TAF.preview) return '<span class="small">' + esc(slovo('tea.apply.previewNote')) + '</span>' +
       teaCardHtml({ id: 0, name: '', about: TAF.about, price: String(TAF.price || '0'), mins: teaMins() || null,
                     shots: TAF.shots.filter(function (s) { return s.state === 'ok'; }).map(function (s) { return s.url; }) }, { book: false }) +
-      '<button type="button" class="btn ghost" data-action="tea-apply-preview">' + esc(teaW('apply.previewBack')) + '</button>';
+      '<button type="button" class="btn ghost" data-action="tea-apply-preview">' + esc(slovo('tea.apply.previewBack')) + '</button>';
     var shotEdit = function (s, i) {
       return '<span class="album-cap">' +
-            '<button type="button" class="btn quiet mini" data-action="tea-shot-del:' + i + '">' + esc(teaW('apply.shotDel')) + '</button>' +
-            (i > 0 ? '<button type="button" class="btn quiet mini" data-action="tea-shot-first:' + i + '">' + esc(teaW('apply.shotFirst')) + '</button>' : '') +
+            '<button type="button" class="btn quiet mini" data-action="tea-shot-del:' + i + '">' + esc(slovo('tea.apply.shotDel')) + '</button>' +
+            (i > 0 ? '<button type="button" class="btn quiet mini" data-action="tea-shot-first:' + i + '">' + esc(slovo('tea.apply.shotFirst')) + '</button>' : '') +
           '</span>';
     };
-    return (edit ? '<span class="small">' + esc(teaW('apply.editNote')) + '</span>' : '') +
-      '<span class="small">' + esc(teaW('apply.sub')) + '</span>' +
+    return (edit ? '<span class="small">' + esc(slovo('tea.apply.editNote')) + '</span>' : '') +
+      '<span class="small">' + esc(slovo('tea.apply.sub')) + '</span>' +
       (back && m.note ? '<span class="said">' + esc(m.note) + '</span>' : '') +
-      '<div class="card"><div class="col"><span class="label">' + esc(teaW('apply.photo')) + '</span>' +
-        '<span class="small">' + esc(teaW('apply.photoNote')) + '</span>' +
+      '<div class="card"><div class="col"><span class="label">' + esc(slovo('tea.apply.photo')) + '</span>' +
+        '<span class="small">' + esc(slovo('tea.apply.photoNote')) + '</span>' +
         teaAlbum(TAF.shots, shotEdit) +
       '</div></div>' +
       '<div class="card"><div class="col">' +
-        '<div class="field"><label for="taf-about">' + esc(teaW('apply.about')) + '</label>' +
+        '<div class="field"><label for="taf-about">' + esc(slovo('tea.apply.about')) + '</label>' +
           '<textarea id="taf-about" rows="5">' + esc(TAF.about) + '</textarea>' +
-          '<span class="small">' + esc(teaW('apply.aboutNote')) + '</span></div>' +
-        '<div class="field"><label for="taf-price">' + esc(teaW('apply.price')) + '</label>' +
+          '<span class="small">' + esc(slovo('tea.apply.aboutNote')) + '</span></div>' +
+        '<div class="field"><label for="taf-price">' + esc(slovo('tea.apply.price')) + '</label>' +
           '<input id="taf-price" inputmode="decimal" value="' + esc(TAF.price) + '">' +
-          '<span id="taf-share">' + (TAF.price !== '' ? teaShareLine(TAF.price, 'apply.priceLow') : '') + '</span></div>' +
-        '<div class="field"><label for="taf-h">' + esc(teaW('apply.dur')) + '</label>' +
-          '<div class="row"><input id="taf-h" inputmode="numeric" value="' + esc(TAF.h) + '" aria-label="' + esc(teaW('apply.durH')) + '">' +
-          '<span class="small">' + esc(teaW('apply.durH')) + '</span>' +
-          '<input id="taf-m" inputmode="numeric" value="' + esc(TAF.m) + '" aria-label="' + esc(teaW('apply.durM')) + '">' +
-          '<span class="small">' + esc(teaW('apply.durM')) + '</span></div></div>' +
+          '<span id="taf-share">' + (TAF.price !== '' ? teaShareLine(TAF.price, 'apply') : '') + '</span></div>' +
+        '<div class="field"><label for="taf-h">' + esc(slovo('tea.apply.dur')) + '</label>' +
+          '<div class="row"><input id="taf-h" inputmode="numeric" value="' + esc(TAF.h) + '" aria-label="' + esc(slovo('tea.apply.durH')) + '">' +
+          '<span class="small">' + esc(slovo('tea.apply.durH')) + '</span>' +
+          '<input id="taf-m" inputmode="numeric" value="' + esc(TAF.m) + '" aria-label="' + esc(slovo('tea.apply.durM')) + '">' +
+          '<span class="small">' + esc(slovo('tea.apply.durM')) + '</span></div></div>' +
       '</div></div>' +
-      '<button type="button" class="btn ghost" data-action="tea-apply-preview">' + esc(teaW('apply.preview')) + '</button>' +
+      '<button type="button" class="btn ghost" data-action="tea-apply-preview">' + esc(slovo('tea.apply.preview')) + '</button>' +
       (TAF.err ? teaDeny(TAF.err) : '') + (TAF.deny ? teaDeny(TAF.deny, true) : '') +
       '<button type="button" class="btn" data-action="tea-apply-send"' + (TAF.busy ? ' disabled aria-disabled="true"' : '') + '>' +
-        esc(TAF.busy ? teaW('sending') : edit ? teaW('apply.sendEdit') : teaW('apply.send')) + '</button>';
+        esc(TAF.busy ? slovo('tea.sending') : edit ? slovo('tea.apply.sendEdit') : slovo('tea.apply.send')) + '</button>';
   },
 
   teaHold: function () {
-    if (TEA.priceFail) return teaRetry(teaW('hold.priceFail'), 'tea-price-retry');
-    if (typeof TEA.amount !== 'number') return '<span class="small">' + esc(teaW('card.loading')) + '</span>';
+    if (TEA.priceFail) return teaRetry(slovo('tea.hold.priceFail'), 'tea-price-retry');
+    if (typeof TEA.amount !== 'number') return '<span class="small">' + esc(slovo('tea.card.loading')) + '</span>';
     var pick = teaPick('teaHold', THF.stale), short = teaHoldShort(), bal = teaBal();
-    return '<span class="small">' + esc(teaW('hold.sub', { amount: money(TEA.amount) })) + '</span>' +
+    return '<span class="small">' + esc(slovo('tea.hold.sub', { amount: money(TEA.amount) })) + '</span>' +
       '<div class="card"><div class="col">' +
-        '<div class="field"><label for="thf-title">' + esc(teaW('hold.title')) + '</label><input id="thf-title" value="' + esc(THF.title) + '"></div>' +
-        '<div class="field"><label for="thf-about">' + esc(teaW('hold.about')) + '</label><textarea id="thf-about" rows="4">' + esc(THF.about) + '</textarea>' +
-          '<span class="small">' + esc(teaW('hold.aboutNote')) + '</span></div>' +
-        '<div class="field"><label for="thf-seats">' + esc(teaW('hold.seats')) + '</label><input id="thf-seats" inputmode="numeric" value="' + esc(THF.seats) + '">' +
-          '<span class="small">' + esc(teaW('hold.seatsNote')) + '</span></div>' +
-        '<div class="field"><label for="thf-entry">' + esc(teaW('hold.entry')) + '</label><input id="thf-entry" inputmode="decimal" value="' + esc(THF.entry) + '">' +
-          '<span id="thf-share">' + teaShareLine(THF.entry, 'hold.entryLow') + '</span></div>' +
+        '<div class="field"><label for="thf-title">' + esc(slovo('tea.hold.title')) + '</label><input id="thf-title" value="' + esc(THF.title) + '"></div>' +
+        '<div class="field"><label for="thf-about">' + esc(slovo('tea.hold.about')) + '</label><textarea id="thf-about" rows="4">' + esc(THF.about) + '</textarea>' +
+          '<span class="small">' + esc(slovo('tea.hold.aboutNote')) + '</span></div>' +
+        '<div class="field"><label for="thf-seats">' + esc(slovo('tea.hold.seats')) + '</label><input id="thf-seats" inputmode="numeric" value="' + esc(THF.seats) + '">' +
+          '<span class="small">' + esc(slovo('tea.hold.seatsNote')) + '</span></div>' +
+        '<div class="field"><label for="thf-entry">' + esc(slovo('tea.hold.entry')) + '</label><input id="thf-entry" inputmode="decimal" value="' + esc(THF.entry) + '">' +
+          '<span id="thf-share">' + teaShareLine(THF.entry, 'hold') + '</span></div>' +
       '</div></div>' +
-      '<div class="card"><div class="col"><span class="label">' + esc(teaW('time')) + '</span>' +
-        (pick ? '<div class="row"><b>' + esc(pick.label) + '</b><button type="button" class="btn quiet mini" data-action="tea-hold-cal">' + esc(teaW('timeChange')) + '</button></div>'
-              : '<button type="button" class="btn quiet" data-action="tea-hold-cal">' + esc(teaW('timePick')) + '</button>') +
+      '<div class="card"><div class="col"><span class="label">' + esc(slovo('tea.time')) + '</span>' +
+        (pick ? '<div class="row"><b>' + esc(pick.label) + '</b><button type="button" class="btn quiet mini" data-action="tea-hold-cal">' + esc(slovo('tea.timeChange')) + '</button></div>'
+              : '<button type="button" class="btn quiet" data-action="tea-hold-cal">' + esc(slovo('tea.timePick')) + '</button>') +
       '</div></div>' +
       '<div class="card"><div class="col">' +
-        (pick ? '<div class="row"><span class="small">' + esc(teaW('willCharge')) + '</span><b class="num">' + esc(money(TEA.amount)) + ' ฿</b></div>' : '') +
-        (short ? '<span class="small">' + esc(teaW('hold.short', { n: money(short), amount: money(TEA.amount), balance: money(bal) })) + '</span>' : '') +
+        (pick ? '<div class="row"><span class="small">' + esc(slovo('tea.willCharge')) + '</span><b class="num">' + esc(money(TEA.amount)) + ' ฿</b></div>' : '') +
+        (short ? '<span class="small">' + esc(slovo('tea.hold.short', { n: money(short), amount: money(TEA.amount), balance: money(bal) })) + '</span>' : '') +
         '<button type="button" class="btn" id="thf-send" data-action="tea-hold-send"' + (teaHoldReady() ? '' : ' disabled aria-disabled="true"') + '>' +
-          esc(THF.busy ? teaW('sending') : teaW('hold.send')) + '</button>' +
+          esc(THF.busy ? slovo('tea.sending') : slovo('tea.hold.send')) + '</button>' +
       '</div></div>' +
-      (short ? '<div class="note">' + svg(ICON.info) + '<span>' + esc(teaW('hold.topupNote')) + '</span></div>' : '') +
+      (short ? '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('tea.hold.topupNote')) + '</span></div>' : '') +
       (THF.err ? teaDeny(THF.err) : '') +
-      (THF.deny ? teaDeny(THF.deny, true) + (THF.money ? '<span class="small">' + esc(teaW('hold.moneyNote')) + '</span>' : '') : '');
+      (THF.deny ? teaDeny(THF.deny, true) + (THF.money ? '<span class="small">' + esc(slovo('tea.hold.moneyNote')) + '</span>' : '') : '');
   },
 
   teaJoin: function (id) {
     if (LIVE && !EVENTS) return eventsWait();
     var e = teaJoinEvent(id);
-    if (!e) return '<div class="card quiet"><span class="small">' + esc(teaW('join.gone')) + '</span></div>';
+    if (!e) return '<div class="card quiet"><span class="small">' + esc(slovo('tea.join.gone')) + '</span></div>';
     var mine = LIVE ? isMyEvent(e) : e.demoMine;
-    var seats = e.unl ? teaW('join.seatsNoLimit') : teaW('join.seats', { free: e.seats, of: e.of });
-    var foot = e.done ? '<div class="card quiet"><span class="small">' + esc(teaW('join.past')) + '</span></div>'
-      : mine ? '<div class="card quiet"><span class="small">' + esc(teaW('join.mine')) + '</span></div>' + (LIVE ? signedBlock(e) : '')
+    var seats = e.unl ? slovo('tea.join.seatsNoLimit') : slovo('tea.join.seats', { free: e.seats, of: e.of });
+    var foot = e.done ? '<div class="card quiet"><span class="small">' + esc(slovo('tea.join.past')) + '</span></div>'
+      : mine ? '<div class="card quiet"><span class="small">' + esc(slovo('tea.join.mine')) + '</span></div>' + (LIVE ? signedBlock(e) : '')
       : bookBlock(e);
-    return '<div class="row"><span class="pill tea">' + esc(teaW('join.pill')) + '</span></div>' +
+    return '<div class="row"><span class="pill tea">' + esc(slovo('tea.join.pill')) + '</span></div>' +
       '<div class="col"><h1 class="clamp2">' + esc(e.title) + '</h1>' +
         '<span class="small">' + esc(teaWhen(e.at, e.mins)) + '</span>' +
-        '<span class="small">' + esc(teaW('join.host', { name: e.master })) + '</span>' +
+        '<span class="small">' + esc(slovo('tea.join.host', { name: e.master })) + '</span>' +
         '<span class="small">' + esc(seats) + '</span></div>' +
       (e.about ? '<div class="card"><p style="font-size:14px;white-space:pre-line;margin:0">' + esc(e.about) + '</p></div>' : '') +
       foot;
@@ -554,6 +553,6 @@ Object.assign(SCREENS, {
 });
 
 // заголовки шапки: имя мастера на карточке — словом сервера; прочие — словарём
-Object.assign(TITLES, { teaMasters: teaW('list.title'), teaBook: teaW('book.title'), teaApply: teaW('apply.title'),
-                        teaHold: teaW('hold.title.screen'), teaJoin: teaW('join.title') });
+Object.assign(TITLES, { teaMasters: slovo('tea.list.title'), teaBook: slovo('tea.book.title'), teaApply: slovo('tea.apply.title'),
+                        teaHold: slovo('tea.hold.title.screen'), teaJoin: slovo('tea.join.title') });
 Object.defineProperty(TITLES, 'teaMaster', { get: function () { return TEA.card ? TEA.card.name : ''; }, enumerable: true, configurable: true });

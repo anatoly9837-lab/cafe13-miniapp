@@ -30,7 +30,7 @@ const R = c => vm.runInContext(c, ctx);
 R(`TEA_URL.mine = function () { return '/tea/card/mine'; }`);
 const card = (id, st) => ({ master_id: id, name: 'Образец', about: 'Пуэр.', price: '600.00', duration_min: 90, shots: 0,
   status: st, approved_at: st === 'approved' ? '2026-11-25T21:58:34.566750Z' : null });
-const mine = R(`teaW('card.mine')`);
+const mine = R(`slovo('tea.card.mine')`);
 const foot = id => { const h = R(`teaCardHtml(teaCardFrom(${JSON.stringify(card(id, 'approved'))}), { book: true })`);
   return h.includes(mine) && !h.includes('tea-book:') ? 'своя' : h.includes('tea-book:' + id) && !h.includes(mine) ? 'запись' : '??'; };
 const ok = [];
