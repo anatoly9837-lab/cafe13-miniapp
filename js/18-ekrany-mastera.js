@@ -294,16 +294,18 @@ function stNum(v, money) {
   return isFinite(n) ? n : NaN;
 }
 function stBad(xs) { return xs.some(function (x) { return typeof x === 'number' && isNaN(x); }); }
-function msLabel(period, ymd) {
+// подстановки подписи периода — общие для страниц статистики; ключ слова каждая страница называет сама, литералом
+function stLabelVars(period, ymd) {
   var s = csStart(period, ymd);
-  if (period === 'day') return slovo('masterStats.period.dayLabel', { date: csDay(s) });
-  if (period === 'month') {
-    var w = bmMonth(Date.parse(s.slice(0, 8) + '15T12:00:00Z')).split(' ');
-    return slovo('masterStats.period.monthLabel', { month: w[0], year: s.slice(0, 4) });
-  }
+  if (period === 'day') return { date: csDay(s) };
+  if (period === 'month') { var w = bmMonth(Date.parse(s.slice(0, 8) + '15T12:00:00Z')).split(' '); return { month: w[0], year: s.slice(0, 4) }; }
   var e = csAdd(s, 6), a = s.split('-'), b = e.split('-');
-  return slovo('masterStats.period.weekLabel', { from: Number(a[2]) + (a[1] === b[1] ? '' : ' ' + MONTHS[Number(a[1]) - 1]),
-                                                 to: Number(b[2]) + ' ' + MONTHS[Number(b[1]) - 1] });
+  return { from: Number(a[2]) + (a[1] === b[1] ? '' : ' ' + MONTHS[Number(a[1]) - 1]), to: Number(b[2]) + ' ' + MONTHS[Number(b[1]) - 1] };
+}
+function msLabel(period, ymd) {
+  var v = stLabelVars(period, ymd);
+  return period === 'day' ? slovo('masterStats.period.dayLabel', v) : period === 'month' ? slovo('masterStats.period.monthLabel', v)
+    : slovo('masterStats.period.weekLabel', v);
 }
 /* Битая часть — отказ целиком: страница с пропавшим блоком читалась бы полной. Ноль не подставляется нигде. */
 function fromMasterStats(d) {
@@ -383,6 +385,49 @@ function loadEventReport() {
     if (current === 'eventReport') render();
   });
 }
+/* ── шаг 36 (Cafe13KPG#567, рецепт `_docs/recept/ekran/36/myStats.md`, miniapp#403; форма — api#195, снимок на 396ce48) ──
+   «Моя» статистика: свои записи, пополнения и счёт; зритель — любой вошедший (№42 «а»). Правило чисел — шага 34
+   (stNum/stBad; «нет данных» печатает только myNum); строка списка — в ОБЩИЙ `eventReport` (состав урезает
+   сервер по роли). `money.balance` — «сейчас», от периода не зависит. */
+var MY = { period: 'month', at: '', data: null, fail: '', deny: '', gen: 0 };
+function mayMyStats() { return LIVE; }
+function fromMyStats(d) {
+  if (!d || typeof d !== 'object') return null;
+  var e = d.events, t = d.topups, m = d.money, l = d.list;
+  if (!e || typeof e !== 'object' || !t || typeof t !== 'object' || !m || typeof m !== 'object' || !Array.isArray(l)) return null;
+  var out = { count: stNum(e.count), spent: stNum(e.spent, true), tCount: stNum(t.count), tAmount: stNum(t.amount, true),
+              balance: stNum(m.balance, true), list: [] };
+  if (stBad([out.count, out.spent, out.tCount, out.tAmount, out.balance])) return null;
+  for (var i = 0; i < l.length; i++) {
+    var x = l[i];
+    if (!x || typeof x.id !== 'number' || typeof x.title !== 'string' || typeof x.starts_at !== 'string') return null;
+    var at = new Date(x.starts_at), paid = stNum(x.paid, true);
+    if (isNaN(at.getTime()) || stBad([paid])) return null;
+    out.list.push({ id: x.id, title: x.title, ymd: bkk(at).ymd, at: at.getTime(), paid: paid });
+  }
+  out.list.sort(function (a, b) { return a.at - b.at; });
+  return out;
+}
+function loadMyStats() {
+  if (!mayMyStats()) return;
+  var gen = ++MY.gen, who = WHO;
+  MY.data = null; MY.fail = ''; MY.deny = '';
+  api('GET', '/stats/me?period=' + MY.period + '&at=' + MY.at).then(function (r) {
+    if (gen !== MY.gen || who !== WHO) return;
+    var got = r.status === 200 ? fromMyStats(r.data) : null;
+    if (got) MY.data = got;
+    else if (r.status === 403) MY.deny = detailOf(r) || failText(r);
+    else MY.fail = failText(r);
+    if (current === 'myStats') render();
+  });
+}
+function myMove(dir) {
+  if (dir > 0 && csStart(MY.period, MY.at) >= csStart(MY.period, msToday())) return;
+  MY.at = csShift(MY.period, MY.at, dir); loadMyStats(); render();
+}
+function myNum(v, money) {
+  return v === null ? '<span class="small">' + esc(slovo('myStats.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
+}
 function erNum(v, money) {
   return v === null ? '<span class="small">' + esc(slovo('eventReport.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
 }
@@ -428,6 +473,44 @@ Object.assign(SCREENS, {
           msNum(x.collected, true) + svg(ICON.chev, 'chev') + '</button>';
       }).join('') + '</div>';
     return seg + nav + E + Pc + D + L;
+  },
+  myStats: function () {
+    if (!mayMyStats()) return '';
+    var P = [['day', slovo('myStats.period.day')], ['week', slovo('myStats.period.week')], ['month', slovo('myStats.period.month')]];
+    var seg = '<div class="seg">' + P.map(function (x) {
+      return '<button type="button" data-action="my-period:' + x[0] + '" aria-pressed="' + (MY.period === x[0]) + '">' + esc(x[1]) + '</button>';
+    }).join('') + '</div>';
+    var last = csStart(MY.period, MY.at) >= csStart(MY.period, msToday()), v = stLabelVars(MY.period, MY.at);
+    var label = MY.period === 'day' ? slovo('myStats.period.dayLabel', v) : MY.period === 'month' ? slovo('myStats.period.monthLabel', v)
+      : slovo('myStats.period.weekLabel', v);
+    var nav = '<div class="row"><button type="button" class="icon-btn" data-action="my-prev" aria-label="' + esc(slovo('myStats.period.prev')) + '">‹</button>' +
+      '<b>' + esc(label) + '</b>' +
+      '<button type="button" class="icon-btn" data-action="my-next" aria-label="' + esc(slovo('myStats.period.next')) + '"' + (last ? ' disabled' : '') + '>›</button></div>' +
+      '<span class="small">' + esc(slovo('myStats.period.clockNote')) + '</span>';
+    if (MY.deny) return seg + nav + '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(MY.deny) + '</span></div>';
+    if (MY.fail) return seg + nav + '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('myStats.error')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="my-retry">' + esc(slovo('myStats.retry')) + '</button></div></div>';
+    if (!MY.data) return seg + nav + '<div class="card quiet"><span class="small">' + esc(slovo('myStats.loading')) + '</span></div>';
+    var s = MY.data;
+    var row = function (l, html) { return '<div><span class="small">' + esc(l) + '</span>' + html + '</div>'; };
+    // ноль — нулём, и под ним E1/T1; «Оплачено» при нуле записей не печатается: сервер отдаёт там null, а «нет данных» врало бы
+    var E = '<div class="card"><b>' + esc(slovo('myStats.events.title')) + '</b><div class="rows">' + row(slovo('myStats.events.count'), myNum(s.count)) +
+        (s.count === 0 ? '' : row(slovo('myStats.events.spent'), myNum(s.spent, true))) + '</div>' +
+      (s.count === 0 ? '<span class="small">' + esc(slovo('myStats.events.none')) + '</span>' : '') + '</div>';
+    var T = '<div class="card"><b>' + esc(slovo('myStats.topups.title')) + '</b><div class="rows">' +
+        // пустой блок — по СЧЁТЧИКУ (рецепт #403): при 0 «Пополнений 0» числом и T1, «Пополнено» скрыто
+        (s.tCount === 0 ? '' : row(slovo('myStats.topups.amount'), myNum(s.tAmount, true))) +
+        row(slovo('myStats.topups.count'), myNum(s.tCount)) + '</div>' +
+      (s.tCount === 0 ? '<span class="small">' + esc(slovo('myStats.topups.none')) + '</span>' : '') + '</div>';
+    var D = '<div class="card"><b>' + esc(slovo('myStats.money.title')) + '</b><div class="rows">' + row(slovo('myStats.money.balance'), myNum(s.balance, true)) + '</div>' +
+      '<span class="small">' + esc(slovo('myStats.money.nowNote')) + '</span></div>';
+    var L = s.count === 0 || !s.list.length ? '' : '<span class="label">' + esc(slovo('myStats.list.title')) + '</span><div class="list">' +
+      s.list.map(function (x) {
+        return '<button type="button" class="listitem" data-action="my-event:' + x.id + '"><span class="grow"><b class="clamp1">' + esc(x.title) + '</b>' +
+          '<span class="small">' + esc(slovo('myStats.list.row', { date: msDate(x.ymd) })) + '</span></span>' +
+          myNum(x.paid, true) + svg(ICON.chev, 'chev') + '</button>';
+      }).join('') + '</div>';
+    return seg + nav + E + T + D + L;
   },
   eventReport: function () {
     if (ER.deny) return '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(ER.deny) + '</span></div>';

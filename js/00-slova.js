@@ -126,6 +126,35 @@ var SLOVA = {
     'masterStats.error': 'Статистика не загрузилась.',
     'masterStats.retry': 'Повторить',
     'masterStats.loading': 'Загружаем статистику…',          // клиент
+    // шаг 36 (Cafe13KPG#567, рецепт 36/myStats, #403): «моя» статистика — у любого вошедшего; форма api#195
+    'myStats.door': 'Моя статистика',
+    'myStats.title': 'Моя статистика',
+    'myStats.period.day': 'День',
+    'myStats.period.week': 'Неделя',
+    'myStats.period.month': 'Месяц',
+    'myStats.period.dayLabel': '{date}',
+    'myStats.period.weekLabel': 'Неделя {from}–{to}',
+    'myStats.period.monthLabel': '{month} {year}',
+    'myStats.period.prev': 'Предыдущий период',              // клиент
+    'myStats.period.next': 'Следующий период',               // клиент
+    'myStats.period.clockNote': 'Записи считаются по дню ивента, пополнения — по дню зачисления.',
+    'myStats.events.title': 'Мои записи',
+    'myStats.events.count': 'Записей',
+    'myStats.events.spent': 'Оплачено',
+    'myStats.events.none': 'Записей в этом периоде не было.',
+    'myStats.topups.title': 'Пополнения',
+    'myStats.topups.amount': 'Пополнено',
+    'myStats.topups.count': 'Пополнений',
+    'myStats.topups.none': 'Пополнений в этом периоде не было.',
+    'myStats.money.title': 'Мой счёт',                       // клиент: у карточки D заголовка в рецепте нет
+    'myStats.money.balance': 'На счёте',
+    'myStats.money.nowNote': 'На счёте — на сегодня, а не за период.',
+    'myStats.list.title': 'Ивенты периода',
+    'myStats.list.row': '{date}',
+    'myStats.noData': 'нет данных',
+    'myStats.error': 'Статистика не загрузилась.',
+    'myStats.retry': 'Повторить',
+    'myStats.loading': 'Загружаем статистику…',              // клиент
     'masterStats.denyTitle': 'Сюда нельзя',                   // клиент
     'masterStats.denyNote': 'Статистику мастера видит тот, кто ведёт свои ивенты.',   // клиент
     // шаг 34, eventReport — рецепт `_docs/recept/ekran/34/eventReport.md` (#400): ОДИН отчёт на все страницы статистики
