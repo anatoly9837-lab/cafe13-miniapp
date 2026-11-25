@@ -16,7 +16,11 @@
    Деньги — строкой сервера, клиент не округляет: на экран — money(строка). Доля клуба и цена заявки — числа
    сервера; в демонстрации — TEA_DEMO, в разметке литерала нет. */
 
-var TEA_URL = { list: null, card: null, shot: null, mine: null, myBooks: null, book: null, apply: null, hold: null, price: null };
+/* Живые ручки (слово coordinator-3 25.11, api 9a0c7e0 в бою): заявка церемонии — POST /master/request с
+   occupancy 'tea', цена — GET /master/price (та же, что у ивента; доли клуба `share` в ответе пока нет, она
+   необязательна). Каталог, карточка, кадр и бронь мастера — ждут ручек server-katalog. */
+var TEA_URL = { list: null, card: null, shot: null, mine: null, myBooks: null, book: null, apply: null,
+                hold: function () { return '/master/request'; }, price: function () { return '/master/price'; } };
 function teaLive(k) { return LIVE && typeof TEA_URL[k] === 'function'; }
 function teaW(k, p) { return slovo('tea.' + k, p); }
 
@@ -147,7 +151,7 @@ function teaLoadPrice() {
   api('GET', TEA_URL.price()).then(function (r) {
     if (gen !== TEA.priceGen) return;
     var a = r.status === 200 && r.data ? teaPrice(r.data.amount) : null, s = r.status === 200 && r.data ? teaPrice(r.data.share) : null;
-    if (a !== null && s !== null) { TEA.amount = Number(a); TEA.share = Number(s); } else TEA.priceFail = failText(r);
+    if (a !== null) { TEA.amount = Number(a); TEA.share = s === null ? null : Number(s); } else TEA.priceFail = failText(r);
     teaRerender({ teaHold: 1, teaApply: 1, home: 1 });
   });
 }
@@ -288,8 +292,9 @@ function teaBookSend() {
 }
 function teaHoldReady() {
   var e = Number(THF.entry);
-  return !THF.busy && typeof TEA.amount === 'number' && typeof TEA.share === 'number' && /^\d+(\.\d+)?$/.test(String(THF.entry).trim()) &&
-    e >= TEA.share && !!teaPick('teaHold', THF.stale) && !teaHoldShort();
+  // доля не пришла (её поля в /master/price пока нет) — нижней грани у входа нет, судит сервер
+  return !THF.busy && typeof TEA.amount === 'number' && /^\d+(\.\d+)?$/.test(String(THF.entry).trim()) &&
+    (typeof TEA.share !== 'number' || e >= TEA.share) && !!teaPick('teaHold', THF.stale) && !teaHoldShort();
 }
 function teaHoldShort() { var b = teaBal(); return LIVE && typeof TEA.amount === 'number' && b !== null && TEA.amount > b ? TEA.amount - b : 0; }
 function teaHoldSend() {
@@ -312,8 +317,8 @@ function teaHoldSend() {
       THF = { title: '', about: '', seats: '0', entry: '', err: '', deny: '', money: false, busy: false, stale: pick };
       haptic('ok'); go('home'); return;
     }
-    // отказ по деньгам — словами сервера, под ним путь пополнения (C12); своего кода у отказа нет — 402/409 о деньгах
-    THF.deny = denyText(r); THF.money = r.status === 402 || /хват|баланс|счёт|счет/i.test(detailOf(r));
+    // отказ по деньгам — словами сервера, под ним путь пополнения (C12); признак — code 'insufficient_funds' (409, app/refusal.py)
+    THF.deny = denyText(r); THF.money = r.data && r.data.code === 'insufficient_funds' || r.status === 402 || /хват|баланс|счёт|счет/i.test(detailOf(r));
     haptic('warn'); if (current === 'teaHold') render();
   });
 }
