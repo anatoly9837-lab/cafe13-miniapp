@@ -644,6 +644,8 @@ function go(screen, p) {
   if (screen === 'home' && current !== 'home' && LIVE) { MR.mineState = ''; }
   // шаг 42 (рецепт 42/home.md, «Перечитать на входе»): своя карточка чайного мастера — на каждый вход, и в демо
   if (screen === 'home' && current !== 'home' && typeof loadTeaMine === 'function') { TEA.mine = null; TEA.mineFail = ''; loadTeaMine(); }
+  // H0 (рецепт 42/home.md): цена заявки церемонии — на каждый вход; загрузка у руки ЧАЙ-A. Свои заявки церемонии — в MR.mine
+  if (screen === 'home' && current !== 'home' && typeof loadTeaHoldPrice === 'function') loadTeaHoldPrice();
   if ((screen === 'masters' || screen === 'masterReqs') && current !== screen && mayMasters()) { MR.qErr = ''; loadMasterQueue(); loadMineMaster(); }
   if (screen === 'masterReq') { MR.qErr = ''; if (current !== 'masterReq' || param !== p) { MR.ask = 0; MR.note = ''; } if (!MR.q && mayMasters()) loadMasterQueue(); }
   if ((screen === 'masterEvents' || screen === 'masterList') && current !== screen && mayMasters()) { MR.sErr = ''; loadSlots(); }
