@@ -226,13 +226,19 @@ var FAIL_NET = false;      // сервер не ответил вовсе — т
 
 function api(method, path, body) {
   var ctl = typeof AbortController === 'function' ? new AbortController() : null;
-  var timer = ctl ? setTimeout(function () { ctl.abort(); }, 10000) : null;
+  // Шаг 44: тело — САМ ФАЙЛ (Blob) у `POST /photos` (api 4c0aae0, routers/photos.py): без JSON, тип — тип файла.
+  // Срок длиннее: сервер держит снимок в очереди на сжатие до 30 с и только потом отвечает 503 photo_busy.
+  var raw = typeof Blob === 'function' && body instanceof Blob;
+  var timer = ctl ? setTimeout(function () { ctl.abort(); }, raw ? 45000 : 10000) : null;
   var opt = { method: method, headers: { 'X-Telegram-Init-Data': tg.initData } };
   // Тестовый режим — на КАЖДОМ запросе, иначе часть экрана придёт из боевой базы.
   if (TEST.on) opt.headers['X-Test-Mode'] = '1';
   if (TEST.on && TEST.as) opt.headers['X-Act-As'] = String(TEST.as.id);
   if (ctl) opt.signal = ctl.signal;
-  if (body !== undefined) {
+  if (raw) {
+    opt.headers['Content-Type'] = body.type || 'application/octet-stream';
+    opt.body = body;
+  } else if (body !== undefined) {
     opt.headers['Content-Type'] = 'application/json';
     opt.body = JSON.stringify(body);
   }

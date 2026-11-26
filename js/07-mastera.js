@@ -330,7 +330,7 @@ function masterOffer() {
     (short ? '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('home.hold.note')) + '</span></div>' : '');
 }
 function sendMaster() {
-  if (MR.busy) return;
+  if (MR.busy || fotoBusy('masterApply')) return;
   var seats = Number(MSF.seats), h = 2 + MSF.extra, p = MR.price[h];
   // пределы — сервера (NewMasterRequest): название 1–200, мест 1–500, аннотация до 2000
   MSF.err = !MSF.title ? 'Без названия ивент в афишу не ставится.'
@@ -341,14 +341,14 @@ function sendMaster() {
   if (MSF.err) { render(); return; }
   if (!LIVE) return;   // витрина: нажатие ничего не отправляет (плашка прототипа это говорит)
   MR.busy = true; render();
-  api('POST', '/master/request', { title: MSF.title, about: MSF.about, seats: seats, place_id: msPlace().id,
-    starts_on: MSF.date, start_local: MSF.time, hours: h }).then(function (r) {
+  api('POST', '/master/request', fotoBody('masterApply', { title: MSF.title, about: MSF.about, seats: seats, place_id: msPlace().id,
+    starts_on: MSF.date, start_local: MSF.time, hours: h })).then(function (r) {
     MR.busy = false;
     var got = r.status === 201 ? fromMasterReq(r.data, false) : null;
     // деньги могли уйти и при неразобранном ответе — свою заявку и остаток перечитываем ВСЕГДА
     loadMineMaster(); refreshMe();
     if (got) {
-      MSF = msfBlank();
+      MSF = msfBlank(); fotoDone('masterApply');
       FLASH = { text: 'Букинг отправлен', note: msWhen(got) + '. Списано ' + money(got.amount) + ' ฿. Решение примет арт-директор; если он откажет, деньги вернутся на счёт.' };
       go('home'); return;
     }
