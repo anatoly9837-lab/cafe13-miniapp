@@ -1554,7 +1554,6 @@ t.7ec893ca	видно	visible	แสดงอยู่	မြင်ရသည်	
 t.0cab901a	выключено, не видно	off, not visible	ปิดอยู่ ไม่แสดง	ပိတ်ထားသည်၊ မမြင်ရ	js/18-ekrany-mastera.js:156	masterEvent	машинный
 t.79dd02aa	Недель впереди	Weeks ahead	สัปดาห์ข้างหน้า	ရှေ့ရက်သတ္တပတ်	js/18-ekrany-mastera.js:158	masterEvent	машинный
 t.cff7e48b	Членство мастера сейчас не действует.	The master's membership is not active now.	สมาชิกภาพของมาสเตอร์ไม่มีผลในขณะนี้	မာစတာ၏ အဖွဲ့ဝင်ခြင်း ယခု အသက်မဝင်ပါ။	js/18-ekrany-mastera.js:159	masterEvent	машинный
-t.9f196ee3	Букает ивент член клуба.	Events are booked by a club member.	สมาชิกคลับเป็นผู้จองอีเวนต์	ပွဲကို ကလပ်အဖွဲ့ဝင်က စာရင်းသွင်းသည်။	js/18-ekrany-mastera.js:169	masterApply	машинный
 t.2a4ab68f	» нет среди открытых мест клуба	” is not among the club's open venues	” ไม่อยู่ในสถานที่ที่เปิดของคลับ	” သည် ကလပ်၏ ဖွင့်ထားသော နေရာများထဲ မပါပါ	js/18-ekrany-mastera.js:173	masterApply	машинный
 t.29b6d1dc	Загружаем место…	Loading venue…	กำลังโหลดสถานที่…	နေရာ ဖွင့်နေသည်…	js/18-ekrany-mastera.js:174	masterApply	машинный
 t.8cc50c4c	฿ на счёте.	฿ in the account.	฿ ในบัญชี.	฿ အကောင့်ထဲတွင်။	js/18-ekrany-mastera.js:182	masterApply	машинный
