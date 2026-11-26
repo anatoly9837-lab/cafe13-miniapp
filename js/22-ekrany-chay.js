@@ -205,7 +205,10 @@ function teaRetry(text, act) {
 }
 /* .album — галерея 1–3 кадров, видна целиком: первый крупный сверху, второй и третий мелкими превью в ряд под
    ним. Пролистывания и точек нет. Ноль кадров — блока нет. Кадр не загрузился — пустой квадрат --surface. */
-function teaAlbum(shots, edit) {
+/* Шаг 44 (рецепт foto/sostav.md, «Правка .album»): `pair` — вид СОБЫТИЯ: при двух кадрах они стоят рядом равными
+   половинами (`.album-pair`), крупного нет. Карточка мастера зовёт без `pair` и рисуется побайтно как прежде:
+   №81 «а» отказал отдельному механизму, а не велел менять её работающий показ (решение координатора 26.11). */
+function teaAlbum(shots, edit, pair) {
   shots = shots.slice(0, TEA_SHOTS_MAX);
   if (!shots.length) return '';
   var frame = function (s, i) {
@@ -213,6 +216,7 @@ function teaAlbum(shots, edit) {
     return '<div class="album-frame' + (i ? ' small' : '') + '">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy">' : '') +
       (edit ? edit(s, i) : '') + '</div>';
   };
+  if (pair && shots.length === 2) return '<div class="album album-pair">' + frame(shots[0], 0) + frame(shots[1], 1) + '</div>';
   return '<div class="album">' + frame(shots[0], 0) +
     (shots.length > 1 ? '<div class="album-thumbs">' + shots.slice(1).map(function (s, k) { return frame(s, k + 1); }).join('') + '</div>' : '') +
   '</div>';
@@ -290,8 +294,8 @@ document.addEventListener('input', function (ev) {
    start_local (ЧЧ:ММ) по часам клуба — это ymd и from выбора календаря. Бронь мастера — та же пара (слово координатора: ведёт сервер). */
 function teaBookBody(c, pick) { return { master_id: c.id, starts_on: pick.ymd, start_local: pick.from }; }
 function teaHoldBody(pick) {
-  return { occupancy: 'tea', title: THF.title.trim(), about: THF.about, seats: Number(THF.seats || 0), price: String(THF.entry).trim(),
-           starts_on: pick.ymd, start_local: pick.from, duration_min: pick.mins };
+  return fotoBody('teaHold', { occupancy: 'tea', title: THF.title.trim(), about: THF.about, seats: Number(THF.seats || 0), price: String(THF.entry).trim(),
+           starts_on: pick.ymd, start_local: pick.from, duration_min: pick.mins });
 }
 function teaApplyBody() {
   return { about: TAF.about, price: String(TAF.price).trim(), duration_min: teaMins(),
@@ -319,7 +323,7 @@ function teaHoldReady() {
   var e = Number(THF.entry);
   // TEA.share — число (teaLoadPrice: Number) или null. При null `e >= null` истинно для любого входа, прошедшего
   // регулярку: без доли нижнюю грань №78 держит сервер, клиент её не выдумывает (константы 100 нет).
-  return !THF.busy && typeof TEA.amount === 'number' && /^\d+(\.\d+)?$/.test(String(THF.entry).trim()) &&
+  return !THF.busy && !fotoBusy('teaHold') && typeof TEA.amount === 'number' && /^\d+(\.\d+)?$/.test(String(THF.entry).trim()) &&
     e >= TEA.share && !!teaPick('teaHold', THF.stale) && !teaHoldShort();
 }
 function teaHoldShort() { var b = teaBal(); return LIVE && typeof TEA.amount === 'number' && b !== null && TEA.amount > b ? TEA.amount - b : 0; }
@@ -341,7 +345,7 @@ function teaHoldSend() {
     if (r.status === 200 || r.status === 201) {
       FLASH = { text: slovo('tea.hold.done'), note: slovo('tea.hold.doneNote', { amount: money(amount) }) };
       THF = { title: '', about: '', seats: '0', entry: '', err: '', deny: '', money: false, busy: false, stale: pick };
-      haptic('ok'); go('home'); return;
+      fotoDone('teaHold'); haptic('ok'); go('home'); return;
     }
     // отказ по деньгам — словами сервера, под ним путь пополнения (C12); признак — code 'insufficient_funds' (409, app/refusal.py)
     THF.deny = denyText(r); THF.money = r.data && r.data.code === 'insufficient_funds' || r.status === 402 || /хват|баланс|счёт|счет/i.test(detailOf(r));
@@ -540,6 +544,8 @@ Object.assign(SCREENS, {
         '<div class="field"><label for="thf-entry">' + esc(slovo('tea.hold.entry')) + '</label><input id="thf-entry" inputmode="decimal" value="' + esc(THF.entry) + '">' +
           '<span id="thf-share">' + teaShareLine(THF.entry, 'hold') + '</span></div>' +
       '</div></div>' +
+      // шаг 44 (foto/teaHold.md): блок «Фото» после полей (C2), перед временем (C3); №81 «а» — тот же механизм, что у ивента
+      fotoBlock('teaHold', slovo('foto.add')) +
       '<div class="card"><div class="col"><span class="label">' + esc(slovo('tea.time')) + '</span>' +
         (pick ? '<div class="row"><b>' + esc(pick.label) + '</b><button type="button" class="btn quiet mini" data-action="tea-hold-cal">' + esc(slovo('tea.timeChange')) + '</button></div>'
               : '<button type="button" class="btn quiet" data-action="tea-hold-cal">' + esc(slovo('tea.timePick')) + '</button>') +
@@ -548,7 +554,7 @@ Object.assign(SCREENS, {
         (pick ? '<div class="row"><span class="small">' + esc(slovo('tea.willCharge')) + '</span><b class="num">' + esc(money(TEA.amount)) + ' ฿</b></div>' : '') +
         (short ? '<span class="small">' + esc(slovo('tea.hold.short', { n: money(short), amount: money(TEA.amount), balance: money(bal) })) + '</span>' : '') +
         '<button type="button" class="btn" id="thf-send" data-action="tea-hold-send"' + (teaHoldReady() ? '' : ' disabled aria-disabled="true"') + '>' +
-          esc(THF.busy ? slovo('tea.sending') : slovo('tea.hold.send')) + '</button>' +
+          esc(THF.busy ? slovo('tea.sending') : fotoBusy('teaHold') ? slovo('foto.wait') : slovo('tea.hold.send')) + '</button>' +
       '</div></div>' +
       (short ? '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('tea.hold.topupNote')) + '</span></div>' : '') +
       (THF.err ? teaDeny(THF.err) : '') +
