@@ -19,11 +19,14 @@ var CARD_LANGS = [['ru', 'RU'], ['en', 'EN'], ['th', 'TH']];
 var CARD_FIELDS = ['c-title', 'c-group', 'c-price', 'c-mins', 'c-about'];
 var CARDS = { list: null, fail: '', gen: 0, from: '', dir: null, lost: false, partner: false };   // partner — вошёл дверью партнёра (шаг 16)   // dir — { id, title } направления карточек
 var CARD = { v: {}, alcohol: false, lang: 'ru', text: {}, body: {}, err: '', deny: '', note: '',
-             busy: false, back: false, reason: '', hideAsk: false, groupAsk: '', edit: 0 };   // edit — номер черновика в правке
+             busy: false, back: false, reason: '', hideAsk: false, groupAsk: '', edit: 0, carry: null, press: '' };   // edit — номер черновика в правке
+// carry — что переживает переход с предпросмотра на рождённую карточку (шаг 44): заметка, отказ и НЕСОХРАНЁННЫЕ рецепты;
+// press — какая из двух кнопок предпросмотра нажата ('add' | 'off'), чтобы «Сохраняем…» стояло на ней, а не на обеих
 
 function cardReset() {
   CARD.v = {}; CARD.alcohol = false; CARD.lang = 'ru'; CARD.text = {}; CARD.body = {}; CARD.err = '';
   CARD.deny = ''; CARD.note = ''; CARD.back = false; CARD.reason = ''; CARD.hideAsk = false; CARD.groupAsk = ''; CARD.edit = 0;
+  CARD.carry = null; CARD.press = '';
 }
 function mayCards() { return LIVE && (grant('admin') || grant('bar') || grant('curator') || grant('worker') || !!cardPartnerDir()); }
 // шаг 16 (Cafe13KPG#547): партнёр — по ВЛАДЕНИЮ направлением (`GET /partner/directions`), не по роли. Первый бизнес:
@@ -144,6 +147,8 @@ function grabCard() {
   CARD_FIELDS.forEach(function (id) { var el = document.getElementById(id); if (el) CARD.v[id] = el.value; });
   var t = document.getElementById('c-recipe');
   if (t) CARD.text[CARD.lang] = t.value;
+  // форма заведения (шаг 44): рецепт всех трёх языков сразу — по полю на язык, а не переключателем
+  CARD_LANGS.forEach(function (l) { var r = document.getElementById('c-rec-' + l[0]); if (r) CARD.text[l[0]] = r.value; });
   var w = document.getElementById('c-reason');
   if (w) CARD.reason = w.value;
 }
@@ -167,7 +172,11 @@ function cardGroup(sure) {
   CARD.groupAsk = '';
   return g;
 }
-function cardSave(sure) {
+/* Шаг 44 (рецепт `_docs/recept/ekran/44/barCard.md`, слово владельца 26.11): форма со всем → «Создать» →
+   предпросмотр → «Добавить в меню» | «Создать выключенной». «Создать» запроса НЕ шлёт: своя проверка формы и вопрос
+   «та же группа?» — здесь, а карточка рождается только кнопкой предпросмотра. Группа на предпросмотре — уже сведённая
+   к заведённой, поэтому гость видит ту строку, под которой позиция встанет. */
+function cardPreview(sure) {
   if (CARD.busy || !CARDS.dir) return;
   grabCard();
   CARD.deny = '';                             // прошлый отказ сервера не висит рядом с новым своим
@@ -175,27 +184,74 @@ function cardSave(sure) {
   if (CARD.err) { haptic('warn'); render(); return; }
   var g = cardGroup(sure);
   if (g === null) return;
-  var body = { direction_id: CARDS.dir.id, group: g, title: CARD.v['c-title'].trim(),
+  CARD.v['c-group'] = g;
+  haptic();
+  go('barCard', 'preview');
+}
+// языки с непустым рецептом — по порядку CARD_LANGS; «в меню» без хотя бы одного не пустит база (триггер 009, №100 «а»)
+function cardRecipeLangs() {
+  return CARD_LANGS.map(function (l) { return l[0]; }).filter(function (l) { return !!(CARD.text[l] || '').trim(); });
+}
+function cardNewBody() {
+  var body = { direction_id: CARDS.dir.id, group: CARD.v['c-group'], title: CARD.v['c-title'].trim(),
                price: Number(String(CARD.v['c-price']).replace(',', '.')),
                about: (CARD.v['c-about'] || '').trim(), is_alcohol: CARD.alcohol };
   var m = String(CARD.v['c-mins'] || '').trim();
   if (m) body.mins = +m;
+  return body;
+}
+/* Цепочка рождения: POST /bar/products (сервер заводит ТОЛЬКО черновиком, bar.py create_product) → рецепт на каждый
+   заполненный язык → для «в меню» смена состояния: active партнёру (№99 «б», тот же признак, что c-approve у черновика),
+   review остальным. ⚠ После 201 карточка УЖЕ есть: обрыв дальше не прячется — открывается сама карточка, заметка
+   говорит, что сделано, отказ — печатью, а несохранённые рецепты переезжают в её поле (carry), чтобы не пропасть. */
+function cardCreate(menu) {
+  if (CARD.busy || !CARDS.dir || cardMissing()) return;
+  var langs = cardRecipeLangs();
+  if (menu && !langs.length) return;          // кнопка погашена; Telegram-кнопки в этом состоянии нет (mainFor)
+  var body = cardNewBody(), target = menu ? (cardPartnerOnly() ? 'active' : 'review') : '';
+  var text = {}; langs.forEach(function (l) { text[l] = CARD.text[l].trim(); });
   var gen = CARDS.gen;
-  CARD.busy = true; CARD.deny = ''; render();
+  CARD.busy = true; CARD.press = menu ? 'add' : 'off'; CARD.deny = ''; CARD.err = ''; render();
   api('POST', '/bar/products', body).then(function (r) {
-    CARD.busy = false;
-    if (gen !== CARDS.gen) return;
+    if (gen !== CARDS.gen) { CARD.busy = false; return; }
     var ok = r.status === 201 && r.data && typeof r.data.id === 'number' && r.data.state === 'draft';
-    if (!ok) { CARD.deny = denyText(r); haptic('warn'); render(); return; }
-    haptic('ok');
-    var id = r.data.id;
-    cardReset();
-    CARD.note = 'Черновик сохранён. Теперь рецепт — без него карточку не поставить в меню.';
+    if (!ok) { CARD.busy = false; CARD.press = ''; CARD.deny = denyText(r); haptic('warn'); render(); return; }
+    var id = r.data.id, saved = [];
     // карточка из ответа — до перечитывания, чтобы экран не моргнул «не найдена»
     CARDS.list = (CARDS.list || []).concat([{ id: id, title: body.title, group: body.group, price: body.price,
       mins: body.mins || null, about: body.about, alcohol: body.is_alcohol, state: 'draft', recipes: [], note: '' }]);
-    go('barCard', String(id));
-    loadCards();
+    var land = function (note, deny) {
+      var rest = {}, first = '';
+      langs.forEach(function (l) { if (saved.indexOf(l) === -1) { rest[l] = text[l]; if (!first) first = l; } });
+      var body2 = {}; saved.forEach(function (l) { body2[l] = text[l]; });
+      CARD.busy = false; CARD.press = '';
+      CARD.carry = { note: note, deny: deny || '', text: rest, body: body2, lang: first || 'ru' };
+      haptic(deny ? 'warn' : 'ok');
+      go('barCard', String(id));
+      loadCards();
+    };
+    var mark = function (st) { CARDS.list = CARDS.list.map(function (x) { return x.id !== id ? x : Object.assign({}, x, { state: st || x.state, recipes: saved.slice() }); }); };
+    var next = function () {
+      if (gen !== CARDS.gen) { CARD.busy = false; return; }
+      if (saved.length < langs.length) {
+        var l = langs[saved.length];
+        api('POST', '/bar/products/' + id + '/recipe', { lang: l, body: text[l] }).then(function (rr) {
+          if (gen !== CARDS.gen) { CARD.busy = false; return; }
+          if (!(rr.status === 201 && rr.data && rr.data.lang === l)) { mark(); land(slovo('barCard.part.recipe', { lang: l.toUpperCase() }), denyText(rr)); return; }
+          saved.push(l); next();
+        });
+        return;
+      }
+      mark();
+      if (!target) { land(slovo('barCard.done.off')); return; }
+      api('POST', '/bar/products/' + id + '/state', { state: target }).then(function (rs) {
+        if (gen !== CARDS.gen) { CARD.busy = false; return; }
+        if (!(rs.status === 200 && rs.data && rs.data.state === target)) { land(slovo(target === 'active' ? 'barCard.part.active' : 'barCard.part.review'), denyText(rs)); return; }
+        mark(target);
+        land(slovo(target === 'active' ? 'barCard.done.active' : 'barCard.done.review'));
+      });
+    };
+    next();
   });
 }
 /* Правка черновика (шаг 15): форма открывается полями карточки, в PATCH уходят ТОЛЬКО изменённые — сервер пишет
