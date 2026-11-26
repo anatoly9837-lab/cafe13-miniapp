@@ -116,7 +116,7 @@
 | `moi-biznesy` | `home` | — | 4368 | 3 | 4 |
 | `moi-biznesy` | `myBiz` | — | 4780 | 4 | 7 |
 | `moi-biznesy` | `sostav-dovody` | — | 4500 | 7 | 0 |
-| `moi-biznesy` | `sostav` | — | 7994 | 6 | 0 |
+| `moi-biznesy` | `sostav` | — | 8003 | 6 | 0 |
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
 | `odobrenie` | `sostav` | — | 4388 | 4 | 0 |
