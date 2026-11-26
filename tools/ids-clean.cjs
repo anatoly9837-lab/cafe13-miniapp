@@ -126,7 +126,9 @@ const keyedFile = rel => rel.split(path.sep).join('/') === PEREVODY;
 function cutPerevodKey(line) {
   const m = line.match(PEREVOD_KEY);
   if (!m || sha8(unesc(m[2])) !== m[1]) return line;
-  return 't. ' + line.slice(10);
+  // режется ровно совпадение (`t.` + 8 знаков), а не первые 10 знаков строки: без якоря `^`
+  // срез по числу отрезал бы то, что стоит ПЕРЕД ключом, — номер (подлог arhitector24, #499)
+  return line.slice(0, m.index) + 't. ' + line.slice(m.index + 10);
 }
 
 // Строка → числа из 7+ цифр, которых нет в списке: [[запись, цифры], …].
@@ -264,6 +266,8 @@ function selfCheckTree() {
 function selfCheckKey() {
   let ru = '', k = '';
   for (let i = 0; i < 100000 && !/\d{7}/.test(k); i++) { ru = 'Свидетель ключа ' + i; k = sha8(ru); }
+  let ru0 = '', k0 = '';
+  for (let i = 0; i < 100000 && (!k0 || /\d{2}/.test(k0)); i++) { ru0 = 'Свидетель без цифр ' + i; k0 = sha8(ru0); }
   const номер = ['91', '82', '73', '64'].join('');
   const tail = '\ten\tth\tmy\tjs/x.js:1\t\tмашинный';
   const случаи = [
@@ -271,6 +275,10 @@ function selfCheckKey() {
     ['тот же ключ в ДРУГОМ файле', 'js/x.tsv', 't.' + k + '\t' + ru + tail, true],
     ['ключ не от своего текста', PEREVODY, 't.' + k + '\t' + ru + '!' + tail, true],
     ['номер человека ключом', PEREVODY, 't.' + номер + '\t' + ru + tail, true],
+    // ключ ВЕРНЫЙ и без 7 цифр, номер стоит ПЕРЕД ним: вырезание обязано его не тронуть
+    ['номер перед верным ключом', PEREVODY, номер + '567\tt.' + k0 + '\t' + ru0 + tail, true],
+    // ключ верный и из 7 цифр, но НЕ в первой колонке: вырезается только первая колонка (якорь `^`)
+    ['верный ключ не в первой колонке', PEREVODY, 'x\tt.' + k + '\t' + ru + tail, true],
     ['номер в тексте строки с верным ключом', PEREVODY, 't.' + k + '\t' + ru + tail.replace('en', 'id ' + номер + '5'), true],
   ];
   const плохо = [];
