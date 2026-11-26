@@ -355,9 +355,9 @@ function tillCard(w) {
    (слово designer-55). by_staff_id и member_id — tg_user_id; из разбора
    они не выходят вовсе. */
 var TD = { gen: 0, data: null, fail: '', ask: -1, busy: -1, deny: null };
-var TD_KIND = { membership: 'Членство', topup: 'На счёт', event: 'За запись', service: 'За услугу',
-                // api#230: бронь чайной церемонии гостем — списание со счёта (ledger kind=tea)
-                tea: 'Бронь церемонии' };
+// Новых видов сюда не добавлять ради показа: вид, которого кассир видеть не должен (tea — деньги брони идут со счёта
+// на счёт, не через ящик), сервер не отдаёт вовсе (фильтр в /till/day, как donation и withdraw; решение coordinator-3)
+var TD_KIND = { membership: 'Членство', topup: 'На счёт', event: 'За запись', service: 'За услугу' };
 var TD_HOW = { cash: 'наличные', card: 'карта', account: 'со счёта' };
 /* НЕЗНАКОМЫЙ вид или способ строки — не отказ дня, а нейтральная строка. Прежде `!TD_KIND[r.kind]` отвергал
    ВЕСЬ день (так было с donation и withdraw: сервер прятал их фильтром, till.py:986), и каждый новый вид книги
