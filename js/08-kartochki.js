@@ -210,10 +210,12 @@ function cardCreate(menu) {
   if (menu && !langs.length) return;          // кнопка погашена; Telegram-кнопки в этом состоянии нет (mainFor)
   var body = cardNewBody(), target = menu ? (cardPartnerOnly() ? 'active' : 'review') : '';
   var text = {}; langs.forEach(function (l) { text[l] = CARD.text[l].trim(); });
-  var gen = CARDS.gen;
+  // сторож цепочки — ЛИЧНОСТЬ (WHO), не свежесть списка (CARDS.gen): после 201 карточка уже есть на сервере, и уход в
+  // список (loadCards двигает gen) не должен молча терять её рецепты; при смене личности цепочка обрывается
+  var who = WHO;
   CARD.busy = true; CARD.press = menu ? 'add' : 'off'; CARD.deny = ''; CARD.err = ''; render();
   api('POST', '/bar/products', body).then(function (r) {
-    if (gen !== CARDS.gen) { CARD.busy = false; return; }
+    if (who !== WHO) { CARD.busy = false; return; }
     var ok = r.status === 201 && r.data && typeof r.data.id === 'number' && r.data.state === 'draft';
     if (!ok) { CARD.busy = false; CARD.press = ''; CARD.deny = denyText(r); haptic('warn'); render(); return; }
     var id = r.data.id, saved = [];
@@ -230,13 +232,13 @@ function cardCreate(menu) {
       go('barCard', String(id));
       loadCards();
     };
-    var mark = function (st) { CARDS.list = CARDS.list.map(function (x) { return x.id !== id ? x : Object.assign({}, x, { state: st || x.state, recipes: saved.slice() }); }); };
+    var mark = function (st) { CARDS.list = (CARDS.list || []).map(function (x) { return x.id !== id ? x : Object.assign({}, x, { state: st || x.state, recipes: saved.slice() }); }); };
     var next = function () {
-      if (gen !== CARDS.gen) { CARD.busy = false; return; }
+      if (who !== WHO) { CARD.busy = false; return; }
       if (saved.length < langs.length) {
         var l = langs[saved.length];
         api('POST', '/bar/products/' + id + '/recipe', { lang: l, body: text[l] }).then(function (rr) {
-          if (gen !== CARDS.gen) { CARD.busy = false; return; }
+          if (who !== WHO) { CARD.busy = false; return; }
           if (!(rr.status === 201 && rr.data && rr.data.lang === l)) { mark(); land(slovo('barCard.part.recipe', { lang: l.toUpperCase() }), denyText(rr)); return; }
           saved.push(l); next();
         });
@@ -245,7 +247,7 @@ function cardCreate(menu) {
       mark();
       if (!target) { land(slovo('barCard.done.off')); return; }
       api('POST', '/bar/products/' + id + '/state', { state: target }).then(function (rs) {
-        if (gen !== CARDS.gen) { CARD.busy = false; return; }
+        if (who !== WHO) { CARD.busy = false; return; }
         if (!(rs.status === 200 && rs.data && rs.data.state === target)) { land(slovo(target === 'active' ? 'barCard.part.active' : 'barCard.part.review'), denyText(rs)); return; }
         mark(target);
         land(slovo(target === 'active' ? 'barCard.done.active' : 'barCard.done.review'));

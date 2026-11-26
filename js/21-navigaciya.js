@@ -695,7 +695,8 @@ function go(screen, p) {
       !(current === 'barCard' && cardPair(param) && cardPair(p))) {
     // с предпросмотра на рождённую карточку переживают заметка, отказ и несохранённые рецепты (cardCreate, carry);
     // с карточки на карточку — одна заметка, как прежде
-    var keep = current === 'barCard' ? (CARD.carry || { note: CARD.note }) : null;
+    // carry переживает и уход в список во время цепочки: рождённая карточка открывается со своим итогом откуда угодно
+    var keep = CARD.carry || (current === 'barCard' ? { note: CARD.note } : null);
     cardReset();
     if (keep) {
       CARD.note = keep.note || ''; CARD.deny = keep.deny || '';

@@ -11,6 +11,8 @@
 //   mN — «Создать» шлёт запрос сам;                    mZ — «назад» с предпросмотра — в список, а не на форму;
 //   mS — переход форма→предпросмотр стирает набранное; mK — после обрыва рецепта несохранённый рецепт пропадает;
 //   mL — в форме один язык рецепта вместо трёх;        mO — «Создать выключенной» шлёт ещё и смену состояния.
+//   mW — цепочку сторожит свежесть списка (CARDS.gen), а не личность (ревью #496 п.2);  mC — carry теряется, если ушли в список;
+//   mI — цепочка не слышит смену личности (WHO);  mD — в демонстрации «та же группа?» формы заведения — «Это демонстрация» (100e4a9 снят).
 'use strict';
 const vm = require('vm'), path = require('path');
 const root = process.argv[2], mutant = process.argv[3] || '';
@@ -25,6 +27,10 @@ const MUT = {
   mZ: ['js/21-navigaciya.js', "barCard: function () { return String(param) === 'preview' ? { s: 'barCard', p: 'new' } : 'barCards'; },", "barCard: 'barCards',"],
   mS: ['js/21-navigaciya.js', '!(current === \'barCard\' && cardPair(param) && cardPair(p))) {', 'true) {'],
   mK: ['js/21-navigaciya.js', 'if (keep.text) {', 'if (false) {'],
+  mW: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n    var ok =", "if (who !== WHO || current !== 'barCard') { CARD.busy = false; return; }\n    var ok ="],
+  mI: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n    var ok =", "\n    var ok ="],
+  mC: ['js/21-navigaciya.js', "var keep = CARD.carry || (current === 'barCard' ? { note: CARD.note } : null);", "var keep = current === 'barCard' ? (CARD.carry || { note: CARD.note }) : null;"],
+  mD: ['js/21-navigaciya.js', " && !(/^c-group-(theirs|mine)$/.test(a) && !CARD.edit)) {", ") {"],
   mL: ['js/16-ekrany-bar.js', 'CARD_LANGS.map(function (l) {\n            return \'<div class="field"><label for="c-rec-\'', 'CARD_LANGS.slice(0, 1).map(function (l) {\n            return \'<div class="field"><label for="c-rec-\''],
   mO: ['js/08-kartochki.js', "if (!target) { land(slovo('barCard.done.off')); return; }", ';'],
 };
@@ -170,6 +176,43 @@ const btn = (h, a) => { const m = h.match(new RegExp('<button[^>]*data-action="'
   start(false, false); R("go('barCard', 'preview')");
   h = html();
   check('card44-pustoj: «Карточка не заполнена» и «К форме», кнопок рождения нет', [h.includes('Карточка не заполнена.'), !!btn(h, 'c-fix'), !btn(h, 'c-add'), !btn(h, 'c-off')], [true, true, true, true]);
+
+  // card44-uhod-v-cepochke (ревью #496, п.2): человек ушёл в список, пока цепочка шла, — loadCards двигает CARDS.gen.
+  // Карточка после 201 уже на сервере: цепочка доходит до конца и открывает её с итогом, рецепты не пропадают молча
+  const api0 = ctx.api;
+  start(true); R("CARD.text = { ru: 'рецепт', en: 'recipe' }; go('barCard', 'preview')");
+  ctx.api = (m, u, body) => { const p = api0(m, u, body);
+    return /\/bar\/products$/.test(u) ? p.then(r => { R("current = 'barCards'; param = null; CARDS.gen++;"); return r; }) : p; };
+  R("doAction('c-add')"); await tick(); ctx.api = api0;
+  check('card44-uhod-v-cepochke: цепочка дошла до конца', posts(), ['P', 'P/501/recipe ru', 'P/501/recipe en', 'P/501/state active']);
+  check('card44-uhod-v-cepochke: открыта рождённая карточка с итогом, busy снят', R("[current, param, CARD.note, CARD.busy].join('|')"), 'barCard|501|' + R("slovo('barCard.done.active')") + '|false');
+  // то же, но рецепт EN отказан: несохранённый рецепт переезжает в поле карточки и после ухода в список
+  start(true); replies['recipe:en'] = { status: 422, data: { detail: 'Слишком длинно.' } };
+  R("CARD.text = { ru: 'рецепт', en: 'recipe' }; go('barCard', 'preview')");
+  ctx.api = (m, u, body) => { const p = api0(m, u, body);
+    return /\/bar\/products$/.test(u) ? p.then(r => { R("current = 'barCards'; param = null; CARDS.gen++;"); return r; }) : p; };
+  R("doAction('c-add')"); await tick(); ctx.api = api0;
+  check('card44-uhod-v-cepochke: обрыв на EN — карточка 501, рецепт EN в поле, отказ показан', R("[current, param, CARD.text.en, !!CARD.deny].join('|')"), 'barCard|501|recipe|true');
+
+  // card44-smena-lichnosti: смена личности (WHO++) посреди цепочки — цепочка обрывается, чужой карточки не открывает
+  start(true); R("CARD.text = { ru: 'рецепт' }; go('barCard', 'preview')");
+  ctx.api = (m, u, body) => { const p = api0(m, u, body);
+    return /\/bar\/products$/.test(u) ? p.then(r => { R("WHO++; current = 'home'; param = null;"); return r; }) : p; };
+  R("doAction('c-add')"); await tick(); ctx.api = api0;
+  check('card44-smena-lichnosti: после 201 запросов нет, экран не уведён, busy снят', [posts(), R("current + ':' + CARD.busy")], [['P'], 'home:false']);
+
+  // card44-demo-gruppa (ревью #496, п.3; правка 100e4a9): в демонстрации ответ «та же группа?» формы ЗАВЕДЕНИЯ ничего
+  // не шлёт и ведёт на предпросмотр; у правки черновика (CARD.edit) он шлёт PATCH — там «Это демонстрация»
+  start(false);
+  R("LIVE = false; FLASH = null; CARDS.list = [{ id: 9, title: 'Латте', group: 'Кофе', price: 200, state: 'active', recipes: ['ru'] }];" +
+    "CARD.v['c-group'] = 'Ко фе'; doAction('c-create')");
+  check('card44-demo-gruppa: вопрос о похожей группе', R("CARD.groupAsk + ':' + current + ':' + param"), 'Кофе:barCard:new');
+  R("doAction('c-group-theirs')"); await tick();
+  check('card44-demo-gruppa: «Да, та же» — предпросмотр со сведённой группой, без «Это демонстрация»', R("[current, param, CARD.v['c-group'], FLASH ? FLASH.text : ''].join('|')"), 'barCard|preview|Кофе|');
+  R("FLASH = null; CARD.edit = 9; doAction('c-group-mine')");
+  check('card44-demo-gruppa: у правки черновика — «Это демонстрация»', R("FLASH ? FLASH.text : ''"), 'Это демонстрация');
+  check('card44-demo-gruppa: запросов нет', posts(), []);
+  R("LIVE = true; FLASH = null; CARD.edit = 0;");
 
   const bad = ok.filter(x => !x).length;
   console.log((bad ? 'КРАСНОЕ: ' + bad : 'ЗЕЛЁНОЕ: 0') + ' из ' + ok.length);
