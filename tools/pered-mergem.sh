@@ -42,10 +42,9 @@
 #   • `check-recepty.py` — рецепты README исполняются: прогон зовёт съёмку и обход образом, это
 #     батарея, а не ворота: один из рецептов — весь live.cjs, замер 20.11.2026 — больше 18 мин, погашен
 #     недоделанным. Гоняется по поводу правки README;
-#   • САМОПРОВЕРКИ трёх приборов — `check-opis.py`, `v-oblasti.py`, `check-recepty.py`: их
-#     самопроверка требует живого git, а ворота гоняются и на копии без него (замер opis8-4a
-#     26.11.2026 на `git archive`). Шаг 18 их НЕ зовёт и называет строкой в каждом прогоне
-#     (`SP_ZHDUT_GIT`); чинить или объявить «только для автора» — отдельный разбор;
+#   • (до 26.11.2026 здесь стояли самопроверки `check-opis.py`, `v-oblasti.py`,
+#     `check-recepty.py` — ждали живой git; починены, их судит шаг 18. `SP_ZHDUT_GIT` оставлен
+#     пустым НАРОЧНО: новый прибор, которому git нужен, вносится туда строкой с причиной);
 #   • шаг 14 с кодом 2 («рецепт не исполнен», «не измерено») МЕРДЖ НЕ ДЕРЖИТ: на стволе 20.11.2026
 #     таких 23+52, и приговор «не выполнено» не дал бы смержить ничего. Число печатается в
 #     последней строке — «зелёное» при нём читать «шаг 7 смотрел не на всё», а не «сошлось»;
@@ -552,17 +551,16 @@ verdict 'screens.html равна пересборке из входов дере
 # `--самопроверка`, обязаны совпасть с SP_PRIBORY + SP_V_SHAGE_5 + SP_ZHDUT_GIT в обе стороны. Новый прибор
 # с самопроверкой, не внесённый сюда, — красное, а не молчаливое «его нет»; выпавший — тоже.
 # ⚠ Висящий не равен красному: `timeout` → «НЕ ВЫПОЛНЕНО: висит», а не «поймали».
-# ⚠ SP_ZHDUT_GIT — НЕ исключение молча: шаг их не зовёт, потому что на копии без git их
-# самопроверка краснеет дорогой, а не прибором. Названы строкой в каждом прогоне и в
-# последней строке приговора. Причины, замер на `git archive` ствола 431af65:
-#   check-opis.py    rc=1 — контроль «живой git в чекауте» (check-opis.py:639);
-#   v-oblasti.py     rc=1 — «корень даёт ветку и sha», «подкаталог НЕ получает чужой sha» (:579);
-#   check-recepty.py rc=2 — пропущено 5 позиций «нет репозитория».
-# В рабочем дереве с git все трое rc=0.
+# ⚠ SP_ZHDUT_GIT — НЕ исключение молча: шаг его приборов не зовёт и называет строкой в
+# каждом прогоне и в последней строке приговора. Сейчас ПУСТ: трое, кто там стоял
+# (check-opis, v-oblasti, check-recepty — контроль различения ходил в git своего чекаута),
+# с 26.11.2026 строят свой репозиторий во временном каталоге и проходят на `git archive`.
+# ⚠ check-recepty.py самопроверкой поднимает контейнеры образа playwright: ворота и так
+# держат слот батареи, но шаг 18 этим образ занимает.
 step '18. самопроверки приборов — --самопроверка каждого (приговор)'
-SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-sostav.py imena-ascii.py klient.cjs klient.py pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py'
+SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py v-oblasti.py'
 SP_V_SHAGE_5='check-stages.py'
-SP_ZHDUT_GIT='check-opis.py check-recepty.py v-oblasti.py'
+SP_ZHDUT_GIT=''
 not_done18=''
 sp_t0=$(date +%s%3N)
 sp_nashli=$(cd "$T/tools" && grep -lF -- '--самопроверка' *.py *.cjs 2>/dev/null | sort)
