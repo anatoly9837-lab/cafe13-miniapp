@@ -5,21 +5,24 @@
    у руки ЧАЙ-Б (js/11, js/18, js/21). Календарь «выбрать» — у руки шага 43 (js/23-kalendar.js): стык назначен
    координатором — go('calendar', {pick: 'teaHold'|'teaBook'}), выбранное — calPicked(откуда).
 
-   ⚠ РУЧЕК СЕРВЕРА НЕТ. На api main шага 42 нет; в api#224–#227 нет карточки, каталога, кадра и брони мастера
-   («Чего НЕТ» в #227). Адреса НЕ выдумываются: таблица TEA_URL пуста, и пока адреса в ней нет, живой режим
-   этого запроса не делает — экран говорит, что не загрузилось, и в WIRED экраны не стоят (дверь гаснет сама).
-   Адрес и форму ответа называет PR сервера; разбор ответа — в одном месте (teaCardFrom и соседи), ключи —
-   по словам рецепта, сверить со снимком формы, когда он будет.
+   Ручки сервера (api app/routers/tea.py, бой d23e45d): каталог, чужая карточка, своя карточка и подача — в TEA_URL
+   ниже. Кадра и брони мастера на сервере НЕТ (POST /tea/bookings → 404, кадры — «отдельная часть», tea.py:21):
+   их адреса пусты, и пока адреса нет, живой режим этого запроса не делает; teaBook в WIRED не стоит (дверь K5
+   гаснет сама, teaCardHtml). Разбор ответа — в одном месте (teaCardFrom и соседи).
    Демонстрация — набор teaCardsDemo() в той форме, которую ждём от разбора.
 
    Слова — ключами `tea.*` в js/00-slova.js (словарь ведёт ЧАЙ-A, строки ЧАЙ-Б приходят письмом).
    Деньги — строкой сервера, клиент не округляет: на экран — money(строка). Доля клуба и цена заявки — числа
    сервера; в демонстрации — TEA_DEMO, в разметке литерала нет. */
 
-/* Живые ручки (слово coordinator-3 25.11, api 9a0c7e0 в бою): заявка церемонии — POST /master/request с
-   occupancy 'tea', цена — GET /master/price (та же, что у ивента; доли клуба `share` в ответе пока нет, она
-   необязательна). Каталог, карточка, кадр и бронь мастера — ждут ручек server-katalog. */
-var TEA_URL = { list: null, card: null, shot: null, mine: null, myBooks: null, book: null, apply: null,
+/* Живые ручки: заявка церемонии — POST /master/request с occupancy 'tea', цена — GET /master/price (доля клуба
+   `share` — строкой, teaPrice). Каталог — GET /tea/masters (только согласованные, №66), чужая карточка —
+   GET /tea/masters/{master_id} (404 — нет согласованной), своя — GET /tea/card/mine, подача и правка —
+   POST /tea/card (api tea.py, бой d23e45d). Кадра (shot), своих броней (myBooks) и брони (book) на сервере нет. */
+var TEA_URL = { list: function () { return '/tea/masters'; },
+                card: function (id) { return '/tea/masters/' + encodeURIComponent(id); },
+                shot: null, mine: function () { return '/tea/card/mine'; }, myBooks: null, book: null,
+                apply: function () { return '/tea/card'; },
                 hold: function () { return '/master/request'; }, price: function () { return '/master/price'; } };
 function teaLive(k) { return LIVE && typeof TEA_URL[k] === 'function'; }
 
@@ -46,7 +49,9 @@ var TEA_SHOTS_MAX = 3;
 function teaCardFrom(d) {
   if (!d || typeof d !== 'object') return null;
   if (typeof d.master_id !== 'number' || typeof d.name !== 'string') return null;
+  // цена — Decimal сервера с двумя знаками («600.00»): нулевые копейки на экран не идут, прочее — как пришло
   var price = teaPrice(d.price); if (price === null) return null;
+  price = price.replace(/\.0+$/, '');
   var mins = typeof d.duration_min === 'number' && d.duration_min > 0 ? d.duration_min : null;
   var n = typeof d.shots === 'number' && d.shots >= 0 ? Math.min(TEA_SHOTS_MAX, Math.floor(d.shots)) : 0;
   var shots = []; for (var i = 0; i < n; i++) shots.push(teaShotUrl(d.master_id, i + 1));
@@ -216,8 +221,9 @@ function teaMyId() { var m = TEA.mine, c = m && (m.live || m.card); return c ? c
 function teaIsMine(c) { var my = teaMyId(); return LIVE && my !== null && c.id === my; }
 function teaCardHtml(c, o) {
   o = o || {};
+  // K5 ведёт на teaBook; пока брони мастера на сервере нет (teaBook вне WIRED), кнопки в живом нет — как у дверей closed()
   var foot = !o.book ? '' : teaIsMine(c) ? '<span class="small">' + esc(slovo('tea.card.mine')) + '</span>'
-    : '<button type="button" class="btn" data-action="tea-book:' + esc(c.id) + '">' + esc(slovo('tea.card.book')) + '</button>';
+    : closed('teaBook') ? '' : '<button type="button" class="btn" data-action="tea-book:' + esc(c.id) + '">' + esc(slovo('tea.card.book')) + '</button>';
   return teaAlbum(c.shots || []) +
     '<div class="card"><div class="col"><span class="label">' + esc(slovo('tea.card.aboutLabel')) + '</span>' +
       '<p style="font-size:14px;white-space:pre-line;margin:0">' + esc(c.about) + '</p></div></div>' +
