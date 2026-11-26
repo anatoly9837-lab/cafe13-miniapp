@@ -250,7 +250,7 @@ var TITLES = {
   consentFull: 'Подробно', joinAbout: 'О клубе',
   drink: 'Напиток', barCart: 'Ваш заказ', barOrder: 'Заказ', barRecipe: 'Рецепт',
   barQueue: 'Заказы на баре', topup: 'Пополнить счёт', barShot: 'Съёмка напитков', barDay: 'Отчёт за день',
-  barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход',
+  barExpense: 'Затраты направления', curator: 'Направление «Бар»', barMoney: 'Доход и расход', myBiz: 'Бизнес',
   organizer: 'Мои мероприятия', eventNew: 'Новое мероприятие',
   eventManage: 'Мероприятие', eventEdit: 'Мероприятие', partner: 'Моё направление', serviceNew: 'Новая услуга',
   people: 'Члены клуба', manage: 'Управление', joinQueue: 'Заявки на доступ', topupQueue: 'Заявки на пополнение', topupReq: 'Заявка на пополнение', withdraw: 'Вывести деньги', withdrawQueue: 'Запросы на вывод', clubStats: 'Статистика клуба', artStats: slovo('artStats.title'), eventApproval: slovo('eventApproval.title'), roleAccount: 'Счёт роли', barCards: 'Карточки меню', barCard: 'Карточка',
@@ -337,7 +337,7 @@ var BACK = {
   teaMasters: 'guest', teaMaster: 'teaMasters', teaBook: 'teaMaster', teaApply: 'home', teaHold: 'home', teaReqs: 'masters', teaReq: 'teaReqs',
   teaJoin: function () { return typeof CAL !== 'undefined' && CAL.ret ? 'calendar' : 'events'; },
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
-  payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home',
+  payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home', myBiz: 'home',
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
@@ -558,6 +558,8 @@ var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-relo
 
 function go(screen, p) {
   if (!SCREENS[screen]) return;
+  // фича 10 (рецепт moi-biznesy/myBiz.md, «Состояния»): карточка дела без выбранного дела — «Клуб», пустой карточки нет
+  if (screen === 'myBiz' && (!BAR || BAR.id !== BAR_PICK)) screen = 'home';
   calGo(screen, p);  // шаг 43: вход в календарь и возврат в него (js/23-kalendar.js)
   if (screen === 'eventEdit' && (current !== 'eventEdit' || EDT.id !== p)) {
     var ee = eventById(p); EDT = { id: p, seats: ee ? String(ee.unl ? 0 : ee.of) : '', about: ee ? ee.about : '',
@@ -589,7 +591,8 @@ function go(screen, p) {
   if (screen === 'barDay' && current !== 'barDay')
     DAY.from = current === 'barQueue' || current === 'barMoney' ? current : homeOf();
   if (screen === 'barMoney' && current !== 'barMoney') {
-    BOOK.from = current === 'barQueue' ? 'barQueue' : homeOf();
+    // фича 10: открыт из карточки дела — назад в неё, а не на «Клуб»
+    BOOK.from = current === 'barQueue' || current === 'myBiz' ? current : homeOf();
     BOOK.ask = false; BOOK.err = '';
   }
   // уход с экрана — тоже «ушли»: окно уровня уходит отправкой, а не сбросом (v91)
@@ -664,10 +667,15 @@ function go(screen, p) {
   if (screen === 'membership' && current !== 'membership' && LIVE) { MREQ.err = ''; loadTiers(); }
   if (screen === 'memberRequests' && current !== 'memberRequests' && mayRequests()) { MREQS.err = ''; MREQS.ask = 0; loadRequests(); if (!TIERS.list) loadTiers(); }
   if (screen === 'home' && current !== 'home' && mayRequests() && WIRED.memberRequests) loadRequests();
+  // фича 10: список дел для группы «Мои бизнесы» — тот же /directions, что у «Услуг»; спрашивается на входе только у того,
+  // у кого грантов bar/curator на два направления и больше: у остальных «Клуб» без нового запроса
+  if (screen === 'home' && current !== 'home' && LIVE && myGrantDirs().length >= 2) loadBiz();
+  // карточка дела: смену могли открыть с другого телефона — состояние бара перечитывается на входе (B1 как на barQueue)
+  if (screen === 'myBiz' && current !== 'myBiz' && LIVE) loadBar(function () { if (current === 'myBiz') render(); });
   // с самой карточки в список возвращаются — это не новый вход, «откуда» не трогать
   // «Услуги» — дверь работника (шаг 15): без неё «назад» увёл бы работника с членством на «Клуб», где двери нет
   if (screen === 'barCards' && current !== 'barCards' && current !== 'barCard') {
-    CARDS.from = current === 'barQueue' || current === 'guest' ? current : homeOf();
+    CARDS.from = current === 'barQueue' || current === 'guest' || current === 'myBiz' ? current : homeOf();
     // шаг 16: дверь партнёра — в блоке бизнеса на «Клубе»; у барной стороны там своя дверь, и она — бар (предел строкой)
     CARDS.partner = current === 'home' && !!cardPartnerDir() && !DATA.barSide;
   }
@@ -798,6 +806,7 @@ function doAction(a) {
     if (a === 'retry-menu') { loadMenu(); render(); return; }
     if (a === 'klub-biz-retry') { loadBiz(); return; }
     if (a === 'klub-biz') { bizPick(Number(arg)); return; }
+    if (a === 'my-biz') { bizPick(Number(arg), 'myBiz'); return; }
     /* Повтор своего заказа (рецепт `barOrder`): прежний отказ стоит до ответа — гасить его раньше
        значило бы на миг сказать «заказа нет». Без направления опросу спросить некого: сперва бар. */
     if (a === 'retry-mine') {

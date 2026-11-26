@@ -14826,6 +14826,244 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
   }
 
+  // ── фича 10 (Cafe13KPG#1107, рецепт _docs/recept/ekran/moi-biznesy/): «Мои бизнесы» на «Клубе» и карточка дела myBiz.
+  // Слово владельца: «как куратор должен видеть список бизнесов которые я курирую. И проваливаюсь уже в плашку этого
+  // бизнеса я могу менять именно этот бизнес». Граница одного и двух — sostav.md: при одном деле ни одного нового нажатия
+  if (part(2)) {
+    const CHAI = { id: 9, title: 'Чайная у моря', is_active: true, is_open: true };
+    // дело без гранта (3) и закрытое направление с грантом (5) — в «Мои бизнесы» не попадают
+    const KUH = { id: 3, title: 'Кухня', is_active: true, is_open: true };
+    const OLD = { id: 5, title: 'Старый бар', is_active: false, is_open: false };
+    const who = (roles, member) => { const me = clone(OWNER); me.roles = roles;
+      if (member === false) { me.membership_active = false; me.membership = null; me.memberships = []; } return me; };
+    const CUR2 = [{ role: 'curator', direction_id: 7 }, { role: 'curator', direction_id: 9 }, { role: 'curator', direction_id: 5 }];
+    // st — состояние стенда: открыт ли бар 7 и чай 9; смена открывается POST /shifts/open
+    const route = st => q => {
+      const u = q.url();
+      if (u.endsWith('/directions')) return json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: st.bar }, Object.assign({}, CHAI, { is_open: st.chai }), KUH, OLD]);
+      if (u.includes('/bar/menu')) return json(200, MENU);
+      if (u.includes('/bar/products')) return json(200, []);
+      if (u.includes('/bar/orders') && q.method() === 'GET') return json(200, []);
+      if (u.includes('/membership-requests')) return json(200, { requests: [], pending: 0 });
+      if (u.endsWith('/shifts/open')) { const b = JSON.parse(q.postData()); if (b.direction_id === 9) st.chai = true; if (b.direction_id === 7) st.bar = true;
+        return json(201, { id: 1, direction_id: b.direction_id, member_id: b.member_id, opened_at: '2026-11-26T05:00:00+00:00' }); }
+      return undefined;
+    };
+    const st0 = () => ({ bar: true, chai: true });
+    const mbOpen = async (roles, st, member) => { const s = await open(true, true, json(200, who(roles, member)), null, null, null, route(st || st0()));
+      await s.p.waitForTimeout(400); return s; };
+    const rows = s => s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="my-biz:"]')].map(b => ({
+      id: b.getAttribute('data-action'), t: (b.querySelector('b') || {}).textContent, pill: b.querySelector('.pill') ? b.querySelector('.pill').textContent : null })));
+    const labels = s => s.p.evaluate(() => [...document.querySelectorAll('#view .group > .label')].map(e => e.textContent));
+    const groupOf = (s, label) => s.p.evaluate(l => { const g = [...document.querySelectorAll('#view .group')].filter(x => (x.querySelector(':scope > .label') || {}).textContent === l)[0];
+      return g ? g.textContent : null; }, label);
+    const cur = s => s.p.evaluate(() => ({ current, pick: BAR_PICK, bar: BAR && BAR.id }));
+    const dirsAsked = s => s.calls.filter(c => c.method === 'GET' && c.url.endsWith('/directions')).length;
+    const qs = (s, path) => s.calls.filter(c => c.method === 'GET' && c.url.includes(path)).map(c => (c.url.match(/direction_id=(\d+)/) || [])[1]);
+    const BAR_ROWS = ['Заказы на баре', 'Карточки меню', 'Доход и расход бара'];
+    const fin = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
+    const toBiz = async (s, n, id) => {
+      await s.p.click(`#view [data-action="my-biz:${id}"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: строка дела ${id} не нажимается`));
+      await s.p.waitForTimeout(400);
+      const c = await cur(s);
+      if (c.current !== 'myBiz' || c.pick !== id || c.bar !== id) { bad.push(`${n}: строка дела ${id} не открыла его карточку: ${JSON.stringify(c)}`); return false; }
+      return true;
+    };
+
+    // moi-biz-odno: куратор ОДНОГО дела — «Клуб» прежний, нового запроса на входе нет, очередь своего дела одним нажатием
+    {
+      const n = 'moi-biz-odno';
+      const s = await mbOpen([{ role: 'curator', direction_id: 7 }]);
+      const t = await s.view();
+      if (t.includes('Мои бизнесы')) bad.push(`${n}: при одном деле группа «Мои бизнесы» — лишний шаг`);
+      const w = await groupOf(s, 'Работа');
+      if (!w || BAR_ROWS.some(x => !w.includes(x))) bad.push(`${n}: строки бара в «Работе» не как сегодня: «${w}»`);
+      if (dirsAsked(s) !== 0) bad.push(`${n}: вход на «Клуб» спросил /directions ${dirsAsked(s)} раз — новый запрос у человека с одним делом`);
+      await s.p.click('#view [data-go="barQueue"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Заказы на баре» не нажимаются`));
+      await s.p.waitForTimeout(400);
+      if ((await cur(s)).current !== 'barQueue') bad.push(`${n}: «Заказы на баре» не открыли очередь одним нажатием`);
+      if (JSON.stringify(qs(s, '/bar/orders')) !== '["7"]') bad.push(`${n}: очередь не своего дела: ${JSON.stringify(qs(s, '/bar/orders'))}`);
+      await fin(s, n);
+    }
+    // moi-biz-dva: куратор «Бара» и «Чая» — группа словами сервера, строк бара в «Работе» нет; «Чай» → карточка «Чая»
+    {
+      const n = 'moi-biz-dva';
+      const s = await mbOpen(CUR2);
+      const r = await rows(s);
+      if (JSON.stringify(r.map(x => [x.id, x.t])) !== JSON.stringify([['my-biz:7', 'Бар'], ['my-biz:9', 'Чайная у моря']]))
+        bad.push(`${n}: строки «Мои бизнесы» не два своих активных дела словами сервера: ${JSON.stringify(r)}`);
+      if (!(await labels(s)).includes('Мои бизнесы')) bad.push(`${n}: нет подписи группы «Мои бизнесы»`);
+      const t = await s.view();
+      BAR_ROWS.forEach(x => { if (t.includes(x)) bad.push(`${n}: «${x}» плоско на «Клубе» при двух делах`); });
+      if (await groupOf(s, 'Работа') !== null) bad.push(`${n}: группа «Работа» без заявок осталась`);
+      if (await toBiz(s, n, 9)) {
+        const l = await labels(s);
+        if (!l.includes('Бизнес «Чайная у моря»')) bad.push(`${n}: подпись карточки не «Бизнес «Чайная у моря»»: ${JSON.stringify(l)}`);
+        if ((await s.view()).includes('Бизнес «Бар»')) bad.push(`${n}: в карточке «Чая» чужое дело`);
+      }
+      await fin(s, n);
+    }
+    // moi-biz-klubnoe-snaruzhi: «Заявки на членство» остаются в «Работе» на «Клубе», в карточке дела их нет. Экран заявок
+    // вне WIRED (вернётся после api) — случай включает его на странице, иначе строки нет ни у кого и запрет не различает
+    {
+      const n = 'moi-biz-klubnoe-snaruzhi';
+      const s = await mbOpen(CUR2.concat([{ role: 'head', direction_id: null }]));
+      await s.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s.p.waitForTimeout(400);
+      const w = await groupOf(s, 'Работа');
+      if (!w || !w.includes('Заявки на членство')) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — «Заявок на членство» нет в «Работе»: «${w}»`);
+      if (w && BAR_ROWS.some(x => w.includes(x))) bad.push(`${n}: рядом с заявками строки бара: «${w}»`);
+      if ((await groupOf(s, 'Мои бизнесы') || '').includes('Заявки на членство')) bad.push(`${n}: заявки внутри «Мои бизнесы»`);
+      if (await toBiz(s, n, 7) && (await s.view()).includes('Заявки на членство')) bad.push(`${n}: клубное в карточке дела`);
+      await fin(s, n);
+    }
+    // moi-biz-chuzhoe (curator 7 + worker 9 — дело одно) и moi-biz-net (без своих дел): «Клуб» как сегодня
+    for (const [n, roles] of [['moi-biz-chuzhoe', [{ role: 'curator', direction_id: 7 }, { role: 'worker', direction_id: 9 }]], ['moi-biz-net', []]]) {
+      const s = await mbOpen(roles);
+      if ((await s.view()).includes('Мои бизнесы') || (await rows(s)).length) bad.push(`${n}: группа «Мои бизнесы» у человека без двух своих дел`);
+      if (dirsAsked(s) !== 0) bad.push(`${n}: вход на «Клуб» спросил /directions`);
+      if (n === 'moi-biz-chuzhoe' && !(await groupOf(s, 'Работа') || '').includes('Заказы на баре')) bad.push(`${n}: строки бара пропали из «Работы»`);
+      await fin(s, n);
+    }
+    // moi-biz-vnutri-chai + moi-biz-nazad: в карточке «Чая» карточки меню и очередь — «Чая»; назад из barCards и barMoney — в ту же карточку
+    {
+      const n = 'moi-biz-vnutri-chai';
+      const s = await mbOpen(CUR2);
+      if (await toBiz(s, n, 9)) {
+        await s.p.click('#view [data-go="barCards"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Карточки меню» не нажимаются`));
+        await s.p.waitForTimeout(400);
+        if ((await s.view()).includes('Не удалось определить')) bad.push(`${n}: карточки меню «Чая» — с плашкой`);
+        if (!qs(s, '/bar/products').length || qs(s, '/bar/products').some(x => x !== '9')) bad.push(`${n}: карточки спрошены не у «Чая»: ${JSON.stringify(qs(s, '/bar/products'))}`);
+        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(300);
+        let c = await cur(s);
+        if (c.current !== 'myBiz' || c.pick !== 9) bad.push(`moi-biz-nazad: назад с «Карточек меню» не в карточку «Чая»: ${JSON.stringify(c)}`);
+        await s.p.click('#view [data-go="barMoney"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Доход и расход бара» не нажимается`));
+        await s.p.waitForTimeout(300);
+        if ((await cur(s)).current !== 'barMoney') bad.push(`moi-biz-nazad: «Доход и расход бара» не открылся`);
+        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(300);
+        c = await cur(s);
+        if (c.current !== 'myBiz' || c.pick !== 9) bad.push(`moi-biz-nazad: назад с «Дохода и расхода» не в карточку «Чая»: ${JSON.stringify(c)}`);
+        await s.p.click('#view [data-go="barQueue"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Заказы на баре» не нажимаются`));
+        await s.p.waitForTimeout(400);
+        const o = qs(s, '/bar/orders');
+        if (!o.length || o.some(x => x !== '9')) bad.push(`${n}: очередь не «Чая»: ${JSON.stringify(o)}`);
+      }
+      await fin(s, n);
+    }
+    // moi-biz-smena: в карточке закрытого «Чая» — «Открыть смену на себя»; после — «открыт», и строка на «Клубе» без «закрыт»
+    {
+      const n = 'moi-biz-smena', st = { bar: true, chai: false };
+      const s = await mbOpen(CUR2, st);
+      const r0 = (await rows(s)).filter(x => x.id === 'my-biz:9')[0];
+      if (!r0 || r0.pill !== 'закрыт') bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — закрытый «Чай» без метки «закрыт»: ${JSON.stringify(r0)}`);
+      if (await toBiz(s, n, 9)) {
+        await s.p.click('#view [data-action="shift-open"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Открыть смену на себя» в карточке закрытого дела`));
+        await s.p.waitForTimeout(500);
+        const p = s.calls.filter(c => c.method === 'POST' && c.url.endsWith('/shifts/open')).map(c => JSON.parse(c.body).direction_id);
+        if (JSON.stringify(p) !== '[9]') bad.push(`${n}: смена открыта не у «Чая»: ${JSON.stringify(p)}`);
+        const pill = await s.p.evaluate(() => (document.querySelector('#view .card.strong .pill') || {}).textContent);
+        if (pill !== 'открыт') bad.push(`${n}: после открытия смены метка «${pill}»`);
+        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(400);
+        const r1 = (await rows(s)).filter(x => x.id === 'my-biz:9')[0];
+        if (!r1 || r1.pill !== null) bad.push(`${n}: на «Клубе» строка «Чая» после открытия смены: ${JSON.stringify(r1)}`);
+      }
+      await fin(s, n);
+    }
+    // moi-biz-smena-dela: корзина «Бара» (выбор на «Услугах») не переезжает в выбранный на «Клубе» «Чай» — один приём bizPick
+    {
+      const n = 'moi-biz-smena-dela';
+      const s = await mbOpen(CUR2);
+      await toBar(s, 7);
+      await s.p.click('[data-action="cart-add:11"]', { timeout: 3000 }).catch(() => {});
+      if (await s.p.evaluate(() => Object.keys(CART).length) !== 1) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — позиция в корзину «Бара» не легла`);
+      await s.p.click('#tabs [data-go="home"]'); await s.p.waitForTimeout(400);
+      if (await toBiz(s, n, 9) && await s.p.evaluate(() => Object.keys(CART).length) !== 0) bad.push(`${n}: корзина «Бара» переехала в «Чай»`);
+      await fin(s, n);
+    }
+    // moi-biz-stary-put (слово coordinator-3): выбор дела на «Услугах» по-прежнему ведёт в МЕНЮ, а очередь — этого дела
+    {
+      const n = 'moi-biz-stary-put';
+      const s = await mbOpen(CUR2);
+      await toBar(s, 9);
+      const c = await cur(s);
+      if (c.current !== 'bar' || c.pick !== 9) bad.push(`${n}: строка «Услуг» привела не в меню «Чая»: ${JSON.stringify(c)}`);
+      if (!qs(s, '/bar/menu').includes('9')) bad.push(`${n}: меню «Чая» не спрошено: ${JSON.stringify(qs(s, '/bar/menu'))}`);
+      await s.p.click('#tabs [data-go="barQueue"]', { timeout: 3000 }).catch(() => bad.push(`${n}: вкладки «Заказы» нет`));
+      await s.p.waitForTimeout(400);
+      const o = qs(s, '/bar/orders');
+      if (!o.length || o.some(x => x !== '9')) bad.push(`${n}: очередь после выбора «Чая» на «Услугах» не его: ${JSON.stringify(o)}`);
+      await fin(s, n);
+    }
+    // moi-biz-plashka-bez-povtora: без своих дел (два активных, грантов нет) — плашка БЕЗ «Повторить»; сбой сети — с ним
+    // (отрицательный контроль); куратор ОДНОГО дела — плашки нет вовсе, меню своего дела (вторая половина, слово coordinator-3)
+    {
+      const n = 'moi-biz-plashka-bez-povtora';
+      for (const [k, roles, dirs] of [['net', [], null], ['set', [], 'abort'], ['odno', [{ role: 'curator', direction_id: 7 }], null]]) {
+        const base = route(st0());
+        const s = await open(true, true, json(200, who(roles)), null, null, null, q => dirs && q.url().endsWith('/directions') ? dirs : base(q));
+        await s.p.waitForTimeout(300);
+        await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(400);
+        const t = await s.view(), btn = !!(await s.p.$('#view [data-action="retry-menu"]'));
+        if (k === 'net' && (!t.includes('Не удалось определить ваш бизнес.') || btn)) bad.push(`${n}: без своих дел — плашка ${t.includes('Не удалось определить')}, «Повторить» ${btn}`);
+        if (k === 'set' && (!t.includes('Меню не загрузилось') || !btn)) bad.push(`${n}: сбой сети без «Повторить» — контроль не различает`);
+        if (k === 'odno' && (t.includes('Не удалось определить') || !t.includes('Эспрессо'))) bad.push(`${n}: куратор одного дела — плашка или нет меню: ${t.slice(0, 160)}`);
+        await fin(s, `${n}/${k}`);
+      }
+    }
+    // moi-biz-bez-vybora: куратор двух дел на меню без выбора — вместо плашки строки его дел, нажатие → карточка дела
+    {
+      const n = 'moi-biz-bez-vybora';
+      const s = await mbOpen(CUR2);
+      await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(500);
+      if ((await s.view()).includes('Не удалось определить')) bad.push(`${n}: куратору двух дел — плашка вместо строк дел`);
+      const r = await rows(s);
+      if (JSON.stringify(r.map(x => x.id)) !== '["my-biz:7","my-biz:9"]') bad.push(`${n}: строки дел вместо плашки: ${JSON.stringify(r)}`);
+      else await toBiz(s, n, 7);
+      await fin(s, n);
+    }
+    // moi-biz-bez-dela (myBiz.md, «Состояния»): вход в карточку без выбранного дела (перезапуск, прямой go) — «Клуб», пустой карточки нет
+    {
+      const n = 'moi-biz-bez-dela';
+      const s = await mbOpen(CUR2);
+      await s.p.evaluate(() => go('guest')); await s.p.waitForTimeout(200);
+      await s.p.evaluate(() => go('myBiz')); await s.p.waitForTimeout(300);
+      const c = await cur(s);
+      if (c.current !== 'home' || c.pick !== null) bad.push(`${n}: вход без выбора не вернул на «Клуб»: ${JSON.stringify(c)}`);
+      await fin(s, n);
+    }
+    // moi-biz-svezhaya-smena: «Чай» закрыт, пока «Клуб» читал список; смену открыли с другого телефона — карточка перечитывает
+    // бар на входе и говорит «открыт», а не старое слово списка
+    {
+      const n = 'moi-biz-svezhaya-smena', st = { bar: true, chai: false };
+      const s = await mbOpen(CUR2, st);
+      st.chai = true;
+      if (await toBiz(s, n, 9)) {
+        await s.p.waitForTimeout(300);
+        const pill = await s.p.evaluate(() => (document.querySelector('#view .card.strong .pill') || {}).textContent);
+        if (pill !== 'открыт') bad.push(`${n}: смена, открытая без нас, в карточке — «${pill}»`);
+      }
+      await fin(s, n);
+    }
+    // moi-biz-b5-b6: «Доход и расход бара» — только у куратора ЭТОГО дела (bar на «Баре» его не видит); «На счёте» — только у
+    // дела из BW.dirs (остаток партнёра), у другого дела строки нет
+    {
+      const n = 'moi-biz-b5-b6';
+      const s = await mbOpen([{ role: 'bar', direction_id: 7 }, { role: 'curator', direction_id: 9 }]);
+      if (await toBiz(s, n, 7)) {
+        if ((await s.view()).includes('Доход и расход бара')) bad.push(`${n}: бар «Бара» видит «Доход и расход бара»`);
+        await s.p.evaluate(() => { BW.dirs = [{ id: 9, title: 'Чайная у моря', wallet: null }]; render(); });
+        if ((await s.view()).includes('На счёте')) bad.push(`${n}: «На счёте» у дела, которого нет в BW.dirs`);
+        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(400);
+        if (await toBiz(s, n, 9)) {
+          await s.p.evaluate(() => { BW.dirs = [{ id: 9, title: 'Чайная у моря', wallet: null }]; render(); });
+          const t = await s.view();
+          if (!t.includes('Доход и расход бара')) bad.push(`${n}: куратор «Чая» без «Дохода и расхода бара»`);
+          if (!t.includes('На счёте') || !t.includes('доли ещё не назначены')) bad.push(`${n}: нет «На счёте» у дела из BW.dirs`);
+        }
+      }
+      await fin(s, n);
+    }
+  }
+
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.
