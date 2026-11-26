@@ -95,10 +95,13 @@ const CASES = [
     ['Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
     // 4 = /me, /events и два запроса блока букинга на «Клубе»: /master/requests/mine и /master/price?hours=2 (цена
     // от часов не зависит — Cafe13KPG#985, второй цены блок не спрашивает); 6 — плюс два запроса блока
-    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера)
-    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
+    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера);
+    // 7 — плюс GET /master/price без часов: цена церемонии для двери «провести церемонию» (js/21 loadTeaHoldPrice).
+    // Основание: дверь teaHold включена этим PR, цена запрашивается законно
+    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 7],
   // кабинет — дверью (HAS_CABINET), срок «14 ноября 2026» — разбором (RAZBOR); на «Клубе» срока нет (#1096)
-  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 6],
+  // 7 — как у owner-lifelong: цена церемонии (дверь teaHold включена этим PR, цена запрашивается законно)
+  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 7],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -1133,6 +1136,46 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         }
       }
       if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия «Отправить»`);
+      await s.ctx.close();
+    }
+    // дверь «провести церемонию» (teaHold в WIRED, v213): кнопку и переход судит СЛОВО и data-go, а не число запросов.
+    // Цена церемонии запрашивается до проверки двери (js/21 loadTeaHoldPrice, js/07 masterOffer), поэтому без этих
+    // случаев спрятанная кнопка оставила бы те же восемь запросов и прогон был бы зелёным (возврат arhitector4-c3 к #463)
+    const teaDoor = s => s.p.evaluate(() => {
+      const b = [...document.querySelectorAll('#view [data-go="teaHold"]')].filter(x => x.textContent === 'Провести чайную церемонию')[0];
+      return { has: !!b, off: b ? b.disabled : null, text: document.getElementById('view').textContent };
+    });
+    // ровно цена — кнопка есть, жива, нажатие открывает teaHold
+    {
+      const n = 'tea-door';
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(PRICE(2), [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      const f = await teaDoor(s);
+      if (!f.has) bad.push(`${n}: на «Клубе» нет кнопки «Провести чайную церемонию» (data-go="teaHold")`);
+      else if (f.off !== false) bad.push(`${n}: при остатке ровно в цену «Провести чайную церемонию» недоступна (${JSON.stringify(f.off)})`);
+      else if (await tapIf(s, n, '#view [data-go="teaHold"]', '«Провести чайную церемонию»')) {
+        await s.p.waitForTimeout(200);
+        const cur = await s.p.evaluate(() => current);
+        if (cur !== 'teaHold') bad.push(`${n}: «Провести чайную церемонию» открыла «${cur}», ждали teaHold`);
+      }
+      if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия «Отправить»`);
+      await s.ctx.close();
+    }
+    // недостача — кнопка ЕСТЬ, но погашена, и нажатие никуда не ведёт (отрицательный контроль к tea-door)
+    {
+      const n = 'tea-door-short';
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(100, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      const f = await teaDoor(s);
+      if (!f.has) bad.push(`${n}: на «Клубе» нет кнопки «Провести чайную церемонию» и при недостаче`);
+      else {
+        if (f.off !== true) bad.push(`${n}: при остатке 100 «Провести чайную церемонию» нажимается — цена 130`);
+        await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="teaHold"]'); b && b.click(); });
+        await s.p.waitForTimeout(200);
+        if (await s.p.evaluate(() => current) === 'teaHold') bad.push(`${n}: погашенная кнопка открыла teaHold`);
+      }
       await s.ctx.close();
     }
     // подача: ровно один POST /master/request с телом формы, после — своя заявка перечитана, на «Клубе» «ждёт решения»
@@ -2970,7 +3013,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (!(await s.p.$(CABINET))) bad.push('retry: после повтора не кабинет');
     // + два запроса блока букинга на «Клубе» (/master/requests/mine, /master/price?hours=2)
     // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
-    if (s.calls.length !== 7) bad.push(`retry: запросов ${s.calls.length}, ждали 7 (/me, /me, /events, /master/requests/mine, /master/price, /partner/requests/mine, /partner/price)`);
+    // + цена церемонии /master/price без часов. Основание: дверь teaHold включена этим PR, цена запрашивается законно
+    if (s.calls.length !== 8) bad.push(`retry: запросов ${s.calls.length}, ждали 8 (/me, /me, /events, /master/requests/mine, /master/price?hours=2, /partner/requests/mine, /partner/price, /master/price)`);
     await s.ctx.close();
   }
 
