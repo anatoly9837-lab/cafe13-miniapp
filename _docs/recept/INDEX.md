@@ -105,9 +105,9 @@
 | `bar` | `sverka-semi` | — | 8553 | 2 | 0 |
 | `dver` | `home` | — | 10398 | 8 | 0 |
 | `dver` | `sostav` | — | 2456 | 4 | 0 |
-| `master` | `home` | — | 6691 | 8 | 10 |
-| `master` | `masterApply` | — | 15808 | 9 | 22 |
-| `master` | `sostav` | — | 4488 | 4 | 0 |
+| `master` | `home` | — | 6776 | 8 | 10 |
+| `master` | `masterApply` | — | 15817 | 9 | 22 |
+| `master` | `sostav` | — | 4524 | 4 | 0 |
 | `odobrenie` | `event` | — | 6089 | 5 | 5 |
 | `odobrenie` | `eventApproval` | — | 10321 | 8 | 15 |
 | `odobrenie` | `sostav` | — | 4388 | 4 | 0 |
