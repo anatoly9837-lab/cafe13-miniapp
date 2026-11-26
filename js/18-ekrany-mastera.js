@@ -165,8 +165,10 @@ Object.assign(SCREENS, {
      выбранной даты — с сервера ДО отправки; место фиксировано, число мест — поле (`events.seats NOT NULL`). Ждущий
      прежний букинг подаче не мешает: «сколько угодно — каждый по 100 ฿» (слово владельца 20.11.2026) */
   masterApply: function () {
-    if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
-      '<span class="small">Букает ивент член клуба.</span></div></div>';
+    // Cafe13KPG#1129: гостю — форма, как всем. Отказ «Букает ивент член клуба» снят: блок «Провести» на «Клубе»
+    // показан всем (№65 «а»), членов клуба не будет (слово владельца 26.11.2026), а сервер членства не спрашивает
+    // (cafe13-api master.py, `_create_request`: «подаёт любой вошедший», бой 913eeef). Условие одно — деньги (409).
+    // Чужими глазами букинг не подаётся — отказ сервера `_not_acting` (403), его слова печатает denyText.
     if (!MSF.date) MSF.date = msTomorrow();
     var h = 2 + MSF.extra, bal = msBalance(), p = MR.price[h];
     var top = h >= MS_MAX_H, dateOk = msYmd(MSF.date) && MSF.date >= msToday();
