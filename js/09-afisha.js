@@ -1105,11 +1105,16 @@ function afishaHome() {
    относительный. Отказы печатаются словом сервера как есть (решение координатора 26.11, №83 «а»): в них числа
    точек и предела; клиент их не переписывает.
 
-   ⚠ FOTO_ON — включение ЗАГРУЗКИ в живом режиме. В бою api a6d4d4c ручек снимков нет: блок «Фото» в формах дал бы
-   людям кнопку в 404. Пока false, в живом блока в формах нет, и `photo_ids` не уходит. Включает координатор
-   отдельным заказом после выкладки api ≥ 4c0aae0. Показ снимков на карточке от флага не зависит: нет `photos` в
-   ответе — блока нет (F5), как у всех старых событий. Вне Telegram (витрина, опись) блок виден и в сеть не ходит. */
-var FOTO_ON = false;
+   ⚠ FOTO_ON — включение ЗАГРУЗКИ в живом режиме ПО ЭКРАНАМ ФОРМ (решение координатора 26.11, Cafe13KPG#1123):
+   дверь открывается там, где за ней есть комната. Снимки в бою есть (api 913eeef, /health "media":"configured").
+   eventNew, eventEdit — открыты: загрузка есть и показ есть (.album на карточке события).
+   teaHold — закрыт: шлёт на тот же /master/request, и при согласии decide переносит снимки на карточку ивента
+   (api master.py:637, здесь :152) — в публичное без просмотра. masterApply — закрыт: арт-директор приложенного не
+   видит (fromMasterReq photos не читает, masterReqs/masterReq альбома не рисуют). Закрытый экран в живом: блока
+   «Фото» в форме нет, `photo_ids` не уходит. Показ снимков на карточке от флага не зависит: нет `photos` в
+   ответе — блока нет (F5). Вне Telegram (витрина, опись) блок виден везде и в сеть не ходит. */
+var FOTO_ON = { eventNew: true, eventEdit: true, teaHold: false, masterApply: false };
+function fotoOn(form) { return FOTO_ON[form] === true; }
 var FOTO_URL = { up: function () { return '/photos'; }, del: function (id) { return '/photos/' + id + '/delete'; } };
 var FOTO_MAX = 3, FOTO_IN_MAX = 8 * 1024 * 1024, FOTO_SIDE = 1600, FOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 var FOTO = {}, FOTO_SEQ = 0;   // FOTO[экран формы] = { list: [кадр], err, verb, of }; кадр = { k, id, url, squeezed, loading, draft }
@@ -1117,7 +1122,7 @@ function fotoFrom(a) {
   return Array.isArray(a) ? a.filter(function (p) { return p && typeof p.id === 'number' && typeof p.url === 'string' && p.url; })
     .slice(0, FOTO_MAX).map(function (p) { return { id: p.id, url: /^https?:/.test(p.url) ? p.url : API + p.url }; }) : [];
 }
-function fotoForm() { return !LIVE || FOTO_ON; }
+function fotoForm(form) { return !LIVE || fotoOn(form); }
 // форма своего экрана; `of` — чей набор (eventEdit: номер события) — сменился предмет, набор берётся заново
 function fotoOf(form, of, photos) {
   var b = FOTO[form];
@@ -1129,13 +1134,13 @@ function fotoOf(form, of, photos) {
 function fotoBusy(form) { var b = FOTO[form]; return !!b && b.list.some(function (f) { return f.loading; }); }
 function fotoIds(form) { var b = FOTO[form]; return b ? b.list.map(function (f) { return f.id; }) : []; }
 // photo_ids в тело подачи — только когда загрузка включена: сервер боя поля не знает
-function fotoBody(form, body) { if (LIVE && FOTO_ON && FOTO[form]) body.photo_ids = fotoIds(form); return body; }
+function fotoBody(form, body) { if (LIVE && fotoOn(form) && FOTO[form]) body.photo_ids = fotoIds(form); return body; }
 function fotoDone(form) { delete FOTO[form]; }
 /* Блок «Фото» формы (masterApply.md P1–P9). addWord / frozenWord — слова экрана, которые зовущий берёт из словаря
    сам: признаки рецепта (`v-oblasti … eventNew 'foto.add'`, `… eventEdit 'foto.frozen'`) считают ключ в теле экрана.
    frozenWord задан — событие согласовано (eventEdit.md): кадры без действий, F6 вместо кнопок. */
 function fotoBlock(form, addWord, frozenWord) {
-  if (!fotoForm()) return '';
+  if (!fotoForm(form)) return '';
   var b = FOTO[form] || fotoOf(form, null, []), n = b.list.length;
   if (frozenWord) return '<div class="card"><div class="col"><span class="label">' + esc(slovo('foto.label')) + '</span>' +
     teaAlbum(b.list, null, true) + '<span class="small">' + esc(frozenWord) + '</span></div></div>';
@@ -1203,7 +1208,7 @@ function fotoPick(form, file) {
       var d = r.data;
       if (r.status === 201 && d && typeof d.id === 'number' && typeof d.url === 'string') {
         // кадр убрали, пока он грузился, или форму уже подали — черновик на сервере не нужен
-        if (b.list.indexOf(f) === -1 || FOTO[form] !== b) { fotoDrop(d.id); return; }
+        if (b.list.indexOf(f) === -1 || FOTO[form] !== b) { fotoDrop(form, d.id); return; }
         f.id = d.id; f.url = /^https?:/.test(d.url) ? d.url : API + d.url; f.loading = false;
         // строка о сжатии — и когда сжал сервер (решение координатора 26.11: «ему всё равно, кто сжал»)
         if (d.squeezed === true) f.squeezed = true;
@@ -1214,12 +1219,12 @@ function fotoPick(form, file) {
     });
   }, function () { gone(); b.err = slovo('foto.notImage'); fotoRedraw(form); });
 }
-function fotoDrop(id) { if (LIVE && FOTO_ON && id > 0) api('POST', FOTO_URL.del(id)); }
+function fotoDrop(form, id) { if (LIVE && fotoOn(form) && id > 0) api('POST', FOTO_URL.del(id)); }
 function fotoDel(form, k) {
   var b = FOTO[form]; if (!b) return;
   b.list = b.list.filter(function (f) {
     if (f.k !== k) return true;
-    if (f.draft && typeof f.id === 'number') fotoDrop(f.id);   // снимок события снимается правкой (photo_ids без него), не здесь
+    if (f.draft && typeof f.id === 'number') fotoDrop(form, f.id);   // снимок события снимается правкой (photo_ids без него), не здесь
     return false;
   });
   fotoRedraw(form);
