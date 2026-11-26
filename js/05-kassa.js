@@ -355,8 +355,16 @@ function tillCard(w) {
    (слово designer-55). by_staff_id и member_id — tg_user_id; из разбора
    они не выходят вовсе. */
 var TD = { gen: 0, data: null, fail: '', ask: -1, busy: -1, deny: null };
+// Новых видов сюда не добавлять ради показа: вид, которого кассир видеть не должен (tea — деньги брони идут со счёта
+// на счёт, не через ящик), сервер не отдаёт вовсе (фильтр в /till/day, как donation и withdraw; решение coordinator-3)
 var TD_KIND = { membership: 'Членство', topup: 'На счёт', event: 'За запись', service: 'За услугу' };
 var TD_HOW = { cash: 'наличные', card: 'карта', account: 'со счёта' };
+/* НЕЗНАКОМЫЙ вид или способ строки — не отказ дня, а нейтральная строка. Прежде `!TD_KIND[r.kind]` отвергал
+   ВЕСЬ день (так было с donation и withdraw: сервер прятал их фильтром, till.py:986), и каждый новый вид книги
+   скрывал кассиру день целиком. Строка остаётся видна, сумма — в итоге; отменить из кассы можно только виды,
+   которые касса сама вносит (TD_UNDO): у прочих отмена своя (бронь — у брони), её касса не подменяет. */
+var TD_OTHER_KIND = 'Прочее', TD_OTHER_HOW = 'другим способом';
+var TD_UNDO = { membership: 1, topup: 1, event: 1, service: 1 };
 
 /* Отказ отмены — словами сервера как есть, у всех четырёх видов хозяина.
    До выкладки api `02f0ac6` сервер у строки ЗАПИСИ обещал «деньги вернутся
@@ -374,16 +382,18 @@ function fromTillDay(d) {
   if (!isFinite(total)) return null;
   for (var i = 0; i < d.rows.length; i++) {
     var r = d.rows[i], amt = r && num(r.amount);
-    if (!r || typeof r.id !== 'number' || !TD_KIND[r.kind] || !TD_HOW[r.method] || !(amt >= 0) || !hm(r.at)) return null;
+    // вид и способ — строкой, но НЕ из перечня: незнакомое показывается нейтрально (см. TD_OTHER_KIND)
+    if (!r || typeof r.id !== 'number' || typeof r.kind !== 'string' || typeof r.method !== 'string' || !(amt >= 0) || !hm(r.at)) return null;
     if ((r.cancels_id !== null && typeof r.cancels_id !== 'number') ||
         (r.cancelled_by !== null && typeof r.cancelled_by !== 'number') ||
         (r.note !== null && typeof r.note !== 'string')) return null;
     // заметка строки — дословно и только у услуги: «заказ бара N» там
     // соглашение, а не схема, его может набрать и кассир (designer-55)
-    var row = { id: r.id, kind: r.kind, amount: amt, time: hm(r.at), how: TD_HOW[r.method],
+    var row = { id: r.id, kind: r.kind, amount: amt, time: hm(r.at), how: TD_HOW[r.method] || TD_OTHER_HOW,
+                label: TD_KIND[r.kind] || TD_OTHER_KIND, canUndo: !!TD_UNDO[r.kind],
                 note: r.kind === 'service' && r.note ? r.note : '',
                 undo: r.cancels_id !== null, gone: r.cancelled_by !== null };
-    if (!row.undo && !row.gone) { live++; sum += amt; by[r.method] = Math.round((by[r.method] + amt) * 100) / 100; }
+    if (!row.undo && !row.gone) { live++; sum += amt; if (TD_HOW[r.method]) by[r.method] = Math.round((by[r.method] + amt) * 100) / 100; }
     rows.push(row);
   }
   return { rows: rows, total: total, count: live, by: by,
@@ -404,7 +414,7 @@ function tillDayLoad() {
 
 function tillCancel(i) {
   var row = TD.data && TD.data.rows[i];
-  if (!row || row.undo || row.gone || TD.busy !== -1) return;
+  if (!row || row.undo || row.gone || !row.canUndo || TD.busy !== -1) return;
   TD.busy = i; TD.ask = -1; TD.deny = null;
   render();
   var gen = TD.gen;
@@ -425,7 +435,7 @@ function tillCancel(i) {
 }
 
 function tillDayRow(r, i) {
-  var label = (r.undo ? 'Отмена · ' : '') + TD_KIND[r.kind];
+  var label = (r.undo ? 'Отмена · ' : '') + r.label;
   var when = r.time + ' · ' + r.how;
   var note = r.note ? '<span class="verbatim">' + esc(r.note) + '</span>' : '';
   var deny = TD.deny && TD.deny.i === i ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(TD.deny.text) + '</span></div>' : '';
@@ -433,7 +443,7 @@ function tillDayRow(r, i) {
     '<span class="small num">' + esc(when) + '</span></div><span class="pill gold">Отменено</span></div></div>';
   if (r.undo) return deny + '<div class="card quiet"><div class="row"><div class="col"><b>' + esc(label) + '</b>' +
     '<span class="small num">' + esc(when) + '</span></div><b class="num">−' + money(r.amount) + ' ฿</b></div></div>';
-  var btn = TD.busy === i ? '<button type="button" class="btn quiet" disabled>…</button>'
+  var btn = !r.canUndo ? '' : TD.busy === i ? '<button type="button" class="btn quiet" disabled>…</button>'
     : TD.ask === i ? '<span class="row" style="gap:6px"><button type="button" class="btn quiet" data-action="td-keep">Не отменять</button>' +
                      '<button type="button" class="btn quiet" data-action="td-cancel:' + i + '">Точно отменить</button></span>'
     : '<button type="button" class="btn quiet" data-action="td-ask:' + i + '"' + (TD.busy !== -1 ? ' disabled' : '') + '>Отменить</button>';
