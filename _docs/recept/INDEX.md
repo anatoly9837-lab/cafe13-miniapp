@@ -103,6 +103,11 @@
 | `bar` | `drink` | — | 9393 | 1 | 13 |
 | `bar` | `sostav` | — | 20326 | 5 | 0 |
 | `bar` | `sverka-semi` | — | 8553 | 2 | 0 |
+| `bez-daty` | `home` | — | 2430 | 4 | 3 |
+| `bez-daty` | `membership` | — | 2371 | 4 | 1 |
+| `bez-daty` | `pass` | — | 2855 | 4 | 1 |
+| `bez-daty` | `sostav-dovody` | — | 960 | 1 | 0 |
+| `bez-daty` | `sostav` | — | 4437 | 4 | 0 |
 | `dver` | `home` | — | 10398 | 8 | 0 |
 | `dver` | `sostav` | — | 2456 | 4 | 0 |
 | `master` | `home` | — | 6776 | 8 | 10 |
