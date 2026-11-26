@@ -95,10 +95,13 @@ const CASES = [
     ['Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
     // 4 = /me, /events и два запроса блока букинга на «Клубе»: /master/requests/mine и /master/price?hours=2 (цена
     // от часов не зависит — Cafe13KPG#985, второй цены блок не спрашивает); 6 — плюс два запроса блока
-    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера)
-    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
+    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера);
+    // 7 — плюс GET /master/price без часов: цена церемонии для двери «провести церемонию» (js/21 loadTeaHoldPrice).
+    // Основание: дверь teaHold включена этим PR, цена запрашивается законно
+    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 7],
   // кабинет — дверью (HAS_CABINET), срок «14 ноября 2026» — разбором (RAZBOR); на «Клубе» срока нет (#1096)
-  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 6],
+  // 7 — как у owner-lifelong: цена церемонии (дверь teaHold включена этим PR, цена запрашивается законно)
+  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 7],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -2919,7 +2922,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (!(await s.p.$(CABINET))) bad.push('retry: после повтора не кабинет');
     // + два запроса блока букинга на «Клубе» (/master/requests/mine, /master/price?hours=2)
     // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
-    if (s.calls.length !== 7) bad.push(`retry: запросов ${s.calls.length}, ждали 7 (/me, /me, /events, /master/requests/mine, /master/price, /partner/requests/mine, /partner/price)`);
+    // + цена церемонии /master/price без часов. Основание: дверь teaHold включена этим PR, цена запрашивается законно
+    if (s.calls.length !== 8) bad.push(`retry: запросов ${s.calls.length}, ждали 8 (/me, /me, /events, /master/requests/mine, /master/price?hours=2, /partner/requests/mine, /partner/price, /master/price)`);
     await s.ctx.close();
   }
 
