@@ -91,12 +91,14 @@ const msNoEnd = clone(OWNER); msNoEnd.memberships.push({ level: 'organizer', sta
 const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
     // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
-    ['Пожизненно', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
+    // «Пожизненно» с «Клуба» ушло вместе с плашкой (Cafe13KPG#1096): разбор /me судит RAZBOR ниже
+    ['Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
     // 4 = /me, /events и два запроса блока букинга на «Клубе»: /master/requests/mine и /master/price?hours=2 (цена
     // от часов не зависит — Cafe13KPG#985, второй цены блок не спрашивает); 6 — плюс два запроса блока
     // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера)
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 6],
+    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
+  // кабинет — дверью (HAS_CABINET), срок «14 ноября 2026» — разбором (RAZBOR); на «Клубе» срока нет (#1096)
+  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 6],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -116,8 +118,9 @@ const CASES = [
   ['network-down', true, true, 'abort', ['Сервер не ответил'], [], 1],
   ['outside-telegram', false, true, json(200, OWNER),
     // «1 250» (демо-остаток) ушёл с главной в скрытую шапку (v87); витрину держат срок и афиша демонстрации
-    ['Действует до 14 ноября', 'Звуковая практика'], ['Пожизненно'], 0],
-  ['api-off', true, false, json(200, OWNER), ['Действует до 14 ноября'], ['Пожизненно'], 0]
+    // витрину держит афиша демонстрации; демонстрационного срока на «Клубе» больше нет (#1096)
+    ['Звуковая практика'], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 0],
+  ['api-off', true, false, json(200, OWNER), ['Звуковая практика'], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 0]
 ];
 
 // Экраны отказа — списком, а не регуляркой по имени: регулярка молча
@@ -132,6 +135,11 @@ const CABINET = '#view [data-go="pass"]';
 const NO_CABINET = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200', 'html-200', 'finite-without-end',
   'memberships-none', 'memberships-object', 'memberships-alien', 'memberships-lifelong-str', 'memberships-noend', 'network-down']);
 const HAS_CABINET = new Set(['owner-lifelong', 'finite', 'outside-telegram', 'api-off']);
+/* Разбор /me (пожизненное ↔ срок) прежде судился строками плашки на «Клубе». Плашку сняли (Cafe13KPG#1096), а экран
+   «Членство» в живом закрыт (нет в WIRED — случай membership-off), и срок /me больше не показывает НИ ОДИН открытый
+   в живом экран. Поэтому судья — то, что разбор отдаёт экранам: DATA.member. [пожизненно, срок начинается с] */
+const RAZBOR = { 'owner-lifelong': [true, null], 'finite': [false, '14 ноября 2026'] };
+Object.keys(RAZBOR).forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('RAZBOR: нет случая ' + n); });
 [...NO_CABINET, ...HAS_CABINET].forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('CABINET: нет случая ' + n); });
 
 // выключатель ищется в любом положении: тест сам ставит нужное. Не один —
@@ -335,6 +343,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (REFUSAL.has(name) && await s.tabsShown())
       bad.push(`${name}: на экране отказа видны вкладки`);
     if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+    if (RAZBOR[name]) {
+      const [life, till] = RAZBOR[name];
+      const got = await s.p.evaluate(() => DATA.member ? { lifelong: DATA.member.lifelong, until: DATA.member.until } : null);
+      if (!got) bad.push(`${name}: разбор /me не отдал члена`);
+      else {
+        if (got.lifelong !== life) bad.push(`${name}: разбор /me: пожизненно ${got.lifelong}, ждали ${life}`);
+        if (till === null ? got.until !== null : !(typeof got.until === 'string' && got.until.startsWith(till)))
+          bad.push(`${name}: разбор /me: срок «${got.until}», ждали ${till === null ? 'нет срока' : '«' + till + '…»'}`);
+      }
+    }
     await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
     await s.ctx.close();
   }
@@ -382,7 +400,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         bad.push(`${n}: после входа на «Пропуске» нет системной «назад»`);
       await s.p.evaluate(() => window.__back && window.__back());
       await s.p.waitForTimeout(150);
-      if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «назад» после входа не вернула в кабинет`);
+      if (await s.p.evaluate(() => current) !== 'home' || !(await s.p.$(CABINET))) bad.push(`${n}: «назад» после входа не вернула в кабинет`);
       await s.ctx.close();
     }
     // витрина вне Telegram: демонстрация работает как прежде, нарисованная «назад» жива
@@ -1025,7 +1043,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       return ok;
     };
     const offer = s => s.p.evaluate(() => {
-      const b = [...document.querySelectorAll('#view [data-action="ms-apply"]')].filter(x => x.textContent === 'Забукать')[0];
+      // слово кнопки — «Провести ивент» (рецепт 42/home.md H0a: «Забукать» → «Провести ивент», смена слова в семье master)
+      const b = [...document.querySelectorAll('#view [data-action="ms-apply"]')].filter(x => x.textContent === 'Провести ивент')[0];
       return { has: !!b, off: b ? b.disabled : null, text: document.getElementById('view').textContent };
     });
     // меньше цены сервера — «Забукать» погашен, и недостача названа ДО нажатия словами СЕРВЕРНОЙ цены
@@ -1485,7 +1504,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.waitForTimeout(400);
       const t = await s.view();
       ['Ваши букинги', 'Ждущий вечер', 'ждёт решения', 'Согласованный вечер', 'согласовано', 'Отказанный вечер', 'Нет фото работ', 'вернулись на счёт',
-       'Недельный слот', 'каждую неделю', 'Забукать'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: на «Клубе» нет «${w}»`); });
+       'Недельный слот', 'каждую неделю', 'Провести ивент'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: на «Клубе» нет «${w}»`); });
       if (t.includes('Прошедший вечер')) bad.push(`${n}: прошедший букинг стоит в списке`);
       // H8 (рецепт master/home.md, №46 «б», фича 4): у согласованного С ДАТОЙ — плата за слот остаётся клубу; ровно у одного
       // (недельный без даты её не несёт, прошедший скрыт)
@@ -2019,8 +2038,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const t = await s.view();
     if (s.calls.length) bad.push(`${n}: без подписи ушло запросов к серверу: ${s.calls.length}`);
     if (t.includes('Подпись не принята') || t.includes('Доступ снят')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
-    // признак витрины — срок демонстрационного члена («1 250» ушёл с главной в скрытую шапку, v87)
-    if (!t.includes('Действует до 14 ноября')) bad.push(`${n}: без подписи нет витрины (демонстрационного срока)`);
+    // признак витрины — афиша демонстрации: срок демонстрационного члена ушёл с «Клуба» вместе с плашкой (#1096)
+    if (!t.includes('Звуковая практика')) bad.push(`${n}: без подписи нет витрины (демонстрационной афиши)`);
     await s.ctx.close();
   }
 
@@ -2125,7 +2144,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       me = json(200, OWNER);
       await tap(s, '[data-action="retry"]');
       await s.p.waitForTimeout(200);
-      if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
+      if (!(await s.p.$(CABINET))) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
       await s.ctx.close();
     }
     // ПЕТЛЯ (Cafe13KPG#853): /join отдаёт ДАВНО согласованную просьбу тому, кого в клубе нет. Прежде экран рисовал
@@ -2161,25 +2180,63 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (await s.p.$('#view [data-go="pass"]')) bad.push(`${n}: у новичка дверь «Пропуск» (решение №45 — пропуска нет)`);
       if (await s.p.$('#join-said')) bad.push(`${n}: у новичка форма просьбы о вступлении`);
       if (!t.includes('Мои записи')) bad.push(`${n}: на «Клубе» новичка нет «Мои записи» — признак «Клуба» мёртв`);
-      // Порядок выкладки (решение координатора 24.11.2026): «Я мастер» новичку — только ПОСЛЕ выкладки api#176. На боевом
-      // 29a088c `queries.event_live` прячет ивент мастера без живого членства, и новичок заплатил бы 100 ฿ за ивент, которого
-      // нет в афише. Снимать эту строку — вместе с клиентом фичи 3 и по /health ≥ fc474be, не раньше.
-      if (await s.p.$('#view [data-action^="ms-"]') || /Забукать ивент|Ваши букинги|Букинги не загрузились/.test(t))
-        bad.push(`${n}: у новичка блок «Я мастер» — фича 3 раньше выкладки api#176 (ивент мастера без членства невидим)`);
+      // Порядок выкладки (решение координатора 24.11.2026) держал «Я мастер» новичку до выкладки api#176: снять — «вместе с
+      // клиентом фичи 3 и по /health ≥ fc474be». Снято шагом 42: /health build_sha 9a0c7e0 содержит fc474be (замер 26.11.2026),
+      // а рецепт 42/home.md (№65 «а», случай tea-home-bez-roli) велит блок «Провести в клубе» без условия роли и членства.
+      // Теперь наоборот: у новичка блок ЕСТЬ (кнопки или честное «не загрузились» — ответ /master/requests/mine здесь не подложен)
+      if (!/Провести в клубе|Букинги не загрузились/.test(t))
+        bad.push(`${n}: у новичка нет блока «Провести в клубе» — рецепт 42/home.md: условия роли и членства на нём нет`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
-    // ДВЕРЬ: член с оплаченным членством ничего не теряет (№38) — дом, вкладка «Клуб», плашка и «Пропуск» на месте
+    // ДВЕРЬ: член с оплаченным членством ничего не теряет (№38) — дом, вкладка «Клуб», «Пропуск» на месте. Плашки членства
+    // нет и у него: Cafe13KPG#1096 (слово владельца 25.11.2026), дверь «Пропуск» осталась строкой — случаи bez-plashki-* ниже
     {
       const n = 'dver-chlen';
       const s = await joinCase(json(200, JOIN0), null, () => json(200, OWNER));
       if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: член не на «Клубе»`);
       const tabs = await s.p.$$eval('#tabs [data-go]', es => es.map(e => e.dataset.go));
       if (!tabs.includes('home')) bad.push(`${n}: у члена нет вкладки «Клуб»`);
-      if (!(await s.view()).includes('Активно')) bad.push(`${n}: у члена пропала плашка членства`);
+      if ((await s.view()).includes('Активно')) bad.push(`${n}: у члена плашка членства («Активно») — снята #1096`);
       if (!(await s.p.$('#view [data-go="pass"]'))) bad.push(`${n}: у члена пропала дверь «Пропуск»`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
+    }
+    /* Cafe13KPG#1096 (слово владельца 25.11.2026: «мы пока отменили членство и это устаревшее штука»): плашки членства —
+       вид, «Активно», срок — на «Клубе» нет у ВСЕХ видов людей, а не у одного. Срок ищется СТРОКОЙ по всей разметке
+       страницы (текст и атрибуты: подсказки title/aria-label, всплывающее), а не глазом на снимке. Дверь «Пропуск» —
+       у кого пропуск есть (№38), у новичка и истёкшего её нет (№45). Признак плашки — три слова и заголовок-уровень
+       (`#view h2` с текстом из LEVEL); пара присутствия — «Мои записи» в живом и афиша в демонстрации */
+    {
+      const ms = (lvl, ends) => ({ level: lvl, starts_at: '2026-10-01T00:00:00+00:00', ends_at: ends, lifelong: !ends });
+      const srok = clone(OWNER); srok.membership = ms('member', '2026-11-14T10:00:00+07:00'); srok.memberships = [srok.membership];
+      const istek = clone(OWNER); istek.membership_active = false; istek.memberships = []; istek.roles = [];
+      istek.membership = ms('member', '2026-11-01T10:00:00+07:00');
+      const bez = clone(OWNER); bez.membership_active = false; bez.membership = null; bez.memberships = []; bez.roles = [];
+      for (const [n, me, pass, dates, anchor] of [
+        ['bez-plashki-pozhiznenno', OWNER, true, [], 'Мои записи'],
+        ['bez-plashki-srok', srok, true, ['14 ноября', '2026-11-14', '14.11.2026'], 'Мои записи'],
+        ['bez-plashki-istekshee', istek, false, ['1 ноября', '2026-11-01', '01.11.2026'], 'Мои записи'],
+        ['bez-plashki-bez', bez, false, [], 'Мои записи'],
+        ['bez-plashki-vitrina', null, true, ['14 ноября'], 'Звуковая практика']]) {
+        const s = me ? await joinCase(json(200, JOIN0), null, () => json(200, me)) : await open(false, true, json(200, OWNER));
+        if (!me) await s.p.waitForTimeout(150);
+        const at = await s.p.evaluate(() => current), t = await s.view();
+        if (at !== 'home' || !t.includes(anchor)) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — не «Клуб» (${at}) или нет «${anchor}»`);
+        else {
+          const html = await s.p.evaluate(() => document.body.innerHTML);
+          ['Активно', 'АКТИВНО', 'Действует до', 'Пожизненно', 'пожизненно'].concat(dates).forEach(x => {
+            if (html.includes(x)) bad.push(`${n}: на «Клубе» осталось «${x}» — плашка членства или её срок (#1096)`);
+          });
+          const lvl = await s.p.evaluate(() => [...document.querySelectorAll('#view h2')].map(e => e.textContent.trim())
+            .filter(x => Object.keys(LEVEL).some(k => LEVEL[k] === x)));
+          if (lvl.length) bad.push(`${n}: на «Клубе» заголовок-уровень «${lvl.join('», «')}» — плашка членства (#1096)`);
+          const door = !!(await s.p.$('#view [data-go="pass"]'));
+          if (door !== pass) bad.push(`${n}: дверь «Пропуск» ${door ? 'есть' : 'пропала'}, ждали ${pass ? 'есть' : 'нет'}`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
     }
     // ДВЕРЬ: выгнанный (допуск снят — сервер отвечает 403 «доступа нет») — по-прежнему noAccess, «О клубе» с него открывается
     {
@@ -2840,7 +2897,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (post.length !== 1 || !post[0].url.endsWith('/me/consent') || post[0].body !== '{"data":true}')
       bad.push('consent: POST /me/consent не ушёл как {"data":true}: ' + JSON.stringify(post));
     const t = await s.view();
-    if (!t.includes('Согласие принято') || !t.includes('Пожизненно')) bad.push('consent: после согласия не кабинет');
+    if (!t.includes('Согласие принято') || !(await s.p.$(CABINET))) bad.push('consent: после согласия не кабинет');
     await s.ctx.close();
   }
   if (part(1)) {
@@ -2859,7 +2916,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     up = true;
     await s.p.click('[data-action="retry"]');
     await s.p.waitForTimeout(150);
-    if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
+    if (!(await s.p.$(CABINET))) bad.push('retry: после повтора не кабинет');
     // + два запроса блока букинга на «Клубе» (/master/requests/mine, /master/price?hours=2)
     // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
     if (s.calls.length !== 7) bad.push(`retry: запросов ${s.calls.length}, ждали 7 (/me, /me, /events, /master/requests/mine, /master/price, /partner/requests/mine, /partner/price)`);
@@ -3072,13 +3129,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: запас не стёрт`);
     await s.ctx.close();
   }
-  // Конечный срок сохраняется в ISO и рисуется словами.
+  // Конечный срок сохраняется в ISO, а на экране его нет: слово владельца 25.11.2026, №79 «Даты убирай
+  // в обоих местах» (Cafe13KPG#1097). Прежде случай ждал «до 14 ноября 2026»; облик подписи судит bez-daty-propusk.
   if (part(1)) {
     const s = await open(true, true, json(200, finite), null,
       json(200, Object.assign({}, PASS, { lifelong: false, valid_until: '2026-11-14T10:00:00+07:00' })));
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('до 14 ноября 2026')) bad.push('pass-finite: срок не показан словами');
+    const t = await s.view();
+    if (!(await s.p.evaluate(() => !!document.querySelector('.pass')))) bad.push('pass-finite: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет');
+    else if (/14\s+ноябр|14\.11\.2026|\bдо\s+\d/i.test(t)) bad.push('pass-finite: срок членства показан на пропуске — снят словом владельца №79');
     const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
     if (!kept || kept.ends !== '2026-11-14T10:00:00+07:00') bad.push('pass-finite: срок сохранён не в ISO: ' + JSON.stringify(kept));
     await s.ctx.close();
@@ -6978,8 +7038,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     ];
     const s = await open(true, true, json(200, GOST), null, null, null, evReply(json(200, S_ZAPISYU)), null, NOWFIX);
     const вкладки = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
-    if (вкладки.indexOf('home') !== -1)
-      bad.push(`bookings-gost-zapert: у гостя появилась вкладка «Клуб» (${JSON.stringify(вкладки)}) — предусловие случая снято, и он больше не доказывает, что кнопка здесь единственный выход к афише (Cafe13KPG#371)`);
+    // шаг 42 (рецепт 42/home.md, слово владельца №65 «а»): «Клуб» открыт всем, и гостю-работнику тоже. Предусловие «вкладки
+    // „Клуб“ нет» снято решением, а не поломкой; случай держит своё второе: кнопка «Вся афиша» на «Записях» есть, тихая и ведёт
+    if (вкладки.indexOf('home') === -1)
+      bad.push(`bookings-gost-zapert: у гостя нет вкладки «Клуб» (${JSON.stringify(вкладки)}) — рецепт 42/home.md (№65 «а») открывает её всем`);
     // у гостя входа в «Записи» нет: «Клуба» у него нет, а в приложении только члены клуба (решение 02.11.2026) — экран
     // судится переходом напрямую: если гость на нём окажется, выход к афише обязан быть
     await s.p.evaluate(() => go('bookings'));
@@ -6990,7 +7052,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const двери = await s.p.$$eval('#view button',
       bs => bs.filter(b => b.textContent.trim() === 'Вся афиша').map(b => b.className));
     if (!двери.length)
-      bad.push('bookings-gost-zapert: гость с записью заперт — с экрана «Записи» в афишу не ведёт ничего, а вкладки «Клуб» у него нет: записался и потерял афишу (Cafe13KPG#371)');
+      bad.push('bookings-gost-zapert: гость с записью заперт — с экрана «Записи» в афишу не ведёт ничего: записался и потерял афишу (Cafe13KPG#371)');
     else if (!/\bquiet\b/.test(двери[0]))
       bad.push(`bookings-gost-zapert: кнопка афиши при живых записях сплошная («${двери[0]}») — посреди списка она забирает экран себе, а главное здесь сами записи (Cafe13KPG#371)`);
     /* Дверь проверяется НАЖАТИЕМ: кнопка, никуда не ведущая, читается как
@@ -10720,97 +10782,47 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
 
-    /* ── ДАТА КОНЦА ЧЛЕНСТВА и ∞ (пункт 6 замечаний владельца: «Даты окончания членства не
-       вижу»; «поставь мне значек бесконечности» 28.10.2026) ──
-       Сервер отдаёт пару ПЛОСКИХ полей (`ends_at` + `lifelong`, бой `e545973`), и состояний
-       ЧЕТЫРЕ, а не два: дата / бессрочно / живого членства нет / поля НЕТ вовсе (старый
-       сервер). Последние два рисуют одно и то же — пусто, — но по РАЗНЫМ причинам, и
-       различать их обязан разбор, а не экран: тот же класс, что у остатка (`'balance' in p`).
-       ⚠ Часы ПРИКОЛОТЫ, даты фикстуры отсчитаны от них же. Порог проверяется с ОБЕИХ сторон
-       границы и НА границе: 14 дней — ещё не «меньше двух недель», 13 — уже. Без середины
-       диапазона проверка не отличала бы «посчитано верно» от «прибор промолчал». */
+    /* ── СРОК В СПИСКЕ ЛЮДЕЙ: даты нет, красного нет, ∞ остался ──
+       Слово владельца 25.11.2026 (№79, Cafe13KPG#1103): «Даты убирай в обоих местах» — им снято и
+       его правило 28.10.2026 «менее 2х недель дата краснеет». Прежние случаи people-till-porog и
+       people-till-poyas судили порог, которого больше нет, и сняты вместе с ним.
+       ⚠ ОТРИЦАТЕЛЬНЫЙ КОНТРОЛЬ — срок через НЕДЕЛЮ: ровно там прежде стояло красное. Проверка
+       «текста даты нет» без него ловила бы только исчезнувшие цифры, а не оставшееся покраснение.
+       Часы приколоты, даты отсчитаны от них. Ключ — атрибут `data-person` (номер строки ответа):
+       `peopleOrder` ставит живые членства наверх, и порядок отрисовки ответу не равен. */
     {
       const n = 'people-till', NOW = '2026-11-01T09:00:00+07:00';
       const lyudi = clone(ROSTER);
-      const dat = (dney) => { const d = new Date(Date.parse(NOW) + dney * 86400000); return d.toISOString(); };
-      lyudi.people[0].ends_at = dat(60);  lyudi.people[0].lifelong = false;   // срок далёкий
-      lyudi.people[1].ends_at = dat(13);  lyudi.people[1].lifelong = false;   // меньше двух недель
-      lyudi.people[2].ends_at = null;     lyudi.people[2].lifelong = true;    // бессрочное
-      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
-      await toPeople(s);
-      /* ⚠ Ключ — АТРИБУТ `data-person` (номер строки ОТВЕТА), а не положение в DOM:
-         `peopleOrder` ставит живые членства наверх, и порядок отрисовки ответу не равен.
-         Первая редакция случая читала по положению и дала перепутанные строки — поймал
-         прогон, а не чтение. */
-      const hvosty = await s.p.$$eval('[data-person]', es => {
-        const o = {};
-        es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = { text: t ? t.textContent : null,
-            soon: t ? t.classList.contains('soon') : null, inf: !!(t && t.querySelector('.inf')) }; });
-        return o; });
-      if (hvosty[0].text !== ' · до 31.12.2026') bad.push(`${n}: далёкий срок «${hvosty[0].text}», ждали « · до 31.12.2026»`);
-      if (hvosty[0].soon) bad.push(`${n}: далёкий срок покраснел`);
-      if (hvosty[1].text !== ' · до 14.11.2026') bad.push(`${n}: близкий срок «${hvosty[1].text}», ждали « · до 14.11.2026»`);
-      if (!hvosty[1].soon) bad.push(`${n}: срок меньше двух недель НЕ покраснел`);
-      if (!hvosty[2].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${hvosty[2].text}»`);
-      if (hvosty[2].soon) bad.push(`${n}: бессрочное покраснело`);
-      await s.ctx.close();
-    }
-    /* Граница порога — ОБЕ стороны и сама граница: «менее 2х недель» это строго меньше 14.
-       Подлоги по краям диапазона оставили бы середину непроверенной, поэтому здесь ровно
-       соседние дни, а не «ноль и много». */
-    {
-      const n = 'people-till-porog', NOW = '2026-11-01T09:00:00+07:00';
-      const lyudi = clone(ROSTER);
       const dat = (dney) => new Date(Date.parse(NOW) + dney * 86400000).toISOString();
-      lyudi.people[0].ends_at = dat(14); lyudi.people[0].lifelong = false;
-      lyudi.people[1].ends_at = dat(13); lyudi.people[1].lifelong = false;
-      lyudi.people[2].ends_at = dat(0);  lyudi.people[2].lifelong = false;
+      lyudi.people[0].ends_at = dat(60); lyudi.people[0].lifelong = false;   // срок далёкий
+      lyudi.people[1].ends_at = dat(7);  lyudi.people[1].lifelong = false;   // через неделю — прежде красное
+      lyudi.people[2].ends_at = null;    lyudi.people[2].lifelong = true;    // бессрочное
       const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
       await toPeople(s);
-      // тот же ключ по атрибуту: порядок отрисовки не равен порядку ответа
-      const soon = await s.p.$$eval('[data-person]', es => {
+      const r = await s.p.$$eval('[data-person]', es => {
         const o = {};
         es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = t ? t.classList.contains('soon') : null; });
+          o[e.getAttribute('data-person')] = { till: t ? t.textContent : null, row: e.textContent,
+            soon: !!e.querySelector('.soon'), inf: !!(t && t.querySelector('.inf')) }; });
         return o; });
-      if (soon[0] !== false) bad.push(`${n}: ровно 14 дней покраснели — «менее 2х недель» это строго меньше`);
-      if (soon[1] !== true) bad.push(`${n}: 13 дней не покраснели`);
-      if (soon[2] !== true) bad.push(`${n}: последний день не покраснел`);
-      await s.ctx.close();
-    }
-    /* ⚠ ПОРОГ СЧИТАЕТСЯ ПО ЧАСАМ КЛУБА, и до этого случая утверждение держалось НИЧЕМ.
-       Нашёл `arhitector-47` мутацией на ревью `#133`: подмена `clubDay()` на сегодняшнюю
-       дату в UTC (`new Date().toISOString().slice(0,10)`) оставляла прогон ЗЕЛЁНЫМ — потому
-       что прежние случаи приколоты на 09:00 острова, а это 02:00 UTC ТОГО ЖЕ дня, и обе
-       системы отсчёта дают одну дату. То есть «по часам клуба» было верно в коде и не
-       проверялось ни одним случаем.
-       Различающее окно — с 00:00 до 07:00 острова: там UTC ещё ВЧЕРА. Часы приколоты на
-       03:00 +07:00 (= 20:00 UTC накануне), срок — ровно на границе: по острову 13 дней
-       (красное), по UTC-сегодня 14 (не красное). Значит мутация гасит красное, а чистое
-       дерево его держит. */
-    {
-      const n = 'people-till-poyas', NOW = '2026-11-02T03:00:00+07:00';   // UTC: 2026-11-01T20:00Z
-      const lyudi = clone(ROSTER);
-      lyudi.people[0].ends_at = '2026-11-15T12:00:00+07:00';   // остров: 13 дней → красное
-      lyudi.people[0].lifelong = false;
-      lyudi.people[1].ends_at = '2026-11-16T12:00:00+07:00';   // остров: 14 дней → ещё нет
-      lyudi.people[1].lifelong = false;
-      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
-      await toPeople(s);
-      const soon = await s.p.$$eval('[data-person]', es => {
-        const o = {};
-        es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = t ? { soon: t.classList.contains('soon'), text: t.textContent } : null; });
-        return o; });
-      // различитель: обе проверки обязаны опираться на СУТКИ ОСТРОВА, а не на UTC
-      if (!soon['0'] || !soon['0'].soon)
-        bad.push(`${n}: 13 дней ПО ОСТРОВУ не покраснели (${JSON.stringify(soon['0'])}) — порог считается не по часам клуба`);
-      if (!soon['1'] || soon['1'].soon)
-        bad.push(`${n}: 14 дней ПО ОСТРОВУ покраснели (${JSON.stringify(soon['1'])}) — «менее 2х недель» это строго меньше`);
-      // и сама дата печатается сутками острова, а не UTC: иначе человек увидит вчерашнее число
-      if (soon['0'] && soon['0'].text !== ' · до 15.11.2026')
-        bad.push(`${n}: дата «${soon['0'].text}», ждали « · до 15.11.2026» — сутки взяты не по острову`);
+      const DATA_RE = /\d{2}\.\d{2}\.\d{4}|\bдо\s+\d/;
+      [['0', 'далёкий срок'], ['1', 'срок через неделю']].forEach(([k, kto]) => {
+        const x = r[k];
+        if (!x) { bad.push(`${n}: строки ${kto} нет в списке`); return; }
+        if (x.till !== null) bad.push(`${n}: у ${kto} остался хвост срока «${x.till}»`);
+        if (DATA_RE.test(x.row)) bad.push(`${n}: у ${kto} в строке дата: «${x.row.trim().slice(0, 80)}»`);
+        if (x.soon) bad.push(`${n}: у ${kto} красное (.soon) — правило двух недель снято владельцем`);
+      });
+      if (!r['2'] || !r['2'].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${r['2'] && r['2'].till}»`);
+      if (r['2'] && r['2'].soon) bad.push(`${n}: бессрочное покраснело`);
+      /* красное снято и в стилях: правило `.till.soon` не должно жить без зова. Судим ПОВЕДЕНИЕМ — цвет
+         пробных `.till` и `.till.soon` рядом: чтение `cssRules` ослепло (мутант b7 «вернуть правило» прошёл
+         зелёным), а цвет различает правило, кто бы его ни дописал. */
+      const cvet = await s.p.evaluate(() => {
+        const box = document.createElement('div'), a = document.createElement('span'), b = document.createElement('span');
+        a.className = 'till'; b.className = 'till soon'; box.append(a, b); document.body.append(box);
+        const r = [getComputedStyle(a).color, getComputedStyle(b).color]; box.remove(); return r; });
+      if (cvet[0] !== cvet[1]) bad.push(`${n}: .till.soon красит иначе, чем .till (${cvet[1]} против ${cvet[0]}) — покраснение снято словом владельца`);
       await s.ctx.close();
     }
 
@@ -14401,6 +14413,324 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
+  // ── шаг 43: календарь «смотреть» в живом режиме (miniapp#451; случаи по ревью arhitector-38) ──
+  // Часы фиксированы: остров — вторник 1 декабря 2026, 10:00 (03:00Z). Пояс телефона — Нью-Йорк, где ещё 30 ноября:
+  // день клетки обязан считаться по острову (bkk), а не по телефону. Ивенты — живым ответом /events, тем же
+  // списком, что «Ивенты» (eventList()). Мутанты, которые случай обязан ловить: день по телефону (cal-chasy-kluba),
+  // однодневность (cal-polnoch), снятое «- 1» в calDays (m451a arhitector-38: конец ровно в 00:00 встаёт во второй
+  // день — cal-polnoch-rovno), пустой прошедший день (L9), «назад» с event на «Ивенты», церемонии демо в живом.
+  if (part(2)) {
+    const n = 'calendar';
+    const NOW43 = Date.parse('2026-12-01T03:00:00Z');
+    const CAL_EV = [
+      // 18:30Z 1 декабря — 01:30 2 декабря острова; в Нью-Йорке 13:30 1 декабря
+      EV({ id: 31, title: 'Часы клуба', starts_at: '2026-12-01T18:30:00Z', duration_min: 60 }),
+      // 22:00 3 декабря острова + 300 мин — до 03:00 4 декабря: две клетки
+      EV({ id: 32, title: 'Через полночь', starts_at: '2026-12-03T15:00:00Z', duration_min: 300 }),
+      // 22:00 5 декабря острова + 120 мин — кончается РОВНО в 00:00 6 декабря: одна клетка
+      EV({ id: 33, title: 'До полуночи', starts_at: '2026-12-05T15:00:00Z', duration_min: 120 })
+    ];
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, CAL_EV)), 'America/New_York', NOW43);
+    const tap = async sel => { await s.p.click('#view ' + sel); await s.p.waitForTimeout(150); };
+    await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(200);
+    if (!await s.p.$('#view [data-go="calendar"]')) bad.push(`${n}: на «Ивентах» нет кнопки календаря (V1)`);
+    else {
+      const c0 = s.calls.length;   // запросы ДО календаря — запуск приложения, не его
+      await tap('[data-go="calendar"]');
+      const cells = () => s.p.evaluate(() => {
+        const o = {};
+        document.querySelectorAll('#view .month [data-action^="cal-day:"]').forEach(b => {
+          o[b.dataset.action.slice(8)] = { ev: b.querySelectorAll('.ev').length, tea: b.querySelectorAll('.ev.tea').length };
+        });
+        return o;
+      });
+      const pressed = () => s.p.evaluate(() => { const b = document.querySelector('#view .seg [aria-pressed="true"]'); return b ? b.textContent : null; });
+      const note = () => s.p.evaluate(() => { const d = document.querySelector('#view .daynote'); return d ? d.textContent : ''; });
+      const c = await cells();
+      const ev = d => (c[d] || { ev: -1 }).ev;
+      if (!Object.keys(c).length) bad.push(`${n}: календарь открылся не месяцем — клеток дней нет`);
+      // cal-chasy-kluba
+      if (ev('2026-12-02') !== 1 || ev('2026-12-01') !== 0)
+        bad.push(`cal-chasy-kluba: 18:30Z 1 декабря — это 2 декабря острова; меток в клетке 1-го ${ev('2026-12-01')}, 2-го ${ev('2026-12-02')} (ждали 0 и 1)`);
+      // cal-polnoch
+      if (ev('2026-12-03') !== 1 || ev('2026-12-04') !== 1)
+        bad.push(`cal-polnoch: 22:00 + 300 мин стоит в клетках 3-го ${ev('2026-12-03')}, 4-го ${ev('2026-12-04')} (ждали 1 и 1)`);
+      // cal-polnoch-rovno — m451a
+      if (ev('2026-12-05') !== 1 || ev('2026-12-06') !== 0)
+        bad.push(`cal-polnoch-rovno: 22:00 + 120 мин кончается в 00:00 — клетки 5-го ${ev('2026-12-05')}, 6-го ${ev('2026-12-06')} (ждали 1 и 0)`);
+      // в живом церемоний для «смотреть» нет: списка у сервера нет (teaList пуст), занятость — только в «выбрать»
+      const tea = Object.values(c).reduce((a, x) => a + x.tea, 0);
+      if (tea) bad.push(`cal-tea-api: в живом (списка церемоний у сервера нет) меток церемоний в месяце ${tea}, ждали 0`);
+      await tap('[data-action="cal-day:2026-12-02"]');
+      const t2 = await s.view();
+      if (!t2.includes('Часы клуба')) bad.push(`cal-chasy-kluba: в дне 2 декабря нет ивента «Часы клуба»`);
+      if (/Чайн(ая|ых) церемони/.test(t2)) bad.push(`cal-tea-api: в живом (списка церемоний у сервера нет) в дне 2 декабря есть церемонии: «${t2.slice(0, 160)}»`);
+      // календарь своего запроса не добавляет: месяц и день — без сервера (ивенты уже в eventList())
+      const alien = s.calls.slice(c0);
+      if (alien.length) bad.push(`${n}: календарь звал сервер: ${alien.map(q => q.method + ' ' + q.url).join(', ')}`);
+      // назад с event — в тот же вид и день (не сегодняшний: 3 декабря)
+      await tap('[data-action="cal-view:month"]');
+      await tap('[data-action="cal-day:2026-12-03"]');
+      if (!await s.p.$('#view [data-event="32"]')) bad.push(`cal-nazad: в дне 3 декабря нет строки ивента 32`);
+      else {
+        await tap('[data-event="32"]');
+        await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(250);
+        const pv = await pressed(), nt = await note();
+        if (pv !== 'День' || !nt.includes('3 декабря'))
+          bad.push(`cal-nazad: «назад» с event — вид «${pv}», подпись «${nt}» (ждали «День» и 3 декабря)`);
+      }
+      // L9: прошлое — не «пусто», а «афиша прошлого не показывает»; дальше прошлого месяца назад не листается
+      await tap('[data-action="cal-view:month"]');
+      await tap('[data-action="cal-prev"]');
+      const back2 = await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="cal-prev"]'); return b ? b.disabled : null; });
+      if (back2 !== true) bad.push(`cal-proshloe: на ноябре (весь в прошлом) ‹ не погашена: ${back2}`);
+      await tap('[data-action="cal-day:2026-11-30"]');
+      const t9 = await s.view();
+      if (!t9.includes('Прошедшие ивенты афиша не показывает') || /ни ивентов|свободно/.test(t9))
+        bad.push(`cal-proshloe: прошедший день 30 ноября говорит «${t9.slice(0, 200)}» — ждали L9`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  /* ── БЕЗ ДАТЫ (Cafe13KPG#1097, #1103; слово владельца 25.11.2026, №79: «Даты убирай в обоих местах») ──
+     Срок членства уходит с экранов человека и кассы, срок в ДАННЫХ живёт. Признак даты — общий для всех
+     случаев: число месяца словом, число ЧИСЛАМИ или «до » перед ними. Срочное — через НЕДЕЛЮ от часов
+     прогона: там прежде краснел список людей, и общий срок — самый близкий к старому правилу. */
+  if (part(2)) {
+    const DATA_RE = /\d{1,2}\s+(январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)|\d{2}\.\d{2}\.\d{4}|\bдо\s+\d/i;
+    const NEDELYA = new Date(Date.now() + 7 * 86400000).toISOString();
+    const podpis = s => s.p.evaluate(() => { const e = document.querySelector('.pass .who .col > span');
+      return e ? e.textContent : null; });
+    // пропуск с сетью: экран пропуска (js/11-ekrany-klub.js) и без сети: passCard (js/03-propusk.js)
+    for (const [n, me, passR, saved, lifelong] of [
+      ['bez-daty-propusk', json(200, OWNER), json(200, Object.assign({}, PASS, { lifelong: false, valid_until: NEDELYA })), null, false],
+      ['bez-daty-propusk-bez-seti', 'abort', null, Object.assign({}, SAVED, { lifelong: false, ends: NEDELYA }), false],
+      ['bez-daty-pozhiznenno-propusk', 'abort', null, SAVED, true]]) {
+      const s = await open(true, true, me, null, passR, saved);
+      if (passR) { await s.p.click('[data-go="pass"]'); await s.p.waitForTimeout(200); }
+      const t = await s.view(), pd = await podpis(s), lvl = await s.p.evaluate(() => LEVEL.member);
+      if (pd === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет: «${t.slice(0, 80)}»`);
+      else {
+        const zhdem = lifelong ? lvl + ' · пожизненно' : lvl;
+        if (pd !== zhdem) bad.push(`${n}: под именем «${pd}», ждали «${zhdem}» — без даты и без висящей « · »`);
+        if (DATA_RE.test(t)) bad.push(`${n}: на пропуске дата: «${(t.match(DATA_RE) || [''])[0]}»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // демонстрация: экран пропуска рисует сам (js/11-ekrany-klub.js, ветка без PASS) — «<вид>» без « · до »
+    {
+      const n = 'bez-daty-propusk-demo';
+      const s = await open(false, true, json(200, OWNER));
+      await s.p.waitForTimeout(150);
+      await s.p.evaluate(() => go('pass')); await s.p.waitForTimeout(150);
+      const t = await s.view(), pd = await podpis(s);
+      if (pd === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет: «${t.slice(0, 80)}»`);
+      else if (/ · $| · до|\bдо\s/.test(pd) || DATA_RE.test(pd)) bad.push(`${n}: под именем «${pd}» — дата или висящая « · »`);
+      await s.ctx.close();
+    }
+    // касса: карточка найденного (tillCard, js/05-kassa.js) и строка «Перед приёмом» (E34zh, ответ потерян)
+    const FIN = Object.assign({}, PERSON, { membership_active: true,
+      membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: NEDELYA, lifelong: false } });
+    {
+      const n = 'bez-daty-kassa';
+      const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, FIN), post: 'abort' }));
+      if (await toPerson(s, n)) {
+        const t = await s.view();
+        const row = await s.p.evaluate(() => { const e = [...document.querySelectorAll('#view .rows > div')]
+          .find(d => /Членство/.test(d.textContent)); return e ? e.querySelector('b').textContent : null; });
+        if (row !== 'Есть') bad.push(`${n}: строка «Членство» на карточке «${row}», ждали «Есть»`);
+        if (DATA_RE.test(t)) bad.push(`${n}: на карточке кассы дата: «${(t.match(DATA_RE) || [''])[0]}»`);
+        if (await toForm(s, n, 'topup')) {
+          await payTopup(s, '500');
+          const t2 = await s.view();
+          if (!t2.includes('Перед приёмом: членство есть, остаток 0 ฿')) bad.push(`${n}: нет «Перед приёмом: членство есть, остаток 0 ฿»`);
+          if (/членство до|Перед приёмом:[^.]*\d{1,2}\s+\S+\s+\d{4}/.test(t2)) bad.push(`${n}: в «Перед приёмом» дата`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // «Членство» (membershipLive, js/10-utility.js): экран вне WIRED, судим его разметку прямо — два членства
+    {
+      const n = 'bez-daty-chlenstvo';
+      const s = await open(true, true, json(200, OWNER));
+      const r = await s.p.evaluate(iso => {
+        DATA.member.memberships = [{ level: 'organizer', until: '1 декабря 2026 г.', lifelong: false, ends: iso },
+                                   { level: 'member', until: null, lifelong: true }];
+        const box = document.createElement('div'); box.innerHTML = membershipLive();
+        return { text: box.textContent, empty: [...box.querySelectorAll('.small')].filter(e => !e.textContent.trim()).length,
+                 life: (box.textContent.match(/Пожизненно/g) || []).length, act: (box.textContent.match(/АКТИВНО/g) || []).length };
+      }, NEDELYA);
+      if (/Действует до/.test(r.text) || DATA_RE.test(r.text)) bad.push(`${n}: на «Членстве» срок: «${(r.text.match(/Действует до.{0,20}/) || r.text.match(DATA_RE) || [''])[0]}»`);
+      if (r.empty) bad.push(`${n}: пустая .small на месте снятой строки (${r.empty})`);
+      if (r.life !== 1) bad.push(`${n}: «Пожизненно» ${r.life} раз, ждали 1 — у пожизненного остаётся (Р2 #453)`);
+      if (r.act !== 2) bad.push(`${n}: «АКТИВНО» ${r.act} раз, ждали 2 — карточки обоих членств`);
+      await s.ctx.close();
+    }
+  }
+
+  /* ── ЗАНЯТОСТЬ КАЛЕНДАРЯ В ЖИВОМ (наряд cafe13kpg-coordinator-3 26.11.2026; api master.py:323 `GET /master/slot-busy`) ──
+     Слово владельца: «если в календаре уже стоят три церемонии на это время, календарь не должен давать возможности
+     даже выбрать это время». Предел — сервера (queries.py TEA_SLOTS = 3, `club_conflict`): ивент закрывает всё,
+     церемоний разом до трёх, ждущий букинг время не держит. Обе стороны: занятое не выбрать, свободное — выбрать.
+     Часы — остров 1 декабря 2026, 10:00; выбор — на 2 декабря (D), полосы считают и 3-е (D1, ночь). */
+  if (part(2)) {
+    const NOWB = Date.parse('2026-12-01T03:00:00Z'), D = '2026-12-02', D1 = '2026-12-03';
+    const T = (d, hm) => d + 'T' + hm + ':00+07:00';
+    const R = (title, occ, d, a, d2, z) => ({ title, occupancy: occ, starts_at: T(d, a), ends_at: T(d2, z) });
+    const PEND = 'букинг мастера ждёт решения';
+    const NOCH = [R('Ночной пуэр', 'tea', D, '23:00', D1, '01:00'), R('Ночной улун', 'tea', D, '23:00', D1, '01:00')];
+    // [имя, ответ о D, ответ о D1 (или код), проверки: [С, До, можно?]]
+    const CASES_B = [
+      ['cal-busy-ivent', [R('Вечер клуба', 'event', D, '18:00', D, '21:00')], [],
+        { band: ['18:00–21:00', 'занято ивентом «Вечер клуба»'], tries: [['19:00', '20:00', false], ['17:00', '18:30', false], ['21:00', '22:00', true]] }],
+      ['cal-busy-tri', [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R('Габа', 'tea', D, '15:00', D, '16:00')], [],
+        { band: ['15:00–16:00', 'церемоний в это время уже 3 из 3'], tries: [['15:30', '16:30', false], ['16:00', '17:00', true]] }],
+      ['cal-busy-dva', [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R(PEND, 'tea', D, '15:00', D, '16:00')], [],
+        { open: ['15:00–16:00', 'церемоний 2 из 3'], tries: [['15:00', '16:00', true]], choose: ['15:00', '16:00'] }],
+      // церемония через полночь приходит в ОБОИХ ответах: дубль дал бы 4 и закрыл ночь
+      ['cal-busy-noch-dubl', NOCH, NOCH, { tries: [['23:30', '00:30', true]] }],
+      // третья — только в ответе о D1: без второго запроса ночь осталась бы открытой
+      ['cal-busy-noch-zavtra', NOCH, NOCH.concat([R('Рассветный', 'tea', D1, '00:15', D1, '00:45')]), { tries: [['23:30', '00:30', false], ['23:30', '00:15', true]] }],
+      ['cal-busy-otkaz', [], 500, { fail: true }],
+      ['cal-busy-ne-ta-data', [], 'ne-ta', { fail: true }]];
+    for (const [n, onD, onD1, want] of CASES_B) {
+      const asked = [];
+      const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (!u.startsWith('/master/slot-busy')) return undefined;
+        asked.push(u);
+        const date = (u.match(/date=([\d-]+)/) || [])[1];
+        const body = date === D ? onD : onD1;
+        if (typeof body === 'number') return json(body, { detail: 'сбой' });
+        if (body === 'ne-ta') return json(200, { place_id: null, place_name: null, date: '2026-12-09', busy: [] });
+        return json(200, { place_id: null, place_name: null, date, busy: body });
+      }, 'Asia/Bangkok', NOWB);
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      const look = () => s.p.evaluate(() => {
+        const v = document.getElementById('view'), b = v.querySelector('[data-action="cal-choose"]');
+        return { text: v.textContent, off: [...v.querySelectorAll('.tband.off')].map(e => ({ t: e.textContent, act: e.hasAttribute('data-action'), btn: e.tagName === 'BUTTON' })),
+                 open: [...v.querySelectorAll('button.tband')].map(e => e.textContent), choose: b ? b.disabled : null };
+      });
+      const want2 = ['/master/slot-busy?date=' + D + '&occupancy=tea', '/master/slot-busy?date=' + D1 + '&occupancy=tea'];
+      if (want2.some(w => !asked.includes(w))) bad.push(`${n}: занятость спрошена не под D и D+1 с occupancy=tea: ${JSON.stringify(asked)}`);
+      let v = await look();
+      if (want.fail) {
+        if (!v.text.includes('Не удалось узнать, какое время занято') || !await s.p.$('#view [data-action="cal-busy-retry"]'))
+          bad.push(`${n}: частичный или чужой ответ не дал L17 с «Повторить»: «${v.text.slice(0, 160)}»`);
+        if (v.off.length || v.open.length || v.choose !== null) bad.push(`${n}: при отказе нарисованы полосы или «Выбрать» (${v.off.length}/${v.open.length}/${v.choose})`);
+      } else if (v.choose === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — полос нет: «${v.text.slice(0, 160)}»`);
+      else {
+        if (want.band) {
+          const o = v.off.find(x => x.t.includes(want.band[0]));
+          if (!o || !o.t.includes(want.band[1])) bad.push(`${n}: нет закрытой полосы «${want.band.join(' · ')}»: ${JSON.stringify(v.off)}`);
+          else if (o.act || o.btn) bad.push(`${n}: закрытая полоса нажимается (${o.btn ? 'кнопка' : 'data-action'})`);
+          if (v.open.some(t => t.includes(want.band[0]))) bad.push(`${n}: занятое ${want.band[0]} есть среди открытых полос`);
+        }
+        if (want.open && !v.open.some(t => t.includes(want.open[0]) && t.includes(want.open[1])))
+          bad.push(`${n}: ${want.open[0]} не открыто с «${want.open[1]}»: открытые ${JSON.stringify(v.open)}, закрытые ${JSON.stringify(v.off)}`);
+        for (const [f, t, ok] of want.tries) {
+          await s.p.evaluate(([f, t]) => {
+            for (const [id, x] of [['cal-from', f], ['cal-to', t]]) {
+              const e = document.getElementById(id); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, [f, t]);
+          await s.p.waitForTimeout(150);
+          v = await look();
+          if (v.choose !== !ok) bad.push(`${n}: ${f}–${t} — «Выбрать это время» ${v.choose ? 'погашена' : 'жива'}, ждали ${ok ? 'живую' : 'погашенную'}`);
+          if (!ok && !v.text.includes('Выберите другое время')) bad.push(`${n}: ${f}–${t} занято, а причина не названа`);
+        }
+        if (want.choose) {
+          await s.p.evaluate(([f, t]) => {
+            for (const [id, x] of [['cal-from', f], ['cal-to', t]]) {
+              const e = document.getElementById(id); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, want.choose);
+          await s.p.waitForTimeout(150);
+          await s.p.click('#view [data-action="cal-choose"]'); await s.p.waitForTimeout(200);
+          const pk = await s.p.evaluate(() => calPicked('teaHold'));
+          if (!pk || pk.ymd !== D || pk.from !== want.choose[0] || pk.to !== want.choose[1]) bad.push(`${n}: выбор не вернулся форме: ${JSON.stringify(pk)}`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Ответ сервера МЕНЯЕТСЯ между запросами — то, чего таблица выше не умеет (ревью arhitector4-c3 #462):
+       повтор после отказа НАЖИМАЕТСЯ, поздний ответ прежнего дня молчит (CALB.gen), вход спрашивает заново. */
+    const TRI = [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R('Габа', 'tea', D, '15:00', D, '16:00')];
+    const BAND3 = ['15:00–16:00', 'церемоний в это время уже 3 из 3'];
+    const hasBand = (v, w) => v.off.some(x => x.t.includes(w[0]) && x.t.includes(w[1]));
+    const lookB = s => s.p.evaluate(() => {
+      const v = document.getElementById('view');
+      return { text: v.textContent, off: [...v.querySelectorAll('.tband.off')].map(e => ({ t: e.textContent })),
+               retry: !!v.querySelector('[data-action="cal-busy-retry"]') };
+    });
+    const openB = async (asked, answer) => open(true, true, json(200, OWNER), null, null, null, q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+      if (!u.startsWith('/master/slot-busy')) return undefined;
+      asked.push(u);
+      return answer((u.match(/date=([\d-]+)/) || [])[1], asked.length);
+    }, 'Asia/Bangkok', NOWB);
+    const okB = (date, busy) => json(200, { place_id: null, place_name: null, date, busy });
+    // 1) cal-busy-povtor: первый ответ о D — 500 (L17), «Повторить» нажата — второй 200, полоса «3 из 3» есть, запросов 4
+    {
+      const n = 'cal-busy-povtor', asked = []; let failD = true;
+      const s = await openB(asked, date => {
+        if (date === D && failD) { failD = false; return json(500, { detail: 'сбой' }); }
+        return okB(date, date === D ? TRI : []);
+      });
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      let v = await lookB(s);
+      if (!v.text.includes('Не удалось узнать, какое время занято') || !v.retry) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — после 500 нет L17 с «Повторить»: «${v.text.slice(0, 160)}»`);
+      else {
+        await s.p.click('#view [data-action="cal-busy-retry"]'); await s.p.waitForTimeout(400);
+        v = await lookB(s);
+        if (asked.length !== 4) bad.push(`${n}: «Повторить» не спросил сервер заново — запросов ${asked.length}, ждали 4: ${JSON.stringify(asked)}`);
+        if (v.retry || !hasBand(v, BAND3)) bad.push(`${n}: после «Повторить» нет полосы «${BAND3.join(' · ')}»: «${v.text.slice(0, 160)}»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 2) cal-busy-pozdno: вход на D1, ответ о нём задержан; человек листает на D до ответа. Поздний ответ (с тремя
+    //    церемониями на D 15–16) обязан промолчать — иначе на D закрыто то, что сервер о D не говорил.
+    {
+      const n = 'cal-busy-pozdno', asked = [];
+      const s = await openB(asked, (date, k) => k <= 2 && date === D1
+        ? new Promise(ok => setTimeout(() => ok(okB(D1, TRI)), 1200)) : okB(date, []));
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D1);
+      await s.p.waitForTimeout(150);
+      await s.p.click('#view [data-action="cal-prev"]');
+      await s.p.waitForTimeout(1800);
+      const v = await lookB(s);
+      if (asked.length !== 4) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — запросов ${asked.length}, ждали 4 (D1, D1+1, D, D1): ${JSON.stringify(asked)}`);
+      if (!v.text.includes('Ср, 2 декабря')) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — день не D: «${v.text.slice(0, 120)}»`);
+      if (hasBand(v, BAND3)) bad.push(`${n}: поздний ответ о D1 закрыл D: ${JSON.stringify(v.off)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 3) cal-busy-vhod: D свободно; ушли с календаря, за это время три церемонии; вход снова — спрошено заново, закрыто
+    {
+      const n = 'cal-busy-vhod', asked = []; let full = false;
+      const s = await openB(asked, date => okB(date, date === D && full ? TRI : []));
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      let v = await lookB(s);
+      if (hasBand(v, BAND3) || asked.length !== 2) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — первый вход: запросов ${asked.length}, полоса ${hasBand(v, BAND3)}`);
+      full = true;
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      v = await lookB(s);
+      if (asked.length !== 4) bad.push(`${n}: второй вход не спросил занятость — запросов ${asked.length}, ждали 4`);
+      if (!hasBand(v, BAND3)) bad.push(`${n}: занятое за время вне календаря осталось открытым: ${JSON.stringify(v.off)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.

@@ -123,6 +123,15 @@ roleAccount	—	в тесте	Cafe13KPG#557	2026-11-20	_docs/recept/ekran/27/rol
 clubStats	—	в тесте	Cafe13KPG#688	2026-11-24	_docs/recept/ekran/31/clubStats.md
 artStats	—	в тесте	Cafe13KPG#563	2026-11-24	_docs/recept/ekran/32/artStats.md
 eventApproval	—	в тесте	Cafe13KPG#1009	2026-11-24	_docs/recept/ekran/odobrenie/eventApproval.md
+calendar	—	не готов	—	2026-11-26	_docs/recept/ekran/43/calendar.md
+teaMasters	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaMasters.md
+teaMaster	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaMaster.md
+teaBook	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaBook.md
+teaApply	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaApply.md
+teaHold	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaHold.md
+teaJoin	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaJoin.md
+teaReqs	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaReqs.md
+teaReq	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaReq.md
 # ⚠ Ниже — экраны, кадры которых НАРИСОВАНЫ, а кода в клиенте нет вовсе
 # (Cafe13KPG#859, замер мой 05.11.2026: ключа SCREENS с таким предметом в
 # стволе клиента нет ни одного). Имя словами — по правилу заголовка этого

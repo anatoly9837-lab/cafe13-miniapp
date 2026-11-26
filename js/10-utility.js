@@ -67,7 +67,7 @@ function membershipLive() {
   var top = member
     ? have.map(function (m) {
         return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(LEVEL[m.level]) + '</h2>' +
-          '<span class="small">' + esc(untilText(m)) + '</span></div><span class="pill on">АКТИВНО</span></div></div>';
+          (untilText(m) ? '<span class="small">' + esc(untilText(m)) + '</span>' : '') + '</div><span class="pill on">АКТИВНО</span></div></div>';
       }).join('')
     : !rq ? '<div class="card quiet"><div class="col"><b>Членства нет</b>' +
         '<span class="small">Услугами острова можно пользоваться и так; пропуск в клуб выдаётся по членству.</span></div></div>'
