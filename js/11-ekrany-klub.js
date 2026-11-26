@@ -1,6 +1,9 @@
 // шаг 42 (рецепт 42/guest.md): ОДНА строка-вход «Чайные мастера» — всем, у кого есть «Услуги», членство не нужно;
 // числа мастеров на входе нет, список — на `teaMasters`. Место — после «Бизнесов клуба», до «Работы»
 function teaEntry() {
+  // в живом — только когда экран подключён (WIRED у руки ЧАЙ-A): серая дверь сказала бы «временно недоступно» о том,
+  // что не работало никогда (случай freeze), а вход появится сам, как только экран включат
+  if (closed('teaMasters')) return '';
   return '<div class="group"><span class="label">' + esc(slovo('guest.tea.label')) + '</span>' +
     '<button type="button" class="listitem" data-go="teaMasters"><span class="grow"><b>' + esc(slovo('guest.tea.title')) + '</b>' +
       '<span class="small">' + esc(slovo('guest.tea.sub')) + '</span></span>' + svg(ICON.chev, 'chev') + '</button></div>';
@@ -10,19 +13,19 @@ function teaEntry() {
    Зритель — все, роль и членство не спрашиваются (№65 «а»). Дверь карточки (H1) вносит человека в каталог «Услуг»,
    одну церемонию НЕ создаёт (№66 «а»); поэтому кнопка вторичная (.btn quiet). Состояние — у руки ЧАЙ-A: TEA.mine, loadTeaMine (js/22) */
 function teaMineBlock() {
-  if (typeof TEA === 'undefined') return '';
+  if (typeof TEA === 'undefined' || closed('teaApply')) return '';   // как teaEntry: до подключения teaApply блока нет
   var m = TEA.mine;
   if (!m) return TEA.mineFail ? '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('home.tea.fail')) + '</span>' +
-      '<button type="button" class="btn quiet" data-action="tq-mine-retry">' + esc(slovo('home.tea.retry')) + '</button></div></div>' : '';
+      '<button type="button" class="btn quiet" data-action="tc-mine-retry">' + esc(slovo('home.tea.retry')) + '</button></div></div>' : '';
   var line = function (st, word) {
-    return '<div class="row"><b>' + esc(slovo('home.tea.line')) + '</b><span class="st ' + st + '">' + esc(slovo(word)) + '</span></div>';
+    return '<div class="row"><b>' + esc(slovo('home.tea.line')) + '</b><span class="st ' + st + '">' + esc(word) + '</span></div>';
   };
-  if (m.status === 'pending') return '<div class="card quiet"><div class="col">' + line('wait', 'home.tea.st.wait') +
+  if (m.status === 'pending') return '<div class="card quiet"><div class="col">' + line('wait', slovo('home.tea.st.wait')) +
       '<span class="small">' + esc(slovo('home.tea.pending')) + '</span></div></div>';
-  if (m.status === 'approved' || m.status === 'edit') return '<div class="card"><div class="col">' + line('ok', 'home.tea.st.ok') +
+  if (m.status === 'approved' || m.status === 'edit') return '<div class="card"><div class="col">' + line('ok', slovo('home.tea.st.ok')) +
       (m.status === 'edit' ? '<span class="small">' + esc(slovo('home.tea.editWait')) + '</span>' : '') +
       '<button type="button" class="btn quiet" data-go="teaApply">' + esc(slovo('home.tea.change')) + '</button></div></div>';
-  if (m.status === 'rejected') return '<div class="card quiet"><div class="col">' + line('no', 'home.tea.st.no') +
+  if (m.status === 'rejected') return '<div class="card quiet"><div class="col">' + line('no', slovo('home.tea.st.no')) +
       (m.note ? '<span class="said">' + esc(m.note) + '</span>' : '') +
       '<button type="button" class="btn quiet" data-go="teaApply">' + esc(slovo('home.tea.again')) + '</button></div></div>';
   return '<div class="card"><div class="col"><b>' + esc(slovo('home.tea.title')) + '</b><span class="small">' + esc(slovo('home.tea.about')) + '</span>' +

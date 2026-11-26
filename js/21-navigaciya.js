@@ -784,9 +784,9 @@ function doAction(a) {
      Разбор здесь, чтобы разметка оставалась одними атрибутами. */
   var arg = null, c = a.indexOf(':');
   if (c !== -1) { arg = a.slice(c + 1); a = a.slice(0, c); }
-  // шаг 42: префикс `tea-` — руки ЧАЙ-A (teaAction в js/22), `tq-` — очередь карточек арт-директора (tqAction в js/18)
+  // шаг 42: префикс `tea-` — руки ЧАЙ-A (teaAction в js/22), `tc-` — очередь карточек арт-директора (tqAction в js/18)
   if (/^tea-/.test(a) && typeof teaAction === 'function' && teaAction(a, arg)) return;
-  if (/^tq-/.test(a) && tqAction(a, arg)) return;
+  if (/^tc-/.test(a) && tqAction(a, arg)) return;
   if (!LIVE && DEMO_SENDS.indexOf(a) !== -1) {
     if (a.slice(0, 2) === 'c-') grabCard();     // набранное в карточке не теряется
     FLASH = { text: 'Это демонстрация', note: 'В Telegram это ушло бы на сервер клуба. Здесь ничего не отправлено и не записано.' };

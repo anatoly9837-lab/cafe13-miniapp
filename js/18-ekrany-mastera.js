@@ -328,19 +328,19 @@ function tqGo(screen, p) {
   if ((screen === 'masters' || screen === 'teaReqs' || screen === 'manage') && current !== screen && mayMasters()) loadTeaQueue();
   if (screen === 'teaReq' && (current !== 'teaReq' || param !== p)) { TQ.err = ''; TQ.note = ''; TQ.gone = 0; if (!TQ.list) loadTeaQueue(); }
 }
-function tqGrab() { var f = document.getElementById('tq-note'); if (f) TQ.note = f.value; }
+function tqGrab() { var f = document.getElementById('tc-note'); if (f) TQ.note = f.value; }
 function tqAction(a, arg) {
-  if (a === 'tq-retry') { loadTeaQueue(); render(); return true; }
-  if (a === 'tq-open') { go('teaReq', arg); return true; }
+  if (a === 'tc-retry') { loadTeaQueue(); render(); return true; }
+  if (a === 'tc-open') { go('teaReq', arg); return true; }
   // R10 «К очереди»: действием, а не data-go — вход в очередь на «Слотах» ровно один (признак masters.md)
-  if (a === 'tq-back') { go('teaReqs'); return true; }
+  if (a === 'tc-back') { go('teaReqs'); return true; }
   // «Повторить» блока «Чайный мастер» на «Клубе» (js/11): загрузка — руки ЧАЙ-A
-  if (a === 'tq-mine-retry') { if (typeof loadTeaMine === 'function') { TEA.mineFail = ''; loadTeaMine(); } render(); return true; }
-  if (a !== 'tq-yes' && a !== 'tq-no') return false;
+  if (a === 'tc-mine-retry') { if (typeof loadTeaMine === 'function') { TEA.mineFail = ''; loadTeaMine(); } render(); return true; }
+  if (a !== 'tc-yes' && a !== 'tc-no') return false;
   tqGrab();
   var q = tqById(arg);
   if (!q || TQ.busy) return true;
-  var yes = a === 'tq-yes';
+  var yes = a === 'tc-yes';
   if (!LIVE) {
     FLASH = { text: 'Это демонстрация', note: 'В Telegram это ушло бы на сервер клуба. Здесь ничего не отправлено и не записано.' };
     haptic('warn'); render(); return true;
@@ -351,7 +351,7 @@ function tqAction(a, arg) {
     TQ.busy = false;
     if (r.status === 200 || r.status === 201 || r.status === 204) {
       TQ.note = '';
-      FLASH = { text: slovo(yes ? 'teaReq.done.yes' : 'teaReq.done.no'), note: '' };
+      FLASH = { text: yes ? slovo('teaReq.done.yes') : slovo('teaReq.done.no'), note: '' };
       loadTeaQueue(); go('teaReqs'); return;
     }
     // R10: карточку уже решил другой арт-директор — сервер отвечает 409; поле R3 сохраняется при любом отказе
@@ -367,7 +367,7 @@ Object.assign(SCREENS, {
   teaReqs: function () {
     if (LIVE && !mayMasters()) return SCREENS.masters();
     if (!TQ.list) return TQ.fail ? '<div class="card strong"><h2>' + esc(slovo('teaReqs.fail.title')) + '</h2><p class="verbatim">' + esc(TQ.fail) + '</p>' +
-        '<button type="button" class="btn" data-action="tq-retry">' + esc(slovo('teaReqs.fail.retry')) + '</button></div>'
+        '<button type="button" class="btn" data-action="tc-retry">' + esc(slovo('teaReqs.fail.retry')) + '</button></div>'
       : '<div class="card quiet"><span class="small">' + esc(slovo('teaReqs.loading')) + '</span></div>';
     var wait = TQ.list.filter(function (q) { return q.status === 'pending'; });
     var past = TQ.list.filter(function (q) { return q.status !== 'pending'; });
@@ -376,14 +376,14 @@ Object.assign(SCREENS, {
       '<span class="small">' + esc(slovo('teaReqs.empty.sub')) + '</span></div></div>';
     return (FLASH ? flash() : '') +
       (wait.length ? '<div class="group"><span class="label">' + esc(slovo('teaReqs.wait')) + '</span>' + wait.map(function (q) {
-        return '<button type="button" class="listitem" data-action="tq-open:' + esc(q.id) + '">' + ava(q) +
+        return '<button type="button" class="listitem" data-action="tc-open:' + esc(q.id) + '">' + ava(q) +
           '<span class="grow"><b class="clamp1">' + esc(q.card.name) + '</b><span class="small">' +
-            esc(slovo(q.kind === 'edit' ? 'teaReqs.kind.edit' : 'teaReqs.kind.new') + ' · ' + topupDay(q.iso, true)) + '</span></span>' +
+            esc((q.kind === 'edit' ? slovo('teaReqs.kind.edit') : slovo('teaReqs.kind.new')) + ' · ' + topupDay(q.iso, true)) + '</span></span>' +
           '<span class="st wait">' + esc(slovo('teaReqs.st.wait')) + '</span>' + svg(ICON.chev, 'chev') + '</button>';
       }).join('') + '</div>' : '') +
       (past.length ? '<div class="group"><span class="label">' + esc(slovo('teaReqs.past')) + '</span>' + past.map(function (q) {
         return '<div class="listitem"><span class="grow"><b class="clamp1">' + esc(q.card.name) + '</b><span class="small">' + esc(topupDay(q.done, true)) + '</span></span>' +
-          '<span class="st ' + TQ_ST[q.status] + '">' + esc(slovo(q.status === 'approved' ? 'teaReqs.st.ok' : 'teaReqs.st.no')) + '</span></div>';
+          '<span class="st ' + TQ_ST[q.status] + '">' + esc((q.status === 'approved' ? slovo('teaReqs.st.ok') : slovo('teaReqs.st.no'))) + '</span></div>';
       }).join('') + '</div>' : '');
   },
 
@@ -393,10 +393,10 @@ Object.assign(SCREENS, {
     if (!TQ.list) return SCREENS.teaReqs();
     var q = tqById(id);
     if (!q || TQ.gone === q.id || q.status !== 'pending') return '<div class="card quiet"><div class="col"><b>' + esc(slovo('teaReq.gone')) + '</b>' +
-      '<button type="button" class="btn quiet" data-action="tq-back">' + esc(slovo('teaReq.gone.back')) + '</button></div></div>';
+      '<button type="button" class="btn quiet" data-action="tc-back">' + esc(slovo('teaReq.gone.back')) + '</button></div></div>';
     var off = TQ.busy ? ' disabled aria-disabled="true"' : '';
-    var CH = { photo: 'teaReq.edit.photo', about: 'teaReq.edit.about', price: 'teaReq.edit.price' };
-    var changed = q.changed.filter(function (k) { return CH[k]; }).map(function (k) { return slovo(CH[k]); });
+    var CH = { photo: slovo('teaReq.edit.photo'), about: slovo('teaReq.edit.about'), price: slovo('teaReq.edit.price') };
+    var changed = q.changed.filter(function (k) { return CH[k]; }).map(function (k) { return CH[k]; });
     var card = typeof teaCardHtml === 'function' ? teaCardHtml(q.card, { book: false }) : '';
     return (FLASH ? flash() : '') +
       '<span class="small">' + esc(slovo('teaReq.sub')) + '</span>' +
@@ -405,13 +405,13 @@ Object.assign(SCREENS, {
           (changed.length ? '<span class="small">' + esc(slovo('teaReq.edit.changed', { what: changed.join(' / ') })) + '</span>' : '') +
         '</div></div>' : '') +
       card +
-      '<div class="card"><div class="field"><label for="tq-note">' + esc(slovo('teaReq.note.label')) + '</label>' +
-        '<textarea id="tq-note" rows="3" maxlength="500"' + off + '>' + esc(TQ.note) + '</textarea>' +
+      '<div class="card"><div class="field"><label for="tc-note">' + esc(slovo('teaReq.note.label')) + '</label>' +
+        '<textarea id="tc-note" rows="3" maxlength="500"' + off + '>' + esc(TQ.note) + '</textarea>' +
         '<span class="small">' + esc(slovo('teaReq.note.sub')) + '</span></div></div>' +
       (TQ.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(TQ.err) + '</span></div>' : '') +
       '<div class="row">' +
-        '<button type="button" class="btn ghost" data-action="tq-no:' + esc(q.id) + '"' + off + '>' + esc(slovo('teaReq.no')) + '</button>' +
-        '<button type="button" class="btn" data-action="tq-yes:' + esc(q.id) + '"' + off + '>' + esc(slovo('teaReq.yes')) + '</button>' +
+        '<button type="button" class="btn ghost" data-action="tc-no:' + esc(q.id) + '"' + off + '>' + esc(slovo('teaReq.no')) + '</button>' +
+        '<button type="button" class="btn" data-action="tc-yes:' + esc(q.id) + '"' + off + '>' + esc(slovo('teaReq.yes')) + '</button>' +
       '</div>';
   }
 });

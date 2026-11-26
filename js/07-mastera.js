@@ -311,10 +311,13 @@ function masterOffer() {
   var pt = typeof teaHoldPrice === 'function' ? teaHoldPrice() : null;
   var bal = msBalance();
   var line = function (p) {
-    return typeof p !== 'number' ? slovo(p === null ? 'home.hold.priceFail' : 'home.hold.loading')
+    return typeof p !== 'number' ? (p === null ? slovo('home.hold.priceFail') : slovo('home.hold.loading'))
       : bal < p ? slovo('home.hold.short', { n: money(p - bal), amount: money(p), balance: money(bal) })
       : slovo('home.hold.sub', { amount: money(p) });
   };
+  // «церемония» — только когда teaHold подключён (как вход на «Услугах», js/11 teaEntry): до того блок — прежний, на одну кнопку
+  if (closed('teaHold')) pt = pe;
+  var tea = !closed('teaHold');
   var off = function (p) { return typeof p !== 'number' || bal < p ? ' disabled aria-disabled="true"' : ''; };
   var same = line(pe) === line(pt);
   var short = typeof pe === 'number' && bal < pe || typeof pt === 'number' && bal < pt;
@@ -322,8 +325,8 @@ function masterOffer() {
       (same ? '<span class="small">' + esc(line(pe)) + '</span>' : '') + '</div>' +
       '<button type="button" class="btn" data-action="ms-apply"' + off(pe) + '>' + esc(slovo('home.hold.event')) + '</button>' +
       (same ? '' : '<span class="small">' + esc(line(pe)) + '</span>') +
-      '<button type="button" class="btn" data-go="teaHold"' + off(pt) + '>' + esc(slovo('home.hold.tea')) + '</button>' +
-      (same ? '' : '<span class="small">' + esc(line(pt)) + '</span>') + '</div>' +
+      (tea ? '<button type="button" class="btn" data-go="teaHold"' + off(pt) + '>' + esc(slovo('home.hold.tea')) + '</button>' +
+      (same ? '' : '<span class="small">' + esc(line(pt)) + '</span>') : '') + '</div>' +
     (short ? '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('home.hold.note')) + '</span></div>' : '');
 }
 function sendMaster() {
