@@ -14657,6 +14657,78 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    /* Ответ сервера МЕНЯЕТСЯ между запросами — то, чего таблица выше не умеет (ревью arhitector4-c3 #462):
+       повтор после отказа НАЖИМАЕТСЯ, поздний ответ прежнего дня молчит (CALB.gen), вход спрашивает заново. */
+    const TRI = [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R('Габа', 'tea', D, '15:00', D, '16:00')];
+    const BAND3 = ['15:00–16:00', 'церемоний в это время уже 3 из 3'];
+    const hasBand = (v, w) => v.off.some(x => x.t.includes(w[0]) && x.t.includes(w[1]));
+    const lookB = s => s.p.evaluate(() => {
+      const v = document.getElementById('view');
+      return { text: v.textContent, off: [...v.querySelectorAll('.tband.off')].map(e => ({ t: e.textContent })),
+               retry: !!v.querySelector('[data-action="cal-busy-retry"]') };
+    });
+    const openB = async (asked, answer) => open(true, true, json(200, OWNER), null, null, null, q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+      if (!u.startsWith('/master/slot-busy')) return undefined;
+      asked.push(u);
+      return answer((u.match(/date=([\d-]+)/) || [])[1], asked.length);
+    }, 'Asia/Bangkok', NOWB);
+    const okB = (date, busy) => json(200, { place_id: null, place_name: null, date, busy });
+    // 1) cal-busy-povtor: первый ответ о D — 500 (L17), «Повторить» нажата — второй 200, полоса «3 из 3» есть, запросов 4
+    {
+      const n = 'cal-busy-povtor', asked = []; let failD = true;
+      const s = await openB(asked, date => {
+        if (date === D && failD) { failD = false; return json(500, { detail: 'сбой' }); }
+        return okB(date, date === D ? TRI : []);
+      });
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      let v = await lookB(s);
+      if (!v.text.includes('Не удалось узнать, какое время занято') || !v.retry) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — после 500 нет L17 с «Повторить»: «${v.text.slice(0, 160)}»`);
+      else {
+        await s.p.click('#view [data-action="cal-busy-retry"]'); await s.p.waitForTimeout(400);
+        v = await lookB(s);
+        if (asked.length !== 4) bad.push(`${n}: «Повторить» не спросил сервер заново — запросов ${asked.length}, ждали 4: ${JSON.stringify(asked)}`);
+        if (v.retry || !hasBand(v, BAND3)) bad.push(`${n}: после «Повторить» нет полосы «${BAND3.join(' · ')}»: «${v.text.slice(0, 160)}»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 2) cal-busy-pozdno: вход на D1, ответ о нём задержан; человек листает на D до ответа. Поздний ответ (с тремя
+    //    церемониями на D 15–16) обязан промолчать — иначе на D закрыто то, что сервер о D не говорил.
+    {
+      const n = 'cal-busy-pozdno', asked = [];
+      const s = await openB(asked, (date, k) => k <= 2 && date === D1
+        ? new Promise(ok => setTimeout(() => ok(okB(D1, TRI)), 1200)) : okB(date, []));
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D1);
+      await s.p.waitForTimeout(150);
+      await s.p.click('#view [data-action="cal-prev"]');
+      await s.p.waitForTimeout(1800);
+      const v = await lookB(s);
+      if (asked.length !== 4) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — запросов ${asked.length}, ждали 4 (D1, D1+1, D, D1): ${JSON.stringify(asked)}`);
+      if (!v.text.includes('Ср, 2 декабря')) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — день не D: «${v.text.slice(0, 120)}»`);
+      if (hasBand(v, BAND3)) bad.push(`${n}: поздний ответ о D1 закрыл D: ${JSON.stringify(v.off)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 3) cal-busy-vhod: D свободно; ушли с календаря, за это время три церемонии; вход снова — спрошено заново, закрыто
+    {
+      const n = 'cal-busy-vhod', asked = []; let full = false;
+      const s = await openB(asked, date => okB(date, date === D && full ? TRI : []));
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      let v = await lookB(s);
+      if (hasBand(v, BAND3) || asked.length !== 2) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — первый вход: запросов ${asked.length}, полоса ${hasBand(v, BAND3)}`);
+      full = true;
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      v = await lookB(s);
+      if (asked.length !== 4) bad.push(`${n}: второй вход не спросил занятость — запросов ${asked.length}, ждали 4`);
+      if (!hasBand(v, BAND3)) bad.push(`${n}: занятое за время вне календаря осталось открытым: ${JSON.stringify(v.off)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
   }
 
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
