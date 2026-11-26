@@ -3127,13 +3127,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: запас не стёрт`);
     await s.ctx.close();
   }
-  // Конечный срок сохраняется в ISO и рисуется словами.
+  // Конечный срок сохраняется в ISO, а на экране его нет: слово владельца 25.11.2026, №79 «Даты убирай
+  // в обоих местах» (Cafe13KPG#1097). Прежде случай ждал «до 14 ноября 2026»; облик подписи судит bez-daty-propusk.
   if (part(1)) {
     const s = await open(true, true, json(200, finite), null,
       json(200, Object.assign({}, PASS, { lifelong: false, valid_until: '2026-11-14T10:00:00+07:00' })));
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('до 14 ноября 2026')) bad.push('pass-finite: срок не показан словами');
+    const t = await s.view();
+    if (!(await s.p.evaluate(() => !!document.querySelector('.pass')))) bad.push('pass-finite: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет');
+    else if (/14\s+ноябр|14\.11\.2026|\bдо\s+\d/i.test(t)) bad.push('pass-finite: срок членства показан на пропуске — снят словом владельца №79');
     const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
     if (!kept || kept.ends !== '2026-11-14T10:00:00+07:00') bad.push('pass-finite: срок сохранён не в ISO: ' + JSON.stringify(kept));
     await s.ctx.close();
@@ -10775,97 +10778,47 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
 
-    /* ── ДАТА КОНЦА ЧЛЕНСТВА и ∞ (пункт 6 замечаний владельца: «Даты окончания членства не
-       вижу»; «поставь мне значек бесконечности» 28.10.2026) ──
-       Сервер отдаёт пару ПЛОСКИХ полей (`ends_at` + `lifelong`, бой `e545973`), и состояний
-       ЧЕТЫРЕ, а не два: дата / бессрочно / живого членства нет / поля НЕТ вовсе (старый
-       сервер). Последние два рисуют одно и то же — пусто, — но по РАЗНЫМ причинам, и
-       различать их обязан разбор, а не экран: тот же класс, что у остатка (`'balance' in p`).
-       ⚠ Часы ПРИКОЛОТЫ, даты фикстуры отсчитаны от них же. Порог проверяется с ОБЕИХ сторон
-       границы и НА границе: 14 дней — ещё не «меньше двух недель», 13 — уже. Без середины
-       диапазона проверка не отличала бы «посчитано верно» от «прибор промолчал». */
+    /* ── СРОК В СПИСКЕ ЛЮДЕЙ: даты нет, красного нет, ∞ остался ──
+       Слово владельца 25.11.2026 (№79, Cafe13KPG#1103): «Даты убирай в обоих местах» — им снято и
+       его правило 28.10.2026 «менее 2х недель дата краснеет». Прежние случаи people-till-porog и
+       people-till-poyas судили порог, которого больше нет, и сняты вместе с ним.
+       ⚠ ОТРИЦАТЕЛЬНЫЙ КОНТРОЛЬ — срок через НЕДЕЛЮ: ровно там прежде стояло красное. Проверка
+       «текста даты нет» без него ловила бы только исчезнувшие цифры, а не оставшееся покраснение.
+       Часы приколоты, даты отсчитаны от них. Ключ — атрибут `data-person` (номер строки ответа):
+       `peopleOrder` ставит живые членства наверх, и порядок отрисовки ответу не равен. */
     {
       const n = 'people-till', NOW = '2026-11-01T09:00:00+07:00';
       const lyudi = clone(ROSTER);
-      const dat = (dney) => { const d = new Date(Date.parse(NOW) + dney * 86400000); return d.toISOString(); };
-      lyudi.people[0].ends_at = dat(60);  lyudi.people[0].lifelong = false;   // срок далёкий
-      lyudi.people[1].ends_at = dat(13);  lyudi.people[1].lifelong = false;   // меньше двух недель
-      lyudi.people[2].ends_at = null;     lyudi.people[2].lifelong = true;    // бессрочное
-      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
-      await toPeople(s);
-      /* ⚠ Ключ — АТРИБУТ `data-person` (номер строки ОТВЕТА), а не положение в DOM:
-         `peopleOrder` ставит живые членства наверх, и порядок отрисовки ответу не равен.
-         Первая редакция случая читала по положению и дала перепутанные строки — поймал
-         прогон, а не чтение. */
-      const hvosty = await s.p.$$eval('[data-person]', es => {
-        const o = {};
-        es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = { text: t ? t.textContent : null,
-            soon: t ? t.classList.contains('soon') : null, inf: !!(t && t.querySelector('.inf')) }; });
-        return o; });
-      if (hvosty[0].text !== ' · до 31.12.2026') bad.push(`${n}: далёкий срок «${hvosty[0].text}», ждали « · до 31.12.2026»`);
-      if (hvosty[0].soon) bad.push(`${n}: далёкий срок покраснел`);
-      if (hvosty[1].text !== ' · до 14.11.2026') bad.push(`${n}: близкий срок «${hvosty[1].text}», ждали « · до 14.11.2026»`);
-      if (!hvosty[1].soon) bad.push(`${n}: срок меньше двух недель НЕ покраснел`);
-      if (!hvosty[2].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${hvosty[2].text}»`);
-      if (hvosty[2].soon) bad.push(`${n}: бессрочное покраснело`);
-      await s.ctx.close();
-    }
-    /* Граница порога — ОБЕ стороны и сама граница: «менее 2х недель» это строго меньше 14.
-       Подлоги по краям диапазона оставили бы середину непроверенной, поэтому здесь ровно
-       соседние дни, а не «ноль и много». */
-    {
-      const n = 'people-till-porog', NOW = '2026-11-01T09:00:00+07:00';
-      const lyudi = clone(ROSTER);
       const dat = (dney) => new Date(Date.parse(NOW) + dney * 86400000).toISOString();
-      lyudi.people[0].ends_at = dat(14); lyudi.people[0].lifelong = false;
-      lyudi.people[1].ends_at = dat(13); lyudi.people[1].lifelong = false;
-      lyudi.people[2].ends_at = dat(0);  lyudi.people[2].lifelong = false;
+      lyudi.people[0].ends_at = dat(60); lyudi.people[0].lifelong = false;   // срок далёкий
+      lyudi.people[1].ends_at = dat(7);  lyudi.people[1].lifelong = false;   // через неделю — прежде красное
+      lyudi.people[2].ends_at = null;    lyudi.people[2].lifelong = true;    // бессрочное
       const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
       await toPeople(s);
-      // тот же ключ по атрибуту: порядок отрисовки не равен порядку ответа
-      const soon = await s.p.$$eval('[data-person]', es => {
+      const r = await s.p.$$eval('[data-person]', es => {
         const o = {};
         es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = t ? t.classList.contains('soon') : null; });
+          o[e.getAttribute('data-person')] = { till: t ? t.textContent : null, row: e.textContent,
+            soon: !!e.querySelector('.soon'), inf: !!(t && t.querySelector('.inf')) }; });
         return o; });
-      if (soon[0] !== false) bad.push(`${n}: ровно 14 дней покраснели — «менее 2х недель» это строго меньше`);
-      if (soon[1] !== true) bad.push(`${n}: 13 дней не покраснели`);
-      if (soon[2] !== true) bad.push(`${n}: последний день не покраснел`);
-      await s.ctx.close();
-    }
-    /* ⚠ ПОРОГ СЧИТАЕТСЯ ПО ЧАСАМ КЛУБА, и до этого случая утверждение держалось НИЧЕМ.
-       Нашёл `arhitector-47` мутацией на ревью `#133`: подмена `clubDay()` на сегодняшнюю
-       дату в UTC (`new Date().toISOString().slice(0,10)`) оставляла прогон ЗЕЛЁНЫМ — потому
-       что прежние случаи приколоты на 09:00 острова, а это 02:00 UTC ТОГО ЖЕ дня, и обе
-       системы отсчёта дают одну дату. То есть «по часам клуба» было верно в коде и не
-       проверялось ни одним случаем.
-       Различающее окно — с 00:00 до 07:00 острова: там UTC ещё ВЧЕРА. Часы приколоты на
-       03:00 +07:00 (= 20:00 UTC накануне), срок — ровно на границе: по острову 13 дней
-       (красное), по UTC-сегодня 14 (не красное). Значит мутация гасит красное, а чистое
-       дерево его держит. */
-    {
-      const n = 'people-till-poyas', NOW = '2026-11-02T03:00:00+07:00';   // UTC: 2026-11-01T20:00Z
-      const lyudi = clone(ROSTER);
-      lyudi.people[0].ends_at = '2026-11-15T12:00:00+07:00';   // остров: 13 дней → красное
-      lyudi.people[0].lifelong = false;
-      lyudi.people[1].ends_at = '2026-11-16T12:00:00+07:00';   // остров: 14 дней → ещё нет
-      lyudi.people[1].lifelong = false;
-      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
-      await toPeople(s);
-      const soon = await s.p.$$eval('[data-person]', es => {
-        const o = {};
-        es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = t ? { soon: t.classList.contains('soon'), text: t.textContent } : null; });
-        return o; });
-      // различитель: обе проверки обязаны опираться на СУТКИ ОСТРОВА, а не на UTC
-      if (!soon['0'] || !soon['0'].soon)
-        bad.push(`${n}: 13 дней ПО ОСТРОВУ не покраснели (${JSON.stringify(soon['0'])}) — порог считается не по часам клуба`);
-      if (!soon['1'] || soon['1'].soon)
-        bad.push(`${n}: 14 дней ПО ОСТРОВУ покраснели (${JSON.stringify(soon['1'])}) — «менее 2х недель» это строго меньше`);
-      // и сама дата печатается сутками острова, а не UTC: иначе человек увидит вчерашнее число
-      if (soon['0'] && soon['0'].text !== ' · до 15.11.2026')
-        bad.push(`${n}: дата «${soon['0'].text}», ждали « · до 15.11.2026» — сутки взяты не по острову`);
+      const DATA_RE = /\d{2}\.\d{2}\.\d{4}|\bдо\s+\d/;
+      [['0', 'далёкий срок'], ['1', 'срок через неделю']].forEach(([k, kto]) => {
+        const x = r[k];
+        if (!x) { bad.push(`${n}: строки ${kto} нет в списке`); return; }
+        if (x.till !== null) bad.push(`${n}: у ${kto} остался хвост срока «${x.till}»`);
+        if (DATA_RE.test(x.row)) bad.push(`${n}: у ${kto} в строке дата: «${x.row.trim().slice(0, 80)}»`);
+        if (x.soon) bad.push(`${n}: у ${kto} красное (.soon) — правило двух недель снято владельцем`);
+      });
+      if (!r['2'] || !r['2'].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${r['2'] && r['2'].till}»`);
+      if (r['2'] && r['2'].soon) bad.push(`${n}: бессрочное покраснело`);
+      /* красное снято и в стилях: правило `.till.soon` не должно жить без зова. Судим ПОВЕДЕНИЕМ — цвет
+         пробных `.till` и `.till.soon` рядом: чтение `cssRules` ослепло (мутант b7 «вернуть правило» прошёл
+         зелёным), а цвет различает правило, кто бы его ни дописал. */
+      const cvet = await s.p.evaluate(() => {
+        const box = document.createElement('div'), a = document.createElement('span'), b = document.createElement('span');
+        a.className = 'till'; b.className = 'till soon'; box.append(a, b); document.body.append(box);
+        const r = [getComputedStyle(a).color, getComputedStyle(b).color]; box.remove(); return r; });
+      if (cvet[0] !== cvet[1]) bad.push(`${n}: .till.soon красит иначе, чем .till (${cvet[1]} против ${cvet[0]}) — покраснение снято словом владельца`);
       await s.ctx.close();
     }
 
@@ -14535,6 +14488,84 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
+  /* ── БЕЗ ДАТЫ (Cafe13KPG#1097, #1103; слово владельца 25.11.2026, №79: «Даты убирай в обоих местах») ──
+     Срок членства уходит с экранов человека и кассы, срок в ДАННЫХ живёт. Признак даты — общий для всех
+     случаев: число месяца словом, число ЧИСЛАМИ или «до » перед ними. Срочное — через НЕДЕЛЮ от часов
+     прогона: там прежде краснел список людей, и общий срок — самый близкий к старому правилу. */
+  if (part(2)) {
+    const DATA_RE = /\d{1,2}\s+(январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)|\d{2}\.\d{2}\.\d{4}|\bдо\s+\d/i;
+    const NEDELYA = new Date(Date.now() + 7 * 86400000).toISOString();
+    const podpis = s => s.p.evaluate(() => { const e = document.querySelector('.pass .who .col > span');
+      return e ? e.textContent : null; });
+    // пропуск с сетью: экран пропуска (js/11-ekrany-klub.js) и без сети: passCard (js/03-propusk.js)
+    for (const [n, me, passR, saved, lifelong] of [
+      ['bez-daty-propusk', json(200, OWNER), json(200, Object.assign({}, PASS, { lifelong: false, valid_until: NEDELYA })), null, false],
+      ['bez-daty-propusk-bez-seti', 'abort', null, Object.assign({}, SAVED, { lifelong: false, ends: NEDELYA }), false],
+      ['bez-daty-pozhiznenno-propusk', 'abort', null, SAVED, true]]) {
+      const s = await open(true, true, me, null, passR, saved);
+      if (passR) { await s.p.click('[data-go="pass"]'); await s.p.waitForTimeout(200); }
+      const t = await s.view(), pd = await podpis(s), lvl = await s.p.evaluate(() => LEVEL.member);
+      if (pd === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет: «${t.slice(0, 80)}»`);
+      else {
+        const zhdem = lifelong ? lvl + ' · пожизненно' : lvl;
+        if (pd !== zhdem) bad.push(`${n}: под именем «${pd}», ждали «${zhdem}» — без даты и без висящей « · »`);
+        if (DATA_RE.test(t)) bad.push(`${n}: на пропуске дата: «${(t.match(DATA_RE) || [''])[0]}»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // демонстрация: экран пропуска рисует сам (js/11-ekrany-klub.js, ветка без PASS) — «<вид>» без « · до »
+    {
+      const n = 'bez-daty-propusk-demo';
+      const s = await open(false, true, json(200, OWNER));
+      await s.p.waitForTimeout(150);
+      await s.p.evaluate(() => go('pass')); await s.p.waitForTimeout(150);
+      const t = await s.view(), pd = await podpis(s);
+      if (pd === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет: «${t.slice(0, 80)}»`);
+      else if (/ · $| · до|\bдо\s/.test(pd) || DATA_RE.test(pd)) bad.push(`${n}: под именем «${pd}» — дата или висящая « · »`);
+      await s.ctx.close();
+    }
+    // касса: карточка найденного (tillCard, js/05-kassa.js) и строка «Перед приёмом» (E34zh, ответ потерян)
+    const FIN = Object.assign({}, PERSON, { membership_active: true,
+      membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: NEDELYA, lifelong: false } });
+    {
+      const n = 'bez-daty-kassa';
+      const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, FIN), post: 'abort' }));
+      if (await toPerson(s, n)) {
+        const t = await s.view();
+        const row = await s.p.evaluate(() => { const e = [...document.querySelectorAll('#view .rows > div')]
+          .find(d => /Членство/.test(d.textContent)); return e ? e.querySelector('b').textContent : null; });
+        if (row !== 'Есть') bad.push(`${n}: строка «Членство» на карточке «${row}», ждали «Есть»`);
+        if (DATA_RE.test(t)) bad.push(`${n}: на карточке кассы дата: «${(t.match(DATA_RE) || [''])[0]}»`);
+        if (await toForm(s, n, 'topup')) {
+          await payTopup(s, '500');
+          const t2 = await s.view();
+          if (!t2.includes('Перед приёмом: членство есть, остаток 0 ฿')) bad.push(`${n}: нет «Перед приёмом: членство есть, остаток 0 ฿»`);
+          if (/членство до|Перед приёмом:[^.]*\d{1,2}\s+\S+\s+\d{4}/.test(t2)) bad.push(`${n}: в «Перед приёмом» дата`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // «Членство» (membershipLive, js/10-utility.js): экран вне WIRED, судим его разметку прямо — два членства
+    {
+      const n = 'bez-daty-chlenstvo';
+      const s = await open(true, true, json(200, OWNER));
+      const r = await s.p.evaluate(iso => {
+        DATA.member.memberships = [{ level: 'organizer', until: '1 декабря 2026 г.', lifelong: false, ends: iso },
+                                   { level: 'member', until: null, lifelong: true }];
+        const box = document.createElement('div'); box.innerHTML = membershipLive();
+        return { text: box.textContent, empty: [...box.querySelectorAll('.small')].filter(e => !e.textContent.trim()).length,
+                 life: (box.textContent.match(/Пожизненно/g) || []).length, act: (box.textContent.match(/АКТИВНО/g) || []).length };
+      }, NEDELYA);
+      if (/Действует до/.test(r.text) || DATA_RE.test(r.text)) bad.push(`${n}: на «Членстве» срок: «${(r.text.match(/Действует до.{0,20}/) || r.text.match(DATA_RE) || [''])[0]}»`);
+      if (r.empty) bad.push(`${n}: пустая .small на месте снятой строки (${r.empty})`);
+      if (r.life !== 1) bad.push(`${n}: «Пожизненно» ${r.life} раз, ждали 1 — у пожизненного остаётся (Р2 #453)`);
+      if (r.act !== 2) bad.push(`${n}: «АКТИВНО» ${r.act} раз, ждали 2 — карточки обоих членств`);
+      await s.ctx.close();
+    }
+  }
+
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.

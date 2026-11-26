@@ -373,16 +373,13 @@ function outSend(k) {
 }
 /* Карточка знает номер строки списка (k), а не tg_user_id: id в разметке
    уехал бы в снимок экрана и дальше. */
-/* Хвост строки имени: дата конца живого членства или ∞ (кадр E47p). Четыре состояния поля
+/* Хвост строки имени: ∞ у бессрочного; у срочного даты нет — слово владельца №79 (Cafe13KPG#1103). Четыре состояния поля
    разобраны в `fromRoster`, здесь они только рисуются — и «поля нет» с «членства нет» дают
    ПУСТО по разным причинам: у первого рисовать нечем, у второго нечего. */
 function tillTail(p) {
   if (!p.till) return '';                                   // старый сервер: поля нет вовсе
   if (p.till.inf) return '<span class="till"> · <span class="inf">∞</span></span>';
-  if (!p.till.iso) return '';                               // живого членства нет
-  var t = tillWords(p.till.iso);
-  if (!t) return '';                                        // дата не разобралась — молчим, а не врём
-  return '<span class="till' + (t.soon ? ' soon' : '') + '"> · до ' + esc(t.text) + '</span>';
+  return '';                                                // срочное: даты нет (№79, Cafe13KPG#1103)
 }
 function personCard(p, k) {
   var lock = PEOPLE.busy ? ' disabled' : '';

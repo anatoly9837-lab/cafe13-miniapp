@@ -148,7 +148,7 @@ var SCREENS = {
         '<div class="who">' +
           '<span class="avatar">' + esc((m.name || '?').slice(0, 1).toUpperCase()) + '</span>' +
           '<span class="col"><b style="font-size:19px;font-family:Prata,Georgia,serif">' + esc(m.name) + '</b>' +
-          '<span style="font-size:12px;color:#B8B6AE">' + esc(m.level) + ' · до ' + esc(m.until) + '</span></span>' +
+          '<span style="font-size:12px;color:#B8B6AE">' + esc(m.level + (m.lifelong ? ' · пожизненно' : '')) + '</span></span>' +
         '</div>' +
         '<div class="code-box">' + pattern(m.number) + '</div>' +
         '<span class="num-big">' + esc(m.number) + '</span>' +
