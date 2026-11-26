@@ -5600,7 +5600,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Пустой день (E36b), неразобранный и не сходящийся — каждый своими словами.
   if (part(1)) if (thawed('касса')) for (const [name, reply, want, never] of [
     ['till-day-empty', json(200, Object.assign({}, DAY_OK, { rows: [], total_live: '0.00', count_live: 0 })), 'Сегодня через кассу ничего не прошло', 'Строки за сегодня'],
-    ['till-day-bad', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 'expense' })] })), 'Ответ сервера не разобран', 'Через книгу за день'],
+    // сломанная строка (вид не строкой) — день отвергнут. Прежде случай брал незнакомый вид 'expense' и ждал отказа
+    // всего дня — ровно дефект, вернувшийся трижды (donation, withdraw, tea — api#230); незнакомый вид теперь не отказ
+    ['till-day-bad', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 7 })] })), 'Ответ сервера не разобран', 'Через книгу за день'],
+    // ВЫДУМАННЫЙ вид, которого нет ни в клиенте, ни на сервере: день открыт, строка «Прочее» (tools/kassa-vid.cjs К1)
+    ['till-day-neznakomyj', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 'zzz-nevedomyy', method: 'account' })], total_live: '3000.00', count_live: 1 })),
+      'Прочее', 'Ответ сервера не разобран'],
     // E36g: расхождение снимает числа, а строки (дословно из ответа) остаются
     ['till-day-sum', json(200, Object.assign({}, DAY_OK, { total_live: '9999.00' })), 'Итог дня не сходится со строками', 'Через книгу за день'],
     ['till-day-403', json(403, { detail: 'нужна роль кассы' }), 'Нужна роль кассы', 'Через книгу за день']
