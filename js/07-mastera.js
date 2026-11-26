@@ -98,6 +98,8 @@ function fromMasterReq(x, queue) {
   // иначе букинг без даты пришёл бы правдоподобной «недельной». `paid_till` (история периодов) не читается
   if (!('starts_at' in x) || x.starts_at !== null && !msMoment(x.starts_at)) return null;
   r.at = x.starts_at;
+  // шаг 42 (api#225): заявка на чайную церемонию — та же заявка мастера с `occupancy: 'tea'`; поля нет — ивент (сервер до #225)
+  r.tea = x.occupancy === 'tea';
   if (queue) { if (typeof x.first_name !== 'string') return null; r.who = msName(x); }
   return r;
 }
@@ -278,18 +280,21 @@ function moneyOf(v) { return typeof v === 'number' ? v : typeof v === 'string' &
    букинг стоит, пока не прошла его дата: в нём причина и «деньги вернулись» */
 function msShown(r) { return r.status === 'pending' || (r.at ? !msPast(r) : r.status === 'approved'); }
 function masterOffer() {
-  if (!LIVE || DATA.role === 'guest') return '';
+  // шаг 42 (рецепт 42/home.md, №65 «а»): блок «Провести» — всем; условие кнопок одно, деньги. Роль guest не спрашивается
+  if (!LIVE) return '';
   if (MR.mineState === '') loadMineMaster();
   loadPrice(2);
   if (MR.mineState === 'loading' && !MR.mine) return '';
   if (MR.mineState !== 'ok' && !MR.mine) return '<div class="card quiet"><div class="row"><span class="small">Букинги не загрузились: ' +
       esc(MR.mineState) + '</span><button type="button" class="btn quiet" data-action="ms-retry-mine">Повторить</button></div></div>';
+  // заявки на церемонию — В ТОМ ЖЕ списке «Ваши букинги» (рецепт 42/home.md): они приходят тем же /master/requests/mine
   var list = MR.mine.filter(msShown).sort(function (a, b) {
     var x = a.at || a.iso, y = b.at || b.iso; return x < y ? -1 : x > y ? 1 : 0;
   });
   var rows = list.length ? '<div class="group"><span class="label">Ваши букинги</span>' + list.map(function (r) {
     var st = r.status === 'pending' ? 'wait' : r.status === 'approved' ? 'ok' : 'no';
-    var sub = msWhen(r) + (r.at ? '' : ', каждую неделю') + ' · «' + r.title + '»';
+    var sub = r.tea && r.at ? msDate(bkk(new Date(r.at)).ymd) + ' ' + bkk(new Date(r.at)).hm + ' · ' + slovo('home.bookings.tea') + ' · «' + r.title + '»'
+      : msWhen(r) + (r.at ? '' : ', каждую неделю') + ' · «' + r.title + '»';
     var tail = r.status === 'rejected' ? (r.note ? sentence(r.note) + ' ' : '') + money(r.amount) + ' ฿ вернулись на счёт.'
       : r.status === 'pending' ? 'Списано ' + money(r.amount) + ' ฿. Решает арт-директор; если откажет, деньги вернутся.'
       // H8 (рецепт master/home.md, №46 «б»): согласованный с датой — плата за слот остаётся клубу
@@ -298,15 +303,31 @@ function masterOffer() {
         (tail ? '<span class="small">' + esc(tail) + '</span>' : '') + '</div>' +
       '<span class="st ' + st + '">' + esc(r.word) + '</span></div></div>';
   }).join('') + '</div>' : '';
-  var p = MR.price[2], bal = msBalance(), short = typeof p === 'number' && bal < p;
-  // E54g: кнопка недоступна, причина — рядом, до нажатия. Цены ещё нет — тоже недоступна: сумму называет сервер
-  return rows + '<div class="card"><div class="col"><b>Забукать ивент</b>' +
-      '<span class="small">Один ивент на дату и время в «' + esc(MS_PLACE) + '». Согласует арт-директор — ивент встанет в афишу.</span></div>' +
-      '<span class="small">' + (typeof p !== 'number' ? (p === null ? 'Цену не удалось узнать у сервера.' : 'Узнаём цену…')
-        : short ? 'Не хватает ' + money(p - bal) + ' ฿: нужно ' + money(p) + ' ฿, на счёте ' + money(bal) + ' ฿'
-        : money(p) + ' ฿ за букинг · спишется при подаче, вернётся при отказе') + '</span>' +
-      '<button type="button" class="btn" data-action="ms-apply"' + (typeof p !== 'number' || short ? ' disabled' : '') + '>Забукать</button></div>' +
-    (short ? '<div class="note">' + svg(ICON.info) + '<span>Пополнить счёт можно на вкладке «Клуб» — кошельком в шапке.</span></div>' : '');
+  /* H0 «Провести в клубе»: две главные кнопки с РАЗНЫМ следствием (№66 «а») — «ивент» ведёт в заявку ивента (masterApply),
+     «церемония» — в одно событие календаря (teaHold, рука ЧАЙ-A); в список мастеров «Услуг» ни одна не вносит, это дверь
+     карточки ниже. Цены — числа сервера, по одной на кнопку: ивент — MR.price[2], церемония — teaHoldPrice() (js/22).
+     number — цена, null — не узнали, undefined — в пути. Недостача видна ДО нажатия (H0c): кнопка гаснет, рядом сумма */
+  var pe = MR.price[2];
+  var pt = typeof teaHoldPrice === 'function' ? teaHoldPrice() : null;
+  var bal = msBalance();
+  var line = function (p) {
+    return typeof p !== 'number' ? (p === null ? slovo('home.hold.priceFail') : slovo('home.hold.loading'))
+      : bal < p ? slovo('home.hold.short', { n: money(p - bal), amount: money(p), balance: money(bal) })
+      : slovo('home.hold.sub', { amount: money(p) });
+  };
+  // «церемония» — только когда teaHold подключён (как вход на «Услугах», js/11 teaEntry): до того блок — прежний, на одну кнопку
+  if (closed('teaHold')) pt = pe;
+  var tea = !closed('teaHold');
+  var off = function (p) { return typeof p !== 'number' || bal < p ? ' disabled aria-disabled="true"' : ''; };
+  var same = line(pe) === line(pt);
+  var short = typeof pe === 'number' && bal < pe || typeof pt === 'number' && bal < pt;
+  return rows + '<div class="card"><div class="col"><b>' + esc(slovo('home.hold.title')) + '</b>' +
+      (same ? '<span class="small">' + esc(line(pe)) + '</span>' : '') + '</div>' +
+      '<button type="button" class="btn" data-action="ms-apply"' + off(pe) + '>' + esc(slovo('home.hold.event')) + '</button>' +
+      (same ? '' : '<span class="small">' + esc(line(pe)) + '</span>') +
+      (tea ? '<button type="button" class="btn" data-go="teaHold"' + off(pt) + '>' + esc(slovo('home.hold.tea')) + '</button>' +
+      (same ? '' : '<span class="small">' + esc(line(pt)) + '</span>') : '') + '</div>' +
+    (short ? '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('home.hold.note')) + '</span></div>' : '');
 }
 function sendMaster() {
   if (MR.busy) return;
