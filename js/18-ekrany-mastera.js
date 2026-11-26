@@ -283,13 +283,15 @@ Object.assign(SCREENS, {
 /* ── шаг 42: очередь карточек чайных мастеров (рецепты 42/teaReqs.md, 42/teaReq.md) ───────────────────────
    Зритель — арт-директор (mayMasters). Решение — только на `teaReq`, где видна вся карточка; в строке очереди кнопок нет.
    Разметка карточки (R2) — ОДНА, у руки ЧАЙ-A: teaCardHtml(c, {book:false}), разбор — teaCardFrom(raw), js/22-ekrany-chay.js.
-   ⚠ Ручек шага 42 на api main НЕТ: адреса ниже — заглушка клиента под проверки, сверить с PR сервера, когда он выйдет.
-   Форма строки очереди: { id, status: pending|approved|rejected, kind: new|edit, iso (подана), done (решена),
-   card (как teaCardFrom), prev (у правки — что сейчас в «Услугах»), changed: ['photo','about','price'] } */
-var TQ_API = { list: '/tea/cards/requests', approve: '/tea/cards/requests/{id}/approve', reject: '/tea/cards/requests/{id}/reject' };
+   Ручки (api app/routers/tea.py, бой d23e45d): очередь — GET /tea/cards → {cards: [...], pending}, строка — поля
+   карточки плоско (как teaCardFrom) + id подачи, created_at, decided_at, note, live (у ждущей правки — что сейчас
+   в «Услугах», иначе null); решение — POST /tea/cards/{id}/decide {decision: approved|rejected, note}.
+   Вид «правка» сервер не шлёт: правка — ждущая подача при живой карточке (live не null), как status 'edit' в
+   /tea/card/mine. Списка изменённых полей (changed) сервер не шлёт — пусто. */
+var TQ_API = { list: '/tea/cards', decide: '/tea/cards/{id}/decide' };
 var TQ = { list: null, fail: '', pending: null, gen: 0, busy: false, err: '', note: '', gone: 0 };
 var TQ_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
-// включено в живом здесь, а не в js/02: файл 02 вне наряда руки. До ручек сервера экран честно скажет «не загрузились»
+// включено в живом здесь, а не в js/02: файл 02 вне наряда руки
 WIRED.teaReqs = 1; WIRED.teaReq = 1;
 
 function tqFrom(raw) {
@@ -297,8 +299,10 @@ function tqFrom(raw) {
   if (!TQ_ST[raw.status]) return null;
   var card = typeof teaCardFrom === 'function' ? teaCardFrom(raw.card || raw) : null;
   if (!card) return null;
-  return { id: String(raw.id), status: raw.status, kind: raw.kind === 'edit' ? 'edit' : 'new', iso: raw.created_at || raw.iso || '',
-    done: raw.decided_at || raw.done || '', card: card, prev: raw.prev && typeof teaCardFrom === 'function' ? teaCardFrom(raw.prev) : null,
+  var prev = raw.live || raw.prev;
+  return { id: String(raw.id), status: raw.status, kind: raw.kind === 'edit' || raw.status === 'pending' && !!raw.live ? 'edit' : 'new',
+    iso: raw.created_at || raw.iso || '', done: raw.decided_at || raw.done || '', card: card,
+    prev: prev && typeof teaCardFrom === 'function' ? teaCardFrom(prev) : null,
     changed: Array.isArray(raw.changed) ? raw.changed : [], note: typeof raw.note === 'string' ? raw.note : '' };
 }
 function tqDemo() {
@@ -314,7 +318,7 @@ function loadTeaQueue() {
   var gen = ++TQ.gen; TQ.fail = '';
   api('GET', TQ_API.list).then(function (r) {
     if (gen !== TQ.gen) return;
-    var arr = r.status === 200 && r.data && Array.isArray(r.data.items) ? r.data.items : r.status === 200 && Array.isArray(r.data) ? r.data : null;
+    var arr = r.status === 200 && r.data && Array.isArray(r.data.cards) ? r.data.cards : null;
     var list = arr && arr.map(tqFrom);
     if (list && list.every(Boolean)) { TQ.list = list; } else { TQ.list = null; TQ.fail = r.status === 403 ? denyText(r) : failText(r); }
     tqCount();
@@ -346,8 +350,9 @@ function tqAction(a, arg) {
     haptic('warn'); render(); return true;
   }
   TQ.busy = true; TQ.err = ''; render();
-  var body = yes ? {} : (TQ.note.trim() ? { note: TQ.note.trim() } : {});
-  api('POST', (yes ? TQ_API.approve : TQ_API.reject).replace('{id}', encodeURIComponent(q.id)), body).then(function (r) {
+  // отказ без причины сервер не принимает (400, слова сервера — в TQ.err)
+  var body = { decision: yes ? 'approved' : 'rejected', note: yes ? '' : TQ.note.trim() };
+  api('POST', TQ_API.decide.replace('{id}', encodeURIComponent(q.id)), body).then(function (r) {
     TQ.busy = false;
     if (r.status === 200 || r.status === 201 || r.status === 204) {
       TQ.note = '';
@@ -355,7 +360,9 @@ function tqAction(a, arg) {
       loadTeaQueue(); go('teaReqs'); return;
     }
     // R10: карточку уже решил другой арт-директор — сервер отвечает 409; поле R3 сохраняется при любом отказе
-    if (r.status === 409) { TQ.gone = q.id; loadTeaQueue(); render(); return; }
+    // 409 у сервера двух видов: «уже решена» и «свою карточку решает другой арт-директор» (tea.py decide). Поэтому
+    // не «решена» вслепую: слова сервера и перечитка — решённую «решённой» покажет сама очередь (q.status)
+    if (r.status === 409) { TQ.err = detailOf(r) || failText(r); loadTeaQueue(); render(); return; }
     TQ.err = detailOf(r) || failText(r); render();
   });
   return true;
