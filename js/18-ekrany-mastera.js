@@ -206,11 +206,14 @@ Object.assign(SCREENS, {
         '<span class="small">0 — без ограничения</span></div>' +
       '<div class="field"><label for="msf-title">Название ивента</label><input id="msf-title" maxlength="200" value="' + esc(MSF.title) + '"></div>' +
       '<div class="field"><label for="msf-about">Коротко для афиши</label><textarea id="msf-about" rows="3" maxlength="' + MS_ABOUT + '">' + esc(MSF.about) + '</textarea></div>' +
+      // шаг 44 (foto/masterApply.md): блок «Фото» после названия и описания, перед ценой; снимок не обязателен (Ф1)
+      fotoBlock('masterApply', slovo('foto.add')) +
       '<div class="rows">' +
         '<div><span class="small">Спишется · ' + h + ' ' + msHours(h) + '</span><b class="num">' + (typeof p === 'number' ? money(p) + ' ฿' : '…') + '</b></div></div>' +
       '<span class="small">Если арт-директор откажет, деньги вернутся на счёт.</span>' +
       (MSF.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MSF.err) + '</span></div>' : '') +
-      '<button type="button" class="btn" data-action="ms-send"' + (why || MR.busy ? ' disabled' : '') + '>' + (MR.busy ? 'Отправляем…' : 'Отправить букинг') + '</button>' +
+      (fotoBusy('masterApply') && !MR.busy ? fotoWaitBtn()
+        : '<button type="button" class="btn" data-action="ms-send"' + (why || MR.busy ? ' disabled' : '') + '>' + (MR.busy ? 'Отправляем…' : 'Отправить букинг') + '</button>') +
       (why ? '<span class="small">' + esc(why) + '</span>' : '') +
     '</div>';
   },

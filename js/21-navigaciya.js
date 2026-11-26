@@ -767,7 +767,7 @@ document.addEventListener('click', function (ev) {
     return;
   }
   if (el.hasAttribute('data-drink')) { go('drink', el.getAttribute('data-drink')); return; }
-  if (el.hasAttribute('data-where')) { ORDER.where = el.getAttribute('data-where'); DENY = ''; haptic(); render(); return; }
+  if (el.hasAttribute('data-where')) { ORDER.where = el.getAttribute('data-where'); DENY = ''; DENY_CODE = ''; haptic(); render(); return; }
   if (el.hasAttribute('data-pay'))   { ORDER.pay   = el.getAttribute('data-pay');   haptic(); render(); return; }
   // грабим введённое ДО перерисовки: иначе выбор категории стирал набранный текст
   if (el.hasAttribute('data-exp'))   { grabForm(EXP_FIELDS); EXP.cat = el.getAttribute('data-exp');   haptic(); render(); return; }
@@ -802,6 +802,8 @@ function doAction(a) {
   // шаг 42: префикс `tea-` — руки ЧАЙ-A (teaAction в js/22), `tc-` — очередь карточек арт-директора (tqAction в js/18)
   if (/^tea-/.test(a) && typeof teaAction === 'function' && teaAction(a, arg)) return;
   if (/^tc-/.test(a) && tqAction(a, arg)) return;
+  // шаг 44: префикс `foto-` — кадры блока «Фото» форм события (fotoAction в js/09)
+  if (/^foto-/.test(a)) { fotoAction(a, arg); return; }
   if (!LIVE && DEMO_SENDS.indexOf(a) !== -1) {
     if (a.slice(0, 2) === 'c-') grabCard();     // набранное в карточке не теряется
     FLASH = { text: 'Это демонстрация', note: 'В Telegram это ушло бы на сервер клуба. Здесь ничего не отправлено и не записано.' };
@@ -1328,6 +1330,8 @@ document.addEventListener('change', function (ev) {
   // смена даты сразу показывает, в чей отчёт уйдёт запись
   if (t && t.id === 'b-date' && current === 'barMoney' && !BOOK.busy) { bookGrab(); render(); return; }
   if (t && t.id === 'tu-file') { if (t.files && t.files[0]) attachReceipt(t.files[0], TUP, 'topup'); return; }
+  // шаг 44: файл в блок «Фото» формы (input[data-foto] — экран формы); тот же файл можно выбрать снова
+  if (t && t.getAttribute && t.getAttribute('data-foto')) { if (t.files && t.files[0]) fotoPick(t.getAttribute('data-foto'), t.files[0]); t.value = ''; return; }
   if (!t || (t.id !== 'shot-file' && t.id !== 'bill-file')) return;
   var f = t.files && t.files[0];
   if (!f) return;

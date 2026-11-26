@@ -147,7 +147,9 @@ function fromEvents(d) {
       approval: appr, rejectNote: typeof e.reject_note === 'string' ? e.reject_note : '',
       // шаг 42 (api#225, миграция 045): вид занятия; поля нет — сервер до 045, всё ивенты. Церемония открывается
       // экраном teaJoin (js/22-ekrany-chay.js); запись и список записавшихся — те же функции, что у ивента
-      occ: e.occupancy === 'tea' ? 'tea' : 'event'
+      occ: e.occupancy === 'tea' ? 'tea' : 'event',
+      // шаг 44 (api 4c0aae0): снимки события, порядок — авторский; поля нет — сервер до 049, снимков нет
+      photos: fotoFrom(e.photos)
     });
   }
   return out.sort(function (a, b) { return a.at - b.at; });
@@ -360,7 +362,7 @@ document.addEventListener('input', function (ev) { if (ev.target && /^edt-/.test
 function editSave() {
   var e = eventById(EDT.id);
   // вне Telegram экран виден (#691), а «Сохранить» в сеть не ходит: витрину открыли посмотреть
-  if (!LIVE || EDT.busy || !canEditEvent(e)) return;
+  if (!LIVE || EDT.busy || !canEditEvent(e) || fotoBusy('eventEdit')) return;
   editGrab();
   var seats = Number(EDT.seats), price = String(EDT.price).trim();
   EDT.err = !(String(EDT.seats).trim() !== '' && Math.floor(seats) === seats && seats >= 0 && seats <= 500) ? 'Число мест — целое, от 0 до 500; 0 — без ограничения.'
@@ -371,13 +373,15 @@ function editSave() {
   var id = EDT.id;
   var body = { seats: seats, about: EDT.about, price: Number(price) };
   if (typeof EDT.ask === 'boolean') body.ask_donation = EDT.ask;
+  // согласованное: снимки заморожены (№82 «а»), photo_ids не шлётся вовсе — правка остального работает как прежде
+  if (e.approval !== 'approved') fotoBody('eventEdit', body);
   api('POST', '/events/' + e.eid + '/edit', body).then(function (r) {
     api('GET', '/events').then(function (g) {
       var list = g.status === 200 ? fromEvents(g.data) : null;
       if (list) { EVENTS = list; EVENTS_STATE = 'ok'; EVENTS_GEN++; }
       EDT.busy = false;
       if (r.status === 200 && r.data && r.data.id === e.eid) {
-        haptic('ok'); FLASH = { text: 'Сохранено', note: 'Только на эту неделю: ' + e.day.split(',')[0].toLowerCase() + '.' };
+        fotoDone('eventEdit'); haptic('ok'); FLASH = { text: 'Сохранено', note: 'Только на эту неделю: ' + e.day.split(',')[0].toLowerCase() + '.' };
         if (current === 'eventEdit') go('event', id);
         return;
       }
@@ -523,7 +527,7 @@ function signedFail(r) {
   var detail = detailOf(r);
   // Привратник доступа и отказ прав приходят одним кодом; у них разные
   // следующие шаги, поэтому и строки разные.
-  if (r.status === 403 && /доступа нет/.test(detail))
+  if (r.status === 403 && codeOf(r) === 'no_access')
     return 'Вас ещё не впустили в клуб — список поэтому и не открылся.';
   if (r.status === 404) return 'Сервер не знает такого мероприятия.';
   return detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r);
@@ -830,7 +834,7 @@ function createEvent() {
   // Один предикат на рисование и на отправку: у человека без права кнопки
   // нет, но и путь закрыт здесь же — иначе мутация, снявшая кнопку,
   // осталась бы зелёной.
-  if (!mayCreateEvent() || EVN_BUSY) return;
+  if (!mayCreateEvent() || EVN_BUSY || fotoBusy('eventNew')) return;
   // Снять введённое ДО первой перерисовки: экран рисует поля из FORM.v, и без
   // этого отказ сервера стирал всё набранное — человек платил вводом за то, в
   // чём не виноват. Нашлось мутацией: второе нажатие не заводило второго
@@ -840,6 +844,7 @@ function createEvent() {
   var f = eventForm();
   if (f.err) { EVN_ERR = f.err; haptic('warn'); render(); return; }
   EVN_BUSY = true; EVN_ERR = ''; render();
+  fotoBody('eventNew', f.body);
   api('POST', '/events', f.body).then(function (r) { afterEventCreate(r, f.body); });
 }
 
@@ -862,7 +867,7 @@ function afterEventCreate(r, sent) {
     if (e && sameAsSent(e, sent)) {
       EVN_ERR = '';
       FORM = { kind: 'paid', filmed: false, place: null, v: {} };
-      dropDraft();
+      dropDraft(); fotoDone('eventNew');
       haptic('ok');
       // Человека уводим на карточку его события только если он всё ещё на
       // форме: уйти с неё — тоже решение, и отменять его нечем.
@@ -888,14 +893,13 @@ function afterEventCreate(r, sent) {
           '. На экране они проверяются иначе — сообщите в клуб, это расхождение.'
         : failText(r);
       haptic('warn');
-    } else if (r.status === 403 && /доступа нет/.test(detail)) {
-      // 403 приходит ДВУХ происхождений, и по коду они неразличимы: отказ
-      // прав («мероприятия заводят организатор, партнёр и работники клуба»)
-      // и привратник доступа («доступа нет»). Во втором случае слово сервера
-      // отвечает не на тот вопрос: человек прочитал бы «Доступа нет» посреди
-      // формы и стал бы править поля. Сравнение по ВХОЖДЕНИЮ: текст
-      // привратника может обрасти уточнением, и точное равенство тогда молча
-      // перестанет узнавать свой случай.
+    } else if (r.status === 403 && codeOf(r) === 'no_access') {
+      // 403 приходит ДВУХ происхождений: отказ прав («мероприятия заводят
+      // организатор, партнёр и работники клуба») и привратник доступа. Во
+      // втором случае слово сервера отвечает не на тот вопрос: человек
+      // прочитал бы «Доступа нет» посреди формы и стал бы править поля.
+      // Различаем по признаку `code` (Cafe13KPG#914), не по тексту: прежнее
+      // сравнение по вхождению молча теряло случай при переформулировке.
       EVN_ERR = 'Вас ещё не впустили в клуб — дело не в форме. Напишите тому, кто вас приглашал.';
       haptic('warn');
     } else {
@@ -1094,6 +1098,139 @@ function afishaHome() {
    `bookBlock`, который эта функция и зовёт последним. Прежняя редакция шапки
    говорила «кнопки записи здесь пока нет» и пережила тот PR, которым запись
    появилась, — следующий читатель завёл бы второй путь к записи. */
+/* ── Шаг 44: снимки события (рецепт `_docs/recept/ekran/foto/`; сервер cafe13-api 4c0aae0, app/routers/photos.py) ──
+   Загрузка — `POST /photos`, тело — САМ ФАЙЛ (не base64): ответ {id, url, width, height, bytes, sha256, squeezed}.
+   Убрать черновик — `POST /photos/{id}/delete`. Привязка — `photo_ids` (≤3, порядок = порядок показа) у `POST /events`,
+   `/events/{id}/edit` и `/master/request` (туда же шлёт teaHold). Показ — `photos[]` {id, url, width, height}, url
+   относительный. Отказы печатаются словом сервера как есть (решение координатора 26.11, №83 «а»): в них числа
+   точек и предела; клиент их не переписывает.
+
+   ⚠ FOTO_ON — включение ЗАГРУЗКИ в живом режиме. В бою api a6d4d4c ручек снимков нет: блок «Фото» в формах дал бы
+   людям кнопку в 404. Пока false, в живом блока в формах нет, и `photo_ids` не уходит. Включает координатор
+   отдельным заказом после выкладки api ≥ 4c0aae0. Показ снимков на карточке от флага не зависит: нет `photos` в
+   ответе — блока нет (F5), как у всех старых событий. Вне Telegram (витрина, опись) блок виден и в сеть не ходит. */
+var FOTO_ON = false;
+var FOTO_URL = { up: function () { return '/photos'; }, del: function (id) { return '/photos/' + id + '/delete'; } };
+var FOTO_MAX = 3, FOTO_IN_MAX = 8 * 1024 * 1024, FOTO_SIDE = 1600, FOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+var FOTO = {}, FOTO_SEQ = 0;   // FOTO[экран формы] = { list: [кадр], err, verb, of }; кадр = { k, id, url, squeezed, loading, draft }
+function fotoFrom(a) {
+  return Array.isArray(a) ? a.filter(function (p) { return p && typeof p.id === 'number' && typeof p.url === 'string' && p.url; })
+    .slice(0, FOTO_MAX).map(function (p) { return { id: p.id, url: /^https?:/.test(p.url) ? p.url : API + p.url }; }) : [];
+}
+function fotoForm() { return !LIVE || FOTO_ON; }
+// форма своего экрана; `of` — чей набор (eventEdit: номер события) — сменился предмет, набор берётся заново
+function fotoOf(form, of, photos) {
+  var b = FOTO[form];
+  if (!b || b.of !== of) b = FOTO[form] = { of: of, err: '', verb: false, list: (photos || []).map(function (p) {
+    return { k: ++FOTO_SEQ, id: p.id, url: p.url, squeezed: false, loading: false, draft: false };
+  }) };
+  return b;
+}
+function fotoBusy(form) { var b = FOTO[form]; return !!b && b.list.some(function (f) { return f.loading; }); }
+function fotoIds(form) { var b = FOTO[form]; return b ? b.list.map(function (f) { return f.id; }) : []; }
+// photo_ids в тело подачи — только когда загрузка включена: сервер боя поля не знает
+function fotoBody(form, body) { if (LIVE && FOTO_ON && FOTO[form]) body.photo_ids = fotoIds(form); return body; }
+function fotoDone(form) { delete FOTO[form]; }
+/* Блок «Фото» формы (masterApply.md P1–P9). addWord / frozenWord — слова экрана, которые зовущий берёт из словаря
+   сам: признаки рецепта (`v-oblasti … eventNew 'foto.add'`, `… eventEdit 'foto.frozen'`) считают ключ в теле экрана.
+   frozenWord задан — событие согласовано (eventEdit.md): кадры без действий, F6 вместо кнопок. */
+function fotoBlock(form, addWord, frozenWord) {
+  if (!fotoForm()) return '';
+  var b = FOTO[form] || fotoOf(form, null, []), n = b.list.length;
+  if (frozenWord) return '<div class="card"><div class="col"><span class="label">' + esc(slovo('foto.label')) + '</span>' +
+    teaAlbum(b.list, null, true) + '<span class="small">' + esc(frozenWord) + '</span></div></div>';
+  var squeezed = b.list.some(function (f) { return f.squeezed; });
+  return '<div class="card"><div class="col"><span class="label">' + esc(slovo('foto.label')) + '</span>' +
+    '<span class="small">' + esc(slovo('foto.note')) + '</span>' +
+    teaAlbum(b.list, function (f, i) {
+      return '<div class="album-cap">' + (f.loading ? '<span class="small">' + esc(slovo('foto.loading')) + '</span>' : '') +
+        '<button type="button" class="btn quiet mini" data-action="foto-del:' + form + ':' + f.k + '">' + esc(slovo('foto.del')) + '</button>' +
+        (i ? '<button type="button" class="btn quiet mini" data-action="foto-first:' + form + ':' + f.k + '">' + esc(slovo('foto.first')) + '</button>' : '') +
+      '</div>';
+    }, true) +
+    (squeezed ? '<span class="small">' + esc(slovo('foto.squeezed')) + '</span>' : '') +
+    (b.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span' + (b.verb ? ' class="verbatim"' : '') + '>' + esc(b.err) + '</span></div>' : '') +
+    (n < FOTO_MAX ? '<label class="btn quiet" for="foto-file-' + form + '">' + esc(addWord) +
+      '<input id="foto-file-' + form + '" type="file" accept="image/*" data-foto="' + form + '" hidden></label>' : '') +
+  '</div></div>';
+}
+// кнопка подачи формы, пока кадр грузится: подача ждёт (masterApply.md, `foto.wait`), кнопка погашена
+function fotoWaitBtn() { return '<button type="button" class="btn" disabled>' + esc(slovo('foto.wait')) + '</button>'; }
+/* Ф3: клиент уменьшает длинную сторону до 1600 px ДО отправки («сжат» — P6). Меньше 1600 и формат, который сервер
+   берёт, — файл уходит как есть; иной формат, который браузер сумел прочесть, — перекладывается в JPEG без
+   уменьшения. Предел всё равно судит сервер: эта проверка — удобство, не защита. */
+function fotoShrink(file) {
+  return new Promise(function (ok, no) {
+    var img = new Image(), u = URL.createObjectURL(file);
+    img.onload = function () {
+      var w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, FOTO_SIDE / Math.max(w, h));
+      if (k >= 1 && FOTO_TYPES.indexOf(file.type) !== -1) { URL.revokeObjectURL(u); ok({ blob: file, squeezed: false }); return; }
+      var c = document.createElement('canvas');
+      c.width = Math.round(w * k); c.height = Math.round(h * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u);
+      c.toBlob(function (bl) { if (bl) ok({ blob: bl, squeezed: k < 1 }); else no(new Error('toBlob')); }, 'image/jpeg', 0.85);
+    };
+    img.onerror = function () { URL.revokeObjectURL(u); no(new Error('image')); };
+    img.src = u;
+  });
+}
+// набранное в полях формы снимается ДО перерисовки: экраны рисуют поля из своего состояния, а не из DOM
+var FOTO_GRAB = { eventNew: function () { grabForm(EVENT_FIELDS); }, eventEdit: function () { editGrab(); },
+                  masterApply: function () { msfGrab(); }, teaHold: function () { teaGrab(); } };
+function fotoRedraw(form) { if (current !== form) return; if (FOTO_GRAB[form]) FOTO_GRAB[form](); render(); }
+// кнопки кадра: `foto-del:<экран>:<номер кадра>`, `foto-first:…` (doAction в js/21 режет первое двоеточие)
+function fotoAction(a, arg) {
+  var c = String(arg || '').lastIndexOf(':'), form = arg.slice(0, c), k = Number(arg.slice(c + 1));
+  if (a === 'foto-del') fotoDel(form, k);
+  else if (a === 'foto-first') fotoFirst(form, k);
+}
+function fotoPick(form, file) {
+  var b = FOTO[form];
+  if (!b || !file || b.list.length >= FOTO_MAX) return;
+  b.err = ''; b.verb = false;   // новый выбор файла снимает отказ
+  // P8 и P7 — клиент судит до отправки, чтобы не грузить зря; сервер судит те же пределы сам (P9)
+  if (!/^image\//.test(file.type || '')) { b.err = slovo('foto.notImage'); fotoRedraw(form); return; }
+  if (file.size > FOTO_IN_MAX) { b.err = slovo('foto.tooBig'); fotoRedraw(form); return; }
+  var f = { k: ++FOTO_SEQ, id: null, url: '', squeezed: false, loading: true, draft: true };
+  b.list.push(f); fotoRedraw(form);
+  var gone = function () { var i = b.list.indexOf(f); if (i !== -1) b.list.splice(i, 1); };
+  fotoShrink(file).then(function (x) {
+    f.squeezed = x.squeezed;
+    // витрина: кадр показывается с устройства, в сеть не ходит
+    if (!LIVE) { f.url = URL.createObjectURL(x.blob); f.id = -f.k; f.loading = false; fotoRedraw(form); return; }
+    return api('POST', FOTO_URL.up(), x.blob).then(function (r) {
+      var d = r.data;
+      if (r.status === 201 && d && typeof d.id === 'number' && typeof d.url === 'string') {
+        // кадр убрали, пока он грузился, или форму уже подали — черновик на сервере не нужен
+        if (b.list.indexOf(f) === -1 || FOTO[form] !== b) { fotoDrop(d.id); return; }
+        f.id = d.id; f.url = /^https?:/.test(d.url) ? d.url : API + d.url; f.loading = false;
+        // строка о сжатии — и когда сжал сервер (решение координатора 26.11: «ему всё равно, кто сжал»)
+        if (d.squeezed === true) f.squeezed = true;
+      } else {
+        gone(); b.err = denyText(r); b.verb = true;   // P9: слово отказа как есть, кадр убирается
+      }
+      fotoRedraw(form);
+    });
+  }, function () { gone(); b.err = slovo('foto.notImage'); fotoRedraw(form); });
+}
+function fotoDrop(id) { if (LIVE && FOTO_ON && id > 0) api('POST', FOTO_URL.del(id)); }
+function fotoDel(form, k) {
+  var b = FOTO[form]; if (!b) return;
+  b.list = b.list.filter(function (f) {
+    if (f.k !== k) return true;
+    if (f.draft && typeof f.id === 'number') fotoDrop(f.id);   // снимок события снимается правкой (photo_ids без него), не здесь
+    return false;
+  });
+  fotoRedraw(form);
+}
+function fotoFirst(form, k) {
+  var b = FOTO[form]; if (!b) return;
+  var f = b.list.filter(function (x) { return x.k === k; })[0];
+  if (f) { b.list.splice(b.list.indexOf(f), 1); b.list.unshift(f); }
+  fotoRedraw(form);
+}
+
 function eventLive(e) {
   return '<div class="col"><h1>' + esc(e.title) + '</h1>' +
       '<span class="small">' + esc(e.day) + ' · ' + esc(e.time) + '–' + esc(e.until) +
@@ -1104,6 +1241,9 @@ function eventLive(e) {
           '<span class="small">Место держится за вами.</span></div>' +
         '<span class="pill on">записаны</span>' +
       '</div></div>' : '') +
+    // шаг 44 (foto/event.md): F1 — кадры в порядке автора; нет снимков — блока нет (F5). F6 — автору согласованного
+    (e.photos && e.photos.length ? teaAlbum(e.photos, null, true) +
+      (isMyEvent(e) && e.approval === 'approved' ? '<span class="small">' + esc(slovo('foto.frozen')) + '</span>' : '') : '') +
     '<div class="rows">' +
       '<div><span class="small">Ведёт</span><b>' + esc(e.master) + '</b></div>' +
       // Места нет — строки нет вовсе. «Место не указано» обещало бы, что

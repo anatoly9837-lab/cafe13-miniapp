@@ -340,7 +340,19 @@ var SLOVA = {
     'calendar.pick.choose': 'Выбрать это время',
     'calendar.pick.busyFail': 'Не удалось узнать, какое время занято.',
     'calendar.pick.busyWait': 'Узнаём, какое время занято…',
-    'calendar.pick.retry': 'Повторить'
+    'calendar.pick.retry': 'Повторить',
+    // шаг 44, снимки события — рецепт `_docs/recept/ekran/foto/` (event F6; masterApply P1–P9; ⚠ «клиент» — foto.wait)
+    'foto.label': 'Фото',
+    'foto.note': 'До трёх снимков. Первый будет крупным.',
+    'foto.del': 'Убрать',
+    'foto.first': 'Сделать первым',
+    'foto.add': 'Добавить фото',
+    'foto.loading': 'Загружаем…',
+    'foto.squeezed': 'Большие снимки уменьшили — так они быстрее открываются.',
+    'foto.tooBig': 'Снимок больше 8 МБ — выберите поменьше.',
+    'foto.notImage': 'Это не фото — выберите снимок.',
+    'foto.wait': 'Загружаем фото…',
+    'foto.frozen': 'Фото согласованы вместе с событием — заменить их нельзя.'
   }
 };
 function slovo(key, vars) {

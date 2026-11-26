@@ -93,8 +93,18 @@ function samoproverka() {
 
 module.exports = { proverit, prochest, NeVypolneno };
 
+// Контракт шага 18 ворот (Cafe13KPG#1118): ПОСЛЕДНЯЯ строка самопроверки — её
+// приговор, из ТОГО ЖЕ кода, каким прибор выходит. Грамматика:
+//   самопроверка <файл>: сошлась | РАЗОШЛАСЬ — код 1 | НЕ ВЫПОЛНЕНА — код N
+// Строка не по грамматике → шаг «НЕ ИЗМЕРЕН»; код 0 при не-«сошлась» → КРАСНОЕ
+// «код съеден». Печатать после неё нельзя: она обязана быть последней.
+function itogSamoproverki(kod) {
+  console.log(`самопроверка ${require('path').basename(__filename)}: ${
+    kod === 0 ? 'сошлась' : kod === 1 ? 'РАЗОШЛАСЬ — код 1' : 'НЕ ВЫПОЛНЕНА — код ' + kod}`);
+  return kod;
+}
 if (require.main === module) {
-  if (process.argv.includes('--самопроверка')) process.exit(samoproverka());
+  if (process.argv.includes('--самопроверка')) process.exit(itogSamoproverki(samoproverka()));
   console.log('запуск: node tools/api-roles.cjs --самопроверка');
   process.exit(2);
 }
