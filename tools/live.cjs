@@ -95,10 +95,13 @@ const CASES = [
     ['Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
     // 4 = /me, /events и два запроса блока букинга на «Клубе»: /master/requests/mine и /master/price?hours=2 (цена
     // от часов не зависит — Cafe13KPG#985, второй цены блок не спрашивает); 6 — плюс два запроса блока
-    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера)
-    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
+    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера);
+    // 7 — плюс GET /master/price без часов: цена церемонии для двери «провести церемонию» (js/21 loadTeaHoldPrice).
+    // Основание: дверь teaHold включена этим PR, цена запрашивается законно
+    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 7],
   // кабинет — дверью (HAS_CABINET), срок «14 ноября 2026» — разбором (RAZBOR); на «Клубе» срока нет (#1096)
-  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 6],
+  // 7 — как у owner-lifelong: цена церемонии (дверь teaHold включена этим PR, цена запрашивается законно)
+  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 7],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -243,10 +246,40 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // убитым. Пометка «НЕ ДОШЁЛ» стоит в строке вердикта, а не в шапке: пересказ вывода теряет шапку.
   // Тот же обработчик и на uncaughtException (возврат arhitector-18 по #528): throw в колбэке setTimeout
   // (фикстуры с задержкой ответа) идёт мимо промисов, и Node выходил с 1 одним стеком — «убит обрывом» жил.
+  /* НЕ ИЗМЕРЕНО — экран заморожен (Cafe13KPG#528 п.1). THAW=1 будит случаи, но не размораживает экран: случай жал
+     ВЫКЛЮЧЕННУЮ кнопку замороженного экрана («День кассы», «Создать мероприятие»), click ждал 30 с и ронял батарею
+     целиком (замер на 09e3b64: live.cjs:5245 и :8723). Теперь клик открытой сессии (open() ниже) сперва спрашивает
+     страницу: цель выключена и ведёт на экран, который приложение держит замороженным (`frozen()` из
+     js/02-chlenstvo.js), — клика нет, экран записан сюда с именем, а находки ЭТОГО случая после такого клика
+     (следствия ненажатой кнопки: «экран не открылся») не идут в КРАСНОЕ, а печатаются здесь же как не измеренные.
+     Находки до клика остаются находками. Итог без красного, но с непустым списком — rc=2 «не целиком»: зелёное о
+     незамеренном врало бы так же, как обрыв. ⚠ Предел: перехвачен только s.p.click(селектор); клик через
+     locator(…).click() или elementHandle.click() идёт мимо. */
+  const FZ = [];
+  const nemer = () => 'НЕ ИЗМЕРЕНО — экран заморожен (FROZEN), клик в выключенную кнопку не делался:\n  ' +
+    FZ.map(f => f.screen + ' — клик «' + f.sel + '» (live.cjs:' + f.line + ')' +
+      (f.lost.length ? '; следствия не засчитаны: ' + f.lost.join(' | ') : '')).join('\n  ');
+  let PENDING_FZ = null;
+  // Находки, добавленные после клика в замороженный экран и до закрытия сессии, — следствия ненажатой кнопки.
+  const settleFz = fz => {
+    if (!fz || fz.done) return; fz.done = true;
+    if (fz.hit === null) return;
+    fz.recs[0].lost = bad.splice(fz.hit); FZ.push(...fz.recs);
+  };
   const obryv = e => {
+    settleFz(PENDING_FZ);
     // под THAW=1 обрыв — частый исход, а давность проснувшихся нужна ровно здесь
     if (WOKE.size) console.log('ПРОСНУЛИСЬ (THAW=1/LVON=1) — красное сперва сверить со словами владельца НОВЕЕ даты сна:\n  ' + [...WOKE].join('\n  '));
-    const why = 'прогон НЕ ДОШЁЛ до конца — батарея оборвалась исключением: ' + String(e && e.message || e).split('\n')[0];
+    // Место обрыва (Cafe13KPG#1083): прежде печаталась только первая строка сообщения — «page.click: Timeout», и из
+    // лога нельзя было сказать, какой случай оборвался. Теперь — кадры этого файла из стека (строка случая и его
+    // помощника) и цель, которую ждал Playwright (она в «Call log» сообщения, второй строкой и ниже).
+    const msg = String(e && e.message || e);
+    const frames = String(e && e.stack || '').split('\n').map(l => (l.match(/live\.cjs:(\d+)/) || [])[1]).filter(Boolean);
+    const aim = (msg.match(/waiting for (locator\(.*\)|selector .*)/) || [])[1];
+    const where = '; место: ' + (frames.length ? 'live.cjs:' + [...new Set(frames)].slice(0, 3).join(' ← :') : 'стек без строк live.cjs') +
+                  (aim ? '; ждал ' + aim : '');
+    const why = 'прогон НЕ ДОШЁЛ до конца — батарея оборвалась исключением: ' + msg.split('\n')[0] + where;
+    if (FZ.length) console.log(nemer());
     if (!bad.length) { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + why + '; находок до обрыва нет'); process.exit(2); }
     console.log('КРАСНОЕ (' + why + '):\n' + bad.join('\n'));
     process.exit(1);
@@ -293,6 +326,27 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       } catch (e) {}
     }, saved ? JSON.stringify(saved) : null);
     const p = await ctx.newPage();
+    // Клик в замороженный экран (Cafe13KPG#528 п.1, см. FZ выше): спросить страницу ДО клика, а не ждать 30 с.
+    settleFz(PENDING_FZ);   // прежняя сессия, которую случай не закрыл, — её следствия считаются до новой
+    const fz = { hit: null, recs: [], done: false };
+    const click0 = p.click.bind(p);
+    p.click = async (sel, opt) => {
+      const stack = new Error().stack;   // синхронно: после await вызывающих кадров в стеке уже нет
+      const screen = await p.evaluate(sel => {
+        try {
+          const el = document.querySelector(sel), go = el && el.closest('[data-go]'), scr = go && go.getAttribute('data-go');
+          const off = el && (el.disabled || el.getAttribute('aria-disabled') === 'true');
+          return off && scr && typeof frozen === 'function' && frozen(scr) ? scr : null;
+        } catch (e) { return null; }   // не CSS-селектор Playwright (text=…) — судит обычный клик
+      }, sel).catch(() => null);
+      if (!screen) return click0(sel, opt);
+      if (fz.hit === null) fz.hit = bad.length;
+      const lines = stack.split('\n').map(l => (l.match(/live\.cjs:(\d+)/) || [])[1]).filter(Boolean);
+      fz.recs.push({ screen, sel, line: lines[1] || lines[0] || '?', lost: [] });
+    };
+    const close0 = ctx.close.bind(ctx);
+    ctx.close = async (...a) => { settleFz(fz); return close0(...a); };
+    PENDING_FZ = fz;
     const calls = [], errs = [];
     p.on('pageerror', e => errs.push(e.message));
     await p.route('https://telegram.org/**', r => r.fulfill({ contentType: 'text/javascript', body: tgStub(inside) }));
@@ -1082,6 +1136,46 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         }
       }
       if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия «Отправить»`);
+      await s.ctx.close();
+    }
+    // дверь «провести церемонию» (teaHold в WIRED, v213): кнопку и переход судит СЛОВО и data-go, а не число запросов.
+    // Цена церемонии запрашивается до проверки двери (js/21 loadTeaHoldPrice, js/07 masterOffer), поэтому без этих
+    // случаев спрятанная кнопка оставила бы те же восемь запросов и прогон был бы зелёным (возврат arhitector4-c3 к #463)
+    const teaDoor = s => s.p.evaluate(() => {
+      const b = [...document.querySelectorAll('#view [data-go="teaHold"]')].filter(x => x.textContent === 'Провести чайную церемонию')[0];
+      return { has: !!b, off: b ? b.disabled : null, text: document.getElementById('view').textContent };
+    });
+    // ровно цена — кнопка есть, жива, нажатие открывает teaHold
+    {
+      const n = 'tea-door';
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(PRICE(2), [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      const f = await teaDoor(s);
+      if (!f.has) bad.push(`${n}: на «Клубе» нет кнопки «Провести чайную церемонию» (data-go="teaHold")`);
+      else if (f.off !== false) bad.push(`${n}: при остатке ровно в цену «Провести чайную церемонию» недоступна (${JSON.stringify(f.off)})`);
+      else if (await tapIf(s, n, '#view [data-go="teaHold"]', '«Провести чайную церемонию»')) {
+        await s.p.waitForTimeout(200);
+        const cur = await s.p.evaluate(() => current);
+        if (cur !== 'teaHold') bad.push(`${n}: «Провести чайную церемонию» открыла «${cur}», ждали teaHold`);
+      }
+      if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия «Отправить»`);
+      await s.ctx.close();
+    }
+    // недостача — кнопка ЕСТЬ, но погашена, и нажатие никуда не ведёт (отрицательный контроль к tea-door)
+    {
+      const n = 'tea-door-short';
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(100, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      const f = await teaDoor(s);
+      if (!f.has) bad.push(`${n}: на «Клубе» нет кнопки «Провести чайную церемонию» и при недостаче`);
+      else {
+        if (f.off !== true) bad.push(`${n}: при остатке 100 «Провести чайную церемонию» нажимается — цена 130`);
+        await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="teaHold"]'); b && b.click(); });
+        await s.p.waitForTimeout(200);
+        if (await s.p.evaluate(() => current) === 'teaHold') bad.push(`${n}: погашенная кнопка открыла teaHold`);
+      }
       await s.ctx.close();
     }
     // подача: ровно один POST /master/request с телом формы, после — своя заявка перечитана, на «Клубе» «ждёт решения»
@@ -2919,7 +3013,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (!(await s.p.$(CABINET))) bad.push('retry: после повтора не кабинет');
     // + два запроса блока букинга на «Клубе» (/master/requests/mine, /master/price?hours=2)
     // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
-    if (s.calls.length !== 7) bad.push(`retry: запросов ${s.calls.length}, ждали 7 (/me, /me, /events, /master/requests/mine, /master/price, /partner/requests/mine, /partner/price)`);
+    // + цена церемонии /master/price без часов. Основание: дверь teaHold включена этим PR, цена запрашивается законно
+    if (s.calls.length !== 8) bad.push(`retry: запросов ${s.calls.length}, ждали 8 (/me, /me, /events, /master/requests/mine, /master/price?hours=2, /partner/requests/mine, /partner/price, /master/price)`);
     await s.ctx.close();
   }
 
@@ -14736,6 +14831,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.
   if (!MINE && Object.keys(LATE_STUBS).length !== LATE_WANT) bad.push(`shape: ПРОВЕРКА НЕ ВЫПОЛНЕНА — join-заглушек в реестре ${Object.keys(LATE_STUBS).length}, ждали ${LATE_WANT}`);
   checkShapes(LATE_STUBS);
+  settleFz(PENDING_FZ);   // до ids-clean: его строки не следствия клика
   // Номера людей: репозиторий публичный — разрешающий список, tools/ids-clean.cjs.
   bad.push(...require('./ids-clean.cjs').idsClean(ROOT));
 
@@ -14748,8 +14844,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   if (MINE && process.env.ONLY_OUT) require('fs').writeFileSync(process.env.ONLY_OUT, JSON.stringify({
     only: ONLY, src: require('crypto').createHash('sha256').update(require('fs').readFileSync(__filename)).digest('hex'),
     sites: site, run: SITES.run, off: SITES.off, late: Object.keys(LATE_STUBS), late_want: LATE_WANT,
-    skipped: [...SKIPPED], notes, bad, ran }));
+    skipped: [...SKIPPED], nemer: FZ, notes, bad, ran }));
   const whose = MINE ? ` (часть ${ONLY}: случаев ${SITES.run.length} из ${site}; сводку по обеим судит tools/live-svod.cjs)` : '';
+  if (FZ.length) console.log(nemer());
   if (bad.length) { console.log('КРАСНОЕ' + whose + ':\n' + bad.join('\n')); process.exit(1); }
+  if (FZ.length) { console.log('ПРОВЕРКА НЕ ЦЕЛИКОМ: красного нет, но экранов не измерено ' + new Set(FZ.map(f => f.screen)).size + ' (заморожены, список выше)' + whose); process.exit(2); }
   console.log('зелёное: ' + ran + ' прогонов экрана' + (SITES.run.includes(1) ? ' (из них ' + CASES.length + ' табличных)' : '') + whose);   // таблица — случай №1
 })();
