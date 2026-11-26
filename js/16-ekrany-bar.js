@@ -5,10 +5,16 @@
 function menuGate() {
   if (MENU_STATE === '' || MENU_STATE === 'loading')
     return '<div class="card quiet"><span class="small">Загружаем меню…</span></div>';
-  if (MENU_STATE !== 'ok')
-    return '<div class="card strong"><h2>Меню не загрузилось</h2><p>' + esc(MENU_STATE) + '</p>' +
-      '<button type="button" class="btn" data-action="retry-menu">Повторить</button></div>';
+  if (MENU_STATE !== 'ok') return menuFail();
   return '';
+}
+/* фича 10 (рецепт moi-biznesy/sostav.md): «Не удалось определить ваш бизнес.» — наш отказ выбирать, а не сбой сети:
+   повтор его не меняет, поэтому кнопки «Повторить» под ним нет; у сбоя сети и разбора она остаётся. У куратора двух
+   дел и больше вместо плашки — те же строки дел, что на «Клубе» (H2): дело выбирает он сам */
+function menuFail() {
+  if (MENU_STATE === NOBIZ && manyBiz()) return '<div class="group"><span class="label">Мои бизнесы</span>' + myBizList() + '</div>';
+  return '<div class="card strong"><h2>Меню не загрузилось</h2><p>' + esc(MENU_STATE) + '</p>' +
+    (MENU_STATE === NOBIZ ? '' : '<button type="button" class="btn" data-action="retry-menu">Повторить</button>') + '</div>';
 }
 function noDrink() {
   return '<div class="card quiet"><span class="small">Такой позиции в меню нет.</span></div>' +
@@ -56,8 +62,7 @@ Object.assign(SCREENS, {
       var body = MENU_STATE === 'loading' || MENU_STATE === ''
         ? '<div class="card quiet"><span class="small">Загружаем меню…</span></div>'
         : MENU_STATE !== 'ok'
-        ? '<div class="card strong"><h2>Меню не загрузилось</h2><p>' + esc(MENU_STATE) + '</p>' +
-            '<button type="button" class="btn" data-action="retry-menu">Повторить</button></div>'
+        ? menuFail()
         : !DATA.bar.menu.length
         ? '<div class="card quiet"><span class="small">В меню пока ни одной позиции.</span></div>'
         : DATA.bar.menu.map(function (g) {
@@ -717,7 +722,7 @@ Object.assign(SCREENS, {
         '<span class="small">' + esc(c.group) + ' · ' + money(c.price) + ' ฿' + (c.mins ? ' · ' + c.mins + ' мин' : '') + (c.alcohol ? ' · алкоголь' : '') + '</span></div>' +
         '<span class="pill' + (c.state === 'active' ? ' on' : back ? ' warm' : '') + '">' + esc(STATE_WORDS[c.state]) + '</span></div>' +
         (c.about ? '<span class="small clamp2">' + esc(c.about) + '</span>' : '') +
-        (back ? '<div class="note">' + svg(ICON.info) + '<span>Вернул куратор: ' + esc(c.note) + '</span></div>' : '') +
+        (back ? '<div class="note">' + svg(ICON.info) + '<span>Вернули с замечанием: ' + esc(c.note) + '</span></div>' : '') +
         // правка — только у черновика; у прочих двери нет и слов об этом нет: отсутствие двери не объясняют
         (c.state === 'draft' && !po ? '<button type="button" class="btn ghost" data-action="c-edit:' + c.id + '"' + lock + '>Изменить карточку</button>' : '') +
       '</div>' + note + photoBlock(c) +

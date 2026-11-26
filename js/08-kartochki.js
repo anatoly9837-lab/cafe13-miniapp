@@ -418,10 +418,8 @@ function plural(n, f) {
   var a = n % 10, b = n % 100;
   return f[a === 1 && b !== 11 ? 0 : (a >= 2 && a <= 4 && (b < 10 || b > 20) ? 1 : 2)];
 }
-function nowHM() {
-  var d = new Date();
-  return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
-}
+// Время заказа демо-бара — по поясу клуба (bkk() из js/09-afisha.js), а не телефона (Cafe13KPG#193).
+function nowHM() { return bkk(new Date()).hm; }
 function orderById(id) {
   return DATA.bar.orders.filter(function (o) { return o.id === id; })[0];
 }

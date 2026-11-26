@@ -5,7 +5,11 @@ Object.assign(SCREENS, {
   manage: function () {
     // v100: две группы, каждая по своему праву — «Кто в клубе» у главы, «Деньги» у ответственного
     // за пополнения (кадр E46, Cafe13KPG#586). Ни одного права — прежний отказ.
-    if (!mayPeople() && !mayTopups() && !mayMasters() && !mayOps() && !(LIVE && msIsMaster()) && !mayWithdraw()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    // Вне Telegram (Cafe13KPG#935) экран рисуется на демо-наборе так, как его видит операционный директор —
+    // зритель рецепта семьи 13: одна группа «Бизнесы». Прочие группы демо не открывает: их права начинаются
+    // с `LIVE`, и часть их дверей вне Telegram отказала бы — дверь в отказ хуже отсутствующей двери
+    var demoOps = !LIVE && MR.demo;
+    if (!demoOps && !mayPeople() && !mayTopups() && !mayMasters() && !mayOps() && !(LIVE && msIsMaster()) && !mayWithdraw()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
     // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
     // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
@@ -45,7 +49,7 @@ Object.assign(SCREENS, {
         svg(ICON.chev, 'chev') + '</button>' : '') + '</div>' : '';
     // шаг 12 (кадр E46е, Cafe13KPG#877): «Бизнесы» — у операционного директора (и админа). Пометки ждущих нет:
     // ждать тут нечему до шага 13, его строка «Заявки в партнёры» ляжет в эту же группу
-    var biz = mayOps() ? '<div class="group"><span class="label">Бизнесы</span>' +
+    var biz = mayOps() || demoOps ? '<div class="group"><span class="label">Бизнесы</span>' +
       '<button type="button" class="listitem" data-go="businesses"><span class="grow"><b>Бизнесы клуба</b>' +
         '<span class="small">Кто партнёр и открыта ли смена</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
       // шаг 13 (рецепт R3): «Заявки в партнёры» — под «Бизнесами клуба», счётчик ждущих чипом `.count`; не загрузилось —
