@@ -36,7 +36,7 @@
 # второй редакции тут нарочно нет (копия признака расходится с прибором молча).
 # Что он умеет, чего нет и чем это измерено — проза `tools/imena-ascii.py`.
 # ⚠ ПРЕДЕЛ — ЧЕГО ВОРОТА НЕ ПРОВЕРЯЮТ (Cafe13KPG#789, замер arhitector-62; шаги 11–16 дописаны
-# frontend-40 20.11.2026). Зелёное здесь значит «прошли шаги 1, 4–18», и НЕ значит:
+# frontend-40 20.11.2026). Зелёное здесь значит «прошли шаги 1, 4–19», и НЕ значит:
 #   • `svyaz-kadrov.py` — связь кадр↔экран: ему нужна база кадров `Cafe13KPG`, её в дереве мерджа
 #     нет, а кадры заморожены. Гоняется руками по поводу правки кадров;
 #   • `check-recepty.py` — рецепты README исполняются: прогон зовёт съёмку и обход образом, это
@@ -643,7 +643,7 @@ verdict 'screens.html равна пересборке из входов дере
 # ⚠ pered-pokazom.cjs (с 26.11.2026, Cafe13KPG#1121) — прибор «показывать можно»: самопроверка судит
 # его ИТОГОВУЮ строку и шаг дыма на подставном вызове — ни git, ни сети, ни docker она не зовёт.
 step '18. самопроверки приборов — --самопроверка каждого (приговор)'
-SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pered-pokazom.cjs pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py v-oblasti.py'
+SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pered-pokazom.cjs pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py teksty.py v-oblasti.py'
 SP_V_SHAGE_5='check-stages.py'
 SP_ZHDUT_GIT=''
 not_done18=''
@@ -683,11 +683,25 @@ for p in $SP_PRIBORY; do
 done
 echo "шаг 18: прогнано $(echo $SP_PRIBORY | wc -w), $SP_V_SHAGE_5 — в шаге 5, не гонял $(echo $SP_ZHDUT_GIT | wc -w); $(( $(date +%s%3N) - sp_t0 )) мс"
 
+# ── 19. тексты ↔ таблица переводов (приговор) — шаг 41 плана, слово владельца 26.11.2026 ──
+# ⚠ Регламент «добавили текст — перевели в таблице» без этого шага был бы пожеланием: правило, которое
+# никто не зовёт, расходится с делом молча. Красное — текст в js/ без строки в texts/perevody.tsv, строка
+# без перевода, перевод без подстановки {имя}. Признак текста и что исключено — проза tools/teksty.py.
+# ⚠ Дерево без прибора или без таблицы (ветка от ствола до шага 41) — «НЕ ВЫПОЛНЕНО», а не зелёное.
+step '19. тексты интерфейса ↔ таблица переводов — tools/teksty.py (приговор)'
+if [ ! -f "$T/tools/teksty.py" ] || [ ! -f "$T/texts/perevody.tsv" ]; then
+    echo '⚠ в дереве нет tools/teksty.py или texts/perevody.tsv — тексты НЕ СВЕРЕНЫ'; [ "$rc_total" -eq 0 ] && rc_total=2
+else
+    ( cd "$T" && PYTHONDONTWRITEBYTECODE=1 python3 -I -B tools/teksty.py "$T" ) >"$W/teksty.log" 2>&1; rc=$?
+    grep '^КРАСНОЕ' "$W/teksty.log" | head -10; tail -3 "$W/teksty.log"
+    verdict 'каждый текст js/ есть в таблице переводов и переведён' "$rc"
+fi
+
 # ── приговор ────────────────────────────────────────────────────────────────
 [ "$reports_dead" -gt 0 ] && mark "отчётов НЕ ВЫПОЛНЕНО: $reports_dead"
 printf '\n'
 case "$rc_total" in
-  0) echo "ЗЕЛЁНОЕ: дерево мерджа $T прошло все приговорные шаги (1, 4–18)"
+  0) echo "ЗЕЛЁНОЕ: дерево мерджа $T прошло все приговорные шаги (1, 4–19)"
      [ -n "$not_done18" ] && echo "⚠ шаг 18 не гонял самопроверки (ждут живой git): $not_done18 — их приговора нет"
      [ -n "$not_done14" ] && echo "⚠ шаг 14 (экран ↔ рецепт) смотрел не на всё: $not_done14 — это не «сошлось»"
      [ "$reports_dead" -gt 0 ] && echo "⚠ при этом ОТЧЁТОВ НЕ ВЫПОЛНЕНО: $reports_dead — мердж они не держат, но и «всё измерено» это уже не значит";;
