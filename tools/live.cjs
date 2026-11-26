@@ -5075,6 +5075,43 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     {
+      // ms-retry: «Повторить» на ошибке masterStats перечитывает — второй GET /stats/master и числа на экране. Вход в
+      // ошибку — путь строки L с null (тот же, что судит masterStats.error выше). Паритет с as-retry шага 32 (ревью #406:
+      // мутант mRt «кнопка без перечитывания» жил — нажатия не было ни у одного случая)
+      const n = 'ms-retry';
+      const L = MS_RESP().list.map(x => Object.assign({}, x)); L[0].bookings = null;
+      let k = 0;
+      const s = await msopen(MASTER, () => ++k === 1 ? json(200, MS_RESP({ list: L })) : json(200, MS_RESP()));
+      await go34(s, n);
+      if (!(await s.view()).includes(await W(s, 'masterStats.error'))) bad.push(`${n}: битый ответ — не «не загрузилось», нажимать нечего`);
+      await s.p.click('[data-action="mst-retry"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Повторить»`));
+      await s.p.waitForTimeout(400);
+      if (k !== 2) bad.push(`${n}: «Повторить» не спросило /stats/master заново (запросов ${k})`);
+      const e = await card(s, await W(s, 'masterStats.events.title'));
+      if (!e || !e.includes((await W(s, 'masterStats.events.count')) + '2')) bad.push(`${n}: «Повторить» не перечитало — чисел нет: «${e}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // er-oshibka-retry: битый ответ /stats/event/{id} — на экране eventReport.error и «Повторить» (вида ошибки отчёта
+      // не судил ни один случай); нажатие — второй GET того же id и доли сервера. Мутант mRt ревью #406 жил без него
+      const n = 'er-oshibka-retry';
+      let k = 0;
+      const s = await msopen(MASTER, () => json(200, MS_RESP()), id => ++k === 1 ? json(200, { id }) : json(200, ER_RESP({ id })));
+      await s.p.evaluate(() => go('eventReport', 52)); await s.p.waitForTimeout(400);
+      const v = await s.view();
+      if (!v.includes(await W(s, 'eventReport.error'))) bad.push(`${n}: битый отчёт — не «не загрузилось»: «${v.slice(0, 120)}»`);
+      if (await card(s, await W(s, 'eventReport.money.title'))) bad.push(`${n}: при битом отчёте стоят деньги`);
+      await s.p.click('[data-action="er-retry"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Повторить»`));
+      await s.p.waitForTimeout(400);
+      const ev = s.calls.filter(c => /\/stats\/event\//.test(c.url)).map(c => c.url.replace(/^https:\/\/api\.cafe13\.club/, ''));
+      if (JSON.stringify(ev) !== '["/stats/event/52","/stats/event/52"]') bad.push(`${n}: «Повторить» не спросило отчёт заново: ${JSON.stringify(ev)}`);
+      const mc = await card(s, await W(s, 'eventReport.money.title'));
+      if (!mc || !mc.includes((await W(s, 'eventReport.money.master')) + (await sum(s, '1020.00')))) bad.push(`${n}: «Повторить» не перечитало — долей нет: «${mc}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
       // ms-period: ‹ уходит запросом с `at` РАНЬШЕ текущего при том же period, и на экране числа прошлого окна; › погашена
       // на текущем, после ‹ — нет, и возвращает в текущий месяц (ревью #406: случаев на ‹ › не было, мутант «at не
       // сдвигается» жил). Образец — stats-razrez шага 31
