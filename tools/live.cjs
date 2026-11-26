@@ -14924,7 +14924,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (n === 'moi-biz-chuzhoe' && !(await groupOf(s, 'Работа') || '').includes('Заказы на баре')) bad.push(`${n}: строки бара пропали из «Работы»`);
       await fin(s, n);
     }
-    // moi-biz-vnutri-chai + moi-biz-nazad: в карточке «Чая» карточки меню и очередь — «Чая»; назад из barCards и barMoney — в ту же карточку
+    // moi-biz-vnutri-chai + moi-biz-nazad: в карточке «Чая» карточки меню и очередь — «Чая»; назад из barCards — в ту же карточку
+    // (barMoney в FROZEN: человеку туда не войти, и «назад» оттуда не судится — долг разморозки, тело PR)
     {
       const n = 'moi-biz-vnutri-chai';
       const s = await mbOpen(CUR2);
@@ -14934,17 +14935,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if ((await s.view()).includes('Не удалось определить')) bad.push(`${n}: карточки меню «Чая» — с плашкой`);
         if (!qs(s, '/bar/products').length || qs(s, '/bar/products').some(x => x !== '9')) bad.push(`${n}: карточки спрошены не у «Чая»: ${JSON.stringify(qs(s, '/bar/products'))}`);
         await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(300);
-        let c = await cur(s);
+        const c = await cur(s);
         if (c.current !== 'myBiz' || c.pick !== 9) bad.push(`moi-biz-nazad: назад с «Карточек меню» не в карточку «Чая»: ${JSON.stringify(c)}`);
-        // barMoney в FROZEN (слово владельца 29.10): строка в карточке серая, как на «Клубе» сегодня. Случай судит «назад»
-        // (BOOK.from), а не разморозку, — экран включается на странице, как WIRED.memberRequests в klubnoe-snaruzhi
-        await s.p.evaluate(() => { delete FROZEN.barMoney; render(); });
-        await s.p.click('#view [data-go="barMoney"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Доход и расход бара» не нажимается`));
-        await s.p.waitForTimeout(300);
-        if ((await cur(s)).current !== 'barMoney') bad.push(`moi-biz-nazad: «Доход и расход бара» не открылся`);
-        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(300);
-        c = await cur(s);
-        if (c.current !== 'myBiz' || c.pick !== 9) bad.push(`moi-biz-nazad: назад с «Дохода и расхода» не в карточку «Чая»: ${JSON.stringify(c)}`);
         await s.p.click('#view [data-go="barQueue"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Заказы на баре» не нажимаются`));
         await s.p.waitForTimeout(400);
         const o = qs(s, '/bar/orders');

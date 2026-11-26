@@ -591,8 +591,7 @@ function go(screen, p) {
   if (screen === 'barDay' && current !== 'barDay')
     DAY.from = current === 'barQueue' || current === 'barMoney' ? current : homeOf();
   if (screen === 'barMoney' && current !== 'barMoney') {
-    // фича 10: открыт из карточки дела — назад в неё, а не на «Клуб»
-    BOOK.from = current === 'barQueue' || current === 'myBiz' ? current : homeOf();
+    BOOK.from = current === 'barQueue' ? 'barQueue' : homeOf();
     BOOK.ask = false; BOOK.err = '';
   }
   // уход с экрана — тоже «ушли»: окно уровня уходит отправкой, а не сбросом (v91)
