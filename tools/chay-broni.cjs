@@ -5,7 +5,9 @@
 // Мутанты (каждый обязан дать КРАСНОЕ и rc=1, и только на своих случаях):
 //   master   — K4b снова обещает отказ мастера («Если мастер откажет…»): краснеет Т1 и только он;
 //   masterart — разбор ждёт полей master/art, как до сверки с a6d4d4c: свои брони отбрасываются целиком (Т2–Т4);
-//   nofilter — брони чужого мастера не отсеиваются (Т3).
+//   nofilter — брони чужого мастера не отсеиваются (Т3);
+//   notealways — слова арт-директора .said и под согласованной (Т6; мутант arhitector11-57): сервер принимает note
+//   при любом решении (master.Decision), а рецепт B12 показывает .said только под отказом.
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
 if (!root) { console.error('корень клиента первым аргументом'); process.exit(2); }
@@ -27,6 +29,7 @@ let src = fs.readFileSync(root + '/js/22-ekrany-chay.js', 'utf8');
 if (mutant === 'master') slova = sub(slova, 'Если арт-директор откажет, деньги вернутся полностью.', 'Если мастер откажет, деньги вернутся полностью.');
 if (mutant === 'masterart') src = sub(src, "|| !st || typeof b.master_id !== 'number') return null;",
   "|| !st || typeof b.master_id !== 'number' || !({ wait: 1, ok: 1, no: 1 })[b.master] || !({ wait: 1, ok: 1, no: 1 })[b.art]) return null;");
+if (mutant === 'notealways') src = sub(src, "(b.st === 'no' && b.note ?", "(b.note ?");
 if (mutant === 'nofilter') src = sub(src, '? got.filter(function (b) { return String(b.master) === String(id); }) : null;', '? got : null;');
 vm.runInContext(slova, ctx, { filename: '00' });
 vm.runInContext(fs.readFileSync(root + '/js/10-utility.js', 'utf8'), ctx, { filename: '10' });
@@ -71,6 +74,12 @@ check('Т4 B12 сумма и слова арт-директора',
 // Т5: незнакомое состояние — список не выдумывается (весь ответ не принят, как прежде)
 const b5 = load(3, [row(25, 3, 'cancelled')]);
 check('Т5 незнакомый status — не принято', b5 === null ? 'null' : JSON.stringify(b5), 'null');
+// Т6: согласованная со словами арт-директора — состояние «согласована», а .said и суммы возврата нет (B12 — только отказ)
+load(3, [row(26, 3, 'approved', { note: 'Ждём вас к 19:00.', decided_at: '2026-11-26T02:00:00Z' })]);
+const h6 = screen(3);
+check('Т6 согласованная со словами — без .said и возврата',
+  (h6.includes(words('tea.book.stOk')) ? 'согласована' : '-') + '/' + (h6.includes('class="said"') ? 'said' : 'нет') + '/' +
+  (h6.includes('вернулись на счёт') ? 'возврат' : 'нет'), 'согласована/нет/нет');
 
 const red = ok.filter(x => !x).length;
 console.log(red ? `КРАСНОЕ: ${red} из ${ok.length}` : `ЗЕЛЁНОЕ: ${ok.length} из ${ok.length}`);
