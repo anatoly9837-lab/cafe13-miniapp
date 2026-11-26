@@ -815,11 +815,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.waitForTimeout(200);
       // экраны — из PROTO самой страницы, а не списком здесь: v107 добавил masterEvent, и список из пяти
       // его не знал. Меньше пяти — признак сломан (PROTO не прочитан), а не «прототипов стало меньше»
-      // привратник у прототипов НЕ один: экраны арт-директора стережёт mayMasters, «Забукать» (masterApply,
-      // v108) — членство. Делим по СВОЙСТВУ тела экрана; прототип без известного привратника — «не выполнено»,
+      // привратник у прототипов НЕ один: экраны арт-директора стережёт mayMasters, «Забукать» (masterApply)
+      // с Cafe13KPG#1129 открыт всем (до того — членство). Делим по СВОЙСТВУ тела экрана; прототип без известного привратника — «не выполнено»,
       // а не молча вне проверки (иначе следующий экран со своим привратником дал бы ложное красное или ничего)
       const split = await s.p.evaluate(() => {
-        const by = { masters: [], member: [], own: [], unknown: [] };
+        const by = { masters: [], member: [], own: [], open: [], unknown: [] };
         // с v109 PROTO пуст: экраны шага 3 берутся по СВОЙСТВУ имени (`master…`), а подключённость сверяется ниже
         Object.keys(SCREENS).filter(k => /^master/.test(k)).forEach(k => {
           const src = String(SCREENS[k]);
@@ -828,6 +828,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           // шаг 34: «Моя статистика» (masterStats) стережёт mayMasterStats — свои ивенты, не решение заявок мастеров;
           // его дверь судит свой случай ms-dver, здесь экран вне проверки по НАЗВАННОМУ привратнику
           else if (/mayMasterStats\(\)/.test(src)) by.own.push(k);
+          // Cafe13KPG#1129: «Забукать» (masterApply) открыт ВСЕМ — привратника нет нарочно; гостя судит ma-gost-podacha
+          else if (k === 'masterApply') by.open.push(k);
           else by.unknown.push(k);
         });
         return by;
@@ -853,32 +855,31 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
-    // экраны, которые стережёт ЧЛЕНСТВО («Забукать», masterApply): гостю — «Сюда нельзя», члену клуба без
-    // ролей — экран формы; с v109 он на ручках (места, цена, своя заявка), плашки и «ноля запросов» нет
+    // «Забукать» (masterApply) — экран ВСЕХ (Cafe13KPG#1129): и гостю, и члену клуба без ролей — форма, не «Сюда нельзя».
+    // Список — по СВОЙСТВУ: экраны master* без привратника из by.open выше; пусто — признак сломан, а не «экранов нет».
+    // ⚠ Под членством среди master* больше нет ни одного: экран с DATA.role === 'guest' — красное (вернули гейт)
     const guest = clone(OWNER); guest.membership_active = false; guest.membership = null; guest.memberships = []; guest.roles = [];
     const plain = clone(OWNER); plain.roles = [];
-    for (const [n, who_, may] of [['proto-member-guest', guest, false], ['proto-member-plain', plain, true]]) {
+    for (const [n, who_] of [['proto-open-guest', guest], ['proto-open-plain', plain]]) {
       const s = await open(true, true, json(200, who_));
       await s.p.waitForTimeout(200);
-      const list = await s.p.evaluate(() => Object.keys(SCREENS).filter(k => /^master/.test(k) && /DATA\.role === 'guest'/.test(String(SCREENS[k]))));
-      if (!list.length) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — прототипов под членством нет`);
+      const gated = await s.p.evaluate(() => Object.keys(SCREENS).filter(k => /^master/.test(k) && /DATA\.role === 'guest'/.test(String(SCREENS[k]))));
+      if (gated.length) bad.push(`${n}: экран мастера снова стережёт членство: ${gated.join(', ')} — членов клуба не будет (Cafe13KPG#1129)`);
+      const list = await s.p.evaluate(() => Object.keys(SCREENS).filter(k => k === 'masterApply'));
+      if (!list.length) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — экрана masterApply нет`);
+      if (n === 'proto-open-guest' && await s.p.evaluate(() => DATA.role) !== 'guest') bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — фикстура не гость`);
       const before = s.calls.length;
       for (const sc of list) {
         await s.p.evaluate(x => go(x), sc);
         await s.p.waitForTimeout(120);
         const cur = await s.p.evaluate(() => current), t = await s.view();
-        if (!may) {
-          // гостя может не пустить и сам go() — экран ему так и так не показан; красное — только экран с формой
-          if (cur === sc && !t.includes('Сюда нельзя')) bad.push(`${n}: «${sc}» открыт гостю — мастером становится член клуба`);
-          continue;
-        }
-        if (cur !== sc) { bad.push(`${n}: go('${sc}') не открыл экран члену клуба (стоит «${cur}»)`); continue; }
-        if (t.includes('Сюда нельзя')) bad.push(`${n}: «${sc}» — «Сюда нельзя» члену клуба`);
+        if (cur !== sc) { bad.push(`${n}: go('${sc}') не открыл экран (стоит «${cur}»)`); continue; }
+        if (t.includes('Сюда нельзя')) bad.push(`${n}: «${sc}» — «Сюда нельзя»: подаёт любой вошедший`);
         if (t.includes('Прототип')) bad.push(`${n}: «${sc}» с плашкой «Прототип» — с v109 экран на ручках`);
       }
-      // гость не подаёт заявку и не спрашивает очередь арт-директора
+      // без нажатия заявка не уходит, и очередь арт-директора без права не спрашивается
       const sent = s.calls.slice(before).map(c => c.method + ' ' + c.url.replace(/^https?:\/\/[^/]+/, ''));
-      if (!may && sent.some(u => /^POST \/master\/request$|\/master\/(requests(?!\/mine)|slots)/.test(u))) bad.push(`${n}: гостю ушли запросы мастера: ${JSON.stringify(sent)}`);
+      if (sent.some(u => /^POST \/master\/request$|\/master\/(requests(?!\/mine)|slots)/.test(u))) bad.push(`${n}: без нажатия или без права ушли запросы мастера: ${JSON.stringify(sent)}`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
@@ -1125,6 +1126,47 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (f.off !== true) bad.push(`${n}: при остатке 100 «Забукать» нажимается — цена 130`);
         if (!f.text.includes('Не хватает 30 ฿')) bad.push(`${n}: недостача не названа ценой сервера (ждали «Не хватает 30 ฿»)`);
         if (f.text.includes('Прототип')) bad.push(`${n}: у блока плашка «Прототип» — с v109 он на ручках`);
+      }
+      await s.ctx.close();
+    }
+    // Cafe13KPG#1129: гость ПОДАЁТ букинг. «Провести» показан всем (№65 «а»), членов клуба не будет, сервер членства
+    // не спрашивает (cafe13-api master.py `_create_request`, бой 913eeef). Обратная половина — ЧУЖИМИ ГЛАЗАМИ не подаётся:
+    // клиент шлёт X-Act-As, сервер 403 (`_not_acting`); заглушка отвечает 403 ТОЛЬКО на запрос с этим заголовком, и
+    // гость без него обязан получить 201. Случай сторожит себя: фикстура — гость (DATA.role), иначе судил бы члена.
+    for (const [n, acting] of [['ma-gost-podacha', false], ['ma-chuzhie-glaza', true]]) {
+      const G = mem(9000, []); G.membership = null; G.membership_active = false; G.memberships = [];
+      const o = { mine: () => [], posted: [], asAct: [] };
+      const api = masterApi(o);
+      const DENY = 'букинг мастера чужими глазами не делается. Деньги не списаны, заявка не подана';
+      const s = await open(true, true, json(200, G), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (u === '/master/request' && q.method() === 'POST' && q.headers()['x-act-as']) { o.asAct.push(1); return json(403, { detail: DENY }); }
+        return api(q);
+      });
+      await s.p.waitForTimeout(300);
+      if (await s.p.evaluate(() => DATA.role) !== 'guest') { bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — фикстура не гость (DATA.role ≠ 'guest')`); await s.ctx.close(); continue; }
+      if (acting) await s.p.evaluate(() => { TEST.on = true; TEST.as = { id: 2, name: '[гость]', what: 'гость' }; go('guest'); go('home'); });
+      await s.p.waitForTimeout(200);
+      if (await tapIf(s, n, '#view [data-action="ms-apply"]', '«Провести ивент»')) {
+        await s.p.waitForTimeout(300);
+        if ((await s.view()).includes('Сюда нельзя') || !(await s.p.$('#msf-title'))) bad.push(`${n}: гостю вместо формы букинга отказ «Сюда нельзя»`);
+        else {
+          await s.p.fill('#msf-title', 'Проба мастера');
+          if (await tapIf(s, n, '[data-action="ms-send"]', '«Отправить букинг»')) {
+            await s.p.waitForTimeout(400);
+            const t = await s.view(), cur = await s.p.evaluate(() => current);
+            const alert = await s.p.evaluate(() => [...document.querySelectorAll('#view .deny[role="alert"]')].map(e => e.textContent).join(' | '));
+            if (!acting) {
+              if (o.posted.length !== 1 || o.asAct.length) bad.push(`${n}: от гостя ушло ${o.posted.length} POST /master/request (чужими глазами ${o.asAct.length}) — ждали ровно один свой`);
+              if (!t.includes('Букинг отправлен')) bad.push(`${n}: у гостя после подачи нет вспышки «Букинг отправлен»`);
+            } else {
+              if (o.asAct.length !== 1 || o.posted.length) bad.push(`${n}: чужими глазами ушло ${o.asAct.length} запросов с X-Act-As и ${o.posted.length} без — ждали ровно один с заголовком`);
+              if (t.includes('Букинг отправлен')) bad.push(`${n}: чужими глазами сказано «Букинг отправлен» — сервер отказал`);
+              if (cur !== 'masterApply') bad.push(`${n}: после отказа чужими глазами форма закрылась (стоит «${cur}»)`);
+              if (!alert.includes('чужими глазами не делается')) bad.push(`${n}: слова сервера об отказе чужими глазами не показаны: ${JSON.stringify(alert)}`);
+            }
+          }
+        }
       }
       await s.ctx.close();
     }
