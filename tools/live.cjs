@@ -40,7 +40,9 @@ function tgStub(inside) {
 const OWNER = {
   member: { tg_user_id: 1, first_name: 'Тест', last_name: '', username: null, photo_url: null,
             pass_code: null, created_at: '2026-10-01T00:00:00+00:00',
-            consent_data_at: '2026-10-18T10:00:00+00:00', consent_filming_at: null },
+            consent_data_at: '2026-10-18T10:00:00+00:00', consent_filming_at: null,
+            // редакции согласий (api 043): у согласия, данного до 043, сервер отдаёт null — как здесь; клиент их не читает
+            consent_data_version: null, consent_filming_version: null },
   membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true },
   // все членства человека (api d0a8c9f, на бою есть; Cafe13KPG#297). Клиент
   // их пока не читает — поле здесь, чтобы заглушка совпадала с боем по форме
@@ -1065,12 +1067,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const MAT = (days, hm) => MDAY(days) + 'T' + (hm || '18:00') + ':00+07:00';
   const mreq = (id, status, extra) => Object.assign({ id, title: 'Проба мастера', about: '', seats: 8, place_id: 1, place_name: 'Зал',
     weekday: 4, weekday_ru: 'четверг', start_local: '18:00', hours: 2, hours_extra: 0, amount: String(PRICE(2)), status,
+    // поля заявки с api#225 (снимок fb13e0f): длительность минутами, занятость, цена входа, съёмка, просьба о донате;
+    // 'event' = поля нет (js/07 r.tea), клиент читает hours — минуты с ним согласны
+    duration_min: 120, occupancy: 'event', price: '0.00', ask_donation: false, filmed: false,
     status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
     created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null, paid_until: null,
     starts_at: MAT(7) }, extra || {});
   // строка `/master/slots` — букинг (у прежних недельных `starts_at` null)
   const mslot = (id, extra) => Object.assign({ request_id: id, title: 'Проба мастера', weekday: 4, weekday_ru: 'четверг', start_local: '18:00',
-    hours: 2, hours_extra: 0, paid_until: null, place_name: 'Зал', first_name: '[мастер]', last_name: '', username: 'm' + id, weeks_on: 1, weeks_off: 0,
+    hours: 2, hours_extra: 0, duration_min: 120, paid_until: null, place_name: 'Зал', first_name: '[мастер]', last_name: '', username: 'm' + id, weeks_on: 1, weeks_off: 0,
     membership_live: true, state: 'published', starts_at: MAT(7) }, extra || {});
   const mbusy = (date, fits, busy, conflict) => ({ place_id: 1, place_name: 'Зал', date, busy: busy || [], starts_at: date + 'T18:00:00+07:00',
     conflict: conflict || null, fits });
@@ -6620,6 +6625,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const EV = over => Object.assign({
     id: 4, title: 'Вечер ханга', starts_at: atBkk(1, 19), duration_min: 90, seats: 12,
     kind: 'paid', price: '400.00', about: 'Живой звук, место у сцены', filmed: false,
+    // занятость (api#225): 'event' — то же, что поля нет (js/09 occ); чайную строку случай ставит сам
+    occupancy: 'event',
     organizer_id: 500, organizer_first_name: 'Образец', organizer_last_name: '',
     taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null,
     // Место есть в КАЖДОЙ строке живого ответа (снимок 23.10.2026), и оба
@@ -6695,7 +6702,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
     const MEMB = clone(OWNER); MEMB.roles = []; MEMB.member.tg_user_id = 77;
     const PROW = (id, title, over) => Object.assign({ id, title, starts_at: atBkk(2, 19), duration_min: 90, seats: 10, kind: 'paid',
-      price: '400.00', place_id: null, organizer_id: 987654, organizer_first_name: 'Работник', organizer_last_name: 'Клуба' }, over);
+      price: '400.00', place_id: null, organizer_id: 987654, organizer_first_name: 'Работник', organizer_last_name: 'Клуба',
+      occupancy: 'event' }, over);
     const DEC = (id, ok, note) => ({ id, approved_at: ok ? '2026-12-02T01:00:00+00:00' : null, approved_by: ok ? 1 : null,
       rejected_at: ok ? null : '2026-12-02T01:00:00+00:00', reject_note: ok ? null : note, approval: ok ? 'approved' : 'rejected' });
     // o.queue() — ответ очереди на каждый GET; o.decide(q) — ответ решения; o.events — строки /events
@@ -13424,12 +13432,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'product-state-review': { id: 81, state: 'review', decided_at: null, decision_note: '' },
     'product-edit': WCEDIT(81, { price: '200.00' }),
     // М.2 (Cafe13KPG#894): заглушки masterApi против снимков master-* (букинг — Cafe13KPG#985)
-    'master-request-201': mreq(901, 'pending'), 'master-price': { hours: 2, hours_included: 2, amount: String(PRICE(2)) },
+    'master-request-201': mreq(901, 'pending'), 'master-price': { hours: 2, hours_included: 2, duration_min: 120, amount: String(PRICE(2)), share: '100' },
     'master-requests-mine-approved': { requests: [mreq(901, 'approved')] },
     'master-slots': { slots: [mslot(901)], masters_without_slot: [] },
     // клиент спрашивает занятость ВСЕГДА со временем — сверка со снимком `-time` (в нём conflict, fits, starts_at);
     // conflict непустой: снимок пишет его объектом, и null здесь сверять было бы не с чем
-    'master-slot-busy-time': mbusy(MDAY(1), false, [{ title: 'Чужой вечер', starts_at: MAT(1, '16:00'), ends_at: MAT(1, '19:30') }],
+    'master-slot-busy-time': mbusy(MDAY(1), false, [{ title: 'Чужой вечер', occupancy: 'event', starts_at: MAT(1, '16:00'), ends_at: MAT(1, '19:30') }],
       { title: 'Чужой вечер', starts_label: MDAY(1).slice(8) + '.' + MDAY(1).slice(5, 7) + ' 16:00', ends_label: '19:30' }),
     // шаг 25 (Cafe13KPG#556): заглушки случаев `vyvod-*` против снимка api 0887c96 (cafe13-api#161)
     'withdraw-request': WD_POSTED(9), 'withdraw-mine': { requests: [WD_REQ(9, 'approved')], balance: '2670.00' },
