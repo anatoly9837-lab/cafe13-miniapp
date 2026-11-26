@@ -1378,7 +1378,6 @@ t.26bd9a4c	Кто просится в клуб	Who is asking to join the club	�
 t.bb05555c	Члены клуба	Club members	สมาชิกคลับ	ကလပ်အဖွဲ့ဝင်များ	js/17-ekrany-upravlenie.js:62	manage	машинный
 t.66ec7eab	Кто в клубе и с какими уровнями	Who is in the club and at what levels	ใครอยู่ในคลับและระดับใด	ကလပ်ထဲ မည်သူ၊ မည်သည့်အဆင့်ဖြင့် ရှိသနည်း	js/17-ekrany-upravlenie.js:63	manage	машинный
 t.f5407e8a	Статистика клуба	Club statistics	สถิติคลับ	ကလပ် စာရင်းအင်း	js/17-ekrany-upravlenie.js:65	manage	машинный
-t.b027bbfb	Заявку в партнёры подаёт член клуба.	A partner request is submitted by a club member.	คำขอเป็นพาร์ทเนอร์ยื่นโดยสมาชิกคลับ	မိတ်ဖက် လျှောက်လွှာကို ကလပ်အဖွဲ့ဝင်က တင်သွင်းသည်။	js/17-ekrany-upravlenie.js:74	partnerApply	машинный
 t.a82721d3	Название бизнеса	Business name	ชื่อธุรกิจ	လုပ်ငန်းအမည်	js/17-ekrany-upravlenie.js:77	partnerApply	машинный
 t.16fb9ff3	Как его назовут гости	What guests will call it	ชื่อที่แขกจะเรียก	ဧည့်သည်များ ခေါ်မည့်အမည်	js/17-ekrany-upravlenie.js:78	partnerApply	машинный
 t.d13ad12f	О бизнесе	About the business	เกี่ยวกับธุรกิจ	လုပ်ငန်းအကြောင်း	js/17-ekrany-upravlenie.js:79	partnerApply	машинный
@@ -1791,3 +1790,27 @@ t.890f04fe	Наведите на код пропуска	Point at the pass code	
 t.92cdcf91	Пропуск прочитан:	Pass read:	อ่านบัตรผ่านแล้ว:	ဝင်ခွင့်ကတ် ဖတ်ပြီး:	js/22-zapusk.js:44		машинный
 t.8d226b84	Отметить вход пока некуда: на сервере для этого ещё нет ручки — код только показан.	There's nowhere to record the entry yet: the server has no endpoint for it yet — the code is only shown.	ยังบันทึกการเข้าไม่ได้: เซิร์ฟเวอร์ยังไม่มี API สำหรับสิ่งนี้ — แสดงรหัสเท่านั้น	ဝင်ရောက်မှုကို မှတ်ရန် နေရာ မရှိသေးပါ- ဆာဗာတွင် ယင်းအတွက် endpoint မရှိသေးပါ — ကုဒ်ကို ပြရုံသာ။	js/22-zapusk.js:45		машинный
 t.2707c683	Купить за	Buy for	ซื้อในราคา	ဝယ်ရန်	js/22-zapusk.js:107		машинный
+masterStats.door	Статистика мастера	Master statistics	สถิติของมาสเตอร์	မာစတာ စာရင်းအင်း	js/00-slova.js:96		машинный
+masterStats.period.clockNote	Ивенты считаются по дню ивента, выплаты — по дню распределения: ивент 30-го, распределённый 2-го, попадёт в разные периоды.	Events count by the event day, payouts by the distribution day: an event on the 30th distributed on the 2nd falls into different periods.	อีเวนต์นับตามวันจัดอีเวนต์ ส่วนการจ่ายนับตามวันแบ่งเงิน: อีเวนต์วันที่ 30 ที่แบ่งเงินวันที่ 2 จะอยู่คนละช่วงเวลา	ပွဲများကို ပွဲကျင်းပသည့်နေ့ဖြင့် ရေတွက်ပြီး ပေးချေမှုများကို ခွဲဝေသည့်နေ့ဖြင့် ရေတွက်သည်- ၃၀ ရက်နေ့ ပွဲကို ၂ ရက်နေ့တွင် ခွဲဝေပါက မတူညီသော ကာလများတွင် ပါဝင်မည်။	js/00-slova.js:106		машинный
+masterStats.events.cashNote	В собранном только безналичные: оплата наличными на кассе сюда не входит.	Collected includes cashless only: cash payments at the till are not included.	ยอดที่เก็บได้รวมเฉพาะการชำระแบบไม่ใช้เงินสด: การจ่ายเงินสดที่แคชเชียร์ไม่รวมอยู่ในนี้	စုဆောင်းရရှိငွေတွင် ငွေသားမဟုတ်သော ပေးချေမှုများသာ ပါဝင်သည်- ငွေကောင်တာတွင် ငွေသားဖြင့် ပေးချေမှု မပါဝင်ပါ။	js/00-slova.js:111		машинный
+masterStats.payouts.title	Выплачено мне	Paid to me	จ่ายให้ฉันแล้ว	ကျွန်ုပ်ထံ ပေးချေပြီး	js/00-slova.js:113		машинный
+masterStats.payouts.amount	Выплачено	Paid out	จ่ายแล้ว	ပေးချေပြီး	js/00-slova.js:114		машинный
+masterStats.payouts.count	Распределений	Distributions	การแบ่งเงิน	ခွဲဝေမှုများ	js/00-slova.js:115		машинный
+masterStats.payouts.none	Выплат в этом периоде не было.	No payouts in this period.	ไม่มีการจ่ายเงินในช่วงเวลานี้	ဤကာလတွင် ပေးချေမှု မရှိခဲ့ပါ။	js/00-slova.js:116		машинный
+masterStats.money.title	Мой счёт	My account	บัญชีของฉัน	ကျွန်ုပ်၏ အကောင့်	js/00-slova.js:117		машинный
+masterStats.money.withdrawable	Можно вывести	Available to withdraw	ถอนได้	ထုတ်ယူနိုင်သည်	js/00-slova.js:119		машинный
+masterStats.money.expected	Ожидается	Expected	ที่คาดว่าจะได้รับ	မျှော်မှန်းထားသည်	js/00-slova.js:120		машинный
+masterStats.money.nowNote	Счёт, вывод и ожидаемое — на сегодня, а не за период.	Account, withdrawal and expected are as of today, not for the period.	บัญชี การถอนเงิน และยอดที่คาดว่าจะได้รับ เป็นยอด ณ วันนี้ ไม่ใช่ของช่วงเวลา	အကောင့်၊ ငွေထုတ်ခြင်းနှင့် မျှော်မှန်းငွေသည် ယနေ့အတွက်ဖြစ်ပြီး ကာလအတွက် မဟုတ်ပါ။	js/00-slova.js:122		машинный
+masterStats.list.title	Ивенты периода	Events in the period	อีเวนต์ในช่วงเวลา	ကာလအတွင်း ပွဲများ	js/00-slova.js:123		машинный
+masterStats.list.row	{date} · Записей: {bookings}	{date} · Bookings: {bookings}	{date} · การจอง: {bookings}	{date} · စာရင်းသွင်းမှု: {bookings}	js/00-slova.js:124		машинный
+masterStats.noData	нет данных	no data	ไม่มีข้อมูล	ဒေတာ မရှိပါ	js/00-slova.js:125		машинный
+masterStats.denyNote	Статистику мастера видит тот, кто ведёт свои ивенты.	Master statistics are visible to those who lead their own events.	สถิติของมาสเตอร์ดูได้เฉพาะผู้ที่จัดอีเวนต์ของตัวเอง	မာစတာ စာရင်းအင်းကို မိမိပွဲများကို ဦးဆောင်သူသာ မြင်နိုင်သည်။	js/00-slova.js:130		машинный
+eventReport.title	Отчёт по ивенту	Event report	รายงานอีเวนต์	ပွဲ အစီရင်ခံစာ	js/00-slova.js:132		машинный
+eventReport.bookings.title	Записи	Bookings	การจอง	စာရင်းသွင်းမှုများ	js/00-slova.js:135		машинный
+eventReport.bookings.noLimit	без предела	no limit	ไม่จำกัด	ကန့်သတ်ချက်မရှိ	js/00-slova.js:138		машинный
+eventReport.money.master	Мастеру	To the master	ให้มาสเตอร์	မာစတာထံ	js/00-slova.js:141		машинный
+eventReport.money.club	Клубу	To the club	ให้คลับ	ကလပ်ထံ	js/00-slova.js:142		машинный
+eventReport.money.cashNote	Только безналичные: оплата наличными на кассе сюда не входит.	Cashless only: cash payments at the till are not included.	เฉพาะการชำระแบบไม่ใช้เงินสด: การจ่ายเงินสดที่แคชเชียร์ไม่รวมอยู่ในนี้	ငွေသားမဟုတ်သော ပေးချေမှုများသာ- ငွေကောင်တာတွင် ငွေသားဖြင့် ပေးချေမှု မပါဝင်ပါ။	js/00-slova.js:143		машинный
+eventReport.money.notYet	Ещё не распределено — доли появятся после распределения.	Not distributed yet — shares will appear after distribution.	ยังไม่ได้แบ่งเงิน — ส่วนแบ่งจะปรากฏหลังการแบ่งเงิน	မခွဲဝေရသေးပါ — ခွဲဝေပြီးနောက် ဝေစုများ ပေါ်လာမည်။	js/00-slova.js:144		машинный
+eventReport.slot	Плата за слот	Slot fee	ค่าสล็อต	အချိန်အပိုင်း ကြေး	js/00-slova.js:145		машинный
+eventReport.error	Отчёт не загрузился.	The report did not load.	โหลดรายงานไม่สำเร็จ	အစီရင်ခံစာ ဖွင့်၍မရပါ။	js/00-slova.js:147		машинный
