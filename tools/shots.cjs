@@ -244,14 +244,18 @@ const LIVE_SHOTS = [
    '«Клуб» члена со СВОИМ ждущим букингом (семья master, рецепт `_docs/recept/ekran/master/home.md`, строки H1–H2) и входом ' +
    '«Забукать». ⚠ Снимок ЖИВОГО режима на фикстуре; форма ответов — по снимкам api `master-requests-mine-pending` и ' +
    '`master-price` (страж формы съёмки), числа и названия — фикстура. Признак — «Ваши букинги»: заголовок рисуется только ' +
-   'по пришедшему непустому списку. Ручки партнёрства фикстуры не имеют (404) — их блок на снимке в виде отказа.',
+   'по пришедшему непустому списку. Ручки партнёрства фикстуры не имеют (404) — их блок на снимке в виде отказа. ' +
+   'Своя карточка чайного мастера — «карточки нет» (`GET /tea/card/mine`, status none).',
    [],
    { '/master/requests/mine': { requests: [{ id: 821, title: 'Ждущий вечер', about: '', seats: 8, place_id: 1, place_name: 'Зал',
        weekday: 4, weekday_ru: 'четверг', start_local: '19:00', hours: 2, hours_extra: 0, duration_min: 120, amount: '100',
        occupancy: 'event', price: '0.00', ask_donation: false, filmed: false, status: 'pending',
        status_ru: 'ждёт решения', created_at: '2026-10-27T03:00:00+00:00', decided_at: null, decision_note: '',
        paid_till: null, paid_until: null, starts_at: '2026-10-30T12:00:00+00:00' }] },
-     '/master/price': { amount: '100', hours: 2, hours_included: 2, duration_min: 120, share: '100' } }],
+     '/master/price': { amount: '100', hours: 2, hours_included: 2, duration_min: 120, share: '100' },
+     // своя карточка чайного мастера: «карточки нет» (status none), как у живого мастера без подачи. Без этой строки ручка
+     // отвечает 404 и «Клуб» рисует плашку «Карточка не загрузилась», которой в бою нет (js/22:123–130; форма — chay-svoya.cjs:63)
+     '/tea/card/mine': { status: 'none', note: '', card: null, live: null } }],
   ['68-no-access', 'noAccess', null, 'Ваш доступ в приложение снят', 'Служебное',
    'Нет доступа: выгнанный просит главу клуба вернуть его (фича 8, рецепт `_docs/recept/ekran/popolnenie/noAccess.md`, J1–J2) — без денег, суммы, чека и кассы. ' +
    '⚠ Снимок ЖИВОГО режима на фикстуре: вид рисуется только по ответу `GET /join`; форма — по снимку api `join-info-none` (страж формы съёмки), ' +
