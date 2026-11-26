@@ -12152,7 +12152,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // облик формы — по стандарту eventNew (ревью designer-55, 23.10.2026)
       const f = await s.p.evaluate(() => {
         const top = id => { const l = document.querySelector(`label[for="${id}"]`); return l ? l.getBoundingClientRect().top : null; };
-        const save = document.querySelector('#view [data-action="c-save"]');
+        const save = document.querySelector('#view [data-action="c-create"]');
         const warn = [...document.querySelectorAll('#view .small')].find(x => x.textContent.startsWith('Пока карточка в работе, поля можно исправить.'));
         return {
           ph: [...document.querySelectorAll('#view input[placeholder]')].map(x => x.placeholder).filter(x => !x.startsWith('Например: ')),
@@ -12168,12 +12168,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await put(s, '#c-title', 'Флэт-уайт', 'cards'); await put(s, '#c-group', ' кофе ', 'cards'); await put(s, '#c-price', '180', 'cards');
       if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) bad.push('cards-create: у формы нет главной кнопки');
       await s.p.evaluate(() => window.__main && window.__main());
-      await s.p.waitForTimeout(400);
+      await s.p.waitForTimeout(200);
+      // шаг 44: главная формы — «Создать», запроса нет: открыт предпросмотр; карточку рождает «Создать выключенной»
+      if (cposts(s, /\/bar\/products$/).length) bad.push('cards-create: «Создать» ушло на сервер до предпросмотра');
+      if (!(await s.view()).includes('Так карточку увидит гость.')) bad.push('cards-create: «Создать» не открыло предпросмотр');
+      await click(s, 'c-off'); await s.p.waitForTimeout(400);
       const pp = cposts(s, /\/bar\/products$/);
       const want = { direction_id: 7, group: 'Кофе', title: 'Флэт-уайт', price: 180, about: '', is_alcohol: false };
       if (pp.length !== 1 || pp[0].body !== JSON.stringify(want)) bad.push('cards-create: ушло ' + JSON.stringify(pp.map(c => c.body)));
       const t = await s.view();
-      if (!t.includes('Черновик сохранён') || !t.includes('Флэт-уайт')) bad.push('cards-create: после сохранения не открылась карточка с заметкой');
+      if (!t.includes('Карточка создана выключенной: в меню её нет.') || !t.includes('Флэт-уайт')) bad.push('cards-create: после «Создать выключенной» не открылась карточка с заметкой');
       await s.ctx.close();
     }
     // похожая группа (пробел внутри) — вопрос, без запроса; «да» — в существующую
@@ -12181,10 +12185,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const s = await cardsCase(WORKER, {});
       await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
       await put(s, '#c-title', 'Раф', 'cards'); await put(s, '#c-group', 'Ко фе', 'cards'); await put(s, '#c-price', '200', 'cards');
-      await click(s, 'c-save'); await s.p.waitForTimeout(150);
+      await click(s, 'c-create'); await s.p.waitForTimeout(150);
       if (!(await s.view()).includes('Это та же группа, что «Кофе»?')) bad.push('cards-group-like: нет вопроса о похожей группе');
       if (cposts(s, /\/bar\/products$/).length) bad.push('cards-group-like: карточка ушла до ответа');
-      await click(s, 'c-group-theirs'); await s.p.waitForTimeout(300);
+      // шаг 44: ответ «да» ведёт на предпросмотр уже со сведённой группой; рождает карточку «Создать выключенной»
+      await click(s, 'c-group-theirs'); await s.p.waitForTimeout(200);
+      if (cposts(s, /\/bar\/products$/).length) bad.push('cards-group-like: ответ о группе ушёл на сервер до предпросмотра');
+      await click(s, 'c-off'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products$/);
       if (pp.length !== 1 || JSON.parse(pp[0].body).group !== 'Кофе') bad.push('cards-group-like: ушло ' + JSON.stringify(pp.map(c => c.body)));
       await s.ctx.close();
@@ -12194,7 +12201,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const s = await cardsCase(WORKER, {});
       await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
       await put(s, '#c-title', 'Глинтвейн', 'cards-group-long'); await put(s, '#c-group', 'Авторскиенапитки сезона  и тёплые настойки дома', 'cards-group-long'); await put(s, '#c-price', '250', 'cards-group-long');
-      await click(s, 'c-save'); await s.p.waitForTimeout(150);
+      await click(s, 'c-create'); await s.p.waitForTimeout(150);
       if (!(await s.view()).includes('Это та же группа, что «Авторские напитки сезона и тёплые настойки дома»?')) bad.push('cards-group-long: нет вопроса о похожей группе');
       const w = await s.p.evaluate(() => ({ doc: document.documentElement.scrollWidth,
         right: Math.max(...[...document.querySelectorAll('[data-action="c-group-theirs"],[data-action="c-group-mine"]')].map(e => e.getBoundingClientRect().right)) }));
@@ -12210,7 +12217,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const s = await cardsCase(WORKER, { create: json(409, { detail: 'такая позиция уже есть' }) });
       await toCards(s); await click(s, 'c-new'); await s.p.waitForTimeout(150);
       await put(s, '#c-title', 'Раф', 'cards-deny-stale'); await put(s, '#c-group', 'Кофе', 'cards-deny-stale'); await put(s, '#c-price', '200', 'cards-deny-stale');
-      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(300);
+      // шаг 44: форма → предпросмотр → «Создать выключенной» (отказ 409 на предпросмотре) → «Изменить» на форму
+      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(200);
+      await click(s, 'c-off'); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes('Такая позиция уже есть.')) bad.push('cards-deny-stale: отказ сервера не на предпросмотре');
+      await click(s, 'c-fix'); await s.p.waitForTimeout(150);
       await put(s, '#c-title', '', 'cards-deny-stale');
       await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(200);
       const all = await s.p.$$eval('.deny', l => l.map(e => e.textContent));
@@ -12228,7 +12239,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await click(s, 'c-alcohol'); await s.p.waitForTimeout(100);
       if (!(await s.p.$('[data-action="c-alcohol"][aria-pressed="true"] .pill.on'))) bad.push('cards-form-deny: «Алкоголь» не показывает «да»');
       await put(s, '#c-title', 'Глинтвейн', 'cards-form-deny'); await put(s, '#c-group', 'Кофе', 'cards-form-deny'); await put(s, '#c-price', '250', 'cards-form-deny');
-      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => window.__main && window.__main()); await s.p.waitForTimeout(200);
+      await click(s, 'c-off'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products$/);
       if (pp.length !== 1 || JSON.parse(pp[0].body).is_alcohol !== true) bad.push('cards-form-deny: «Алкоголь» не ушёл в теле: ' + JSON.stringify(pp.map(c => c.body)));
       await s.ctx.close();
@@ -12810,7 +12822,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (t.includes('Направление «Бар»') || t.includes('«Бар»')) bad.push(`${n}: на экране работника литерал «Бар»`);
         if (await tapIf(s, n, '#view [data-action="c-new"]', '«Новая карточка»')) {
           await s.p.fill('#c-title', 'Бриошь'); await s.p.fill('#c-group', 'Выпечка'); await s.p.fill('#c-price', '150');
-          if (await tapIf(s, n, '#view [data-action="c-save"]', '«Сохранить черновик»')) {
+          if (await tapIf(s, n, '#view [data-action="c-create"]', '«Создать»') &&
+              await tapIf(s, n, '#view [data-action="c-off"]', '«Создать выключенной»')) {
             await s.p.waitForTimeout(400);
             const c = o.bodies.filter(b => b[0] === 'create');
             if (c.length !== 1 || c[0][2].direction_id !== 9) bad.push(`${n}: черновик заведён не в бизнес роли: ${JSON.stringify(c)}`);
@@ -13067,11 +13080,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (!t.includes('Поля сохранённого черновика правит тот, кто ведёт карточки бизнеса, — проверьте их до сохранения. Рецепт замените в любой момент.')) bad.push(`${n}: нет подписи о пределе правки`);
         if (t.includes('поля можно исправить')) bad.push(`${n}: партнёру обещана правка полей`);
         await s.p.fill('#c-title', 'Флэт уайт'); await s.p.fill('#c-group', 'Кофе'); await s.p.fill('#c-price', '140');
-        if (await tapIf(s, n, '#view [data-action="c-save"]', '«Сохранить черновик»')) {
+        if (await tapIf(s, n, '#view [data-action="c-create"]', '«Создать»') &&
+            await tapIf(s, n, '#view [data-action="c-off"]', '«Создать выключенной»')) {
           await s.p.waitForTimeout(400);
           const c = o.bodies.filter(b => b[0] === 'create');
           if (c.length !== 1 || c[0][2].direction_id !== 7) bad.push(`${n}: черновик не в своё направление 7: ${JSON.stringify(c)}`);
-          if (!(await s.view()).includes('Черновик сохранён. Теперь рецепт — без него карточку не поставить в меню.')) bad.push(`${n}: нет «Черновик сохранён…»`);
+          if (!(await s.view()).includes('Карточка создана выключенной: в меню её нет.')) bad.push(`${n}: нет «Карточка создана выключенной…»`);
         }
       }
       await done(s, n);
