@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v219 · 0.2 «Путь бизнеса» · 26.11.2026';
+var VERSION = 'v220 · 0.2 «Путь бизнеса» · 26.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -226,13 +226,19 @@ var FAIL_NET = false;      // сервер не ответил вовсе — т
 
 function api(method, path, body) {
   var ctl = typeof AbortController === 'function' ? new AbortController() : null;
-  var timer = ctl ? setTimeout(function () { ctl.abort(); }, 10000) : null;
+  // Шаг 44: тело — САМ ФАЙЛ (Blob) у `POST /photos` (api 4c0aae0, routers/photos.py): без JSON, тип — тип файла.
+  // Срок длиннее: сервер держит снимок в очереди на сжатие до 30 с и только потом отвечает 503 photo_busy.
+  var raw = typeof Blob === 'function' && body instanceof Blob;
+  var timer = ctl ? setTimeout(function () { ctl.abort(); }, raw ? 45000 : 10000) : null;
   var opt = { method: method, headers: { 'X-Telegram-Init-Data': tg.initData } };
   // Тестовый режим — на КАЖДОМ запросе, иначе часть экрана придёт из боевой базы.
   if (TEST.on) opt.headers['X-Test-Mode'] = '1';
   if (TEST.on && TEST.as) opt.headers['X-Act-As'] = String(TEST.as.id);
   if (ctl) opt.signal = ctl.signal;
-  if (body !== undefined) {
+  if (raw) {
+    opt.headers['Content-Type'] = body.type || 'application/octet-stream';
+    opt.body = body;
+  } else if (body !== undefined) {
     opt.headers['Content-Type'] = 'application/json';
     opt.body = JSON.stringify(body);
   }

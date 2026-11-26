@@ -892,6 +892,8 @@ body.has-main .dup-main { display: none; }
    квадрат --surface. */
 .album { display: flex; flex-direction: column; gap: 8px; }
 .album-thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* шаг 44: два кадра события — рядом равными половинами, крупного нет (foto/sostav.md); у карточки мастера не стоит */
+.album.album-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .album-frame { position: relative; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden; background: var(--surface); }
 .album-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .album-cap { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 8px; flex-wrap: wrap; }

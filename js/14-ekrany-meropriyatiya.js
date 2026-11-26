@@ -164,6 +164,8 @@ Object.assign(SCREENS, {
 
       '<div class="field"><label for="f-about">Описание</label>' +
         '<input id="f-about" type="text" value="' + keep('f-about') + '" placeholder="Что будет и что взять с собой"></div>' +
+      // шаг 44 (foto/eventNew.md): блок «Фото» после описания; снимок не обязателен (Ф1)
+      fotoBlock('eventNew', slovo('foto.add')) +
 
       '<button type="button" class="listitem" data-toggle="filmed" aria-pressed="' + FORM.filmed + '">' +
         svg(ICON.cam, 'chev') +
@@ -176,6 +178,7 @@ Object.assign(SCREENS, {
 
       (EVN_BUSY
         ? '<div class="card quiet"><span class="small">Отправляем…</span></div>'
+        : fotoBusy('eventNew') ? fotoWaitBtn()
         : '<button type="button" class="btn dup-main" data-action="create-event">Опубликовать в афише</button>') +
       // Единственное место, где человек ещё может перечитать поля: правок у
       // мероприятия не существует, исправляют снятием.
@@ -213,6 +216,8 @@ Object.assign(SCREENS, {
     // у демо-афиши длительности нет полем — она считается из «с»–«до»
     var mins = typeof e.mins === 'number' ? e.mins : hmMin(e.until) - hmMin(e.time);
     var h = Math.round(mins / 60 * 10) / 10;
+    // шаг 44 (foto/eventEdit.md): набор снимков формы — с события; согласованное — заморожено (№82 «а»), F6 вместо кнопок
+    fotoOf('eventEdit', e.eid, e.photos);
     return '<div class="card quiet"><div class="col"><b>' + esc(e.title) + '</b>' +
         '<span class="small">' + esc(e.day + ' · ' + e.time + (h > 0 ? ' · ' + msHoursText(h) : '') + (e.place ? ' · ' + e.place : '')) + '</span>' +
         '<span class="small">Название, время, длительность и место мероприятия здесь не меняются.</span></div></div>' +
@@ -220,6 +225,7 @@ Object.assign(SCREENS, {
         '<span class="small">0 — без ограничения</span></div>' +
       '<div class="field"><label for="edt-about">Коротко для афиши</label><textarea id="edt-about" maxlength="2000">' + esc(EDT.about) + '</textarea>' +
         '<span class="small">До 2000 знаков</span></div>' +
+      fotoBlock('eventEdit', slovo('foto.add'), e.approval === 'approved' ? slovo('foto.frozen') : '') +
       // E67: цена входа; при живых записях — погашена, причина словами сервера (409 правки)
       '<div class="field"><label for="edt-price">Цена входа, ฿</label><input id="edt-price" inputmode="decimal" value="' + esc(EDT.price) + '"' +
         (takenOf(e) > 0 ? ' disabled aria-disabled="true" aria-describedby="edt-price-why"' : '') + '>' +
@@ -232,8 +238,8 @@ Object.assign(SCREENS, {
         '<span class="pill' + (EDT.ask ? ' on' : '') + '">' + (EDT.ask ? 'включено' : 'выключено') + '</span></button>' : '') +
       (EDT.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(EDT.err) + '</span></div>'
         : '<div class="note">' + svg(ICON.info) + '<span>Правка только на эту неделю. Следующие недели придут такими, как в заявке.</span></div>') +
-      '<button type="button" class="btn" data-action="edt-save"' + (EDT.busy ? ' disabled' : '') + '>' +
-        (EDT.busy ? 'Сохраняем…' : 'Сохранить на ' + esc(when)) + '</button>';
+      (fotoBusy('eventEdit') && !EDT.busy ? fotoWaitBtn() : '<button type="button" class="btn" data-action="edt-save"' + (EDT.busy ? ' disabled' : '') + '>' +
+        (EDT.busy ? 'Сохраняем…' : 'Сохранить на ' + esc(when)) + '</button>');
   },
 
   eventManage: function (id) {
