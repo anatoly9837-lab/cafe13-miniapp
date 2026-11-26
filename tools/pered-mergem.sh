@@ -562,7 +562,7 @@ SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py 
 SP_V_SHAGE_5='check-stages.py'
 SP_ZHDUT_GIT=''
 not_done18=''
-sp_t0=$(date +%s%N)
+sp_t0=$(date +%s%3N)
 sp_nashli=$(cd "$T/tools" && grep -lF -- '--самопроверка' *.py *.cjs 2>/dev/null | sort)
 sp_zhdali=$(printf '%s\n' $SP_PRIBORY $SP_V_SHAGE_5 $SP_ZHDUT_GIT | sort)
 if [ "$sp_nashli" != "$sp_zhdali" ]; then
@@ -591,7 +591,7 @@ for p in $SP_PRIBORY; do
            [ "$rc_total" -eq 0 ] && rc_total=2;;
     esac
 done
-echo "шаг 18: прогнано $(echo $SP_PRIBORY | wc -w), $SP_V_SHAGE_5 — в шаге 5, не гонял $(echo $SP_ZHDUT_GIT | wc -w); $(( ($(date +%s%N) - sp_t0) / 1000000 )) мс"
+echo "шаг 18: прогнано $(echo $SP_PRIBORY | wc -w), $SP_V_SHAGE_5 — в шаге 5, не гонял $(echo $SP_ZHDUT_GIT | wc -w); $(( $(date +%s%3N) - sp_t0 )) мс"
 
 # ── приговор ────────────────────────────────────────────────────────────────
 [ "$reports_dead" -gt 0 ] && mark "отчётов НЕ ВЫПОЛНЕНО: $reports_dead"
