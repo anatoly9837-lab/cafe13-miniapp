@@ -15026,7 +15026,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const s = await open(true, true, json(200, who(CUR2)), null, null, null, q => {
           if (!q.url().endsWith('/directions')) return base(q);
           d++;
-          if (k === 'home') return d === 1 ? later(900, base(q)) : base(q);
+          // вход на «Клуб» спрашивает список не один раз — опаздывают ВСЕ ответы, иначе быстрый второй рисует строки сам
+          if (k === 'home') return later(900, base(q));
           return d === 1 ? 'abort' : d === 3 ? later(900, base(q)) : base(q);
         });
         await s.p.waitForTimeout(300);
