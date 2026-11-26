@@ -70,8 +70,7 @@ Object.assign(SCREENS, {
   // ── шаг 13 (Cafe13KPG#889): рецепт `_docs/recept/ekran/13-zayavka-v-partnyory.md` (cafe13-miniapp#257) ──
   // R2: форма. Цена и остаток — до нажатия; «спишется» — число сервера, своей арифметики нет
   partnerApply: function () {
-    if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
-      '<span class="small">Заявку в партнёры подаёт член клуба.</span></div></div>';
+    // фича 7 (№49 «а», рецепт 13/partnerApply): гость получает ту же форму, что член; без денег — 409 сервера
     var p = PR.price, bal = msBalance();
     var err = PR.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(PR.err) + '</span></div>' : '';
     return '<div class="field"><label for="pr-title">Название бизнеса</label><input id="pr-title" value="' + esc(PR.title) + '">' +
