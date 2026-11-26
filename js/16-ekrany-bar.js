@@ -48,6 +48,46 @@ function mineFail() {
     '<button type="button" class="btn" data-action="retry-mine">Повторить</button></div>';
 }
 
+/* Шаг 44 · предпросмотр заводимой карточки (рецепт `_docs/recept/ekran/44/barCard.md`, `V1`–`V10`). Вид гостя — те же
+   классы и тот же tile(), что у строки меню (barRow) и открытой позиции (drink), но БЕЗ их действий: «Купить» и
+   «в заказ» у позиции, которой ещё нет, заказали бы несуществующее. Позиция живого меню без снимка рисуется «без фото» —
+   так её и увидит гость: снимков у товара на сервере нет. */
+function cardPreviewHtml(deny, lock) {
+  if (cardMissing()) return '<div class="card quiet"><span class="small">' + esc(slovo('barCard.preview.empty')) + '</span></div>' +
+    '<button type="button" class="btn ghost" data-action="c-fix">' + esc(slovo('barCard.preview.toForm')) + '</button>';
+  var v = CARD.v, mins = String(v['c-mins'] || '').trim();
+  var d = { id: '0', title: v['c-title'].trim(), about: (v['c-about'] || '').trim(), price: Number(String(v['c-price']).replace(',', '.')),
+            mins: mins, photo: false, shot: 'none' };
+  var po = cardPartnerOnly(), has = cardRecipeLangs().length > 0;
+  var busy = function (k, word) { return CARD.busy && CARD.press === k ? slovo('barCard.preview.busy') : word; };
+  var main = po ? slovo('barCard.preview.add') : slovo('barCard.preview.review');
+  // в демонстрации «в меню» и «выключенной» отвечают плашкой «Это демонстрация» (DEMO_SENDS, js/21): без неё нажатие
+  // ничего не меняет на экране — немая кнопка (Cafe13KPG#338, ворота #496 a0b6fe5, шаг 1 demo-press)
+  return (!LIVE && FLASH ? flash() : '') +
+    '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('barCard.preview.note')) + '</span></div>' +
+    '<div class="group"><span class="label">' + esc(slovo('barCard.preview.row')) + '</span>' +
+      '<span class="label">' + esc(v['c-group']) + '</span>' +
+      '<div class="card"><div class="row top"><span class="plain drinkbtn">' + tile(d) +
+        '<span class="col"><b class="clamp2">' + esc(d.title) + '</b>' +
+          '<span class="small clamp1">' + esc(d.about) + '</span>' +
+          '<b class="num">' + money(d.price) + ' ฿</b></span></span></div></div>' +
+    '</div>' +
+    '<div class="group"><span class="label">' + esc(slovo('barCard.preview.open')) + '</span>' + tile(d, true) +
+      '<h1 class="clamp2">' + esc(d.title) + '</h1>' + (d.about ? '<p>' + esc(d.about) + '</p>' : '') +
+      '<div class="rows">' +
+        '<div><span class="small">' + esc(slovo('barCard.preview.price')) + '</span><b class="num">' + money(d.price) + ' ฿</b></div>' +
+        (mins ? '<div><span class="small">' + esc(slovo('barCard.preview.mins')) + '</span><b class="num">' + esc(mins) + ' мин</b></div>' : '') +
+      '</div>' +
+    '</div>' +
+    deny +
+    // №100 «а»: без рецепта «в меню» гаснет — запрет верный, вес нет (как «Утвердить — в меню» без рецепта)
+    (has ? '' : '<span class="small">' + esc(slovo('barCard.preview.needRecipe')) + '</span>') +
+    '<button type="button" class="btn' + (has ? ' dup-main" data-action="c-add"' + lock : ' ghost" disabled') + '>' + esc(busy('add', main)) + '</button>' +
+    '<button type="button" class="btn quiet" data-action="c-off"' + lock + '>' + esc(busy('off', slovo('barCard.preview.off'))) + '</button>' +
+    '<span class="small">' + esc(slovo('barCard.preview.unseen')) + '</span>' +
+    '<button type="button" class="btn ghost" data-action="c-fix"' + lock + '>' + esc(slovo('barCard.preview.fix')) + '</button>';
+}
+
 Object.assign(SCREENS, {
 
   /* ── бар ───────────────────────────────────────────────
@@ -649,6 +689,14 @@ Object.assign(SCREENS, {
         '<button type="button" class="listitem" data-action="c-alcohol" aria-pressed="' + CARD.alcohol + '"' + lock + '>' +
           '<span class="grow"><b>Алкоголь</b><span class="small">Отметьте, если в составе есть алкоголь</span></span>' +
           '<span class="pill' + (CARD.alcohol ? ' on' : '') + '">' + (CARD.alcohol ? 'да' : 'нет') + '</span></button>' +
+        // шаг 44: рецепт — в форме заведения, ВСЕ три языка полями подряд (рецепт 44/barCard `F2`–`F4`); у правки черновика
+        // его нет — там рецепт ведётся на самой карточке, как прежде
+        (act === 'c-create' ? '<span class="label">' + esc(slovo('barCard.new.recipe')) + '</span>' +
+          CARD_LANGS.map(function (l) {
+            return '<div class="field"><label for="c-rec-' + l[0] + '">' + esc(slovo('barCard.new.recipeLang', { lang: l[1] })) + '</label>' +
+              '<textarea id="c-rec-' + l[0] + '" rows="4"' + lock + '>' + esc(CARD.text[l[0]] || '') + '</textarea></div>';
+          }).join('') +
+          '<span class="small">' + esc(slovo('barCard.new.recipeNote')) + '</span>' : '') +
         (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
         deny +
         '<button type="button" class="btn dup-main" data-action="' + act + '"' + lock + '>' + (CARD.busy ? 'Сохраняем…' : word) + '</button>' +
@@ -657,7 +705,8 @@ Object.assign(SCREENS, {
           : '<span class="small">Пока карточка в работе, поля можно исправить. Утверждённую не правит никто — с меню её снимает тот, кто утверждает карточки бизнеса.</span>') +
       '</div>';
     };
-    if (id === 'new') return form('c-save', 'Сохранить черновик');
+    if (id === 'new') return form('c-create', slovo('barCard.new.create'));
+    if (id === 'preview') return cardPreviewHtml(deny, lock);
     if (CARDS.lost) return '<div class="card quiet"><span class="small">Бизнес не нашёлся: роль работника есть, направления по ней нет.</span></div>';
     if (!CARDS.list) return CARDS.fail ? '<div class="card quiet"><span class="verbatim">' + esc(CARDS.fail) + '</span></div>'
                                        : '<div class="card quiet"><span class="small">Загружаем карточку…</span></div>';

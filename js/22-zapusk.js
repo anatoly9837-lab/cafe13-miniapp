@@ -93,7 +93,12 @@ function mainFor() {
   // осталась зелёной — проверка была недостижимой. Что DATA.grants присваивается
   // в одном месте, сторожит tools/live.cjs до первого случая.
   if (current === 'barCards' && LIVE && CARDS.list) return { text: 'Новая карточка', a: 'c-new' };
-  if (current === 'barCard' && param === 'new' && !CARD.busy) return { text: 'Сохранить черновик', a: 'c-save' };
+  // шаг 44: на форме — «Создать» (переход без запроса); на предпросмотре — его главная, и только когда она горит:
+  // без рецепта она погашена (№100 «а»), а кнопка Telegram, молчащая по нажатию, неотличима от зависшей
+  if (current === 'barCard' && param === 'new' && !CARD.busy) return { text: slovo('barCard.new.create'), a: 'c-create' };
+  if (current === 'barCard' && param === 'preview')
+    return CARD.busy || cardMissing() || !cardRecipeLangs().length ? null
+         : { text: cardPartnerOnly() ? slovo('barCard.preview.add') : slovo('barCard.preview.review'), a: 'c-add' };
   // форма правки черновика (шаг 15) — то же условие, при котором экран её рисует
   if (current === 'barCard' && CARD.edit && String(CARD.edit) === String(param) && !CARD.busy && (cardBy(param) || {}).state === 'draft')
     return { text: 'Сохранить изменения', a: 'c-edit-save:' + CARD.edit };

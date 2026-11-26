@@ -352,7 +352,33 @@ var SLOVA = {
     'foto.tooBig': 'Снимок больше 8 МБ — выберите поменьше.',
     'foto.notImage': 'Это не фото — выберите снимок.',
     'foto.wait': 'Загружаем фото…',
-    'foto.frozen': 'Фото согласованы вместе с событием — заменить их нельзя.'
+    'foto.frozen': 'Фото согласованы вместе с событием — заменить их нельзя.',
+    // шаг 44, заведение карточки товара одной формой и предпросмотром — рецепт `_docs/recept/ekran/44/barCard.md`
+    // (слова рецепта; «Создать выключенной» — слово владельца 26.11)
+    'barCard.new.recipe': 'Рецепт',
+    'barCard.new.recipeLang': 'Рецепт · {lang}',
+    'barCard.new.recipeNote': 'Рецепт видит только бар, гость — нет. Без рецепта карточку можно создать выключенной, но не поставить в меню.',
+    'barCard.new.create': 'Создать',
+    'barCard.preview.note': 'Так карточку увидит гость. В меню она появится, когда её поставят.',
+    'barCard.preview.row': 'В списке меню',
+    'barCard.preview.open': 'Если открыть позицию',
+    'barCard.preview.price': 'Цена',
+    'barCard.preview.mins': 'Готовится',
+    'barCard.preview.add': 'Добавить в меню',
+    'barCard.preview.review': 'Отправить на утверждение',
+    'barCard.preview.needRecipe': 'Сначала рецепт — без него позиция не попадёт в меню.',
+    'barCard.preview.off': 'Создать выключенной',
+    'barCard.preview.unseen': 'Выключенная карточка гостю не видна и ждёт в черновиках.',
+    'barCard.preview.fix': 'Изменить',
+    'barCard.preview.busy': 'Сохраняем…',
+    'barCard.preview.empty': 'Карточка не заполнена.',
+    'barCard.preview.toForm': 'К форме',
+    'barCard.done.active': 'Карточка в меню: гость её уже видит.',
+    'barCard.done.review': 'Карточка создана и отправлена на утверждение.',
+    'barCard.done.off': 'Карточка создана выключенной: в меню её нет.',
+    'barCard.part.recipe': 'Карточка создана выключенной, но рецепт {lang} не сохранился — он остался в поле.',
+    'barCard.part.review': 'Карточка создана выключенной, но на утверждение не ушла.',
+    'barCard.part.active': 'Карточка создана выключенной, но в меню не поставлена.'
   }
 };
 function slovo(key, vars) {

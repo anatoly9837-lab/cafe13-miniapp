@@ -343,7 +343,9 @@ var BACK = {
   tillPerson: 'staff', tillMembership: 'tillPerson', tillTopup: 'tillPerson', tillDay: 'staff',
   // homeOf() работника без членства — 'guest', экран услуг: из карточек он уезжал бы
   // туда, а не в «Заказы», откуда вошёл (Cafe13KPG#403)
-  barCards: function () { return CARDS.from || homeOf(); }, barCard: 'barCards',
+  barCards: function () { return CARDS.from || homeOf(); },
+  // шаг 44: с предпросмотра «назад» — на форму той же карточки, а не в список
+  barCard: function () { return String(param) === 'preview' ? { s: 'barCard', p: 'new' } : 'barCards'; },
   serviceNew: 'partner', consentFull: 'consent',
   // тетрадь клуба открыта с экрана просьбы — туда и возврат (решение владельца 28.10, Cafe13KPG#324 v74)
   joinAbout: 'noAccess',
@@ -556,7 +558,7 @@ function demoWork(screen, p) {
 /* Отправки и перечитывания рабочих экранов. В демонстрации они не уходят:
    сервера нет, а «ничего не случилось» на нажатие — дефект, уже бывший у нас
    (Cafe13KPG#338). Поэтому нажатие отвечает словами, что это демонстрация. */
-var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-save', 'c-edit-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
+var DEMO_SENDS = ['p-give', 'p-ask', 'p-back', 'p-lvrevoke', 'p-outyes', 'p-reload', 'c-add', 'c-off', 'c-edit-save', 'c-group-theirs', 'c-group-mine', 'c-recipe',
                   'c-review', 'c-approve', 'c-hide', 'c-back-send', 'c-reload', 'b-send', 'book-retry',
                   'tp-send', 'tp-reload', 'td-cancel', 'td-reload', 'bw-send', 'bw-revoke'];
 
@@ -687,10 +689,19 @@ function go(screen, p) {
   }
   if (screen === 'home' && current !== 'home' && cardPartnerDir()) loadPartnerCards();
   if (screen === 'barCards' && current !== 'barCards' && mayCards()) loadCards();
-  if (screen === 'barCard' && (current !== 'barCard' || String(param) !== String(p))) {
-    // заметка «черновик сохранён» переживает переход с формы на саму карточку
-    var keepNote = current === 'barCard' ? CARD.note : '';
-    cardReset(); CARD.note = keepNote;
+  // шаг 44: форма и предпросмотр — одна заводимая карточка: переход между ними (вперёд, «назад», «Изменить») набранное не стирает
+  var cardPair = function (x) { return String(x) === 'new' || String(x) === 'preview'; };
+  if (screen === 'barCard' && (current !== 'barCard' || String(param) !== String(p)) &&
+      !(current === 'barCard' && cardPair(param) && cardPair(p))) {
+    // с предпросмотра на рождённую карточку переживают заметка, отказ и несохранённые рецепты (cardCreate, carry);
+    // с карточки на карточку — одна заметка, как прежде
+    // carry переживает и уход в список во время цепочки: рождённая карточка открывается со своим итогом откуда угодно
+    var keep = CARD.carry || (current === 'barCard' ? { note: CARD.note } : null);
+    cardReset();
+    if (keep) {
+      CARD.note = keep.note || ''; CARD.deny = keep.deny || '';
+      if (keep.text) { CARD.text = keep.text; CARD.body = keep.body || {}; CARD.lang = keep.lang || 'ru'; }
+    }
   }
   current = screen;
   param = p || null;
@@ -804,7 +815,8 @@ function doAction(a) {
   if (/^tc-/.test(a) && tqAction(a, arg)) return;
   // шаг 44: префикс `foto-` — кадры блока «Фото» форм события (fotoAction в js/09)
   if (/^foto-/.test(a)) { fotoAction(a, arg); return; }
-  if (!LIVE && DEMO_SENDS.indexOf(a) !== -1) {
+  // шаг 44: ответ «та же группа?» в форме ЗАВЕДЕНИЯ ничего не шлёт — ведёт на предпросмотр; шлёт он только у правки черновика
+  if (!LIVE && DEMO_SENDS.indexOf(a) !== -1 && !(/^c-group-(theirs|mine)$/.test(a) && !CARD.edit)) {
     if (a.slice(0, 2) === 'c-') grabCard();     // набранное в карточке не теряется
     FLASH = { text: 'Это демонстрация', note: 'В Telegram это ушло бы на сервер клуба. Здесь ничего не отправлено и не записано.' };
     haptic('warn'); render(); return;
@@ -915,12 +927,16 @@ function doAction(a) {
       if (a === 'c-reload') { loadCards(); render(); return; }
       if (a === 'c-new') { go('barCard', 'new'); return; }
       if (a === 'c-open') { go('barCard', arg); return; }
-      if (a === 'c-save') { cardSave(); return; }
+      // шаг 44: «Создать» — на предпросмотр без запроса; рождают карточку две кнопки предпросмотра
+      if (a === 'c-create') { cardPreview(); return; }
+      if (a === 'c-add') { cardCreate(true); return; }
+      if (a === 'c-off') { cardCreate(false); return; }
+      if (a === 'c-fix') { go('barCard', 'new'); return; }
       // правка черновика (шаг 15): дверь у карточки и сохранение; вопрос «та же группа?» — в форму, которая открыта
       if (a === 'c-edit') { cardEditStart(Number(arg)); haptic(); render(); return; }
       if (a === 'c-edit-save') { cardEditSave(Number(arg)); return; }
-      if (a === 'c-group-theirs') { if (CARD.edit) cardEditSave(CARD.edit, 'theirs'); else cardSave('theirs'); return; }
-      if (a === 'c-group-mine') { if (CARD.edit) cardEditSave(CARD.edit, 'mine'); else cardSave('mine'); return; }
+      if (a === 'c-group-theirs') { if (CARD.edit) cardEditSave(CARD.edit, 'theirs'); else cardPreview('theirs'); return; }
+      if (a === 'c-group-mine') { if (CARD.edit) cardEditSave(CARD.edit, 'mine'); else cardPreview('mine'); return; }
       if (a === 'c-recipe') { recipeSave(Number(arg)); return; }
       if (a === 'c-review') { cardState(Number(arg), 'review'); return; }
       if (a === 'c-approve') { cardState(Number(arg), 'active'); return; }
