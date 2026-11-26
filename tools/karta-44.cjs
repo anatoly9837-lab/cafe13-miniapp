@@ -12,6 +12,7 @@
 //   mS — переход форма→предпросмотр стирает набранное; mK — после обрыва рецепта несохранённый рецепт пропадает;
 //   mL — в форме один язык рецепта вместо трёх;        mO — «Создать выключенной» шлёт ещё и смену состояния.
 //   mW — цепочку сторожит свежесть списка (CARDS.gen), а не личность (ревью #496 п.2);  mC — carry теряется, если ушли в список;
+//   mW3, mW4 — снята охрана WHO после ответа на рецепт / на смену состояния;
 //   mI — цепочка не слышит смену личности (WHO);  mD — в демонстрации «та же группа?» формы заведения — «Это демонстрация» (100e4a9 снят).
 'use strict';
 const vm = require('vm'), path = require('path');
@@ -30,6 +31,8 @@ const MUT = {
   mW: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n    var ok =", "if (who !== WHO || current !== 'barCard') { CARD.busy = false; return; }\n    var ok ="],
   mI: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n    var ok =", "\n    var ok ="],
   mC: ['js/21-navigaciya.js', "var keep = CARD.carry || (current === 'barCard' ? { note: CARD.note } : null);", "var keep = current === 'barCard' ? (CARD.carry || { note: CARD.note }) : null;"],
+  mW3: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n          if (!(rr.status", "\n          if (!(rr.status"],
+  mW4: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n        if (!(rs.status", "\n        if (!(rs.status"],
   mD: ['js/21-navigaciya.js', " && !(/^c-group-(theirs|mine)$/.test(a) && !CARD.edit)) {", ") {"],
   mL: ['js/16-ekrany-bar.js', 'CARD_LANGS.map(function (l) {\n            return \'<div class="field"><label for="c-rec-\'', 'CARD_LANGS.slice(0, 1).map(function (l) {\n            return \'<div class="field"><label for="c-rec-\''],
   mO: ['js/08-kartochki.js', "if (!target) { land(slovo('barCard.done.off')); return; }", ';'],
@@ -202,6 +205,19 @@ const btn = (h, a) => { const m = h.match(new RegExp('<button[^>]*data-action="'
   check('card44-smena-lichnosti: после 201 запросов нет, экран не уведён, busy снят', [posts(), R("current + ':' + CARD.busy")], [['P'], 'home:false']);
   // список новой личности не получает чужую рождённую карточку (смена личности обнуляет CARDS.list, js/05)
   check('card44-smena-lichnosti: в списке новой личности чужой карточки нет', R('CARDS.list'), null);
+  // то же на двух поздних охранах (ревью #496, arhitector23-e9): смена личности в ответе на рецепт (EN отказан) и в
+  // ответе на смену состояния — новой личности не открыта чужая рождённая карточка
+  start(true); replies['recipe:en'] = { status: 422, data: { detail: 'x' } };
+  R("CARD.text = { ru: 'рецепт', en: 'recipe' }; go('barCard', 'preview')");
+  ctx.api = (m, u, body) => { const p = api0(m, u, body);
+    return /\/recipe$/.test(u) && body && body.lang === 'en' ? p.then(r => { R("WHO++; CARDS.list = null; current = 'home'; param = null;"); return r; }) : p; };
+  R("doAction('c-add')"); await tick(); ctx.api = api0;
+  check('card44-smena-lichnosti-na-recepte: экран не уведён, список новой личности пуст', [R('current'), R('CARDS.list')], ['home', null]);
+  start(true); R("CARD.text = { ru: 'рецепт' }; go('barCard', 'preview')");
+  ctx.api = (m, u, body) => { const p = api0(m, u, body);
+    return /\/state$/.test(u) ? p.then(r => { R("WHO++; CARDS.list = null; current = 'home'; param = null;"); return r; }) : p; };
+  R("doAction('c-add')"); await tick(); ctx.api = api0;
+  check('card44-smena-lichnosti-na-state: экран не уведён, список новой личности пуст', [R('current'), R('CARDS.list')], ['home', null]);
 
   // card44-demo-gruppa (ревью #496, п.3; правка 100e4a9): в демонстрации ответ «та же группа?» формы ЗАВЕДЕНИЯ ничего
   // не шлёт и ведёт на предпросмотр; у правки черновика (CARD.edit) он шлёт PATCH — там «Это демонстрация»
