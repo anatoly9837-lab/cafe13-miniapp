@@ -15015,6 +15015,35 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       else await toBiz(s, n, 7);
       await fin(s, n);
     }
+    // moi-biz-pozdno: список дел приходит ПОСЛЕ отрисовки. (a) «Клуб»: ответ /directions опаздывает — строки встают сами,
+    // без чужого render. (b) меню: на входе в «Клуб» список не пришёл (сбой сети), человек открыл меню — отказ выбирать
+    // перечитывает список (loadMenu → loadBiz), и опоздавший ответ рисует строки дел на меню, а не «Бизнесы не загрузились»
+    {
+      const n = 'moi-biz-pozdno';
+      const later = (ms, r) => new Promise(ok => setTimeout(() => ok(r), ms));
+      for (const k of ['home', 'bar']) {
+        const base = route(st0()); let d = 0;
+        const s = await open(true, true, json(200, who(CUR2)), null, null, null, q => {
+          if (!q.url().endsWith('/directions')) return base(q);
+          d++;
+          if (k === 'home') return d === 1 ? later(900, base(q)) : base(q);
+          return d === 1 ? 'abort' : d === 3 ? later(900, base(q)) : base(q);
+        });
+        await s.p.waitForTimeout(300);
+        if (k === 'home') {
+          if ((await rows(s)).length) bad.push(`${n}/home: ПРОВЕРКА НЕ ВЫПОЛНЕНА — строки дел до ответа /directions`);
+          await s.p.waitForTimeout(1200);
+          if (JSON.stringify((await rows(s)).map(x => x.id)) !== '["my-biz:7","my-biz:9"]') bad.push(`${n}/home: опоздавший список не нарисован на «Клубе»: ${JSON.stringify(await rows(s))}`);
+        } else {
+          if (!(await s.view()).includes('Бизнесы не загрузились')) bad.push(`${n}/bar: ПРОВЕРКА НЕ ВЫПОЛНЕНА — сбой списка на «Клубе» не показан`);
+          await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(300);
+          if ((await rows(s)).length) bad.push(`${n}/bar: ПРОВЕРКА НЕ ВЫПОЛНЕНА — строки дел на меню до ответа /directions`);
+          await s.p.waitForTimeout(1200);
+          if (JSON.stringify((await rows(s)).map(x => x.id)) !== '["my-biz:7","my-biz:9"]') bad.push(`${n}/bar: на меню после отказа выбирать нет строк дел: ${JSON.stringify(await rows(s))}`);
+        }
+        await fin(s, `${n}/${k}`);
+      }
+    }
     // moi-biz-bez-dela (myBiz.md, «Состояния»): вход в карточку без выбранного дела (перезапуск, прямой go) — «Клуб», пустой карточки нет
     {
       const n = 'moi-biz-bez-dela';
