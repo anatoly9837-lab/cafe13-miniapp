@@ -253,6 +253,12 @@ def razobrat(src, fname):
             m = re.compile(r'[\w.]+').match(src, i)
             code.append(m.group(0)); prev = 'val'; last_ident.clear()
             return m.end(), line
+        if src.startswith('++', i) or src.startswith('--', i):
+            # ++/-- перед «/» — всегда постфикс (`i++ / 2`): за ним значение, и «/» — деление.
+            # У префикса (`++i`) следом идёт имя, и оно само ставит 'val'. Без этой ветки
+            # второй «+» давал prev='op', деление читалось регуляркой и глотало литерал (S11).
+            code.append(src[i:i + 2]); prev = 'val'; last_ident.clear()
+            return i + 2, line
         code.append(ch)
         if ch == '.':
             last_ident.append('.')
@@ -538,6 +544,7 @@ def sobrat_v_tablicu(root):
 #   S8 разбор сбит: регулярка после «)» условия прочитана делением → 2 (инвариант, а не тихий пропуск)
 #   S9 у живой строки сняты переводы («нет перевода»)             → 1 о строке таблицы
 #   S10 из th-перевода выброшена подстановка {имя}                → 1 о строке таблицы
+#   S11 литерал между делениями после постфикса `i++ / 2`         → 1 о литерале (деление не прочитано регуляркой)
 NEW = 'Свидетель сорок первого шага'
 
 
@@ -620,6 +627,9 @@ def samoproverka(root):
             # регулярка после «)» условия — предел разбора: читается как деление, и текст регулярки уходит в код
             fh.write(orig + "\nfunction svidetel41(x, y) { if (x) /Сбой «/.test(y); }\n")
         case('S8 разбор сбит (регулярка после «)»)', 2)
+        with open(target, 'w', encoding='utf-8') as fh:
+            fh.write(orig + f"\nfunction svidetel41(i) {{ var k = i++ / 2; var t = '{NEW}'; var z = k / 2; return t + z; }}\n")
+        case('S11 деление после постфикса ++', 1, f'КРАСНОЕ js/20-ekrany-sluzhebnye.js:{nlines + 2}: текст без строки в {TABLE}: «{NEW}»')
     finally:
         shutil.rmtree(w, ignore_errors=True)
     if bad:
