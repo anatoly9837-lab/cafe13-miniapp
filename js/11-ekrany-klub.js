@@ -1,3 +1,37 @@
+// шаг 42 (рецепт 42/guest.md): ОДНА строка-вход «Чайные мастера» — всем, у кого есть «Услуги», членство не нужно;
+// числа мастеров на входе нет, список — на `teaMasters`. Место — после «Бизнесов клуба», до «Работы»
+function teaEntry() {
+  // в живом — только когда экран подключён (WIRED у руки ЧАЙ-A): серая дверь сказала бы «временно недоступно» о том,
+  // что не работало никогда (случай freeze), а вход появится сам, как только экран включат
+  if (closed('teaMasters')) return '';
+  return '<div class="group"><span class="label">' + esc(slovo('guest.tea.label')) + '</span>' +
+    '<button type="button" class="listitem" data-go="teaMasters"><span class="grow"><b>' + esc(slovo('guest.tea.title')) + '</b>' +
+      '<span class="small">' + esc(slovo('guest.tea.sub')) + '</span></span>' + svg(ICON.chev, 'chev') + '</button></div>';
+}
+
+/* шаг 42 (рецепт 42/home.md, «Чайный мастер»): своя карточка для «Услуг» — пять состояний и «не загрузилось».
+   Зритель — все, роль и членство не спрашиваются (№65 «а»). Дверь карточки (H1) вносит человека в каталог «Услуг»,
+   одну церемонию НЕ создаёт (№66 «а»); поэтому кнопка вторичная (.btn quiet). Состояние — у руки ЧАЙ-A: TEA.mine, loadTeaMine (js/22) */
+function teaMineBlock() {
+  if (typeof TEA === 'undefined' || closed('teaApply')) return '';   // как teaEntry: до подключения teaApply блока нет
+  var m = TEA.mine;
+  if (!m) return TEA.mineFail ? '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('home.tea.fail')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="tc-mine-retry">' + esc(slovo('home.tea.retry')) + '</button></div></div>' : '';
+  var line = function (st, word) {
+    return '<div class="row"><b>' + esc(slovo('home.tea.line')) + '</b><span class="st ' + st + '">' + esc(word) + '</span></div>';
+  };
+  if (m.status === 'pending') return '<div class="card quiet"><div class="col">' + line('wait', slovo('home.tea.st.wait')) +
+      '<span class="small">' + esc(slovo('home.tea.pending')) + '</span></div></div>';
+  if (m.status === 'approved' || m.status === 'edit') return '<div class="card"><div class="col">' + line('ok', slovo('home.tea.st.ok')) +
+      (m.status === 'edit' ? '<span class="small">' + esc(slovo('home.tea.editWait')) + '</span>' : '') +
+      '<button type="button" class="btn quiet" data-go="teaApply">' + esc(slovo('home.tea.change')) + '</button></div></div>';
+  if (m.status === 'rejected') return '<div class="card quiet"><div class="col">' + line('no', slovo('home.tea.st.no')) +
+      (m.note ? '<span class="said">' + esc(m.note) + '</span>' : '') +
+      '<button type="button" class="btn quiet" data-go="teaApply">' + esc(slovo('home.tea.again')) + '</button></div></div>';
+  return '<div class="card"><div class="col"><b>' + esc(slovo('home.tea.title')) + '</b><span class="small">' + esc(slovo('home.tea.about')) + '</span>' +
+    '<button type="button" class="btn quiet" data-go="teaApply">' + esc(slovo('home.tea.open')) + '</button></div></div>';
+}
+
 var SCREENS = {
 
   home: function () {
@@ -29,6 +63,8 @@ var SCREENS = {
 
       // шаг 3: «Я мастер» — под строкой «Пропуск» (кадр E54; плашки членства нет с #1096); у гостя пусто
       masterOffer() +
+      // шаг 42: «Чайный мастер» — ниже «Провести», выше «Свой бизнес в клубе» (рецепт 42/home.md)
+      teaMineBlock() +
       // шаг 13 (рецепт R1): «Свой бизнес в клубе» — ниже блока мастера. Шаг 14 (рецепт 14/bizWorkers): дверь «Работники»
       // в согласованном состоянии блока — одна на все бизнесы, выбор бизнеса на самом экране
       // шаг 16 (рецепт 16/home): дверь очереди согласования — партнёру по владению; счётчик по списку, null — без чипа
@@ -92,7 +128,7 @@ var SCREENS = {
                   '<span class="grow"><b class="clamp2">' + esc(b.title) + '</b></span>' +
                   (b.is_open ? '' : '<span class="pill">закрыт</span>') + svg(ICON.chev, 'chev') + '</button>';
               }).join('')) +
-        '</div>' +
+        '</div>' + teaEntry() +
         // шаг 15 (рецепт 15/barCards): дверь РАБОТНИКА бизнеса — по его праву, а не mayCards(): у барной стороны
         // двери уже две («Клуб», «Заказы»). «Работа» — то же слово, что на «Клубе»; подпись — без «утверждения»:
         // утверждает куратор, и чужое слово обещало бы право шага 16
@@ -111,7 +147,7 @@ var SCREENS = {
           '<span class="grow"><b class="clamp2">' + esc(DATA.bar.title) + '</b></span>' +
           (DATA.bar.open ? '' : '<span class="pill">закрыт</span>') + svg(ICON.chev, 'chev') +
         '</button>' +
-      '</div>' +
+      '</div>' + teaEntry() +
       '<div class="group"><span class="label">Услуги острова</span>' +
         (DATA.services.length ? DATA.services.map(function (s) {
           return '<button type="button" class="listitem">' +
