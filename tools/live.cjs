@@ -108,7 +108,7 @@ const CASES = [
   ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 8],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Доступ снят'], 1],
-  ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
+  ['stranger-403', true, true, json(403, { detail: 'доступа нет', code: 'no_access' }),
     // + GET /join: экран просьбы спрашивает сервер сам (Cafe13KPG#459); здесь /join тоже 403
     // J0 (рецепт #397): шапка выгнанного — «Доступ снят»; слов новичка о списке нет
     ['Доступ снят'], ['Подпись не принята', 'Член клуба', 'Вас ещё нет в списке', 'Попасть в список'], 2],
@@ -439,7 +439,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!(await s.view()).includes(stay)) bad.push(`${n}: переход data-go увёл с экрана отказа`);
     };
     for (const [n, me, stay] of [
-      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Доступ снят'],
+      ['vyhod-403', json(403, { detail: 'доступа нет', code: 'no_access' }), 'Доступ снят'],
       ['vyhod-401', json(401, { detail: 'подпись не принята' }), 'Подпись не принята'],
       ['vyhod-500', json(500, { detail: 'x' }), 'Сервер клуба недоступен']]) {
       const s = await open(true, true, me);
@@ -511,7 +511,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
     await s.ctx.close();
     // экран входа: человека ещё нет — и баланса в шапке нет
-    const s2 = await open(true, true, json(403, { detail: 'доступа нет' }));
+    const s2 = await open(true, true, json(403, { detail: 'доступа нет', code: 'no_access' }));
     if (await s2.p.evaluate(() => document.getElementById('bar-right').innerHTML !== '')) bad.push(`${n}: баланс в шапке на экране входа`);
     await s2.ctx.close();
   }
@@ -2183,7 +2183,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // ответы /join*: join — функция или ответ; post — ответ на POST /join/request
     const joinCase = async (join, post, me) => {
       const posted = [];
-      const s = await open(true, true, me || json(403, { detail: 'доступа нет' }), null, null, null, q => {
+      const s = await open(true, true, me || json(403, { detail: 'доступа нет', code: 'no_access' }), null, null, null, q => {
         const u = q.url();
         if (/\/join\/requisites\/(promptpay|usdt)$/.test(u)) return { status: 200, contentType: 'image/png', body: PNG1 };
         if (u.endsWith('/join/request') && q.method() === 'POST') { posted.push(JSON.parse(q.postData())); return post || json(201, JPOST); }
@@ -2251,7 +2251,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // человека, который ждал — просьба ждёт, ответ приходит, повторный вход на экран его видит
     {
       const n = 'join-prinyali';
-      let me = json(403, { detail: 'доступа нет' }), st = 'pending';
+      let me = json(403, { detail: 'доступа нет', code: 'no_access' }), st = 'pending';
       const s = await joinCase(() => json(200, withReq(st)), null, () => me);
       if (!(await s.view()).includes('Просьба отправлена')) bad.push(`${n}: на старте нет ждущей просьбы`);
       st = 'approved';
@@ -2270,7 +2270,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // новой просьбы есть, ложных слов нет; «Войти» не нажимается, потому что кнопки нет
     // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009): второй вход — «200 без живого членства» — снят: такой человек теперь начинает с
     // «Клуба» (случай dver-dom), экрана просьбы у него нет. Остаётся выгнанный (403)
-    for (const [n, me] of [['join-petlya-403', json(403, { detail: 'доступа нет' })]]) {
+    for (const [n, me] of [['join-petlya-403', json(403, { detail: 'доступа нет', code: 'no_access' })]]) {
       const s = await joinCase(json(200, withReq('approved')), null, () => me);
       const t = await s.view();
       if (await s.p.evaluate(() => current) !== 'noAccess') bad.push(`${n}: не на экране просьбы (${await s.p.evaluate(() => current)})`);
@@ -3219,6 +3219,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // фича 1 «ДВЕРЬ» (Cafe13KPG#1009, дополнение 2): причины «членство не активно» больше нет — отказ без её слов
     ['pass-403', json(403, { detail: 'членство не активно' }), 'Сервер отказал в пропуске', true],
     ['pass-403-other', json(403, { detail: 'нужна роль' }), 'Сервер отказал в пропуске', true],
+    // Cafe13KPG#914: прежние слова привратника БЕЗ признака `code` — обычный отказ, а не «Доступ снят»:
+    // клиент не разбирает текст. Мутант с разбором прозы краснеет здесь.
+    ['pass-403-proza-bez-koda', json(403, { detail: 'доступа нет' }), 'Сервер отказал в пропуске', true],
     ['pass-bad', json(200, { pass_code: '0042', level: 'member', lifelong: true }), 'Ответ сервера не разобран', false],
     ['pass-down', 'abort', 'Сервер не ответил', false]]) {
     const s = await open(true, true, json(200, OWNER), null, reply, SAVED);
@@ -3233,17 +3236,18 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.ctx.close();
   }
 
-  // «доступа нет» на /pass — отказ во входе целиком, а не «пропуска нет».
-  if (part(1)) {
-    const s = await open(true, true, json(200, OWNER), null, json(403, { detail: 'доступа нет' }), SAVED);
+  // Привратник на /pass (`code: 'no_access'`) — отказ во входе целиком, а не «пропуска нет».
+  // Второй случай — те же признак и причина ДРУГИМИ словами (Cafe13KPG#914): экран обязан остаться.
+  if (part(1)) for (const [name, detail] of [['pass-403-list', 'доступа нет'], ['pass-403-inymi', 'вход в клуб для вас закрыт']]) {
+    const s = await open(true, true, json(200, OWNER), null, json(403, { detail, code: 'no_access' }), SAVED);
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('Доступ снят')) bad.push('pass-403-list: не экран «Доступ снят»');
-    if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('pass-403-list: запас не стёрт');
+    if (!(await s.view()).includes('Доступ снят')) bad.push(`${name}: не экран «Доступ снят»`);
+    if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: запас не стёрт`);
     await s.ctx.close();
   }
   // Отказ /me стирает запас.
-  if (part(1)) for (const [name, me] of [['me-401-wipes', json(401, {})], ['me-403-wipes', json(403, { detail: 'доступа нет' })]]) {
+  if (part(1)) for (const [name, me] of [['me-401-wipes', json(401, {})], ['me-403-wipes', json(403, { detail: 'доступа нет', code: 'no_access' })]]) {
     const s = await open(true, true, me, null, null, SAVED);
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: запас не стёрт`);
     await s.ctx.close();
@@ -3574,7 +3578,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const NOTILL = clone(OWNER); NOTILL.roles = [];
   if (part(1)) for (const [who, name, want] of [[NOTILL, 'topup-409', 'перевод по реквизитам клуба'], [OWNER, 'topup-409-admin', 'перевод по реквизитам клуба']]) {
     const s = await open(true, true, json(200, who), null, null, null,
-      bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830' }) }));
+      bar({ order: json(409, { detail: 'на счёте 3170, не хватает 1830', code: 'insufficient_funds' }) }));
     await toBar(s);
     await s.p.click('[data-action="buy:11"]');
     await s.p.waitForTimeout(250);
@@ -3627,13 +3631,19 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // 409, поэтому признак — ТЕКСТ плашки, равный тексту сервера, а не код.
   // Каждый случай: корзина из двух позиций «к столу», отказ — плашка над
   // «Купить», состав и место на месте, нажатие снова возможно.
-  if (part(1)) for (const [name, status, detail] of [
+  // Нехватку клиент узнаёт по признаку `code: 'insufficient_funds'`, а не по тексту
+  // (Cafe13KPG#914): «-inymi» — та же причина другими словами, выход обязан остаться;
+  // «-bez-koda» — прежние слова без признака, выхода быть не должно (иначе клиент разбирает прозу).
+  if (part(1)) for (const [name, status, detail, code] of [
     ['deny-closed', 409, 'бар закрыт: смена не открыта, заказ принять некому'],
     ['deny-noitems', 400, 'нет таких позиций в этом меню: [12]'],
     ['deny-hidden', 409, 'позиция снята с меню: Флэт-уайт'],
     ['deny-cash', 409, 'на баре платят со счёта в клубе; пополнить можно у хостес'],
-    ['deny-short', 409, 'на счёте 240, не хватает 60']]) {
-    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: json(status, { detail }) }));
+    ['deny-short', 409, 'на счёте 240, не хватает 60', 'insufficient_funds'],
+    ['deny-short-inymi', 409, 'денег мало: 240 из 300', 'insufficient_funds'],
+    ['deny-short-bez-koda', 409, 'на счёте 240, не хватает 60']]) {
+    const short = code === 'insufficient_funds';
+    const s = await open(true, true, json(200, OWNER), null, null, null, bar({ order: json(status, code ? { detail, code } : { detail }) }));
     await toBar(s);
     await s.p.click('[data-action="cart-add:11"]');
     await s.p.click('[data-action="cart-add:12"]');
@@ -3643,15 +3653,19 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     await s.p.click('[data-where="к столу"]');
     // «Купить» в Telegram — главная кнопка; своя в разметке на этот случай спрятана
     if (!(await s.p.evaluate(() => typeof window.__main === 'function'))) { bad.push(`${name}: у корзины нет главной кнопки`); await s.ctx.close(); continue; }
+    const me0 = s.calls.filter(c => /\/me(\?|$)/.test(c.url)).length;
     await s.p.evaluate(() => window.__main());
     await s.p.waitForTimeout(300);
+    // нехватка — остаток мог устареть, /me перечитывается; при прочих отказах — нет
+    const meAgain = s.calls.filter(c => /\/me(\?|$)/.test(c.url)).length > me0;
+    if (meAgain !== short) bad.push(`${name}: /me ${meAgain ? 'перечитан' : 'не перечитан'}, ждали ${short ? 'перечитан' : 'нет'}`);
     const pp = posts(s);
     if (pp.length !== 1 || JSON.parse(pp[0].body).pay_method !== 'account') bad.push(`${name}: ушло не одно тело со счёта: ` + JSON.stringify(pp.map(c => c.body)));
     const deny = await s.p.$eval('.deny', e => e.textContent).catch(() => null);
     if (deny !== detail) bad.push(`${name}: плашка «${deny}», сервер сказал «${detail}»`);
     // «Пополнить счёт» — выход только при нехватке; при других отказах деньги не причина
     const topup = !!(await s.p.$('.deny + [data-go="topup"]'));
-    if (topup !== (name === 'deny-short')) bad.push(`${name}: кнопка «Пополнить счёт» ${topup ? 'есть' : 'нет'}, ждали ${name === 'deny-short' ? 'есть' : 'нет'}`);
+    if (topup !== short) bad.push(`${name}: кнопка «Пополнить счёт» ${topup ? 'есть' : 'нет'}, ждали ${short ? 'есть' : 'нет'}`);
     const t = await s.view();
     if (!t.includes('Эспрессо') || !t.includes('Флэт-уайт')) bad.push(`${name}: корзина потеряна после отказа`);
     if (!(await s.p.$('[data-where="к столу"][aria-pressed="true"]'))) bad.push(`${name}: выбор места потерян после отказа`);
@@ -9390,8 +9404,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         'Мероприятия заводят организатор, партнёр и работники клуба', 'не впустили'],
       // Тот же код, другое происхождение: привратник доступа. Слово сервера
       // здесь отвечает не на тот вопрос, поэтому на экране своя строка.
-      ['sozdat-403-privratnik', 403, { detail: 'доступа нет' },
+      ['sozdat-403-privratnik', 403, { detail: 'доступа нет', code: 'no_access' },
         'Вас ещё не впустили в клуб', 'Доступа нет'],
+      // Cafe13KPG#914: признак, а не текст — другими словами тот же привратник;
+      // прежние слова без признака — обычный отказ словами сервера.
+      ['sozdat-403-privratnik-inymi', 403, { detail: 'вход в клуб для вас закрыт', code: 'no_access' },
+        'Вас ещё не впустили в клуб', 'Вход в клуб для вас закрыт'],
+      ['sozdat-403-proza-bez-koda', 403, { detail: 'доступа нет' },
+        'Доступа нет', 'не впустили'],
       // Форма взята из снимка event-create-422.json (не подделана): в каждом
       // объекте есть input и ctx, а msg — по-английски, поэтому на экран идёт
       // имя ПОЛЯ из loc, а не msg.
@@ -9931,8 +9951,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     for (const [name, reply, want, nope] of [
       ['spisok-403', json(403, { detail: 'список записавшихся видит организатор мероприятия или работник клуба' }),
         'Список записавшихся видит организатор мероприятия или работник клуба', 'Пока никто не записался'],
-      ['spisok-403-privratnik', json(403, { detail: 'доступа нет' }),
+      ['spisok-403-privratnik', json(403, { detail: 'доступа нет', code: 'no_access' }),
         'Вас ещё не впустили в клуб', 'Доступа нет'],
+      ['spisok-403-privratnik-inymi', json(403, { detail: 'вход в клуб для вас закрыт', code: 'no_access' }),
+        'Вас ещё не впустили в клуб', 'Вход в клуб для вас закрыт'],
+      ['spisok-403-proza-bez-koda', json(403, { detail: 'доступа нет' }),
+        'Доступа нет', 'не впустили'],
       ['spisok-404', json(404, { detail: 'мероприятия нет' }),
         'Сервер не знает такого мероприятия', 'Пока никто не записался'],
       ['spisok-set', 'abort', 'Сервер не ответил', 'Пока никто не записался'],

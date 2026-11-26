@@ -760,7 +760,7 @@ document.addEventListener('click', function (ev) {
     return;
   }
   if (el.hasAttribute('data-drink')) { go('drink', el.getAttribute('data-drink')); return; }
-  if (el.hasAttribute('data-where')) { ORDER.where = el.getAttribute('data-where'); DENY = ''; haptic(); render(); return; }
+  if (el.hasAttribute('data-where')) { ORDER.where = el.getAttribute('data-where'); DENY = ''; DENY_CODE = ''; haptic(); render(); return; }
   if (el.hasAttribute('data-pay'))   { ORDER.pay   = el.getAttribute('data-pay');   haptic(); render(); return; }
   // грабим введённое ДО перерисовки: иначе выбор категории стирал набранный текст
   if (el.hasAttribute('data-exp'))   { grabForm(EXP_FIELDS); EXP.cat = el.getAttribute('data-exp');   haptic(); render(); return; }

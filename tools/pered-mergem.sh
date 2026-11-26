@@ -126,6 +126,44 @@ W=$(mktemp -d "$RUNS_BASE/run-XXXXXX") || die 'не создался рабоч�
 # прогонов), второй прогон его не повторит.
 keep_why=''
 mark() { keep_why="${keep_why:+$keep_why; }$1"; }
+
+# ── судья самопроверки (шаги 5 и 18) — контракт Cafe13KPG#1118 ─────────────
+# ⚠ До 26.11.2026 шаги судили самопроверку ТОЛЬКО кодом выхода: прибор, напечатавший
+# «РАЗОШЛАСЬ» и вышедший нулём (код съеден), был зелёным (мутант mB arhitector14-5b,
+# ревью #484). Поиск СЛОВ ОТКАЗА в логе — перечень плохого: всё, чего в перечне нет,
+# проходит молча (у check-stages общего приговора не было вовсе, «бед 1» строчными у
+# check-sostav и v-oblasti признак не брал). Поэтому судится ПЕРЕЧЕНЬ ДОПУСТИМОГО.
+# Контракт, ДОСЛОВНО — последняя непустая строка вывода `--самопроверка` обязана быть
+#     самопроверка <файл>: сошлась
+#     самопроверка <файл>: РАЗОШЛАСЬ — код 1
+#     самопроверка <файл>: НЕ ВЫПОЛНЕНА — код N        (N — целое, не 0 и не 1)
+# где <файл> — имя прибора в tools/, а код в строке — тот, каким прибор выходит.
+#   • строка не по грамматике (или чужое имя)  → «НЕ ИЗМЕРЕН» (2): неизвестное падает громко;
+#   • код выхода 0, а строка не «сошлась»       → КРАСНОЕ «код съеден»;
+#   • код ≠ 0, а строка говорит другой код      → КРАСНОЕ «код и приговор спорят».
+# Печатает строку функция итог_самопроверки / itogSamoproverki в каждом приборе.
+# Выход: sp_ishod = зелёное | красное | не-выполнена | не-измерен; sp_pochemu — текст.
+sudit_sp() { # <прибор> <лог> <код выхода>
+    local p=$1 log=$2 rc=$3 last kod
+    last=$(grep -v '^[[:space:]]*$' "$log" | tail -1)
+    if   [ "$last" = "самопроверка $p: сошлась" ]; then kod=0
+    elif [ "$last" = "самопроверка $p: РАЗОШЛАСЬ — код 1" ]; then kod=1
+    elif [[ "$last" =~ ^самопроверка\ (.+):\ НЕ\ ВЫПОЛНЕНА\ —\ код\ ([0-9]+)$ ]] \
+         && [ "${BASH_REMATCH[1]}" = "$p" ] && [ "${BASH_REMATCH[2]}" -gt 1 ]; then kod=${BASH_REMATCH[2]}
+    else
+        sp_ishod=не-измерен
+        sp_pochemu="последняя строка не по грамматике итога (Cafe13KPG#1118): «$(printf '%s' "$last" | cut -c1-160)»"
+        return
+    fi
+    if [ "$kod" -ne "$rc" ]; then
+        sp_ishod=красное
+        if [ "$rc" -eq 0 ]; then sp_pochemu="КОД СЪЕДЕН: вышла 0, а приговор «$last»"
+        else sp_pochemu="код и приговор спорят: вышла $rc, а приговор «$last»"; fi
+    elif [ "$kod" -eq 0 ]; then sp_ishod=зелёное; sp_pochemu=$last
+    elif [ "$kod" -eq 1 ]; then sp_ishod=красное; sp_pochemu=$last
+    else sp_ishod=не-выполнена; sp_pochemu=$last
+    fi
+}
 trap 'ec=$?
 if [ "$ec" -eq 0 ] && [ -z "$keep_why" ]; then rm -rf "$W"
 else echo "рабочий каталог прогона ОСТАВЛЕН: $W${keep_why:+ — нашлось: $keep_why}"; fi' EXIT
@@ -409,8 +447,16 @@ fi
 # ── 5–6. прибор стадий (приговоры) ──────────────────────────────────────────
 step '5. прибор стадий — самопроверка (приговор)'
 ( cd "$T" && python3 -I tools/check-stages.py --самопроверка >"$W/sp.log" 2>&1 ); rc=$?
-[ "$rc" -eq 0 ] || { echo "КРАСНОЕ: самопроверка прибора стадий rc=$rc"; grep -i 'провален' "$W/sp.log" | head -5; rc_total=1; }
-[ "$rc" -eq 0 ] && echo 'самопроверка прибора стадий: rc=0'
+# ⚠ Судья тот же, что у шага 18 (sudit_sp), но строже: у check-stages код 2 — это
+# «КОНТРОЛЬ ПРОВАЛЕН», а не «нечем мерить», поэтому всё, кроме зелёного и «не измерен», — красное.
+sudit_sp check-stages.py "$W/sp.log" "$rc"
+case "$sp_ishod" in
+  зелёное)   echo "самопроверка прибора стадий: rc=0 — $sp_pochemu";;
+  не-измерен) echo "ПРОВЕРКА НЕ ВЫПОЛНЕНА: самопроверка прибора стадий НЕ ИЗМЕРЕНА (rc=$rc) — $sp_pochemu"
+             [ "$rc_total" -eq 0 ] && rc_total=2;;
+  *)         echo "КРАСНОЕ: самопроверка прибора стадий rc=$rc — $sp_pochemu"
+             grep -i 'провален' "$W/sp.log" | head -5; rc_total=1;;
+esac
 
 step '6. прибор стадий — ПО ЭТОМУ ДЕРЕВУ (--дерево ., клиент по index.html, приговор)'
 ( cd "$T" && python3 -I tools/check-stages.py --дерево . ); rc=$?
@@ -578,17 +624,22 @@ done
 for p in $SP_PRIBORY; do
     [ -f "$T/tools/$p" ] || continue   # пропажу уже назвала сверка перечня
     case "$p" in
-      *.py)  ( cd "$T" && PYTHONDONTWRITEBYTECODE=1 timeout "${SP_TIMEOUT:-300}" python3 -I "tools/$p" --самопроверка ) >"$W/sp18-$p.log" 2>&1 </dev/null; rc=$?;;
+      *.py)  ( cd "$T" && PYTHONDONTWRITEBYTECODE=1 timeout "${SP_TIMEOUT:-300}" python3 -I -B "tools/$p" --самопроверка ) >"$W/sp18-$p.log" 2>&1 </dev/null; rc=$?;;
       *.cjs) ( cd "$T" && timeout "${SP_TIMEOUT:-300}" node "tools/$p" --самопроверка ) >"$W/sp18-$p.log" 2>&1 </dev/null; rc=$?;;
     esac
-    case "$rc" in
-      0)   echo "зелёное: $p";;
-      1)   echo "КРАСНОЕ: самопроверка $p rc=1 — $(grep -v '^[[:space:]]*$' "$W/sp18-$p.log" | tail -1 | cut -c1-200)"
-           grep -E 'РАЗОШ|БЕДА|ПРОВАЛ|ВЫЖИЛ' "$W/sp18-$p.log" | grep -v '^[[:space:]]*сошлось' | head -5 | sed 's/^/  /'; rc_total=1;;
-      124) echo "ПРОВЕРКА НЕ ВЫПОЛНЕНА: самопроверка $p ВИСИТ (${SP_TIMEOUT:-300} с) — не измерено, не «поймали»"
-           [ "$rc_total" -eq 0 ] && rc_total=2;;
-      *)   echo "ПРОВЕРКА НЕ ВЫПОЛНЕНА: самопроверка $p rc=$rc — $(tail -1 "$W/sp18-$p.log" | cut -c1-200)"
-           [ "$rc_total" -eq 0 ] && rc_total=2;;
+    if [ "$rc" -eq 124 ]; then
+        echo "ПРОВЕРКА НЕ ВЫПОЛНЕНА: самопроверка $p ВИСИТ (${SP_TIMEOUT:-300} с) — не измерено, не «поймали»"
+        [ "$rc_total" -eq 0 ] && rc_total=2; continue
+    fi
+    sudit_sp "$p" "$W/sp18-$p.log" "$rc"   # контракт последней строки — см. sudit_sp выше
+    case "$sp_ishod" in
+      зелёное)      echo "зелёное: $p";;
+      красное)      echo "КРАСНОЕ: самопроверка $p rc=$rc — $(printf '%s' "$sp_pochemu" | cut -c1-200)"
+                    grep -E 'РАЗОШ|БЕДА|ПРОВАЛ|ВЫЖИЛ' "$W/sp18-$p.log" | grep -v '^[[:space:]]*сошлось' | head -5 | sed 's/^/  /'; rc_total=1;;
+      не-выполнена) echo "ПРОВЕРКА НЕ ВЫПОЛНЕНА: самопроверка $p rc=$rc — $(printf '%s' "$sp_pochemu" | cut -c1-200)"
+                    [ "$rc_total" -eq 0 ] && rc_total=2;;
+      *)            echo "ПРОВЕРКА НЕ ВЫПОЛНЕНА: самопроверка $p НЕ ИЗМЕРЕНА (rc=$rc) — $sp_pochemu"
+                    [ "$rc_total" -eq 0 ] && rc_total=2;;
     esac
 done
 echo "шаг 18: прогнано $(echo $SP_PRIBORY | wc -w), $SP_V_SHAGE_5 — в шаге 5, не гонял $(echo $SP_ZHDUT_GIT | wc -w); $(( $(date +%s%3N) - sp_t0 )) мс"
