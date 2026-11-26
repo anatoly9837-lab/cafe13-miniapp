@@ -111,10 +111,11 @@
 | `dver` | `home` | — | 10398 | 8 | 0 |
 | `dver` | `sostav` | — | 2456 | 4 | 0 |
 | `foto` | `event` | — | 3840 | 3 | 2 |
+| `foto` | `eventEdit` | — | 2054 | 1 | 0 |
 | `foto` | `eventNew` | — | 650 | 0 | 0 |
-| `foto` | `masterApply` | — | 4648 | 3 | 9 |
-| `foto` | `sostav-dovody` | — | 3603 | 7 | 0 |
-| `foto` | `sostav` | — | 6456 | 4 | 0 |
+| `foto` | `masterApply` | — | 4957 | 3 | 9 |
+| `foto` | `sostav-dovody` | — | 4845 | 9 | 0 |
+| `foto` | `sostav` | — | 7218 | 4 | 0 |
 | `foto` | `teaHold` | — | 603 | 0 | 0 |
 | `master` | `home` | — | 6776 | 8 | 10 |
 | `master` | `masterApply` | — | 15817 | 9 | 22 |
