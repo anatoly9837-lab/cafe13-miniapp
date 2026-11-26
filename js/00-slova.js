@@ -286,6 +286,7 @@ var SLOVA = {
     'calendar.pick.zero': 'Конец совпадает с началом.',
     'calendar.pick.choose': 'Выбрать это время',
     'calendar.pick.busyFail': 'Не удалось узнать, какое время занято.',
+    'calendar.pick.busyWait': 'Узнаём, какое время занято…',
     'calendar.pick.retry': 'Повторить'
   }
 };
