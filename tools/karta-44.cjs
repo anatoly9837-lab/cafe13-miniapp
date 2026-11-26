@@ -14,6 +14,7 @@
 //   mW — цепочку сторожит свежесть списка (CARDS.gen), а не личность (ревью #496 п.2);  mC — carry теряется, если ушли в список;
 //   mW3, mW4 — снята охрана WHO после ответа на рецепт / на смену состояния;
 //   mF — предпросмотр не выводит FLASH: в демонстрации «в меню»/«выключенной» немые (ворота #496 a0b6fe5);
+//   mU — в бою до ответа нажатая кнопка предпросмотра не говорит «Сохраняем…»;
 //   mI — цепочка не слышит смену личности (WHO);  mD — в демонстрации «та же группа?» формы заведения — «Это демонстрация» (100e4a9 снят).
 'use strict';
 const vm = require('vm'), path = require('path');
@@ -35,6 +36,7 @@ const MUT = {
   mW3: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n          if (!(rr.status", "\n          if (!(rr.status"],
   mW4: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n        if (!(rs.status", "\n        if (!(rs.status"],
   mF: ['js/16-ekrany-bar.js', "  return (!LIVE && FLASH ? flash() : '') +\n    '<div class=\"note\">'", "  return '' +\n    '<div class=\"note\">'"],
+  mU: ['js/16-ekrany-bar.js', "return CARD.busy && CARD.press === k ? slovo('barCard.preview.busy') : word;", 'return word;'],
   mD: ['js/21-navigaciya.js', " && !(/^c-group-(theirs|mine)$/.test(a) && !CARD.edit)) {", ") {"],
   mL: ['js/16-ekrany-bar.js', 'CARD_LANGS.map(function (l) {\n            return \'<div class="field"><label for="c-rec-\'', 'CARD_LANGS.slice(0, 1).map(function (l) {\n            return \'<div class="field"><label for="c-rec-\''],
   mO: ['js/08-kartochki.js', "if (!target) { land(slovo('barCard.done.off')); return; }", ';'],
@@ -247,6 +249,23 @@ const btn = (h, a) => { const m = h.match(new RegExp('<button[^>]*data-action="'
     check('card44-demo-predprosmotr: «' + a + '» — запросов нет', posts(), []);
   }
   R("LIVE = true; FLASH = null;");
+
+  // card44-zhivoe-nazhatie (вопрос coordinator-3 к воротам a0b6fe5: демо-случай не судит живой путь): в бою, ДО ответа
+  // сервера, нажатая кнопка говорит «Сохраняем…», все три кнопки погашены, Telegram-кнопки нет, ушёл один POST
+  for (const a of ['c-add', 'c-off']) {
+    start(false); R("CARD.text = { ru: 'рецепт' }; go('barCard', 'preview')");
+    const h0 = html(), keep = ctx.api;
+    ctx.api = (m, u, body) => { if (m !== 'GET') calls.push({ m, u, body }); return new Promise(() => {}); };
+    R("doAction('" + a + "')"); await tick();
+    const h1 = html(); ctx.api = keep;
+    const word = R("slovo('barCard.preview.busy')");
+    check('card44-zhivoe-nazhatie: «' + a + '» до ответа — экран тот же, разметка сменилась, на кнопке «' + word + '»',
+      [R('current + ":" + param'), h1 !== h0, (btn(h1, a) || '') !== '' && h1.split(btn(h1, a))[1].startsWith(word)], ['barCard:preview', true, true]);
+    check('card44-zhivoe-nazhatie: «' + a + '» до ответа — c-add, c-off, c-fix погашены, Telegram-кнопки нет',
+      [['c-add', 'c-off', 'c-fix'].map(x => /\sdisabled/.test(btn(h1, x) || '')), R('JSON.stringify(mainFor())')], [[true, true, true], 'null']);
+    check('card44-zhivoe-nazhatie: «' + a + '» — ушёл один POST продукта', posts(), ['P']);
+    R("CARD.busy = false; CARD.press = '';");
+  }
 
   const bad = ok.filter(x => !x).length;
   console.log((bad ? 'КРАСНОЕ: ' + bad : 'ЗЕЛЁНОЕ: 0') + ' из ' + ok.length);
