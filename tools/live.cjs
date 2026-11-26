@@ -14906,8 +14906,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
 
     // moi-biz-odno: куратор ОДНОГО дела — «Клуб» прежний, нового запроса на входе нет, очередь своего дела одним нажатием
     {
-      const n = 'moi-biz-odno';
-      const s = await mbOpen([{ role: 'curator', direction_id: 7 }]);
+      // второй вариант ролей (возврат arhitector5-e9 по #464): куратор сам стоит за баром — два гранта на ОДНО дело
+      for (const [n, roles] of [['moi-biz-odno', [{ role: 'curator', direction_id: 7 }]],
+                                ['moi-biz-odno/bar+curator', [{ role: 'bar', direction_id: 7 }, { role: 'curator', direction_id: 7 }]]]) {
+      const s = await mbOpen(roles);
       const t = await s.view();
       if (t.includes('Мои бизнесы')) bad.push(`${n}: при одном деле группа «Мои бизнесы» — лишний шаг`);
       const w = await groupOf(s, 'Работа');
@@ -14918,6 +14920,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if ((await cur(s)).current !== 'barQueue') bad.push(`${n}: «Заказы на баре» не открыли очередь одним нажатием`);
       if (JSON.stringify(qs(s, '/bar/orders')) !== '["7"]') bad.push(`${n}: очередь не своего дела: ${JSON.stringify(qs(s, '/bar/orders'))}`);
       await fin(s, n);
+      }
     }
     // moi-biz-dva: куратор «Бара» и «Чая» — группа словами сервера, строк бара в «Работе» нет; «Чай» → карточка «Чая»
     {
