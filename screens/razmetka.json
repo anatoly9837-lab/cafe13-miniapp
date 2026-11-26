@@ -1,18 +1,18 @@
 {
- "снято": "2026-11-26T07:20:20.305Z",
+ "снято": "2026-11-26T09:43:10.172Z",
  "слепки_страницы": {
-  "index.html": "06c99521e902b252cc27ba0b253ccede5729ad789d0480851189227ed80839c6",
+  "index.html": "dd006764ba7eb3ed3879d585815f06d5940290bd479ee99f524a16aa850b3923",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "6a6aa8b9939ed9c1a3332c1ca150cee32f1e3c35aae15586149e925d06cc4ea4",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
   "js/00-slova.js": "01c620b2d749ab77255a365c84305211dc90ef305ba81324b37d45ae45ff98f8",
-  "js/01-osnova.js": "bad5b8d30fe40872d82793b57fb291a0027a22f9324e04fa73148306695fedce",
-  "js/02-chlenstvo.js": "ee115398eace0d4f153298af62a42a40f478ef3d9197ecc61eceb8ec7bc8d2bd",
+  "js/01-osnova.js": "a2d0aae31cbb6ee5d47bf9a22dde8f5b56371a39a33871e82878cf5bbdcd8e5e",
+  "js/02-chlenstvo.js": "c0a769ddc11136567a01ed0ecf6d90e6d8848f96587e6ca357816995426ca606",
   "js/03-propusk.js": "ce4d0a0039bfb28c37efe7474400cba025d55f7dfba2200941fe1e9a765fc5e7",
   "js/04-bar.js": "06540e5d3bcda2a0c07f55368ff461c36d09de6409ef5f1e387a9035fa37f538",
-  "js/05-kassa.js": "61a94e1d5b89a51ea51468d3695a763cae6cbe44a38aa3590c60f839bf127ee6",
+  "js/05-kassa.js": "0aa4ac7c20436a65238af33d0f646eff55acad208ecdaf4cc2858f69562f785e",
   "js/06-lyudi.js": "0e48ae83ff229e56901c9730010cf10e7290eca5a6f247f7a6bbb8509b637000",
   "js/07-mastera.js": "226174951a55082fbc4819ca87037fa73c32901bdae04926b4c25d4467c2f286",
   "js/08-kartochki.js": "cd61ca109cfa622fbb58ca397126d1c2e1fffa6f85a72525c2106c6bd78a3f2a",
@@ -25,11 +25,11 @@
   "js/15-ekrany-partner-soglasie.js": "0737612312e6cc7d89f1d0dd0418d6f2ce82b1a10eb2045c87b31c5fa05aeffd",
   "js/16-ekrany-bar.js": "a8e42dde2e635d5a0e0271fe356d08b95c22d23a29de81b53185a0af80a86205",
   "js/17-ekrany-upravlenie.js": "f001df34e51b6146e3151002d7369608124fd629a30b129074c27063a620aed2",
-  "js/18-ekrany-mastera.js": "b7c14462a9551a1f2ed4b536d9f1e7e9ad19e567354a9dfa06d826b213a440be",
+  "js/18-ekrany-mastera.js": "db3f81961a4927efb708a92d75be34463f09a1b5f1330c66b25f2310fd462e0b",
   "js/19-ekrany-lyudi.js": "8b1561bd88cb3070f158bf41a495e7e66aebd589b5542dced0f3ae902684bb55",
   "js/20-ekrany-sluzhebnye.js": "a0ba85da42addb3bd5db360b936456d5c59dd075c9ebc1a55ef4d2cbd3d96810",
-  "js/21-navigaciya.js": "f13d7e61020d2aac947bc5f4968459ad76a9003451303fc5746b753c398d75a0",
-  "js/22-ekrany-chay.js": "3aaab7f01e17301f6c0a834dd2199787842ce27e776cbf5b3c7c4c40f7066d2f",
+  "js/21-navigaciya.js": "f35e40ecbf9ad8744f1158bd74f5a38ef5bd11446b8ea01aca5e00a273fcbb6b",
+  "js/22-ekrany-chay.js": "fdd96c4e5d802fcf78ed333746562f79e975c096d92d72c8c98ce70dcebf8acb",
   "js/23-kalendar.js": "6eb1aaceeecc48f5e31128af3cd86e30ab1da0c04142ff8716bfe88466272f53",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
  },
@@ -42,20 +42,20 @@
    "байт": 19224,
    "слепок": "blifkimhjehajheh"
   },
-  "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExd8hLxR.woff2": {
-   "байт": 22032,
-   "слепок": "bhnaeimkafmlbcbi"
-  },
   "https://fonts.gstatic.com/s/prata/v22/6xKhdSpbNNCT-sWLCm7JLQ.woff2": {
    "байт": 13132,
    "слепок": "ddjcnofkdidnokmg"
+  },
+  "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExd8hLxR.woff2": {
+   "байт": 22032,
+   "слепок": "bhnaeimkafmlbcbi"
   },
   "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExN8hA.woff2": {
    "байт": 37916,
    "слепок": "jkgjnakkehdemeac"
   }
  },
- "свод_слепков": "ff4ae26852767045d3f5b8ec04c7c3c104b3b1ecb631b9e41ef1dd54a47ba3e6",
+ "свод_слепков": "441589a803d1c0b3ca9e672545a023f1deafe736d4d04a0b8607182693c40a41",
  "область": "вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает",
  "предел": "ОДИН снятый вид каждого экрана. Состояния рецепта (отказ, пусто, отправка, вспышка) опись не снимает, и класс, живущий только в них, сверке «не измерен», а не зелёный",
  "экраны": {
@@ -3690,20 +3690,20 @@
      "видимых": 2
     },
     "card quiet": {
-     "всего": 3,
-     "видимых": 3
+     "всего": 4,
+     "видимых": 4
     },
     "row": {
-     "всего": 2,
-     "видимых": 2
+     "всего": 3,
+     "видимых": 3
     },
     "col": {
      "всего": 2,
      "видимых": 2
     },
     "small": {
-     "всего": 4,
-     "видимых": 4
+     "всего": 5,
+     "видимых": 5
     },
     "st wait": {
      "всего": 1,
@@ -3718,8 +3718,8 @@
      "видимых": 2
     },
     "btn quiet": {
-     "всего": 1,
-     "видимых": 1
+     "всего": 2,
+     "видимых": 2
     },
     "tabs": {
      "всего": 1,
