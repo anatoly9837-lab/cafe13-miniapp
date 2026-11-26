@@ -14458,13 +14458,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // cal-polnoch-rovno — m451a
       if (ev('2026-12-05') !== 1 || ev('2026-12-06') !== 0)
         bad.push(`cal-polnoch-rovno: 22:00 + 120 мин кончается в 00:00 — клетки 5-го ${ev('2026-12-05')}, 6-го ${ev('2026-12-06')} (ждали 1 и 0)`);
-      // TEA_API=false: в живом церемоний нет вовсе
+      // в живом церемоний для «смотреть» нет: списка у сервера нет (teaList пуст), занятость — только в «выбрать»
       const tea = Object.values(c).reduce((a, x) => a + x.tea, 0);
-      if (tea) bad.push(`cal-tea-api: в живом при TEA_API=false меток церемоний в месяце ${tea}, ждали 0`);
+      if (tea) bad.push(`cal-tea-api: в живом (списка церемоний у сервера нет) меток церемоний в месяце ${tea}, ждали 0`);
       await tap('[data-action="cal-day:2026-12-02"]');
       const t2 = await s.view();
       if (!t2.includes('Часы клуба')) bad.push(`cal-chasy-kluba: в дне 2 декабря нет ивента «Часы клуба»`);
-      if (/Чайн(ая|ых) церемони/.test(t2)) bad.push(`cal-tea-api: в живом при TEA_API=false в дне 2 декабря есть церемонии: «${t2.slice(0, 160)}»`);
+      if (/Чайн(ая|ых) церемони/.test(t2)) bad.push(`cal-tea-api: в живом (списка церемоний у сервера нет) в дне 2 декабря есть церемонии: «${t2.slice(0, 160)}»`);
       // календарь своего запроса не добавляет: месяц и день — без сервера (ивенты уже в eventList())
       const alien = s.calls.slice(c0);
       if (alien.length) bad.push(`${n}: календарь звал сервер: ${alien.map(q => q.method + ' ' + q.url).join(', ')}`);
@@ -14566,6 +14566,167 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (r.empty) bad.push(`${n}: пустая .small на месте снятой строки (${r.empty})`);
       if (r.life !== 1) bad.push(`${n}: «Пожизненно» ${r.life} раз, ждали 1 — у пожизненного остаётся (Р2 #453)`);
       if (r.act !== 2) bad.push(`${n}: «АКТИВНО» ${r.act} раз, ждали 2 — карточки обоих членств`);
+      await s.ctx.close();
+    }
+  }
+
+  /* ── ЗАНЯТОСТЬ КАЛЕНДАРЯ В ЖИВОМ (наряд cafe13kpg-coordinator-3 26.11.2026; api master.py:323 `GET /master/slot-busy`) ──
+     Слово владельца: «если в календаре уже стоят три церемонии на это время, календарь не должен давать возможности
+     даже выбрать это время». Предел — сервера (queries.py TEA_SLOTS = 3, `club_conflict`): ивент закрывает всё,
+     церемоний разом до трёх, ждущий букинг время не держит. Обе стороны: занятое не выбрать, свободное — выбрать.
+     Часы — остров 1 декабря 2026, 10:00; выбор — на 2 декабря (D), полосы считают и 3-е (D1, ночь). */
+  if (part(2)) {
+    const NOWB = Date.parse('2026-12-01T03:00:00Z'), D = '2026-12-02', D1 = '2026-12-03';
+    const T = (d, hm) => d + 'T' + hm + ':00+07:00';
+    const R = (title, occ, d, a, d2, z) => ({ title, occupancy: occ, starts_at: T(d, a), ends_at: T(d2, z) });
+    const PEND = 'букинг мастера ждёт решения';
+    const NOCH = [R('Ночной пуэр', 'tea', D, '23:00', D1, '01:00'), R('Ночной улун', 'tea', D, '23:00', D1, '01:00')];
+    // [имя, ответ о D, ответ о D1 (или код), проверки: [С, До, можно?]]
+    const CASES_B = [
+      ['cal-busy-ivent', [R('Вечер клуба', 'event', D, '18:00', D, '21:00')], [],
+        { band: ['18:00–21:00', 'занято ивентом «Вечер клуба»'], tries: [['19:00', '20:00', false], ['17:00', '18:30', false], ['21:00', '22:00', true]] }],
+      ['cal-busy-tri', [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R('Габа', 'tea', D, '15:00', D, '16:00')], [],
+        { band: ['15:00–16:00', 'церемоний в это время уже 3 из 3'], tries: [['15:30', '16:30', false], ['16:00', '17:00', true]] }],
+      ['cal-busy-dva', [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R(PEND, 'tea', D, '15:00', D, '16:00')], [],
+        { open: ['15:00–16:00', 'церемоний 2 из 3'], tries: [['15:00', '16:00', true]], choose: ['15:00', '16:00'] }],
+      // церемония через полночь приходит в ОБОИХ ответах: дубль дал бы 4 и закрыл ночь
+      ['cal-busy-noch-dubl', NOCH, NOCH, { tries: [['23:30', '00:30', true]] }],
+      // третья — только в ответе о D1: без второго запроса ночь осталась бы открытой
+      ['cal-busy-noch-zavtra', NOCH, NOCH.concat([R('Рассветный', 'tea', D1, '00:15', D1, '00:45')]), { tries: [['23:30', '00:30', false], ['23:30', '00:15', true]] }],
+      ['cal-busy-otkaz', [], 500, { fail: true }],
+      ['cal-busy-ne-ta-data', [], 'ne-ta', { fail: true }]];
+    for (const [n, onD, onD1, want] of CASES_B) {
+      const asked = [];
+      const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (!u.startsWith('/master/slot-busy')) return undefined;
+        asked.push(u);
+        const date = (u.match(/date=([\d-]+)/) || [])[1];
+        const body = date === D ? onD : onD1;
+        if (typeof body === 'number') return json(body, { detail: 'сбой' });
+        if (body === 'ne-ta') return json(200, { place_id: null, place_name: null, date: '2026-12-09', busy: [] });
+        return json(200, { place_id: null, place_name: null, date, busy: body });
+      }, 'Asia/Bangkok', NOWB);
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      const look = () => s.p.evaluate(() => {
+        const v = document.getElementById('view'), b = v.querySelector('[data-action="cal-choose"]');
+        return { text: v.textContent, off: [...v.querySelectorAll('.tband.off')].map(e => ({ t: e.textContent, act: e.hasAttribute('data-action'), btn: e.tagName === 'BUTTON' })),
+                 open: [...v.querySelectorAll('button.tband')].map(e => e.textContent), choose: b ? b.disabled : null };
+      });
+      const want2 = ['/master/slot-busy?date=' + D + '&occupancy=tea', '/master/slot-busy?date=' + D1 + '&occupancy=tea'];
+      if (want2.some(w => !asked.includes(w))) bad.push(`${n}: занятость спрошена не под D и D+1 с occupancy=tea: ${JSON.stringify(asked)}`);
+      let v = await look();
+      if (want.fail) {
+        if (!v.text.includes('Не удалось узнать, какое время занято') || !await s.p.$('#view [data-action="cal-busy-retry"]'))
+          bad.push(`${n}: частичный или чужой ответ не дал L17 с «Повторить»: «${v.text.slice(0, 160)}»`);
+        if (v.off.length || v.open.length || v.choose !== null) bad.push(`${n}: при отказе нарисованы полосы или «Выбрать» (${v.off.length}/${v.open.length}/${v.choose})`);
+      } else if (v.choose === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — полос нет: «${v.text.slice(0, 160)}»`);
+      else {
+        if (want.band) {
+          const o = v.off.find(x => x.t.includes(want.band[0]));
+          if (!o || !o.t.includes(want.band[1])) bad.push(`${n}: нет закрытой полосы «${want.band.join(' · ')}»: ${JSON.stringify(v.off)}`);
+          else if (o.act || o.btn) bad.push(`${n}: закрытая полоса нажимается (${o.btn ? 'кнопка' : 'data-action'})`);
+          if (v.open.some(t => t.includes(want.band[0]))) bad.push(`${n}: занятое ${want.band[0]} есть среди открытых полос`);
+        }
+        if (want.open && !v.open.some(t => t.includes(want.open[0]) && t.includes(want.open[1])))
+          bad.push(`${n}: ${want.open[0]} не открыто с «${want.open[1]}»: открытые ${JSON.stringify(v.open)}, закрытые ${JSON.stringify(v.off)}`);
+        for (const [f, t, ok] of want.tries) {
+          await s.p.evaluate(([f, t]) => {
+            for (const [id, x] of [['cal-from', f], ['cal-to', t]]) {
+              const e = document.getElementById(id); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, [f, t]);
+          await s.p.waitForTimeout(150);
+          v = await look();
+          if (v.choose !== !ok) bad.push(`${n}: ${f}–${t} — «Выбрать это время» ${v.choose ? 'погашена' : 'жива'}, ждали ${ok ? 'живую' : 'погашенную'}`);
+          if (!ok && !v.text.includes('Выберите другое время')) bad.push(`${n}: ${f}–${t} занято, а причина не названа`);
+        }
+        if (want.choose) {
+          await s.p.evaluate(([f, t]) => {
+            for (const [id, x] of [['cal-from', f], ['cal-to', t]]) {
+              const e = document.getElementById(id); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, want.choose);
+          await s.p.waitForTimeout(150);
+          await s.p.click('#view [data-action="cal-choose"]'); await s.p.waitForTimeout(200);
+          const pk = await s.p.evaluate(() => calPicked('teaHold'));
+          if (!pk || pk.ymd !== D || pk.from !== want.choose[0] || pk.to !== want.choose[1]) bad.push(`${n}: выбор не вернулся форме: ${JSON.stringify(pk)}`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Ответ сервера МЕНЯЕТСЯ между запросами — то, чего таблица выше не умеет (ревью arhitector4-c3 #462):
+       повтор после отказа НАЖИМАЕТСЯ, поздний ответ прежнего дня молчит (CALB.gen), вход спрашивает заново. */
+    const TRI = [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R('Габа', 'tea', D, '15:00', D, '16:00')];
+    const BAND3 = ['15:00–16:00', 'церемоний в это время уже 3 из 3'];
+    const hasBand = (v, w) => v.off.some(x => x.t.includes(w[0]) && x.t.includes(w[1]));
+    const lookB = s => s.p.evaluate(() => {
+      const v = document.getElementById('view');
+      return { text: v.textContent, off: [...v.querySelectorAll('.tband.off')].map(e => ({ t: e.textContent })),
+               retry: !!v.querySelector('[data-action="cal-busy-retry"]') };
+    });
+    const openB = async (asked, answer) => open(true, true, json(200, OWNER), null, null, null, q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+      if (!u.startsWith('/master/slot-busy')) return undefined;
+      asked.push(u);
+      return answer((u.match(/date=([\d-]+)/) || [])[1], asked.length);
+    }, 'Asia/Bangkok', NOWB);
+    const okB = (date, busy) => json(200, { place_id: null, place_name: null, date, busy });
+    // 1) cal-busy-povtor: первый ответ о D — 500 (L17), «Повторить» нажата — второй 200, полоса «3 из 3» есть, запросов 4
+    {
+      const n = 'cal-busy-povtor', asked = []; let failD = true;
+      const s = await openB(asked, date => {
+        if (date === D && failD) { failD = false; return json(500, { detail: 'сбой' }); }
+        return okB(date, date === D ? TRI : []);
+      });
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      let v = await lookB(s);
+      if (!v.text.includes('Не удалось узнать, какое время занято') || !v.retry) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — после 500 нет L17 с «Повторить»: «${v.text.slice(0, 160)}»`);
+      else {
+        await s.p.click('#view [data-action="cal-busy-retry"]'); await s.p.waitForTimeout(400);
+        v = await lookB(s);
+        if (asked.length !== 4) bad.push(`${n}: «Повторить» не спросил сервер заново — запросов ${asked.length}, ждали 4: ${JSON.stringify(asked)}`);
+        if (v.retry || !hasBand(v, BAND3)) bad.push(`${n}: после «Повторить» нет полосы «${BAND3.join(' · ')}»: «${v.text.slice(0, 160)}»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 2) cal-busy-pozdno: вход на D1, ответ о нём задержан; человек листает на D до ответа. Поздний ответ (с тремя
+    //    церемониями на D 15–16) обязан промолчать — иначе на D закрыто то, что сервер о D не говорил.
+    {
+      const n = 'cal-busy-pozdno', asked = [];
+      const s = await openB(asked, (date, k) => k <= 2 && date === D1
+        ? new Promise(ok => setTimeout(() => ok(okB(D1, TRI)), 1200)) : okB(date, []));
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D1);
+      await s.p.waitForTimeout(150);
+      await s.p.click('#view [data-action="cal-prev"]');
+      await s.p.waitForTimeout(1800);
+      const v = await lookB(s);
+      if (asked.length !== 4) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — запросов ${asked.length}, ждали 4 (D1, D1+1, D, D1): ${JSON.stringify(asked)}`);
+      if (!v.text.includes('Ср, 2 декабря')) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — день не D: «${v.text.slice(0, 120)}»`);
+      if (hasBand(v, BAND3)) bad.push(`${n}: поздний ответ о D1 закрыл D: ${JSON.stringify(v.off)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 3) cal-busy-vhod: D свободно; ушли с календаря, за это время три церемонии; вход снова — спрошено заново, закрыто
+    {
+      const n = 'cal-busy-vhod', asked = []; let full = false;
+      const s = await openB(asked, date => okB(date, date === D && full ? TRI : []));
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      let v = await lookB(s);
+      if (hasBand(v, BAND3) || asked.length !== 2) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — первый вход: запросов ${asked.length}, полоса ${hasBand(v, BAND3)}`);
+      full = true;
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      v = await lookB(s);
+      if (asked.length !== 4) bad.push(`${n}: второй вход не спросил занятость — запросов ${asked.length}, ждали 4`);
+      if (!hasBand(v, BAND3)) bad.push(`${n}: занятое за время вне календаря осталось открытым: ${JSON.stringify(v.off)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
   }

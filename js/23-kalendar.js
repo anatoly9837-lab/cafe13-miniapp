@@ -10,12 +10,12 @@
 
    Ивенты — eventList(), тот же массив, что у «Ивентов», своего запроса нет.
 
-   ⚠ ЗАГЛУШКА ЦЕРЕМОНИЙ. Ручки церемоний (сервер шага 42) нет. TEA_API = false: в живом режиме церемоний в
-   календаре НЕТ вовсе (не «не загрузились» — спрашивать некого), в демонстрации — набор TEA_DEMO в форме,
-   которую ждём от сервера. Живой путь включается ТОЛЬКО заменой TEA_API на true вместе с loadTea() на ручку
-   сервера в бою — правило сцепки: клиент в бой после сервера. */
+   Занятость для «выбрать время» в живом режиме — ручка сервера в бою `GET /master/slot-busy?date=…&occupancy=tea`
+   (api master.py:323, выложена 25.11 20:12Z, сборка 9a0c7e0): TEA_API = true, разбор — calLoadBusy() ниже.
+   ⚠ Списка церемоний для «смотреть» у сервера нет: в живом месяце и дне церемоний НЕТ (teaList пуст), в
+   демонстрации — набор teaDemo(). Правило сцепки прежнее: клиент в бой после сервера. */
 
-var TEA_API = false;
+var TEA_API = true;
 var CAL = { mode: 'look', view: 'month', day: null, mon: null, ret: false };   // mon — первое число показанного месяца, ymd
 
 /* Набор демонстрации. Ёмкость 4, а не 3 НАРОЧНО (рецепт, случай `cal-vybor-tri`): 3 константой в коде
@@ -33,8 +33,11 @@ function teaDemo() {
     { id: 't5', vis: 'mine', title: 'Габа на закате', at: at(ymdAdd(t, 2), '18:00'), mins: 75, host: '[вы]', free: 5, of: 5, price: 200, booked: false }
   ];
 }
-function teaList() { return LIVE ? (TEA_API ? null : []) : teaDemo(); }
-function teaCap() { return LIVE ? null : TEA_CAP_DEMO; }
+function teaList() { return LIVE ? [] : teaDemo(); }
+/* Предел церемоний разом — сервера: `TEA_SLOTS = 3` (api queries.py, `club_conflict`; слово владельца 25.11, цитата 5:
+   «три слота»). Ёмкость сервер не отдаёт — число здесь копия, и при расхождении последним стражем остаётся 409. */
+var TEA_SLOTS = 3;
+function teaCap() { return LIVE ? TEA_SLOTS : TEA_CAP_DEMO; }
 
 /* Дни, которые занимает отметка: от дня начала до дня последней минуты — ивент 22:00 + 300 мин стоит в
    двух клетках (`cal-polnoch`). У демо-ивента даты нет — его день даёт evYmd(), и он однодневный. */
@@ -220,7 +223,7 @@ function calAction(a, arg) {
   // аргумент — «ЧЧ:ММ@ЧЧ:ММ», а не минуты: склейка цифр через дефис читается стражем ids-clean как номер
   if (a === 'cal-band' && /^\d\d:\d\d@\d\d:\d\d$/.test(arg) && CAL.mode === 'pick') { calBand(arg); return true; }
   if (a === 'cal-choose' && CAL.mode === 'pick') { calChoose(); return true; }
-  if (a === 'cal-busy-retry' && CAL.mode === 'pick') { render(); return true; }
+  if (a === 'cal-busy-retry' && CAL.mode === 'pick') { calBusyRetry(); return true; }
   return false;
 }
 
@@ -249,6 +252,7 @@ function calPickEnter(p) {
   CAL = { mode: 'pick', src: p.pick, view: 'day', day: day, mon: calMonthStart(day), ret: false,
           master: m, from: '', to: '', pick: CAL.pick && CAL.pick.src === p.pick ? CAL.pick : null };
   if (CAL.pick && CAL.pick.ymd === day) { CAL.from = CAL.pick.from; CAL.to = CAL.pick.to; }
+  CALB.day = '';   // каждый вход — свежая занятость: за время на форме время могли занять
 }
 function calBack() {
   if (CAL.mode !== 'pick') return 'events';
@@ -266,7 +270,8 @@ function calPickNote() {
 function calDur() { var m = CAL.master; return m && m.mins > 0 ? m.mins : 0; }
 
 /* Занятость двух суток от начала дня d (минуты 0…2880): ивенты, церемонии с видом, свои/мастера. В демонстрации —
-   из eventList() и teaDemo(); в живом режиме ручки нет (сервер шага 42) — null, экран говорит L17. */
+   из eventList() и teaDemo(); в живом режиме — из ответа сервера (CALB), пока его нет — null, экран говорит
+   «узнаём» или L17. */
 function calSpan(x) {
   if (typeof x.at === 'number') return [x.at, x.at + (x.mins > 0 ? x.mins : 0) * 60000];
   var d = evYmd(x), s = Date.parse(d + 'T' + x.time + ':00' + CAL_OFF), e = Date.parse(d + 'T' + (x.until || x.time) + ':00' + CAL_OFF);
@@ -280,6 +285,14 @@ function calBusy(d) {
     var a = Math.max(span[0], t0), b = Math.min(span[1], t1);
     if (b > a) { o.s = Math.round((a - t0) / 60000); o.e = Math.round((b - t0) / 60000); out.push(o); }
   }
+  if (LIVE) {
+    if (CALB.day !== d || !CALB.rows) return null;
+    // ивент закрывает всё; церемония — одна из TEA_SLOTS. Своей/мастера в ответе нет — сервер её не различает.
+    CALB.rows.forEach(function (r) {
+      add([r.s, r.e], r.occ === 'event' ? { kind: 'event', title: r.title } : { kind: 'tea', vis: 'open', title: r.title });
+    });
+    return { items: out, cap: teaCap() };
+  }
   (eventList() || []).forEach(function (e) { add(calSpan(e), { kind: 'event', title: e.title }); });
   var mid = CAL.master && CAL.master.id;
   (teaList() || []).forEach(function (c) {
@@ -290,6 +303,44 @@ function calBusy(d) {
   });
   return { items: out, cap: teaCap() };
 }
+/* ── живая занятость: `GET /master/slot-busy?date=…&occupancy=tea` ─────────────────────────────────────────────
+   Ответ — сутки клуба `date`, `busy` — всё, что их ПЕРЕСЕКАЕТ: { title, occupancy: event|tea, starts_at, ends_at }.
+   Сервер судит (queries.py `club_conflict`): ивент закрывает всё, церемоний разом — до TEA_SLOTS.
+   ⚠ Ждущий букинг мастера в `busy` есть (заголовок CAL_PENDING), но время НЕ держит: решение координатора 25.11,
+   `fits` и подача считают без ждущих. Посчитай его календарь — закрыл бы время, которое сервер даёт.
+   Полосы — двое суток (ночная церемония до утра), поэтому спрашиваются d и d+1; из ответа о d+1 берётся только
+   НАЧАТОЕ в d+1 — начатое раньше пересекает и d и уже есть в первом ответе (дубль дал бы лишнюю церемонию).
+   Частичного ответа нет: пришли оба и оба о спрошенной дате — полосы; иначе L17 с «Повторить». Поздний ответ под
+   прежний день молчит (CALB.gen), как у формы мастера (`loadBusy`, js/07-mastera.js). */
+var CAL_PENDING = 'букинг мастера ждёт решения';
+var CALB = { day: '', gen: 0, rows: null, fail: false };
+function calBusyRows(r, date, from) {
+  var d = r.status === 200 ? r.data : null;
+  if (!d || d.date !== date || !Array.isArray(d.busy)) return null;
+  var out = [], bad = false;
+  d.busy.forEach(function (b) {
+    var s = b && typeof b.starts_at === 'string' ? Date.parse(b.starts_at) : NaN;
+    var e = b && typeof b.ends_at === 'string' ? Date.parse(b.ends_at) : NaN;
+    if (!b || typeof b.title !== 'string' || (b.occupancy !== 'event' && b.occupancy !== 'tea') || isNaN(s) || isNaN(e) || e < s) { bad = true; return; }
+    if (b.title === CAL_PENDING || s < from) return;
+    out.push({ title: b.title, occ: b.occupancy, s: s, e: e });
+  });
+  return bad ? null : out;
+}
+function calLoadBusy(d) {
+  if (!LIVE || !TEA_API || CALB.day === d) return;
+  var gen = ++CALB.gen, d2 = ymdAdd(d, 1);
+  CALB.day = d; CALB.rows = null; CALB.fail = false;
+  function ask(x) { return api('GET', '/master/slot-busy?date=' + x + '&occupancy=tea'); }
+  Promise.all([ask(d), ask(d2)]).then(function (rs) {
+    if (gen !== CALB.gen) return;
+    var a = calBusyRows(rs[0], d, -Infinity), b = calBusyRows(rs[1], d2, calDayStart(d2));
+    if (a && b) CALB.rows = a.concat(b); else CALB.fail = true;
+    if (current === 'calendar' && CAL.mode === 'pick') render();
+  });
+}
+function calBusyRetry() { CALB.day = ''; calLoadBusy(CAL.day); render(); }
+
 /* Отрезки двух суток по границам занятого. Причина закрытия — первая по порядку: ивент, полные места, своя/мастера
    церемония, прошлое (calendar-dovody.md, «Три причины закрытия»). */
 function calSegments(d, busy) {
@@ -339,7 +390,10 @@ function calRange() {
 function calPick() {
   var d = CAL.day, today = bkk(new Date()).ymd;
   var head = calPickNote() + calSeg() + calNav(calDayTitle(d), d === today, d > today);
+  calLoadBusy(d);
   var busy = calBusy(d);
+  if (!busy && LIVE && TEA_API && CALB.day === d && !CALB.fail)
+    return head + '<div class="card quiet"><span class="small">' + esc(slovo('calendar.pick.busyWait')) + '</span></div>';
   if (!busy) return head + '<div class="card quiet"><span class="small">' + esc(slovo('calendar.pick.busyFail')) + '</span>' +
     '<button type="button" class="btn quiet mini" data-action="cal-busy-retry">' + esc(slovo('calendar.pick.retry')) + '</button></div>';
   var segs = calSegments(d, busy), r = calRange();
