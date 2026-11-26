@@ -329,6 +329,8 @@ function shiftAct(open) {
                       : failText(r) };
       }
       haptic(!err && BAR.open === open ? 'ok' : 'warn');
+      // фича 10: смену открывают и в карточке дела (myBiz) — loadQueue рисует только очередь, карточка ждала бы чужого render
+      if (current !== 'barQueue') render();
       loadQueue();
     });
   });

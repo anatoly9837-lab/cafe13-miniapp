@@ -14936,6 +14936,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(300);
         let c = await cur(s);
         if (c.current !== 'myBiz' || c.pick !== 9) bad.push(`moi-biz-nazad: назад с «Карточек меню» не в карточку «Чая»: ${JSON.stringify(c)}`);
+        // barMoney в FROZEN (слово владельца 29.10): строка в карточке серая, как на «Клубе» сегодня. Случай судит «назад»
+        // (BOOK.from), а не разморозку, — экран включается на странице, как WIRED.memberRequests в klubnoe-snaruzhi
+        await s.p.evaluate(() => { delete FROZEN.barMoney; render(); });
         await s.p.click('#view [data-go="barMoney"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Доход и расход бара» не нажимается`));
         await s.p.waitForTimeout(300);
         if ((await cur(s)).current !== 'barMoney') bad.push(`moi-biz-nazad: «Доход и расход бара» не открылся`);
@@ -15050,11 +15053,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const s = await mbOpen([{ role: 'bar', direction_id: 7 }, { role: 'curator', direction_id: 9 }]);
       if (await toBiz(s, n, 7)) {
         if ((await s.view()).includes('Доход и расход бара')) bad.push(`${n}: бар «Бара» видит «Доход и расход бара»`);
-        await s.p.evaluate(() => { BW.dirs = [{ id: 9, title: 'Чайная у моря', wallet: null }]; render(); });
+        await s.p.evaluate(() => { BW.dirs = [{ id: 9, title: 'Чайная у моря', wallet: { sum: null, through: null } }]; render(); });
         if ((await s.view()).includes('На счёте')) bad.push(`${n}: «На счёте» у дела, которого нет в BW.dirs`);
         await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(400);
         if (await toBiz(s, n, 9)) {
-          await s.p.evaluate(() => { BW.dirs = [{ id: 9, title: 'Чайная у моря', wallet: null }]; render(); });
+          await s.p.evaluate(() => { BW.dirs = [{ id: 9, title: 'Чайная у моря', wallet: { sum: null, through: null } }]; render(); });
           const t = await s.view();
           if (!t.includes('Доход и расход бара')) bad.push(`${n}: куратор «Чая» без «Дохода и расхода бара»`);
           if (!t.includes('На счёте') || !t.includes('доли ещё не назначены')) bad.push(`${n}: нет «На счёте» у дела из BW.dirs`);
