@@ -684,14 +684,11 @@ body.has-main .dup-main { display: none; }
    смещение едет; на это стоит случай `people-fold` (центры кнопки и первой строки). */
 .fold-wrap > .outbtn { position: absolute; left: 8px; top: 4px; z-index: 1; }
 
-/* ⚠ ДАТА КОНЦА ЧЛЕНСТВА — слово владельца 28.10.2026: «После имени сделай не большим шрифтом
-   дату окончания членства. Если до конца членства остается менее 2х недель дата краснеет».
-   Числа кадра E47p. Красное — `--clay-ink`, а не `--clay`: это ТЕКСТ, и у него свой тон.
+/* Хвост имени в списке людей. Дату конца и её покраснение снял владелец 25.11.2026 (№79,
+   Cafe13KPG#1103: «Даты убирай в обоих местах») — осталось только ∞ у бессрочного.
    ⚠ Бессрочное — значок ∞ («поставь мне значек бесконечности», 29.10.2026), и он крупнее
    даты на 2 px: в 12 px знак читается как восьмёрка. */
 .till { font-size: 12px; font-weight: 400; color: var(--muted); }
-
-.till.soon { color: var(--clay-ink); }
 
 .till .inf { font-size: 14px; line-height: 1; vertical-align: -1px; }
 
@@ -888,6 +885,19 @@ body.has-main .dup-main { display: none; }
 .wk .ev { display: block; height: 5px; border-radius: 3px; margin: 4px 3px 0; background: var(--gold-mark); }
 .wk .no { display: block; height: 5px; margin: 4px 3px 0; }
 .daynote { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* ── шаг 42: галерея чайного мастера (.album — НОВЫЙ класс) ──
+   1–3 кадра видны разом: первый крупный на ширину карточки, второй и третий — превью в ряд под ним. Кадр
+   квадратный, обрезка cover, радиус 12px из шкалы; нового радиуса и цвета нет. Кадр не загрузился — пустой
+   квадрат --surface. */
+.album { display: flex; flex-direction: column; gap: 8px; }
+.album-thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.album-frame { position: relative; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden; background: var(--surface); }
+.album-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.album-cap { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+/* первый кадр альбома в строке списка мастеров; кадра нет — пустой круг --surface без буквы */
+.listitem .avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: var(--surface); }
+.listitem .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* шаг 43, календарь (рецепт 43/sostav.md): сетка месяца — семь колонок Пн–Вс, клетка = число и до трёх полосок.
    Ивент — залитая .ev (та же метка, что в неделе «Ивентов»), церемония — ПОЛАЯ .ev.tea: отличие формой, не только
    цветом. Названий в клетке нет по построению (колонка ≈47 px, размен E60). */
