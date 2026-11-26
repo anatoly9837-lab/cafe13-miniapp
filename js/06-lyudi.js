@@ -373,16 +373,13 @@ function outSend(k) {
 }
 /* Карточка знает номер строки списка (k), а не tg_user_id: id в разметке
    уехал бы в снимок экрана и дальше. */
-/* Хвост строки имени: дата конца живого членства или ∞ (кадр E47p). Четыре состояния поля
+/* Хвост строки имени: ∞ у бессрочного; у срочного даты нет — слово владельца №79 (Cafe13KPG#1103). Четыре состояния поля
    разобраны в `fromRoster`, здесь они только рисуются — и «поля нет» с «членства нет» дают
    ПУСТО по разным причинам: у первого рисовать нечем, у второго нечего. */
 function tillTail(p) {
   if (!p.till) return '';                                   // старый сервер: поля нет вовсе
   if (p.till.inf) return '<span class="till"> · <span class="inf">∞</span></span>';
-  if (!p.till.iso) return '';                               // живого членства нет
-  var t = tillWords(p.till.iso);
-  if (!t) return '';                                        // дата не разобралась — молчим, а не врём
-  return '<span class="till' + (t.soon ? ' soon' : '') + '"> · до ' + esc(t.text) + '</span>';
+  return '';                                                // срочное: даты нет (№79, Cafe13KPG#1103)
 }
 function personCard(p, k) {
   var lock = PEOPLE.busy ? ' disabled' : '';
@@ -625,28 +622,43 @@ function peopleFilter() {
    на ручку не годится: байты берутся fetch'ем и показываются objectURL. */
 var JOIN_MIME = { 'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/webp': 'WEBP', 'application/pdf': 'PDF' };
 var JOIN_PILL = { pending: 'ЖДЁТ', approved: 'ВПУЩЕНА', rejected: 'ОТКАЗАНО' };
-var JOINQ = { list: null, fail: '', gen: 0, busy: 0, err: '', ok: 0, no: 0, note: '', shot: {}, who: 0 };
+var JOINQ = { list: null, bad: [], fail: '', gen: 0, busy: 0, err: '', ok: 0, no: 0, note: '', shot: {}, who: 0 };
 
-/* Одна битая просьба — отказ целиком: очередь с пропавшей строкой выглядит полной. */
+/* Cafe13KPG#1084. Просьба без денег ЗАКОННА: с миграции 041 (фича 8) `/join/request` — просьба выгнанного
+   вернуться, и amount_thb, receipt_mime, receipt_bytes у неё NULL (чек — парой, CHECK receipt_pair). Такая
+   строка показывается полноправной, с кнопками решения: что законно по рамке, показывается, а не прощается.
+   Битая строка (нет номера или состояния, сумма не число, тип чека без файла или наоборот) выпадает ОДНА,
+   и экран называет её номером и причиной. Прежде любая такая строка гасила главе всю очередь, и первая же
+   просьба по 041 оставляла его без единой. Список без названной пропажи выглядел бы полным — поэтому `bad`. */
+function joinBroken(q) {
+  if (!q || typeof q.id !== 'number') return 'нет номера';
+  if (!JOIN_PILL[q.status]) return 'неизвестное состояние';
+  var mime = q.receipt_mime === undefined ? null : q.receipt_mime, bytes = q.receipt_bytes === undefined ? null : q.receipt_bytes;
+  if ((mime === null) !== (bytes === null)) return mime === null ? 'чек без типа' : 'тип чека без файла';
+  if (mime !== null && (!JOIN_MIME[mime] || typeof bytes !== 'number')) return 'чек непонятного вида';
+  if (q.amount_thb !== null && q.amount_thb !== undefined && !isFinite(num(q.amount_thb))) return 'сумма не число';
+  if (q.amount_usd !== null && q.amount_usd !== undefined && !isFinite(num(q.amount_usd))) return 'сумма в USDT не число';
+  return '';
+}
 function fromJoinQueue(d) {
   if (!d || !Array.isArray(d.requests) || typeof d.pending !== 'number') return null;
-  var out = [];
+  var out = [], bad = [];
   for (var i = 0; i < d.requests.length; i++) {
-    var q = d.requests[i];
-    if (!q || typeof q.id !== 'number' || !JOIN_PILL[q.status] || !JOIN_MIME[q.receipt_mime] ||
-        typeof q.receipt_bytes !== 'number' || !isFinite(num(q.amount_thb))) return null;
-    var usd = q.amount_usd === null || q.amount_usd === undefined ? null : num(q.amount_usd);
-    if (usd !== null && !isFinite(usd)) return null;
+    var q = d.requests[i], why = joinBroken(q);
+    if (why) { bad.push({ id: q && typeof q.id === 'number' ? q.id : null, why: why }); continue; }
+    var money = q.amount_thb !== null && q.amount_thb !== undefined;
+    var shot = q.receipt_mime !== null && q.receipt_mime !== undefined;
     out.push({ id: q.id, status: q.status,
                name: [q.first_name, q.last_name].filter(Boolean).join(' ') || (q.username ? '@' + q.username : 'Без имени'),
                said: typeof q.said === 'string' ? q.said.trim() : '',
                answer: typeof q.decision_note === 'string' ? q.decision_note.trim() : '',
-               mime: q.receipt_mime, kb: Math.max(1, Math.round(q.receipt_bytes / 1024)),
-               thb: num(q.amount_thb), usd: usd,
+               mime: shot ? q.receipt_mime : null, kb: shot ? Math.max(1, Math.round(q.receipt_bytes / 1024)) : null,
+               thb: money ? num(q.amount_thb) : null,
+               usd: q.amount_usd === null || q.amount_usd === undefined ? null : num(q.amount_usd),
                iso: typeof q.created_at === 'string' ? q.created_at : '',
                done: typeof q.decided_at === 'string' ? q.decided_at : '' });
   }
-  return out;
+  return { list: out, bad: bad };
 }
 function loadJoinQueue() {
   var gen = ++JOINQ.gen, who = WHO;
@@ -655,13 +667,13 @@ function loadJoinQueue() {
   JOINQ.fail = '';
   api('GET', '/join/requests').then(function (r) {
     if (gen !== JOINQ.gen || who !== WHO) return;
-    var list = r.status === 200 ? fromJoinQueue(r.data) : null;
-    if (list) JOINQ.list = list;
-    else { JOINQ.list = null; JOINQ.fail = r.status === 403 ? denyText(r) : failText(r); }
+    var got = r.status === 200 ? fromJoinQueue(r.data) : null;
+    if (got) { JOINQ.list = got.list; JOINQ.bad = got.bad; }
+    else { JOINQ.list = null; JOINQ.bad = []; JOINQ.fail = r.status === 403 ? denyText(r) : failText(r); }
     // чек нужен только тому, о ком ещё решают, и только на самой очереди (на «Управлении» —
-    // один счёт); PDF показать нечем — его байты не берутся вовсе
+    // один счёт); PDF показать нечем — его байты не берутся вовсе; у просьбы по 041 чека нет вовсе
     if (current === 'joinQueue')
-      (JOINQ.list || []).forEach(function (q) { if (q.status === 'pending' && q.mime !== 'application/pdf') joinShot(q.id); });
+      (JOINQ.list || []).forEach(function (q) { if (q.status === 'pending' && q.mime && q.mime !== 'application/pdf') joinShot(q.id); });
     if (current === 'joinQueue' || current === 'manage') render();
   });
 }
@@ -700,6 +712,9 @@ function decideJoin(id, decision) {
   });
 }
 function joinTile(q) {
+  // просьба по 041 — без денег и без чека: плитки нет, сумма не выдумывается (ноль был бы «заплатил 0»)
+  if (!q.mime) return '<span class="small">' + (q.thb === null ? 'Без взноса и без чека'
+    : 'Без чека · просили по заявке: <b class="num">' + money(q.thb) + ' ฿</b>') + '</span>';
   var s = JOINQ.shot[q.id] || {}, pdf = q.mime === 'application/pdf';
   var box = 'flex:0 0 auto;width:72px;aspect-ratio:3/4;border-radius:9px;border:1px dashed var(--line);' +
             'background:var(--surface);display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden;' +
@@ -710,8 +725,9 @@ function joinTile(q) {
   // «открыть» у PDF, как в E45, нет нарочно: открывается ли objectURL в Telegram-вебвью,
   // не проверено, а обещание, которого может не быть, хуже отсутствующей кнопки (#413)
   var kind = JOIN_MIME[q.mime] + ' · ' + q.kb + ' КБ';
-  var sums = '<span class="small">Просили по заявке: <b class="num">' + money(q.thb) + ' ฿</b>' +
-    (q.usd !== null ? ' или <b class="num">' + money(q.usd) + ' USDT</b>' : '') + '</span>';
+  var sums = q.thb === null ? '<span class="small">Суммы в просьбе нет</span>'
+    : '<span class="small">Просили по заявке: <b class="num">' + money(q.thb) + ' ฿</b>' +
+      (q.usd !== null ? ' или <b class="num">' + money(q.usd) + ' USDT</b>' : '') + '</span>';
   // E45e: чек не пришёл — место плитки занимает строка с «Повторить» (на 72 px пара рвётся);
   // суммы остаются, они из строки очереди. Решения не запираются: сервер чека не спрашивает.
   if (s.fail) return '<div class="col"><div class="row"><span class="small">Чек не загрузился</span>' +
@@ -733,8 +749,9 @@ function joinCard(q) {
           '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>Не отказывать</button>' +
           '<button type="button" class="btn quiet" data-action="j-no:' + q.id + '"' + busy + '>Отказать и отправить</button></div>'
       : JOINQ.ok === q.id
-      // E45d: имени в вопросе нет нарочно — оно строкой выше, в той же карточке
-      ? '<span class="small">Согласие впустит человека в приложение и создаст членство — одним действием. Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба — кнопкой на «Членах клуба», и тогда он теряет вход и живое членство разом.</span>' + row +
+      // E45d: имени в вопросе нет нарочно — оно строкой выше, в той же карточке. Членства согласие НЕ создаёт с фичи 8
+      // (cafe13-api join.py в бою 410f240: допуск и, при способе оплаты, пополнение счёта) — Cafe13KPG#1084
+      ? '<span class="small">Согласие впустит человека в приложение — одним действием; членства оно не создаёт. Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба — кнопкой на «Членах клуба», и тогда он теряет вход и живое членство разом.</span>' + row +
           '<button type="button" class="btn quiet" data-action="j-keep"' + busy + '>Не соглашаться</button>' +
           '<button type="button" class="btn quiet" data-action="j-yes:' + q.id + '"' + busy + '>Точно согласиться</button></div>'
       : row +
@@ -871,10 +888,10 @@ function loadBusinesses() {
    согласие операционного директора СОЗДАЁТ бизнес. Разборщик строгий: одна битая строка — отказ целиком (§4).
    ⚠ Рецептов шага 13 в стволе нет (#887): слова и раскладка — по образцу мастера и сверяются, когда рецепт ляжет. */
 /* Цена месяца — ТОЛЬКО от сервера, `GET /partner/price` → {amount} (рецепт R1, «Заказ серверу»; Cafe13KPG#902).
-   ⚠ На 06.11.2026 этой ручки НЕТ (`PRICE_MONTH` — константа внутри partner.py): сервер отвечает 404, экран говорит
-   «Цену не удалось узнать у сервера.», кнопка погашена — экран есть, купить нельзя. Число в разметке соврало бы при
-   первой смене цены. Ручка ляжет — экран оживёт без правки клиента: это и есть отрицательный контроль заплатки
-   (случаи `partner-cena-404` и `partner-cena-200`). `price`: undefined — не спрашивали, 'loading', число, null — не узнать */
+   Ручка ЕСТЬ: api d768d94 (18.11.2026), в бою 410f240 — `partner.py:175`, ответ `{"amount": "2600.00"}` строкой
+   (батарея api `tests/test_api_partner.py:159` на 410f240). До неё (06.11) сервер отвечал 404 — тогда экран говорит
+   «Цену не удалось узнать у сервера.», кнопка погашена. Число в разметке соврало бы при первой смене цены. Обе стороны
+   держат случаи `partner-cena-404` и `partner-cena-200`. `price`: undefined — не спрашивали, 'loading', число, null — не узнать */
 var PR = { mine: null, mineState: '', mineGen: 0, q: null, pending: null, qFail: '', qGen: 0, price: undefined, priceGen: 0,
            busy: false, ask: 0, note: '', qErr: '', title: '', about: '', err: '' };
 function loadPartnerPrice() {

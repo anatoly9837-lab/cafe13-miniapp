@@ -40,7 +40,9 @@ function tgStub(inside) {
 const OWNER = {
   member: { tg_user_id: 1, first_name: 'Тест', last_name: '', username: null, photo_url: null,
             pass_code: null, created_at: '2026-10-01T00:00:00+00:00',
-            consent_data_at: '2026-10-18T10:00:00+00:00', consent_filming_at: null },
+            consent_data_at: '2026-10-18T10:00:00+00:00', consent_filming_at: null,
+            // редакции согласий (api 043): у согласия, данного до 043, сервер отдаёт null — как здесь; клиент их не читает
+            consent_data_version: null, consent_filming_version: null },
   membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true },
   // все членства человека (api d0a8c9f, на бою есть; Cafe13KPG#297). Клиент
   // их пока не читает — поле здесь, чтобы заглушка совпадала с боем по форме
@@ -91,17 +93,25 @@ const msNoEnd = clone(OWNER); msNoEnd.memberships.push({ level: 'organizer', sta
 const CASES = [
   ['owner-lifelong', true, true, json(200, OWNER),
     // остаток с главной ушёл в шапку (v87): «3 170 ฿» из корня /me держит случай balans-shapka
-    ['Пожизненно', 'Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
+    // «Пожизненно» с «Клуба» ушло вместе с плашкой (Cafe13KPG#1096): разбор /me судит RAZBOR ниже
+    ['Глава клуба', 'Администратор', 'Афиша', 'В афише пока ничего нет'],
     // 4 = /me, /events и два запроса блока букинга на «Клубе»: /master/requests/mine и /master/price?hours=2 (цена
     // от часов не зависит — Cafe13KPG#985, второй цены блок не спрашивает); 6 — плюс два запроса блока
-    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера)
-    ['Действует до', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 6],
-  ['finite', true, true, json(200, finite), ['Действует до 14 ноября 2026'], ['Пожизненно'], 6],
+    // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера);
+    // 7 — плюс GET /master/price без часов: цена церемонии для двери «провести церемонию» (js/21 loadTeaHoldPrice).
+    // Основание: дверь teaHold включена этим PR, цена запрашивается законно
+    // 8 — плюс GET /tea/card/mine (#468). Основание: дверь teaApply включена этим PR, блок „Чайный мастер“ читает свою карточку — GET /tea/card/mine (js/21:648, только при открытой двери)
+    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 8],
+  // кабинет — дверью (HAS_CABINET), срок «14 ноября 2026» — разбором (RAZBOR); на «Клубе» срока нет (#1096)
+  // 7 — как у owner-lifelong: цена церемонии (дверь teaHold включена этим PR, цена запрашивается законно)
+  // 8 — как у owner-lifelong, плюс GET /tea/card/mine (#468). Основание: дверь teaApply включена этим PR, блок „Чайный мастер“ читает свою карточку — GET /tea/card/mine
+  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 8],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
-    ['Подпись не принята'], ['нет в списке'], 1],
+    ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
     // + GET /join: экран просьбы спрашивает сервер сам (Cafe13KPG#459); здесь /join тоже 403
-    ['Вас ещё нет в списке'], ['Подпись не принята', 'Член клуба'], 2],
+    // J0 (рецепт #397): шапка выгнанного — «Доступ снят»; слов новичка о списке нет
+    ['Доступ снят'], ['Подпись не принята', 'Член клуба', 'Вас ещё нет в списке', 'Попасть в список'], 2],
   ['server-500', true, true, json(500, { detail: 'x' }), ['Сервер ответил кодом 500'], [], 1],
   ['empty-200', true, true, json(200, {}), ['Ответ сервера не разобран'], [], 1],
   ['html-200', true, true, { status: 200, contentType: 'text/html', body: '<html>ok</html>' },
@@ -115,8 +125,9 @@ const CASES = [
   ['network-down', true, true, 'abort', ['Сервер не ответил'], [], 1],
   ['outside-telegram', false, true, json(200, OWNER),
     // «1 250» (демо-остаток) ушёл с главной в скрытую шапку (v87); витрину держат срок и афиша демонстрации
-    ['Действует до 14 ноября', 'Звуковая практика'], ['Пожизненно'], 0],
-  ['api-off', true, false, json(200, OWNER), ['Действует до 14 ноября'], ['Пожизненно'], 0]
+    // витрину держит афиша демонстрации; демонстрационного срока на «Клубе» больше нет (#1096)
+    ['Звуковая практика'], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 0],
+  ['api-off', true, false, json(200, OWNER), ['Звуковая практика'], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 0]
 ];
 
 // Экраны отказа — списком, а не регуляркой по имени: регулярка молча
@@ -131,6 +142,11 @@ const CABINET = '#view [data-go="pass"]';
 const NO_CABINET = new Set(['no-sign-401', 'stranger-403', 'server-500', 'empty-200', 'html-200', 'finite-without-end',
   'memberships-none', 'memberships-object', 'memberships-alien', 'memberships-lifelong-str', 'memberships-noend', 'network-down']);
 const HAS_CABINET = new Set(['owner-lifelong', 'finite', 'outside-telegram', 'api-off']);
+/* Разбор /me (пожизненное ↔ срок) прежде судился строками плашки на «Клубе». Плашку сняли (Cafe13KPG#1096), а экран
+   «Членство» в живом закрыт (нет в WIRED — случай membership-off), и срок /me больше не показывает НИ ОДИН открытый
+   в живом экран. Поэтому судья — то, что разбор отдаёт экранам: DATA.member. [пожизненно, срок начинается с] */
+const RAZBOR = { 'owner-lifelong': [true, null], 'finite': [false, '14 ноября 2026'] };
+Object.keys(RAZBOR).forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('RAZBOR: нет случая ' + n); });
 [...NO_CABINET, ...HAS_CABINET].forEach(n => { if (!CASES.some(c => c[0] === n)) throw new Error('CABINET: нет случая ' + n); });
 
 // выключатель ищется в любом положении: тест сам ставит нужное. Не один —
@@ -214,7 +230,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const ASLEEP = {
     // шаг 22 (Cafe13KPG#553): «очередь на баре», «смена» и «вход в очередь по роли» проснулись вместе с `barQueue`
     'касса': ['2026-10-28', 'fcd2a09'], 'доход и расход бара': ['2026-10-28', 'fcd2a09'],
-    'отчёт за день': ['2026-10-28', 'fcd2a09'], 'завести мероприятие': ['2026-10-28', 'fcd2a09'],
+    'отчёт за день': ['2026-10-28', 'fcd2a09'],
+    // «завести мероприятие» проснулось с `eventNew` (Cafe13KPG#1078): довод заморозки снят рамкой владельца 24.11
     'пополнение из бара (бармен без права кассы)': ['2026-10-28', 'c72c2f3'],
     'запись в тестовом режиме через «Доход и расход» бара': ['2026-10-28', 'c72c2f3'],
     'отказ по праву на замороженных рабочих экранах': ['2026-10-28', '2c4cadd'],
@@ -228,12 +245,51 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   };
   // Исключение посреди батареи не глотает уже найденное: без этого обрыв печатал
   // только стек, и красные строки всех пройденных случаев терялись (Cafe13KPG#415).
-  process.on('unhandledRejection', e => {
+  // Код обрыва (Cafe13KPG#528): найденное ДО обрыва — настоящая находка, rc=1; обрыв без находок — отсутствие
+  // замера, rc=2 «не выполнено». Прежде оба выходили с 1 под «КРАСНОЕ», и мутант, «убитый» обрывом, засчитывался
+  // убитым. Пометка «НЕ ДОШЁЛ» стоит в строке вердикта, а не в шапке: пересказ вывода теряет шапку.
+  // Тот же обработчик и на uncaughtException (возврат arhitector-18 по #528): throw в колбэке setTimeout
+  // (фикстуры с задержкой ответа) идёт мимо промисов, и Node выходил с 1 одним стеком — «убит обрывом» жил.
+  /* НЕ ИЗМЕРЕНО — экран заморожен (Cafe13KPG#528 п.1). THAW=1 будит случаи, но не размораживает экран: случай жал
+     ВЫКЛЮЧЕННУЮ кнопку замороженного экрана («День кассы», «Создать мероприятие»), click ждал 30 с и ронял батарею
+     целиком (замер на 09e3b64: live.cjs:5245 и :8723). Теперь клик открытой сессии (open() ниже) сперва спрашивает
+     страницу: цель выключена и ведёт на экран, который приложение держит замороженным (`frozen()` из
+     js/02-chlenstvo.js), — клика нет, экран записан сюда с именем, а находки ЭТОГО случая после такого клика
+     (следствия ненажатой кнопки: «экран не открылся») не идут в КРАСНОЕ, а печатаются здесь же как не измеренные.
+     Находки до клика остаются находками. Итог без красного, но с непустым списком — rc=2 «не целиком»: зелёное о
+     незамеренном врало бы так же, как обрыв. ⚠ Предел: перехвачен только s.p.click(селектор); клик через
+     locator(…).click() или elementHandle.click() идёт мимо. */
+  const FZ = [];
+  const nemer = () => 'НЕ ИЗМЕРЕНО — экран заморожен (FROZEN), клик в выключенную кнопку не делался:\n  ' +
+    FZ.map(f => f.screen + ' — клик «' + f.sel + '» (live.cjs:' + f.line + ')' +
+      (f.lost.length ? '; следствия не засчитаны: ' + f.lost.join(' | ') : '')).join('\n  ');
+  let PENDING_FZ = null;
+  // Находки, добавленные после клика в замороженный экран и до закрытия сессии, — следствия ненажатой кнопки.
+  const settleFz = fz => {
+    if (!fz || fz.done) return; fz.done = true;
+    if (fz.hit === null) return;
+    fz.recs[0].lost = bad.splice(fz.hit); FZ.push(...fz.recs);
+  };
+  const obryv = e => {
+    settleFz(PENDING_FZ);
     // под THAW=1 обрыв — частый исход, а давность проснувшихся нужна ровно здесь
     if (WOKE.size) console.log('ПРОСНУЛИСЬ (THAW=1/LVON=1) — красное сперва сверить со словами владельца НОВЕЕ даты сна:\n  ' + [...WOKE].join('\n  '));
-    console.log('КРАСНОЕ:\n' + bad.concat('БАТАРЕЯ ОБОРВАЛАСЬ исключением: ' + String(e && e.message || e).split('\n')[0]).join('\n'));
+    // Место обрыва (Cafe13KPG#1083): прежде печаталась только первая строка сообщения — «page.click: Timeout», и из
+    // лога нельзя было сказать, какой случай оборвался. Теперь — кадры этого файла из стека (строка случая и его
+    // помощника) и цель, которую ждал Playwright (она в «Call log» сообщения, второй строкой и ниже).
+    const msg = String(e && e.message || e);
+    const frames = String(e && e.stack || '').split('\n').map(l => (l.match(/live\.cjs:(\d+)/) || [])[1]).filter(Boolean);
+    const aim = (msg.match(/waiting for (locator\(.*\)|selector .*)/) || [])[1];
+    const where = '; место: ' + (frames.length ? 'live.cjs:' + [...new Set(frames)].slice(0, 3).join(' ← :') : 'стек без строк live.cjs') +
+                  (aim ? '; ждал ' + aim : '');
+    const why = 'прогон НЕ ДОШЁЛ до конца — батарея оборвалась исключением: ' + msg.split('\n')[0] + where;
+    if (FZ.length) console.log(nemer());
+    if (!bad.length) { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + why + '; находок до обрыва нет'); process.exit(2); }
+    console.log('КРАСНОЕ (' + why + '):\n' + bad.join('\n'));
     process.exit(1);
-  });
+  };
+  process.on('unhandledRejection', obryv);
+  process.on('uncaughtException', obryv);
   // Счёт прогонов считается, а не вписывается: каждый случай открывает свой
   // экран через open(), поэтому здесь он и растёт. Прежняя строка складывала
   // длину таблицы с числом 180 — императивные случаи (их большинство) в неё
@@ -274,6 +330,27 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       } catch (e) {}
     }, saved ? JSON.stringify(saved) : null);
     const p = await ctx.newPage();
+    // Клик в замороженный экран (Cafe13KPG#528 п.1, см. FZ выше): спросить страницу ДО клика, а не ждать 30 с.
+    settleFz(PENDING_FZ);   // прежняя сессия, которую случай не закрыл, — её следствия считаются до новой
+    const fz = { hit: null, recs: [], done: false };
+    const click0 = p.click.bind(p);
+    p.click = async (sel, opt) => {
+      const stack = new Error().stack;   // синхронно: после await вызывающих кадров в стеке уже нет
+      const screen = await p.evaluate(sel => {
+        try {
+          const el = document.querySelector(sel), go = el && el.closest('[data-go]'), scr = go && go.getAttribute('data-go');
+          const off = el && (el.disabled || el.getAttribute('aria-disabled') === 'true');
+          return off && scr && typeof frozen === 'function' && frozen(scr) ? scr : null;
+        } catch (e) { return null; }   // не CSS-селектор Playwright (text=…) — судит обычный клик
+      }, sel).catch(() => null);
+      if (!screen) return click0(sel, opt);
+      if (fz.hit === null) fz.hit = bad.length;
+      const lines = stack.split('\n').map(l => (l.match(/live\.cjs:(\d+)/) || [])[1]).filter(Boolean);
+      fz.recs.push({ screen, sel, line: lines[1] || lines[0] || '?', lost: [] });
+    };
+    const close0 = ctx.close.bind(ctx);
+    ctx.close = async (...a) => { settleFz(fz); return close0(...a); };
+    PENDING_FZ = fz;
     const calls = [], errs = [];
     p.on('pageerror', e => errs.push(e.message));
     await p.route('https://telegram.org/**', r => r.fulfill({ contentType: 'text/javascript', body: tgStub(inside) }));
@@ -324,6 +401,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (REFUSAL.has(name) && await s.tabsShown())
       bad.push(`${name}: на экране отказа видны вкладки`);
     if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+    if (RAZBOR[name]) {
+      const [life, till] = RAZBOR[name];
+      const got = await s.p.evaluate(() => DATA.member ? { lifelong: DATA.member.lifelong, until: DATA.member.until } : null);
+      if (!got) bad.push(`${name}: разбор /me не отдал члена`);
+      else {
+        if (got.lifelong !== life) bad.push(`${name}: разбор /me: пожизненно ${got.lifelong}, ждали ${life}`);
+        if (till === null ? got.until !== null : !(typeof got.until === 'string' && got.until.startsWith(till)))
+          bad.push(`${name}: разбор /me: срок «${got.until}», ждали ${till === null ? 'нет срока' : '«' + till + '…»'}`);
+      }
+    }
     await s.p.screenshot({ path: `${OUT}/live-${name}.png` });
     await s.ctx.close();
   }
@@ -352,7 +439,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!(await s.view()).includes(stay)) bad.push(`${n}: переход data-go увёл с экрана отказа`);
     };
     for (const [n, me, stay] of [
-      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Вас ещё нет в списке'],
+      ['vyhod-403', json(403, { detail: 'доступа нет' }), 'Доступ снят'],
       ['vyhod-401', json(401, { detail: 'подпись не принята' }), 'Подпись не принята'],
       ['vyhod-500', json(500, { detail: 'x' }), 'Сервер клуба недоступен']]) {
       const s = await open(true, true, me);
@@ -371,7 +458,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         bad.push(`${n}: после входа на «Пропуске» нет системной «назад»`);
       await s.p.evaluate(() => window.__back && window.__back());
       await s.p.waitForTimeout(150);
-      if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «назад» после входа не вернула в кабинет`);
+      if (await s.p.evaluate(() => current) !== 'home' || !(await s.p.$(CABINET))) bad.push(`${n}: «назад» после входа не вернула в кабинет`);
       await s.ctx.close();
     }
     // витрина вне Telegram: демонстрация работает как прежде, нарисованная «назад» жива
@@ -571,6 +658,30 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const t = await s.view();
         // после отправки — история (E52v) с «ждёт проверки» из перечитанного ответа сервера
         if (!t.includes('ждёт проверки')) bad.push(`${n}: после отправки нет «ждёт проверки» из истории`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // предел чека — 2 МиБ = 2 * 1024 * 1024 байт (`RECEIPT_MAX`, потолок сервера), и отказ называет его ТЕМ ЖЕ словом,
+    // что подпись у чека (Cafe13KPG#584). Граница мерится по обе стороны: «2 МБ + 1 байт» больше 2 МБ в обиходе,
+    // но в предел входит; «2 МиБ + 1 байт» — на байт сверх него. Так слово отказа привязано к числу, а не к буквам
+    {
+      const n = 'tu-chek-predel', MIB2 = 2 * 1024 * 1024, MB2 = 2 * 1000 * 1000;
+      const s = await tuCase(() => json(200, hist([])));
+      await tap(s, '[data-action="tu-online"]');
+      if (!(await s.p.$('#tu-file'))) bad.push(`${n}: «Онлайн» не открыло форму с чеком`);
+      else {
+        await s.p.fill('#tu-amount', '1500');
+        const deny = () => s.p.evaluate(() => { const d = document.querySelector('#view .deny[role="alert"]'); return d ? d.textContent.trim() : null; });
+        await s.p.setInputFiles('#tu-file', pdf(MIB2 + 1), { timeout: 60000 });
+        await s.p.waitForTimeout(300);
+        const said = await deny();
+        if (said !== 'Чек больше 2 МиБ — приложите файл поменьше.') bad.push(`${n}: на чек «2 МиБ + 1 байт» отказ «${said}», ждали «Чек больше 2 МиБ — приложите файл поменьше.»`);
+        if (!(await s.p.$('#tu-send[disabled]'))) bad.push(`${n}: чек сверх предела принят — отправка доступна`);
+        await s.p.setInputFiles('#tu-file', pdf(MB2 + 1), { timeout: 60000 });
+        await s.p.waitForTimeout(300);
+        if (await deny() !== null) bad.push(`${n}: чек «2 МБ + 1 байт» (меньше 2 МиБ) отвергнут: «${await deny()}»`);
+        if (await s.p.$('#tu-send[disabled]')) bad.push(`${n}: с чеком в пределе 2 МиБ отправка недоступна`);
       }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
@@ -923,8 +1034,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     decision_note: '', direction_id: status === 'approved' ? 7 : null, paid_till: null, active: status === 'approved' }, extra || {});
   const qrow = (id, status, extra) => Object.assign(preq(id, status), { member_id: 200000011, first_name: 'Имя' + id, last_name: '', username: null }, extra || {});
   const PQUEUE = l => ({ requests: l, pending: l.filter(x => x.status === 'pending').length });
-  const PDECIDE = (id, decision) => ({ id, status: decision, decided_at: '2026-11-06T06:00:00+00:00', refund_ledger_id: null,
-    direction_id: decision === 'approved' ? 7 : null, status_ru: '' });
+  const PDECIDE = (id, decision) => Object.assign({ id, status: decision, decided_at: '2026-11-06T06:00:00+00:00', refund_ledger_id: null,
+    direction_id: decision === 'approved' ? 7 : null, status_ru: '' },
+    // согласие (api 1d7da4b, partner.py:303) отдаёт ещё title и paid_till — МОМЕНТ конца оплаченного; отказ их не несёт
+    decision === 'approved' ? { title: 'Кофейня', paid_till: '2026-12-01T17:00:00+00:00' } : {});
   // ── шаг 14: заглушки ручек работников — на уровне функции, как у шага 13: те же построители уходят в `STUBS`
   // (сверка с формой cafe13-api 9ad148e). `elsewhere` — число других бизнесов (без названий), `paid_till` — момент
   const BWDIR = (id, active) => ({ id, title: { 7: 'Кофейня', 9: 'Пекарня' }[id] || 'Бизнес ' + id, active,
@@ -954,12 +1067,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const MAT = (days, hm) => MDAY(days) + 'T' + (hm || '18:00') + ':00+07:00';
   const mreq = (id, status, extra) => Object.assign({ id, title: 'Проба мастера', about: '', seats: 8, place_id: 1, place_name: 'Зал',
     weekday: 4, weekday_ru: 'четверг', start_local: '18:00', hours: 2, hours_extra: 0, amount: String(PRICE(2)), status,
+    // поля заявки с api#225 (снимок fb13e0f): длительность минутами, занятость, цена входа, съёмка, просьба о донате;
+    // 'event' = поля нет (js/07 r.tea), клиент читает hours — минуты с ним согласны
+    duration_min: 120, occupancy: 'event', price: '0.00', ask_donation: false, filmed: false,
     status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
     created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null, paid_until: null,
     starts_at: MAT(7) }, extra || {});
   // строка `/master/slots` — букинг (у прежних недельных `starts_at` null)
   const mslot = (id, extra) => Object.assign({ request_id: id, title: 'Проба мастера', weekday: 4, weekday_ru: 'четверг', start_local: '18:00',
-    hours: 2, hours_extra: 0, paid_until: null, place_name: 'Зал', first_name: '[мастер]', last_name: '', username: 'm' + id, weeks_on: 1, weeks_off: 0,
+    hours: 2, hours_extra: 0, duration_min: 120, paid_until: null, place_name: 'Зал', first_name: '[мастер]', last_name: '', username: 'm' + id, weeks_on: 1, weeks_off: 0,
     membership_live: true, state: 'published', starts_at: MAT(7) }, extra || {});
   const mbusy = (date, fits, busy, conflict) => ({ place_id: 1, place_name: 'Зал', date, busy: busy || [], starts_at: date + 'T18:00:00+07:00',
     conflict: conflict || null, fits });
@@ -988,7 +1104,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       return ok;
     };
     const offer = s => s.p.evaluate(() => {
-      const b = [...document.querySelectorAll('#view [data-action="ms-apply"]')].filter(x => x.textContent === 'Забукать')[0];
+      // слово кнопки — «Провести ивент» (рецепт 42/home.md H0a: «Забукать» → «Провести ивент», смена слова в семье master)
+      const b = [...document.querySelectorAll('#view [data-action="ms-apply"]')].filter(x => x.textContent === 'Провести ивент')[0];
       return { has: !!b, off: b ? b.disabled : null, text: document.getElementById('view').textContent };
     });
     // меньше цены сервера — «Забукать» погашен, и недостача названа ДО нажатия словами СЕРВЕРНОЙ цены
@@ -1026,6 +1143,46 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         }
       }
       if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия «Отправить»`);
+      await s.ctx.close();
+    }
+    // дверь «провести церемонию» (teaHold в WIRED, v213): кнопку и переход судит СЛОВО и data-go, а не число запросов.
+    // Цена церемонии запрашивается до проверки двери (js/21 loadTeaHoldPrice, js/07 masterOffer), поэтому без этих
+    // случаев спрятанная кнопка оставила бы те же восемь запросов и прогон был бы зелёным (возврат arhitector4-c3 к #463)
+    const teaDoor = s => s.p.evaluate(() => {
+      const b = [...document.querySelectorAll('#view [data-go="teaHold"]')].filter(x => x.textContent === 'Провести чайную церемонию')[0];
+      return { has: !!b, off: b ? b.disabled : null, text: document.getElementById('view').textContent };
+    });
+    // ровно цена — кнопка есть, жива, нажатие открывает teaHold
+    {
+      const n = 'tea-door';
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(PRICE(2), [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      const f = await teaDoor(s);
+      if (!f.has) bad.push(`${n}: на «Клубе» нет кнопки «Провести чайную церемонию» (data-go="teaHold")`);
+      else if (f.off !== false) bad.push(`${n}: при остатке ровно в цену «Провести чайную церемонию» недоступна (${JSON.stringify(f.off)})`);
+      else if (await tapIf(s, n, '#view [data-go="teaHold"]', '«Провести чайную церемонию»')) {
+        await s.p.waitForTimeout(200);
+        const cur = await s.p.evaluate(() => current);
+        if (cur !== 'teaHold') bad.push(`${n}: «Провести чайную церемонию» открыла «${cur}», ждали teaHold`);
+      }
+      if (o.posted.length) bad.push(`${n}: заявка ушла без нажатия «Отправить»`);
+      await s.ctx.close();
+    }
+    // недостача — кнопка ЕСТЬ, но погашена, и нажатие никуда не ведёт (отрицательный контроль к tea-door)
+    {
+      const n = 'tea-door-short';
+      const o = { mine: () => [], posted: [] };
+      const s = await open(true, true, json(200, mem(100, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(300);
+      const f = await teaDoor(s);
+      if (!f.has) bad.push(`${n}: на «Клубе» нет кнопки «Провести чайную церемонию» и при недостаче`);
+      else {
+        if (f.off !== true) bad.push(`${n}: при остатке 100 «Провести чайную церемонию» нажимается — цена 130`);
+        await s.p.evaluate(() => { const b = document.querySelector('#view [data-go="teaHold"]'); b && b.click(); });
+        await s.p.waitForTimeout(200);
+        if (await s.p.evaluate(() => current) === 'teaHold') bad.push(`${n}: погашенная кнопка открыла teaHold`);
+      }
       await s.ctx.close();
     }
     // подача: ровно один POST /master/request с телом формы, после — своя заявка перечитана, на «Клубе» «ждёт решения»
@@ -1448,7 +1605,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.waitForTimeout(400);
       const t = await s.view();
       ['Ваши букинги', 'Ждущий вечер', 'ждёт решения', 'Согласованный вечер', 'согласовано', 'Отказанный вечер', 'Нет фото работ', 'вернулись на счёт',
-       'Недельный слот', 'каждую неделю', 'Забукать'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: на «Клубе» нет «${w}»`); });
+       'Недельный слот', 'каждую неделю', 'Провести ивент'].forEach(w => { if (!t.includes(w)) bad.push(`${n}: на «Клубе» нет «${w}»`); });
       if (t.includes('Прошедший вечер')) bad.push(`${n}: прошедший букинг стоит в списке`);
       // H8 (рецепт master/home.md, №46 «б», фича 4): у согласованного С ДАТОЙ — плата за слот остаётся клубу; ровно у одного
       // (недельный без даты её не несёт, прошедший скрыт)
@@ -1471,6 +1628,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const t = await s.view();
       if (!t.includes('Букинги не загрузились')) bad.push(`${n}: строка без starts_at принята`);
       if (t.includes('Без даты') || t.includes('каждую неделю')) bad.push(`${n}: строка без starts_at показана как букинг`);
+      await s.ctx.close();
+    }
+    // причина отказа — фраза человека: своя точка не удваивается, «!» и «?» не получают точку (Cafe13KPG#725)
+    {
+      const n = 'buking-otkaz-tochka';
+      const mine = [
+        mreq(841, 'rejected', { title: 'Отказ с точкой', starts_at: MAT(3), decision_note: 'возьмите вторник.' }),
+        mreq(842, 'rejected', { title: 'Отказ без точки', starts_at: MAT(4), decision_note: 'нет фото работ' }),
+        mreq(843, 'rejected', { title: 'Отказ с вопросом', starts_at: MAT(5), decision_note: 'а где смета?' })];
+      const o = { mine: () => mine, posted: [] };
+      const s = await open(true, true, json(200, mem(9000, [])), null, null, null, masterApi(o));
+      await s.p.waitForTimeout(400);
+      const t = await s.view();
+      ['Возьмите вторник. ', 'Нет фото работ. ', 'А где смета? '].forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w.trim()}» перед возвратом`); });
+      for (const w of ['..', '?.', '!.']) if (t.includes(w)) bad.push(`${n}: в причине отказа «${w}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
     // продления нет (Cafe13KPG#985, ветвь 7): у мастера с согласованным букингом нет «Продлить», экрана нет, ручки
@@ -1509,7 +1682,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     // ── шаг 13: заявка в партнёры (Cafe13KPG#889, рецепт cafe13-miniapp#257, ручки cafe13-api#143) ──
-    // Цена — ТОЛЬКО `GET /partner/price` (ручки на 06.11 нет, Cafe13KPG#902). Пара `partner-cena-404`/`-200` —
+    // Цена — ТОЛЬКО `GET /partner/price` (Cafe13KPG#902; ручка в бою 410f240, partner.py:175). Пара `partner-cena-404`/`-200` —
     // отрицательный контроль заплатки: 404 гасит кнопку, 200 оживляет её суммой сервера без правки клиента
     {
       const flat = t => t.replace(/[\s  ]/g, '');
@@ -1981,9 +2154,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open('nosign', true, json(401, { detail: 'подпись не принята' }));
     const t = await s.view();
     if (s.calls.length) bad.push(`${n}: без подписи ушло запросов к серверу: ${s.calls.length}`);
-    if (t.includes('Подпись не принята') || t.includes('нет в списке')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
-    // признак витрины — срок демонстрационного члена («1 250» ушёл с главной в скрытую шапку, v87)
-    if (!t.includes('Действует до 14 ноября')) bad.push(`${n}: без подписи нет витрины (демонстрационного срока)`);
+    if (t.includes('Подпись не принята') || t.includes('Доступ снят')) bad.push(`${n}: без подписи — экран отказа, а не витрина`);
+    // признак витрины — афиша демонстрации: срок демонстрационного члена ушёл с «Клуба» вместе с плашкой (#1096)
+    if (!t.includes('Звуковая практика')) bad.push(`${n}: без подписи нет витрины (демонстрационной афиши)`);
     await s.ctx.close();
   }
 
@@ -2088,7 +2261,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       me = json(200, OWNER);
       await tap(s, '[data-action="retry"]');
       await s.p.waitForTimeout(200);
-      if (!(await s.view()).includes('Пожизненно')) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
+      if (!(await s.p.$(CABINET))) bad.push(`${n}: «Войти в клуб» не впустило в кабинет`);
       await s.ctx.close();
     }
     // ПЕТЛЯ (Cafe13KPG#853): /join отдаёт ДАВНО согласованную просьбу тому, кого в клубе нет. Прежде экран рисовал
@@ -2124,25 +2297,63 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (await s.p.$('#view [data-go="pass"]')) bad.push(`${n}: у новичка дверь «Пропуск» (решение №45 — пропуска нет)`);
       if (await s.p.$('#join-said')) bad.push(`${n}: у новичка форма просьбы о вступлении`);
       if (!t.includes('Мои записи')) bad.push(`${n}: на «Клубе» новичка нет «Мои записи» — признак «Клуба» мёртв`);
-      // Порядок выкладки (решение координатора 24.11.2026): «Я мастер» новичку — только ПОСЛЕ выкладки api#176. На боевом
-      // 29a088c `queries.event_live` прячет ивент мастера без живого членства, и новичок заплатил бы 100 ฿ за ивент, которого
-      // нет в афише. Снимать эту строку — вместе с клиентом фичи 3 и по /health ≥ fc474be, не раньше.
-      if (await s.p.$('#view [data-action^="ms-"]') || /Забукать ивент|Ваши букинги|Букинги не загрузились/.test(t))
-        bad.push(`${n}: у новичка блок «Я мастер» — фича 3 раньше выкладки api#176 (ивент мастера без членства невидим)`);
+      // Порядок выкладки (решение координатора 24.11.2026) держал «Я мастер» новичку до выкладки api#176: снять — «вместе с
+      // клиентом фичи 3 и по /health ≥ fc474be». Снято шагом 42: /health build_sha 9a0c7e0 содержит fc474be (замер 26.11.2026),
+      // а рецепт 42/home.md (№65 «а», случай tea-home-bez-roli) велит блок «Провести в клубе» без условия роли и членства.
+      // Теперь наоборот: у новичка блок ЕСТЬ (кнопки или честное «не загрузились» — ответ /master/requests/mine здесь не подложен)
+      if (!/Провести в клубе|Букинги не загрузились/.test(t))
+        bad.push(`${n}: у новичка нет блока «Провести в клубе» — рецепт 42/home.md: условия роли и членства на нём нет`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
-    // ДВЕРЬ: член с оплаченным членством ничего не теряет (№38) — дом, вкладка «Клуб», плашка и «Пропуск» на месте
+    // ДВЕРЬ: член с оплаченным членством ничего не теряет (№38) — дом, вкладка «Клуб», «Пропуск» на месте. Плашки членства
+    // нет и у него: Cafe13KPG#1096 (слово владельца 25.11.2026), дверь «Пропуск» осталась строкой — случаи bez-plashki-* ниже
     {
       const n = 'dver-chlen';
       const s = await joinCase(json(200, JOIN0), null, () => json(200, OWNER));
       if (await s.p.evaluate(() => current) !== 'home') bad.push(`${n}: член не на «Клубе»`);
       const tabs = await s.p.$$eval('#tabs [data-go]', es => es.map(e => e.dataset.go));
       if (!tabs.includes('home')) bad.push(`${n}: у члена нет вкладки «Клуб»`);
-      if (!(await s.view()).includes('Активно')) bad.push(`${n}: у члена пропала плашка членства`);
+      if ((await s.view()).includes('Активно')) bad.push(`${n}: у члена плашка членства («Активно») — снята #1096`);
       if (!(await s.p.$('#view [data-go="pass"]'))) bad.push(`${n}: у члена пропала дверь «Пропуск»`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
+    }
+    /* Cafe13KPG#1096 (слово владельца 25.11.2026: «мы пока отменили членство и это устаревшее штука»): плашки членства —
+       вид, «Активно», срок — на «Клубе» нет у ВСЕХ видов людей, а не у одного. Срок ищется СТРОКОЙ по всей разметке
+       страницы (текст и атрибуты: подсказки title/aria-label, всплывающее), а не глазом на снимке. Дверь «Пропуск» —
+       у кого пропуск есть (№38), у новичка и истёкшего её нет (№45). Признак плашки — три слова и заголовок-уровень
+       (`#view h2` с текстом из LEVEL); пара присутствия — «Мои записи» в живом и афиша в демонстрации */
+    {
+      const ms = (lvl, ends) => ({ level: lvl, starts_at: '2026-10-01T00:00:00+00:00', ends_at: ends, lifelong: !ends });
+      const srok = clone(OWNER); srok.membership = ms('member', '2026-11-14T10:00:00+07:00'); srok.memberships = [srok.membership];
+      const istek = clone(OWNER); istek.membership_active = false; istek.memberships = []; istek.roles = [];
+      istek.membership = ms('member', '2026-11-01T10:00:00+07:00');
+      const bez = clone(OWNER); bez.membership_active = false; bez.membership = null; bez.memberships = []; bez.roles = [];
+      for (const [n, me, pass, dates, anchor] of [
+        ['bez-plashki-pozhiznenno', OWNER, true, [], 'Мои записи'],
+        ['bez-plashki-srok', srok, true, ['14 ноября', '2026-11-14', '14.11.2026'], 'Мои записи'],
+        ['bez-plashki-istekshee', istek, false, ['1 ноября', '2026-11-01', '01.11.2026'], 'Мои записи'],
+        ['bez-plashki-bez', bez, false, [], 'Мои записи'],
+        ['bez-plashki-vitrina', null, true, ['14 ноября'], 'Звуковая практика']]) {
+        const s = me ? await joinCase(json(200, JOIN0), null, () => json(200, me)) : await open(false, true, json(200, OWNER));
+        if (!me) await s.p.waitForTimeout(150);
+        const at = await s.p.evaluate(() => current), t = await s.view();
+        if (at !== 'home' || !t.includes(anchor)) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — не «Клуб» (${at}) или нет «${anchor}»`);
+        else {
+          const html = await s.p.evaluate(() => document.body.innerHTML);
+          ['Активно', 'АКТИВНО', 'Действует до', 'Пожизненно', 'пожизненно'].concat(dates).forEach(x => {
+            if (html.includes(x)) bad.push(`${n}: на «Клубе» осталось «${x}» — плашка членства или её срок (#1096)`);
+          });
+          const lvl = await s.p.evaluate(() => [...document.querySelectorAll('#view h2')].map(e => e.textContent.trim())
+            .filter(x => Object.keys(LEVEL).some(k => LEVEL[k] === x)));
+          if (lvl.length) bad.push(`${n}: на «Клубе» заголовок-уровень «${lvl.join('», «')}» — плашка членства (#1096)`);
+          const door = !!(await s.p.$('#view [data-go="pass"]'));
+          if (door !== pass) bad.push(`${n}: дверь «Пропуск» ${door ? 'есть' : 'пропала'}, ждали ${pass ? 'есть' : 'нет'}`);
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
     }
     // ДВЕРЬ: выгнанный (допуск снят — сервер отвечает 403 «доступа нет») — по-прежнему noAccess, «О клубе» с него открывается
     {
@@ -2203,7 +2414,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
     // фича 8: случай join-rekvizity снят — реквизитов на форме возврата нет (рецепт popolnenie/noAccess)
-    // ответ /join не разобран — так и сказано, и есть повтор; формы без цен нет
+    // ответ /join не разобран — так и сказано, и есть повтор. Битость — в about_token и you, НЕ в цене (Cafe13KPG#1075)
     {
       const n = 'join-ne-razobran';
       const s = await joinCase(json(200, { amount_thb: null }));
@@ -2211,6 +2422,78 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!t.includes('Ответ сервера не разобран.')) bad.push(`${n}: неразобранный /join не назван`);
       if (await s.p.$('#join-said')) bad.push(`${n}: форма показана по неразобранному ответу`);
       if (!(await s.p.$('[data-action="join-retry"]'))) bad.push(`${n}: нет «Попробовать снова»`);
+      await s.ctx.close();
+    }
+    /* Cafe13KPG#1075, клиент РАНЬШЕ сервера: /join без цены разбирается. Сервер уберёт amount_thb/amount_usd/
+       period_months (членство не продаётся, рамка 24.11) только после этого клиента в бою; прежнее `thb > 0` в fromJoin
+       сделало бы null каждый такой ответ — экран просьбы «не разобран» у всех. Выгнанный (403 на /me) стоит на noAccess,
+       и в JOIN.info обязан лечь разобранный ответ. Мутант — вернуть `thb > 0` (или требование currency) — краснит. */
+    {
+      const n = 'join-bez-ceny';
+      const BARE = clone(JOIN0);
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete BARE[k]);
+      const s = await joinCase(json(200, BARE));
+      const t = await s.view();
+      if (t.includes('Ответ сервера не разобран.')) bad.push(`${n}: /join без цены назван неразобранным`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.token === 'tok-проверка'))))
+        bad.push(`${n}: /join без цены не разобран — JOIN.info пуст`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Приёмка arhitector-cb (возврат #439 на 2a4a6e0): просьба ПОДАНА, а в ответе /join цены нет или
+       она 0 — экран обязан показать поданную просьбу. Случай выше идёт с request: null, ждущий случай формы — с
+       ценой 3600: мутант `request: num(d.amount_thb) > 0 ? req : null` проходил оба и терял просьбу молча. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-prosba (' + tag + ')';
+      const R = withReq('pending');
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete R[k]);
+      if (price !== undefined) R.amount_thb = price;
+      const s = await joinCase(json(200, R));
+      const t = await s.view();
+      if (!t.includes('Просьба у главы клуба. Ответ придёт сюда.') || !t.includes('ЖДЁТ ОТВЕТА'))
+        bad.push(`${n}: поданная просьба не показана — нет J4 и «ждёт ответа»`);
+      if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: у поданной просьбы снова форма отправки`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.request && JOIN.info.request.id === 7))))
+        bad.push(`${n}: просьба №7 не легла в JOIN.info`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Приёмка arhitector-86 (возврат #439 на a13cde5): без цены был проверен только ЖДУЩИЙ, а отказ с причиной
+       (join-otkazano) шёл с ценой 3600 — мутант `note: … && num(d.amount_thb) > 0 ? … : ''` проходил и терял
+       причину у каждого отказанного, как только сервер уберёт цену. Тот же отказ — без цены и с '0.00'. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-otkaz (' + tag + ')';
+      const R = withReq('rejected', 'чек не читается');
+      ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete R[k]);
+      if (price !== undefined) R.amount_thb = price;
+      const s = await joinCase(json(200, R));
+      const t = await s.view();
+      for (const w of ['Просьба отклонена', 'ОТКАЗАНО', '«чек не читается»'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      if (!(await s.p.$('[data-action="join-again"]'))) bad.push(`${n}: нет кнопки «Попросить снова»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Приёмка arhitector-aa (#439 на 22c52ee): ждущая (cb) и отказ (86) без цены покрыты, а СОГЛАСИЕ шло только
+       через join-prinyali с ценой JOIN0 — мутант «request → null при approved без цены» проходил. Тот же путь
+       человека, который ждал (заглушка #853: согласию верят, только если просьбу видели ждущей), — без цены и с '0.00'. */
+    for (const [tag, price] of [['нет', undefined], ['0', '0.00']]) {
+      const n = 'join-bez-ceny-soglasie (' + tag + ')';
+      let st = 'pending';
+      const R = () => {
+        const r = withReq(st);
+        ['amount_thb', 'amount_usd', 'period_months', 'currency'].forEach(k => delete r[k]);
+        if (price !== undefined) r.amount_thb = price;
+        return json(200, r);
+      };
+      const s = await joinCase(R, null, () => json(403, { detail: 'доступа нет' }));
+      if (!(await s.view()).includes('Просьба у главы клуба. Ответ придёт сюда.')) bad.push(`${n}: на старте нет ждущей просьбы`);
+      st = 'approved';
+      await s.p.evaluate(() => { go('joinAbout'); go('noAccess'); }); await s.p.waitForTimeout(200);
+      if (!(await s.view()).includes('Вас приняли в клуб')) bad.push(`${n}: согласие без цены не показано — нет «Вас приняли в клуб»`);
+      if (!(await s.p.evaluate(() => !!(JOIN.info && JOIN.info.request && JOIN.info.request.status === 'approved'))))
+        bad.push(`${n}: согласие №7 не легло в JOIN.info`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
   }
@@ -2360,7 +2643,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (t.includes('ещё не подключено') || t.includes('только в демонстрации')) bad.push(`${n}: замороженному экрану сказано «ещё не подключено» — он был подключён`);
     // шаг 4 (Cafe13KPG#670) размораживает афишу; шаг 4, п.3 — «Свои ивенты» мастеру и правку недели; «Новое мероприятие» — нет.
     // Шаг 7, часть А (Cafe13KPG#755, решение координатора по слову владельца в #510): «Записи» разморожены — дверь к благодарности
-    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', true], ['bookings', false],
+    for (const [g, cold] of [['events', false], ['organizer', false], ['eventEdit', false], ['eventNew', false], ['bookings', false],
                               ['guest', false], ['bar', false], ['barQueue', false], ['barMoney', true]]) {
       await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
       const said = (await s.view()).includes('временно недоступно');
@@ -2731,7 +3014,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (post.length !== 1 || !post[0].url.endsWith('/me/consent') || post[0].body !== '{"data":true}')
       bad.push('consent: POST /me/consent не ушёл как {"data":true}: ' + JSON.stringify(post));
     const t = await s.view();
-    if (!t.includes('Согласие принято') || !t.includes('Пожизненно')) bad.push('consent: после согласия не кабинет');
+    if (!t.includes('Согласие принято') || !(await s.p.$(CABINET))) bad.push('consent: после согласия не кабинет');
     await s.ctx.close();
   }
   if (part(1)) {
@@ -2750,10 +3033,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     up = true;
     await s.p.click('[data-action="retry"]');
     await s.p.waitForTimeout(150);
-    if (!(await s.view()).includes('Пожизненно')) bad.push('retry: после повтора не кабинет');
+    if (!(await s.p.$(CABINET))) bad.push('retry: после повтора не кабинет');
     // + два запроса блока букинга на «Клубе» (/master/requests/mine, /master/price?hours=2)
     // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
-    if (s.calls.length !== 7) bad.push(`retry: запросов ${s.calls.length}, ждали 7 (/me, /me, /events, /master/requests/mine, /master/price, /partner/requests/mine, /partner/price)`);
+    // + цена церемонии /master/price без часов. Основание: дверь teaHold включена этим PR, цена запрашивается законно
+    // + GET /tea/card/mine (#468). Основание: дверь teaApply включена этим PR, блок „Чайный мастер“ читает свою карточку — GET /tea/card/mine
+    if (s.calls.length !== 9) bad.push(`retry: запросов ${s.calls.length}, ждали 9 (/me, /me, /events, /master/requests/mine, /master/price?hours=2, /partner/requests/mine, /partner/price, /master/price, /tea/card/mine)`);
     await s.ctx.close();
   }
 
@@ -2953,7 +3238,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const s = await open(true, true, json(200, OWNER), null, json(403, { detail: 'доступа нет' }), SAVED);
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('Вас ещё нет в списке')) bad.push('pass-403-list: не экран «нет в списке»');
+    if (!(await s.view()).includes('Доступ снят')) bad.push('pass-403-list: не экран «Доступ снят»');
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push('pass-403-list: запас не стёрт');
     await s.ctx.close();
   }
@@ -2963,13 +3248,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (await s.p.evaluate(() => localStorage.getItem('cafe13.pass'))) bad.push(`${name}: запас не стёрт`);
     await s.ctx.close();
   }
-  // Конечный срок сохраняется в ISO и рисуется словами.
+  // Конечный срок сохраняется в ISO, а на экране его нет: слово владельца 25.11.2026, №79 «Даты убирай
+  // в обоих местах» (Cafe13KPG#1097). Прежде случай ждал «до 14 ноября 2026»; облик подписи судит bez-daty-propusk.
   if (part(1)) {
     const s = await open(true, true, json(200, finite), null,
       json(200, Object.assign({}, PASS, { lifelong: false, valid_until: '2026-11-14T10:00:00+07:00' })));
     await s.p.click('[data-go="pass"]');
     await s.p.waitForTimeout(200);
-    if (!(await s.view()).includes('до 14 ноября 2026')) bad.push('pass-finite: срок не показан словами');
+    const t = await s.view();
+    if (!(await s.p.evaluate(() => !!document.querySelector('.pass')))) bad.push('pass-finite: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет');
+    else if (/14\s+ноябр|14\.11\.2026|\bдо\s+\d/i.test(t)) bad.push('pass-finite: срок членства показан на пропуске — снят словом владельца №79');
     const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
     if (!kept || kept.ends !== '2026-11-14T10:00:00+07:00') bad.push('pass-finite: срок сохранён не в ISO: ' + JSON.stringify(kept));
     await s.ctx.close();
@@ -3119,7 +3407,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const ORDER = { id: 5, number: '261018-01', state: 'new', sum: '70.00', created_at: '2026-10-18T12:00:00+00:00',
                   place: 'за стойку', pay_method: 'account', ledger_id: 41 };
   const row = st => { const r = Object.assign({}, ORDER, { state: st, member_id: 1, first_name: 'Тест', last_name: '',
-    photo_url: null, accepted_at: null, ready_at: null, served_at: null,
+    photo_url: null, accepted_at: null, ready_at: null, served_at: null, received_at: null,
     items: [{ product_id: 11, title: 'Эспрессо', price: '70.00', qty: 1 }] }); delete r.ledger_id; return r; };
   // id 7, а не 1: так видно, что он взят с сервера, а не угадан
   // гостю — без долей направления (их видит только куратор): так отдаёт сервер
@@ -3579,7 +3867,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── очередь на баре (шаг 5) ──
   // Работнику чужие строки приходят без sum и без items[].price (cafe13-api#11).
   const worker = (id, number, st, extra) => Object.assign({ id, number, state: st, place: 'к столу', pay_method: 'account',
-    created_at: '2026-10-18T12:0' + id + ':00+00:00', accepted_at: null, ready_at: null, served_at: null,
+    created_at: '2026-10-18T12:0' + id + ':00+00:00', accepted_at: null, ready_at: null, served_at: null, received_at: null,
     member_id: 50 + id, first_name: 'Гость' + id, last_name: '', photo_url: null,
     items: [{ product_id: 11, title: 'Эспрессо', qty: 2 }] }, extra);
   const QUEUE = [worker(3, '261018-03', 'new', { photo_url: 'https://t.me/i/userpic/320/x.jpg' }),
@@ -5333,7 +5621,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Пустой день (E36b), неразобранный и не сходящийся — каждый своими словами.
   if (part(1)) if (thawed('касса')) for (const [name, reply, want, never] of [
     ['till-day-empty', json(200, Object.assign({}, DAY_OK, { rows: [], total_live: '0.00', count_live: 0 })), 'Сегодня через кассу ничего не прошло', 'Строки за сегодня'],
-    ['till-day-bad', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 'expense' })] })), 'Ответ сервера не разобран', 'Через книгу за день'],
+    // сломанная строка (вид не строкой) — день отвергнут. Прежде случай брал незнакомый вид 'expense' и ждал отказа
+    // всего дня — ровно дефект, грозивший трижды (donation, withdraw, tea — сервер прячет их фильтром); незнакомый вид теперь не отказ
+    ['till-day-bad', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 7 })] })), 'Ответ сервера не разобран', 'Через книгу за день'],
+    // ВЫДУМАННЫЙ вид, которого нет ни в клиенте, ни на сервере: день открыт, строка «Прочее» (tools/kassa-vid.cjs К1)
+    ['till-day-neznakomyj', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 'zzz-nevedomyy', method: 'account' })], total_live: '3000.00', count_live: 1 })),
+      'Прочее', 'Ответ сервера не разобран'],
     // E36g: расхождение снимает числа, а строки (дословно из ответа) остаются
     ['till-day-sum', json(200, Object.assign({}, DAY_OK, { total_live: '9999.00' })), 'Итог дня не сходится со строками', 'Через книгу за день'],
     ['till-day-403', json(403, { detail: 'нужна роль кассы' }), 'Нужна роль кассы', 'Через книгу за день']
@@ -6348,6 +6641,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   const EV = over => Object.assign({
     id: 4, title: 'Вечер ханга', starts_at: atBkk(1, 19), duration_min: 90, seats: 12,
     kind: 'paid', price: '400.00', about: 'Живой звук, место у сцены', filmed: false,
+    // занятость (api#225): 'event' — то же, что поля нет (js/09 occ); чайную строку случай ставит сам
+    occupancy: 'event',
     organizer_id: 500, organizer_first_name: 'Образец', organizer_last_name: '',
     taken: 0, seats_left: 12, booked_by_me: null, my_booking_id: null,
     // Место есть в КАЖДОЙ строке живого ответа (снимок 23.10.2026), и оба
@@ -6423,7 +6718,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
     const MEMB = clone(OWNER); MEMB.roles = []; MEMB.member.tg_user_id = 77;
     const PROW = (id, title, over) => Object.assign({ id, title, starts_at: atBkk(2, 19), duration_min: 90, seats: 10, kind: 'paid',
-      price: '400.00', place_id: null, organizer_id: 987654, organizer_first_name: 'Работник', organizer_last_name: 'Клуба' }, over);
+      price: '400.00', place_id: null, organizer_id: 987654, organizer_first_name: 'Работник', organizer_last_name: 'Клуба',
+      occupancy: 'event' }, over);
     const DEC = (id, ok, note) => ({ id, approved_at: ok ? '2026-12-02T01:00:00+00:00' : null, approved_by: ok ? 1 : null,
       rejected_at: ok ? null : '2026-12-02T01:00:00+00:00', reject_note: ok ? null : note, approval: ok ? 'approved' : 'rejected' });
     // o.queue() — ответ очереди на каждый GET; o.decide(q) — ответ решения; o.events — строки /events
@@ -6869,8 +7165,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     ];
     const s = await open(true, true, json(200, GOST), null, null, null, evReply(json(200, S_ZAPISYU)), null, NOWFIX);
     const вкладки = await s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')));
-    if (вкладки.indexOf('home') !== -1)
-      bad.push(`bookings-gost-zapert: у гостя появилась вкладка «Клуб» (${JSON.stringify(вкладки)}) — предусловие случая снято, и он больше не доказывает, что кнопка здесь единственный выход к афише (Cafe13KPG#371)`);
+    // шаг 42 (рецепт 42/home.md, слово владельца №65 «а»): «Клуб» открыт всем, и гостю-работнику тоже. Предусловие «вкладки
+    // „Клуб“ нет» снято решением, а не поломкой; случай держит своё второе: кнопка «Вся афиша» на «Записях» есть, тихая и ведёт
+    if (вкладки.indexOf('home') === -1)
+      bad.push(`bookings-gost-zapert: у гостя нет вкладки «Клуб» (${JSON.stringify(вкладки)}) — рецепт 42/home.md (№65 «а») открывает её всем`);
     // у гостя входа в «Записи» нет: «Клуба» у него нет, а в приложении только члены клуба (решение 02.11.2026) — экран
     // судится переходом напрямую: если гость на нём окажется, выход к афише обязан быть
     await s.p.evaluate(() => go('bookings'));
@@ -6881,7 +7179,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const двери = await s.p.$$eval('#view button',
       bs => bs.filter(b => b.textContent.trim() === 'Вся афиша').map(b => b.className));
     if (!двери.length)
-      bad.push('bookings-gost-zapert: гость с записью заперт — с экрана «Записи» в афишу не ведёт ничего, а вкладки «Клуб» у него нет: записался и потерял афишу (Cafe13KPG#371)');
+      bad.push('bookings-gost-zapert: гость с записью заперт — с экрана «Записи» в афишу не ведёт ничего: записался и потерял афишу (Cafe13KPG#371)');
     else if (!/\bquiet\b/.test(двери[0]))
       bad.push(`bookings-gost-zapert: кнопка афиши при живых записях сплошная («${двери[0]}») — посреди списка она забирает экран себе, а главное здесь сами записи (Cafe13KPG#371)`);
     /* Дверь проверяется НАЖАТИЕМ: кнопка, никуда не ведущая, читается как
@@ -8294,6 +8592,25 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
 
+    // 1б. числа под «Ваши мероприятия впереди» — без кончившегося (Cafe13KPG#361); оно остаётся в списке с пометкой.
+    // Кончившиеся отличаются от живого каждым из четырёх чисел и вдобавок безлимитом: возврат любого числа к «всем» краснит
+    {
+      const n = 'organizer-vperedi';
+      const ago = NOWFIX - 9000e3;
+      const list = [MINE(), EV({ id: 7, title: 'Чужой вечер', organizer_id: 500, starts_at: atBkk(1, 20) }),
+        MINE({ id: 9, title: 'Мой прошедший', starts_at: new Date(ago).toISOString(), duration_min: 60, seats: 10, taken: 5, seats_left: 5 }),
+        MINE({ id: 10, title: 'Мой прошедший без мест', starts_at: new Date(ago).toISOString(), duration_min: 60, seats: 0, taken: 4, seats_left: null })];
+      const s = await openM(evReply(json(200, list)));
+      await s.p.evaluate(() => go('organizer')); await s.p.waitForTimeout(200);
+      const nums = await s.p.$$eval('#view .rows > div', d => d.map(x => [x.querySelector('.small').textContent, x.querySelector('b').textContent]));
+      const want = [['Событий', '1'], ['Записалось', '3 из 12'], ['Наполненность', '25 %'], ['Если все заплатят', '1 200 ฿']];
+      if (JSON.stringify(nums) !== JSON.stringify(want)) bad.push(`${n}: числа «впереди» ${JSON.stringify(nums)}, ждали ${JSON.stringify(want)}`);
+      const t = await s.view();
+      if (!t.includes('Мой прошедший') || !t.includes('завершилось')) bad.push(`${n}: кончившееся пропало из списка или без пометки «завершилось»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
     // 2. кнопка правки — только на СВОЁМ и не кончившемся; над отменой (необратимое последним, E55k)
     {
       const n = 'edt-knopka';
@@ -8445,7 +8762,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
 
     // 5. витрина вне Telegram (Cafe13KPG#691): экран правки, а не отказ «не ваше»; длительность демо считается
-    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1.5»: охрана `h > 0` глотает NaN молча;
+    // из «с»–«до» (поля mins у демо нет) — проверяется НАЛИЧИЕ «· 1,5 часа»: охрана `h > 0` глотает NaN молча;
+    // дробная длительность — словом и с запятой, не «· 1.5» (Cafe13KPG#707);
     // «Сохранить» в сеть не ходит. Живой режим (чужое — отказ, своё — форма) держат edt-knopka и edt-200
     {
       const n = 'edt-vitrina';
@@ -8456,7 +8774,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       else {
         if (t.includes('Править это мероприятие может его ведущий.')) bad.push(`${n}: вне Telegram вместо экрана правки отказ «не ваше»`);
         if (!(await s.p.$('#edt-seats')) || !(await s.p.$('[data-action="edt-save"]'))) bad.push(`${n}: вне Telegram нет формы правки`);
-        if (!t.includes('Сегодня, четверг · 19:00 · 1.5')) bad.push(`${n}: в строке мероприятия нет длительности «· 1.5» (из 19:00–20:30)`);
+        if (!t.includes('Сегодня, четверг · 19:00 · 1,5 часа')) bad.push(`${n}: в строке мероприятия нет длительности «· 1,5 часа» (из 19:00–20:30)`);
+        if (/· \d+\.\d/.test(t)) bad.push(`${n}: дробная длительность числом с точкой (Cafe13KPG#707)`);
         if (/NaN/.test(t)) bad.push(`${n}: на экране NaN`);
         const before = s.calls.length;
         if (await s.p.$('[data-action="edt-save"]')) { await s.p.click('[data-action="edt-save"]'); await s.p.waitForTimeout(300); }
@@ -8641,7 +8960,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Право даёт либо роль клуба, либо купленный уровень — две независимые
   // ветки, и у каждой свой случай: фикстура с одной ветвью оставила бы
   // мутацию, снявшую вторую, зелёной (так было с разбором баланса строкой).
-  if (part(2)) if (thawed('завести мероприятие')) {
+  if (part(2)) {
     const member = clone(OWNER); member.roles = [];                       // уровень member, ролей нет
     const levelOrg = clone(OWNER); levelOrg.roles = []; levelOrg.membership.level = 'organizer';
     const curatorOnly = clone(OWNER); curatorOnly.roles = [{ role: 'curator', direction_id: 1 }];
@@ -9236,7 +9555,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
      не открывал ни один прогон: строку можно было переписать любым
      словом, и батарея осталась бы зелёной. Сторож фикстуры здесь — сам
      факт, что открылся кабинет, и говорит он ОДИН. */
-  if (part(2)) if (thawed('завести мероприятие')) {
+  if (part(2)) {
     const s = await open(true, false, json(200, OWNER), null, null, null, null, null, NOWFIX);
     await s.p.evaluate(() => go('organizer'));
     await s.p.waitForTimeout(150);
@@ -9259,7 +9578,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
      строки: две свои (платная с двумя записями и бесплатная с одной) и одну
      ЧУЖУЮ — без чужой строки проверка «только свои» была бы зелёной при
      любом отборе, и это условие случая, а не украшение. */
-  if (part(2)) if (thawed('завести мероприятие')) {
+  if (part(2)) {
     const org = clone(OWNER); org.roles = []; org.membership.level = 'organizer';
     const MOI = [
       EV({ id: 21, title: 'Своё платное', organizer_id: 1, starts_at: atBkk(1, 19),
@@ -9310,11 +9629,11 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
             bad.push('kabinet-dengi: «Соберёте» читается как факт о деньгах, а признака оплаты в строке афиши нет вовсе');
           if (!t.includes('800'))
             bad.push(`kabinet-dengi: нет суммы 800 (2 записи × 400): «${t.slice(0, 200)}»`);
-          // Правки нет — сказано СТРОКОЙ, а не умолчанием.
-          if (!t.includes('сервер правки не умеет'))
-            bad.push('kabinet-pravka: отсутствие правки не названо — человек будет искать кнопку');
-          if (/Править|Изменить мероприятие/.test(t))
-            bad.push('kabinet-pravka: на экране обещана правка, а ручки её нет на сервере');
+          // Правка недели есть (шаг 4, п.3, 266750d: POST /events/{id}/edit, кадр E61), и живёт она ВНУТРИ мероприятия:
+          // кабинет называет, где она и что правится. Прежнее ожидание «сервер правки не умеет» отстало, пока раздел
+          // спал с 28.10 (раздел «завести мероприятие») — проснулся с eventNew (Cafe13KPG#1078).
+          if (!t.includes('правка — внутри мероприятия') || !t.includes('Править можно число мест и описание, по одной неделе'))
+            bad.push('kabinet-pravka: кабинет не говорит, где правка и что правится (E61) — человек будет искать кнопку');
           // Архив сюда не крадётся: #265 владельцем не открыта.
           if (/Прошедшие|Архив/.test(t))
             bad.push('kabinet-arhiv: кабинет обещает прошедшие — это #265, афиша прошедшего не отдаёт ни при каких параметрах');
@@ -9354,7 +9673,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
 
      Случай судит ОБЕ стороны — есть у кончившегося и НЕТ у будущего: иначе
      пометка, прибитая ко всем строкам, прошла бы за верную. */
-  if (part(2)) if (thawed('завести мероприятие')) {
+  if (part(2)) {
     const org = clone(OWNER); org.roles = []; org.membership.level = 'organizer';
     const ROWS = [
       EV({ id: 41, title: 'Своё завтра', organizer_id: 1, starts_at: atBkk(1, 19),
@@ -10590,97 +10909,47 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
 
-    /* ── ДАТА КОНЦА ЧЛЕНСТВА и ∞ (пункт 6 замечаний владельца: «Даты окончания членства не
-       вижу»; «поставь мне значек бесконечности» 28.10.2026) ──
-       Сервер отдаёт пару ПЛОСКИХ полей (`ends_at` + `lifelong`, бой `e545973`), и состояний
-       ЧЕТЫРЕ, а не два: дата / бессрочно / живого членства нет / поля НЕТ вовсе (старый
-       сервер). Последние два рисуют одно и то же — пусто, — но по РАЗНЫМ причинам, и
-       различать их обязан разбор, а не экран: тот же класс, что у остатка (`'balance' in p`).
-       ⚠ Часы ПРИКОЛОТЫ, даты фикстуры отсчитаны от них же. Порог проверяется с ОБЕИХ сторон
-       границы и НА границе: 14 дней — ещё не «меньше двух недель», 13 — уже. Без середины
-       диапазона проверка не отличала бы «посчитано верно» от «прибор промолчал». */
+    /* ── СРОК В СПИСКЕ ЛЮДЕЙ: даты нет, красного нет, ∞ остался ──
+       Слово владельца 25.11.2026 (№79, Cafe13KPG#1103): «Даты убирай в обоих местах» — им снято и
+       его правило 28.10.2026 «менее 2х недель дата краснеет». Прежние случаи people-till-porog и
+       people-till-poyas судили порог, которого больше нет, и сняты вместе с ним.
+       ⚠ ОТРИЦАТЕЛЬНЫЙ КОНТРОЛЬ — срок через НЕДЕЛЮ: ровно там прежде стояло красное. Проверка
+       «текста даты нет» без него ловила бы только исчезнувшие цифры, а не оставшееся покраснение.
+       Часы приколоты, даты отсчитаны от них. Ключ — атрибут `data-person` (номер строки ответа):
+       `peopleOrder` ставит живые членства наверх, и порядок отрисовки ответу не равен. */
     {
       const n = 'people-till', NOW = '2026-11-01T09:00:00+07:00';
       const lyudi = clone(ROSTER);
-      const dat = (dney) => { const d = new Date(Date.parse(NOW) + dney * 86400000); return d.toISOString(); };
-      lyudi.people[0].ends_at = dat(60);  lyudi.people[0].lifelong = false;   // срок далёкий
-      lyudi.people[1].ends_at = dat(13);  lyudi.people[1].lifelong = false;   // меньше двух недель
-      lyudi.people[2].ends_at = null;     lyudi.people[2].lifelong = true;    // бессрочное
-      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
-      await toPeople(s);
-      /* ⚠ Ключ — АТРИБУТ `data-person` (номер строки ОТВЕТА), а не положение в DOM:
-         `peopleOrder` ставит живые членства наверх, и порядок отрисовки ответу не равен.
-         Первая редакция случая читала по положению и дала перепутанные строки — поймал
-         прогон, а не чтение. */
-      const hvosty = await s.p.$$eval('[data-person]', es => {
-        const o = {};
-        es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = { text: t ? t.textContent : null,
-            soon: t ? t.classList.contains('soon') : null, inf: !!(t && t.querySelector('.inf')) }; });
-        return o; });
-      if (hvosty[0].text !== ' · до 31.12.2026') bad.push(`${n}: далёкий срок «${hvosty[0].text}», ждали « · до 31.12.2026»`);
-      if (hvosty[0].soon) bad.push(`${n}: далёкий срок покраснел`);
-      if (hvosty[1].text !== ' · до 14.11.2026') bad.push(`${n}: близкий срок «${hvosty[1].text}», ждали « · до 14.11.2026»`);
-      if (!hvosty[1].soon) bad.push(`${n}: срок меньше двух недель НЕ покраснел`);
-      if (!hvosty[2].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${hvosty[2].text}»`);
-      if (hvosty[2].soon) bad.push(`${n}: бессрочное покраснело`);
-      await s.ctx.close();
-    }
-    /* Граница порога — ОБЕ стороны и сама граница: «менее 2х недель» это строго меньше 14.
-       Подлоги по краям диапазона оставили бы середину непроверенной, поэтому здесь ровно
-       соседние дни, а не «ноль и много». */
-    {
-      const n = 'people-till-porog', NOW = '2026-11-01T09:00:00+07:00';
-      const lyudi = clone(ROSTER);
       const dat = (dney) => new Date(Date.parse(NOW) + dney * 86400000).toISOString();
-      lyudi.people[0].ends_at = dat(14); lyudi.people[0].lifelong = false;
-      lyudi.people[1].ends_at = dat(13); lyudi.people[1].lifelong = false;
-      lyudi.people[2].ends_at = dat(0);  lyudi.people[2].lifelong = false;
+      lyudi.people[0].ends_at = dat(60); lyudi.people[0].lifelong = false;   // срок далёкий
+      lyudi.people[1].ends_at = dat(7);  lyudi.people[1].lifelong = false;   // через неделю — прежде красное
+      lyudi.people[2].ends_at = null;    lyudi.people[2].lifelong = true;    // бессрочное
       const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
       await toPeople(s);
-      // тот же ключ по атрибуту: порядок отрисовки не равен порядку ответа
-      const soon = await s.p.$$eval('[data-person]', es => {
+      const r = await s.p.$$eval('[data-person]', es => {
         const o = {};
         es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = t ? t.classList.contains('soon') : null; });
+          o[e.getAttribute('data-person')] = { till: t ? t.textContent : null, row: e.textContent,
+            soon: !!e.querySelector('.soon'), inf: !!(t && t.querySelector('.inf')) }; });
         return o; });
-      if (soon[0] !== false) bad.push(`${n}: ровно 14 дней покраснели — «менее 2х недель» это строго меньше`);
-      if (soon[1] !== true) bad.push(`${n}: 13 дней не покраснели`);
-      if (soon[2] !== true) bad.push(`${n}: последний день не покраснел`);
-      await s.ctx.close();
-    }
-    /* ⚠ ПОРОГ СЧИТАЕТСЯ ПО ЧАСАМ КЛУБА, и до этого случая утверждение держалось НИЧЕМ.
-       Нашёл `arhitector-47` мутацией на ревью `#133`: подмена `clubDay()` на сегодняшнюю
-       дату в UTC (`new Date().toISOString().slice(0,10)`) оставляла прогон ЗЕЛЁНЫМ — потому
-       что прежние случаи приколоты на 09:00 острова, а это 02:00 UTC ТОГО ЖЕ дня, и обе
-       системы отсчёта дают одну дату. То есть «по часам клуба» было верно в коде и не
-       проверялось ни одним случаем.
-       Различающее окно — с 00:00 до 07:00 острова: там UTC ещё ВЧЕРА. Часы приколоты на
-       03:00 +07:00 (= 20:00 UTC накануне), срок — ровно на границе: по острову 13 дней
-       (красное), по UTC-сегодня 14 (не красное). Значит мутация гасит красное, а чистое
-       дерево его держит. */
-    {
-      const n = 'people-till-poyas', NOW = '2026-11-02T03:00:00+07:00';   // UTC: 2026-11-01T20:00Z
-      const lyudi = clone(ROSTER);
-      lyudi.people[0].ends_at = '2026-11-15T12:00:00+07:00';   // остров: 13 дней → красное
-      lyudi.people[0].lifelong = false;
-      lyudi.people[1].ends_at = '2026-11-16T12:00:00+07:00';   // остров: 14 дней → ещё нет
-      lyudi.people[1].lifelong = false;
-      const s = await peopleCase(OWNER, { people: json(200, lyudi) }, NOW);
-      await toPeople(s);
-      const soon = await s.p.$$eval('[data-person]', es => {
-        const o = {};
-        es.forEach(e => { const t = e.querySelector('.till');
-          o[e.getAttribute('data-person')] = t ? { soon: t.classList.contains('soon'), text: t.textContent } : null; });
-        return o; });
-      // различитель: обе проверки обязаны опираться на СУТКИ ОСТРОВА, а не на UTC
-      if (!soon['0'] || !soon['0'].soon)
-        bad.push(`${n}: 13 дней ПО ОСТРОВУ не покраснели (${JSON.stringify(soon['0'])}) — порог считается не по часам клуба`);
-      if (!soon['1'] || soon['1'].soon)
-        bad.push(`${n}: 14 дней ПО ОСТРОВУ покраснели (${JSON.stringify(soon['1'])}) — «менее 2х недель» это строго меньше`);
-      // и сама дата печатается сутками острова, а не UTC: иначе человек увидит вчерашнее число
-      if (soon['0'] && soon['0'].text !== ' · до 15.11.2026')
-        bad.push(`${n}: дата «${soon['0'].text}», ждали « · до 15.11.2026» — сутки взяты не по острову`);
+      const DATA_RE = /\d{2}\.\d{2}\.\d{4}|\bдо\s+\d/;
+      [['0', 'далёкий срок'], ['1', 'срок через неделю']].forEach(([k, kto]) => {
+        const x = r[k];
+        if (!x) { bad.push(`${n}: строки ${kto} нет в списке`); return; }
+        if (x.till !== null) bad.push(`${n}: у ${kto} остался хвост срока «${x.till}»`);
+        if (DATA_RE.test(x.row)) bad.push(`${n}: у ${kto} в строке дата: «${x.row.trim().slice(0, 80)}»`);
+        if (x.soon) bad.push(`${n}: у ${kto} красное (.soon) — правило двух недель снято владельцем`);
+      });
+      if (!r['2'] || !r['2'].inf) bad.push(`${n}: у бессрочного нет значка ∞: «${r['2'] && r['2'].till}»`);
+      if (r['2'] && r['2'].soon) bad.push(`${n}: бессрочное покраснело`);
+      /* красное снято и в стилях: правило `.till.soon` не должно жить без зова. Судим ПОВЕДЕНИЕМ — цвет
+         пробных `.till` и `.till.soon` рядом: чтение `cssRules` ослепло (мутант b7 «вернуть правило» прошёл
+         зелёным), а цвет различает правило, кто бы его ни дописал. */
+      const cvet = await s.p.evaluate(() => {
+        const box = document.createElement('div'), a = document.createElement('span'), b = document.createElement('span');
+        a.className = 'till'; b.className = 'till soon'; box.append(a, b); document.body.append(box);
+        const r = [getComputedStyle(a).color, getComputedStyle(b).color]; box.remove(); return r; });
+      if (cvet[0] !== cvet[1]) bad.push(`${n}: .till.soon красит иначе, чем .till (${cvet[1]} против ${cvet[0]}) — покраснение снято словом владельца`);
       await s.ctx.close();
     }
 
@@ -11243,6 +11512,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (await s.p.$(sel)) { await s.p.fill(sel, v); return true; }
       bad.push(`${name}: нет поля ${sel}`); return false;
     };
+    // то же для чтения: голый inputValue по пропавшему полю ждал 30 с и обрывал батарею раньше сводки,
+    // вместо того чтобы покраснеть своим текстом (Cafe13KPG#424)
+    const val = async (s, sel, name) => {
+      if (await s.p.$(sel)) return s.p.inputValue(sel);
+      bad.push(`${name}: нет поля ${sel}`); return null;
+    };
 
     // список: hidden запрошен явно, группы — экраном, причина возврата в строке
     {
@@ -11315,9 +11590,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // Плашка состояния: глина — только у возврата (ждёт действия автора); «Снята»
     // спокойная — решение куратора принято и закрыто (словарь облика, E39b)
     for (const [id, want, not, pill, warm] of [
-      [58, ['Возвращена', 'Вернул куратор: нет тайского рецепта', 'Отправить на утверждение'], ['Черновик'], 'Возвращена', true],
-      [53, ['Черновик', 'Отправить на утверждение'], ['Возвращена', 'Вернул куратор'], 'Черновик', false],
-      [55, ['Снята'], ['Возвращена', 'Вернул куратор'], 'Снята', false]]) {
+      [58, ['Возвращена', 'Вернули с замечанием: нет тайского рецепта', 'Отправить на утверждение'], ['Черновик'], 'Возвращена', true],
+      [53, ['Черновик', 'Отправить на утверждение'], ['Возвращена', 'Вернули с замечанием'], 'Черновик', false],
+      [55, ['Снята'], ['Возвращена', 'Вернули с замечанием'], 'Снята', false]]) {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await openCard(s, id);
       const t = await s.view();
@@ -11533,10 +11808,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     {
       const s = await cardsCase(WORKER, {});
       await toCards(s); await openCard(s, 53); await s.p.waitForTimeout(200);
-      if ((await s.p.inputValue('#c-recipe')) !== 'старый рецепт') bad.push('cards-recipe: прежний рецепт RU не в поле');
+      const ru = await val(s, '#c-recipe', 'cards-recipe');
+      if (ru !== null && ru !== 'старый рецепт') bad.push('cards-recipe: прежний рецепт RU не в поле');
       if (!(await s.view()).includes('Заменить рецепт (RU)')) bad.push('cards-recipe: у RU с рецептом нет «Заменить»');
       await click(s, 'c-lang:th'); await s.p.waitForTimeout(200);
-      if ((await s.p.inputValue('#c-recipe')) !== '') bad.push('cards-recipe: в поле TH чужой текст');
+      const th = await val(s, '#c-recipe', 'cards-recipe');
+      if (th !== null && th !== '') bad.push('cards-recipe: в поле TH чужой текст');
       if (!(await s.view()).includes('Сохранить рецепт (TH)')) bad.push('cards-recipe: у TH без рецепта нет «Сохранить»');
       await put(s, '#c-recipe', 'สูตร', 'cards'); await click(s, 'c-recipe:53'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/53\/recipe$/);
@@ -11637,7 +11914,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${name}: ошибки страницы ` + s.errs.join('; '));
       await s.ctx.close();
     }
-    // куратор возвращает: без причины — не уходит; с причиной — hidden + note.
+    // куратор возвращает: без причины — не уходит; с причиной — draft + note (Cafe13KPG#314: hidden — только снятие с меню).
     // Описание длинное нарочно: у короткой карточки поле причины и так в виду,
     // и случай не отличил бы прокрутку от её отсутствия (так и было: снятая
     // прокрутка оставалась зелёной; у designer-55 кнопки уходили за край, 23.10.2026).
@@ -11667,7 +11944,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (cposts(s, /state$/).length) bad.push('cards-return: возврат ушёл без причины');
       await put(s, '#c-reason', 'нет фото', 'cards'); await click(s, 'c-back-send:51'); await s.p.waitForTimeout(300);
       const pp = cposts(s, /\/bar\/products\/51\/state$/);
-      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'hidden', note: 'нет фото' })) bad.push('cards-return: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      if (pp.length !== 1 || pp[0].body !== JSON.stringify({ state: 'draft', note: 'нет фото' })) bad.push('cards-return: ушло ' + JSON.stringify(pp.map(c => c.body)));
+      // ответ сервера принят как возврат: слово успеха, а не плашка отказа
+      if (!(await s.view()).includes('Возвращено с причиной.')) bad.push('cards-return: после ответа нет «Возвращено с причиной.»');
       await s.ctx.close();
     }
     // отказ — текстом сервера, и список перечитан
@@ -12216,7 +12495,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           if (JSON.stringify(p) !== JSON.stringify([['patch', 81, { price: 200 }]])) bad.push(`${n}: PATCH ${JSON.stringify(p)}, ждали только { price: 200 }`);
           const t2 = await s.view();
           if (!t2.includes('Изменения сохранены.')) bad.push(`${n}: нет «Изменения сохранены.»`);
-          if (!t2.includes('Вернул куратор: цена выше соседних')) bad.push(`${n}: замечание куратора пропало после правки`);
+          if (!t2.includes('Вернули с замечанием: цена выше соседних')) bad.push(`${n}: замечание пропало после правки`);
           if (!t2.includes('200 ฿')) bad.push(`${n}: на карточке не новая цена`);
           if (await s.p.$('#view #c-price')) bad.push(`${n}: после сохранения форма правки не закрылась`);
         }
@@ -12330,12 +12609,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const f = await st();
         if (f.off !== false || f.why || !f.last) bad.push(`${n}: замечание набрано — «Вернуть» погашена или нет «прежнее затрётся»: ${JSON.stringify(f)}`);
         if (await tapIf(s, n, '#view [data-action="c-back-send:82"]', '«Вернуть»')) await s.p.waitForTimeout(400);
-        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 82 && b[2].state === 'hidden' && b[2].note === 'нет фото')) bad.push(`${n}: возврат не ушёл с замечанием: ${JSON.stringify(o.bodies)}`);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 82 && b[2].state === 'draft' && b[2].note === 'нет фото')) bad.push(`${n}: возврат не ушёл черновиком с замечанием: ${JSON.stringify(o.bodies)}`);
+        if (o.bodies.some(b => b[0] === 'state' && b[2].state === 'hidden' && b[2].note)) bad.push(`${n}: ушло hidden с замечанием — сервер его запретит (Cafe13KPG#314): ${JSON.stringify(o.bodies)}`);
       }
       await s.p.evaluate(() => go('barCard', '83')); await s.p.waitForTimeout(300);
       if (await tapIf(s, n, '#view [data-action="c-hide-ask"]', '«Снять с меню»') && await tapIf(s, n, '#view [data-action="c-hide:83"]', '«Точно снять»')) {
         await s.p.waitForTimeout(400);
-        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 83 && b[2].state === 'hidden')) bad.push(`${n}: снятие не ушло: ${JSON.stringify(o.bodies)}`);
+        if (!o.bodies.some(b => b[0] === 'state' && b[1] === 83 && b[2].state === 'hidden' && !b[2].note)) bad.push(`${n}: снятие не ушло hidden без замечания: ${JSON.stringify(o.bodies)}`);
       }
       await s.p.evaluate(() => go('barCard', '81')); await s.p.waitForTimeout(300);
       await noEdit(81);
@@ -12477,12 +12757,26 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── шаг 20: деньги бизнеса (Cafe13KPG#551, рецепты `_docs/recept/ekran/20/`, ручки cafe13-api#153 и #156).
   // Остаток — пара `wallet` + `wallet_through` в `/partner/directions` и `/directions` (договор `20/ostatok.md`),
   // отчёт месяца — `/bar/month`. Суммы фикстуры нарочно не круглые и не совпадают с долями из таблиц (70/30 от 21 220)
+  // ── Cafe13KPG#964: прототип «Моё дело» (`partner`) долей не печатает — один источник, дверь на bizMoney ──
+  // Литерал доли рядом с живым числом на глаз не отличить. Экран живёт только в демонстрации (в живом закрыт).
+  if (part(1)) {
+    const n = 'pm-proto-moe-delo';
+    const s = await open(false, true, json(200, clone(OWNER)));
+    await s.p.evaluate(() => go('partner'));
+    await s.p.waitForTimeout(200);
+    const t = await s.view();
+    if (/\d\s?%/.test(t)) bad.push(`${n}: прототип печатает процент литералом: ${(t.match(/[^\n]{0,20}\d\s?%/) || [''])[0]}`);
+    if (!(await s.p.$('#view [data-go="bizMoney"]'))) bad.push(`${n}: нет двери «Деньги бизнеса»`);
+    await s.ctx.close();
+  }
+
   if (part(1)) {
     const n0 = 'pm';
     const OCT = '2026-10-31T17:00:00+00:00';   // полночь 1 ноября по Пхангану: месяц момента — ноябрь, зачислено — по октябрь
     const MON = extra => Object.assign({ direction: 'Кофейня', month: '2026-10', period_start: OCT, period_end: '2026-11-30T17:00:00+00:00',
       revenue: '52340.00', opex: '31120.00', opex_paid: '30000.00', payroll_accrued: '1120.00', net: '21220.00', share_mode: 'net',
-      share_club_pct: '30.00', club_share: '6366.00', share_partner_pct: '70.00', partner_share: '14854.00',
+      // доли НАРОЧНО не 30/70 (Cafe13KPG#964): литерал «70 %» на месте числа сервера с такой фикстурой прошёл бы зелёным
+      share_club_pct: '35.00', club_share: '7427.00', share_partner_pct: '65.00', partner_share: '13793.00',
       invest: '0.00', invest_note: 'в чистую прибыль и долю клуба не входит (bar-unit.md §6.1)' }, extra || {});
     const W = (wallet, through) => ({ wallet, wallet_through: through });
     const pmMe = () => { const p = clone(OWNER); p.roles = []; p.balance = 9000; return p; };
@@ -12532,10 +12826,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if ((await s.p.evaluate(() => document.getElementById('title').textContent)) !== 'Деньги бизнеса') bad.push(`${n}: шапка не «Деньги бизнеса»`);
         const t = flat(await s.view());
         ['Ноябрь2026', 'Бизнес„Кофейня“·месяцпоПхангану', 'Итогмесяца', 'Выручка52340฿', 'Текущиезатраты31120฿', 'Чистаяприбыль21220฿',
-         'Какделится', 'Вашадоля·70%14854฿', 'Клубу·30%6366฿', 'Вашадолязачислитсянасчётпозакрытиюмесяца.', 'Обновить']
+         'Какделится', 'Вашадоля·65%13793฿', 'Клубу·35%7427฿', 'Вашадолязачислитсянасчётпозакрытиюмесяца.', 'Обновить']
           .forEach(w => { if (!t.includes(flat(w))) bad.push(`${n}: нет «${w}»`); });
         if (/Октябрь2026|2026-10/.test(t)) bad.push(`${n}: подпись месяца взята из ключа month (октябрь вместо ноября, Cafe13KPG#961)`);
-        if (/30\.00|70\.00|bar-unit|Вложения|шаг21/.test(t)) bad.push(`${n}: на экране процент с хвостом, invest_note, пустые вложения или номер шага`);
+        if (/35\.00|65\.00|bar-unit|Вложения|шаг21/.test(t)) bad.push(`${n}: на экране процент с хвостом, invest_note, пустые вложения или номер шага`);
         if (!o.seen.includes('GET /bar/month?direction_id=7')) bad.push(`${n}: отчёт месяца своего бизнеса не спрошен: ${o.seen.join(', ')}`);
         await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(250);
         if ((await s.p.evaluate(() => current)) !== 'home') bad.push(`${n}: «назад» ведёт не на «Клуб»`);
@@ -12548,7 +12842,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const { s, ok } = await enter(o, n);
       if (ok) {
         const t = flat(await body(s));
-        ['Чистаяприбыль−580฿', 'Вашадоля·70%0฿', 'Клубу·30%0฿', 'Замесяцприбылинет:долисчитаютсятолькосприбыли,поэтомуобепонулю.']
+        ['Чистаяприбыль−580฿', 'Вашадоля·65%0฿', 'Клубу·35%0฿', 'Замесяцприбылинет:долисчитаютсятолькосприбыли,поэтомуобепонулю.']
           .forEach(w => { if (!t.includes(w)) bad.push(`${n}: нет «${w}»`); });
       }
       await done(s, n);
@@ -12576,7 +12870,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const t = flat(await body(s));
         if (!t.includes('Вашадоляненазначена') || !t.includes('Долюпартнёрауэтогобизнесаещёненазначили.')) bad.push(`${n}: пустая доля не названа словами`);
         if (/Вашадоля[^К]*฿/.test(t)) bad.push(`${n}: в строке пустой доли — сумма`);
-        if (!t.includes('Клубу·30%6366฿')) bad.push(`${n}: доля клуба пропала`);
+        if (!t.includes('Клубу·35%7427฿')) bad.push(`${n}: доля клуба пропала`);
       }
       await done(s, n);
     }
@@ -13154,12 +13448,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     'product-state-review': { id: 81, state: 'review', decided_at: null, decision_note: '' },
     'product-edit': WCEDIT(81, { price: '200.00' }),
     // М.2 (Cafe13KPG#894): заглушки masterApi против снимков master-* (букинг — Cafe13KPG#985)
-    'master-request-201': mreq(901, 'pending'), 'master-price': { hours: 2, hours_included: 2, amount: String(PRICE(2)) },
+    'master-request-201': mreq(901, 'pending'), 'master-price': { hours: 2, hours_included: 2, duration_min: 120, amount: String(PRICE(2)), share: '100' },
     'master-requests-mine-approved': { requests: [mreq(901, 'approved')] },
     'master-slots': { slots: [mslot(901)], masters_without_slot: [] },
     // клиент спрашивает занятость ВСЕГДА со временем — сверка со снимком `-time` (в нём conflict, fits, starts_at);
     // conflict непустой: снимок пишет его объектом, и null здесь сверять было бы не с чем
-    'master-slot-busy-time': mbusy(MDAY(1), false, [{ title: 'Чужой вечер', starts_at: MAT(1, '16:00'), ends_at: MAT(1, '19:30') }],
+    'master-slot-busy-time': mbusy(MDAY(1), false, [{ title: 'Чужой вечер', occupancy: 'event', starts_at: MAT(1, '16:00'), ends_at: MAT(1, '19:30') }],
       { title: 'Чужой вечер', starts_label: MDAY(1).slice(8) + '.' + MDAY(1).slice(5, 7) + ' 16:00', ends_label: '19:30' }),
     // шаг 25 (Cafe13KPG#556): заглушки случаев `vyvod-*` против снимка api 0887c96 (cafe13-api#161)
     'withdraw-request': WD_POSTED(9), 'withdraw-mine': { requests: [WD_REQ(9, 'approved')], balance: '2670.00' },
@@ -13675,13 +13969,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (tqGets(s, /\/32\/receipt$/).length) bad.push(`${n}: байты PDF спрошены — показать их нечем`);
       await s.ctx.close();
     }
-    // решил другой (409): отказ словами сервера, очередь перечитана, итога «Зачислено» нет
+    // решил другой (409): отказ словами сервера, очередь перечитана, итога «Зачислено» нет.
+    // Фраза — api#203 (Cafe13KPG#587): женский род у «заявки», `status_ru` истории остался «зачислено»
     {
-      const n = 'tq-409', s = await tqCase(OWNER, { decide: json(409, { detail: 'заявка уже зачислено' }) });
+      const n = 'tq-409', s = await tqCase(OWNER, { decide: json(409, { detail: 'заявка уже зачислена' }) });
       await toReq(s, 31);
       await tqAct(s, 'tq-ok:31'); await s.p.waitForTimeout(500);
       const deny = await s.p.$eval('#view .deny', e => e.textContent).catch(() => '');
-      if (!deny.includes('Заявка уже зачислено')) bad.push(`${n}: нет отказа словами сервера: «${deny}»`);
+      if (!deny.includes('Заявка уже зачислена')) bad.push(`${n}: нет отказа словами сервера: «${deny}»`);
       if ((await s.view()).includes('Зачислено 1 000')) bad.push(`${n}: отказ показан успехом`);
       if (tqGets(s, /\/topup\/requests$/).length < 2) bad.push(`${n}: после отказа очередь не перечитана`);
       await s.ctx.close();
@@ -13712,7 +14007,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         receipt_mime: 'image/webp', receipt_bytes: 1000, amount_thb: '1111.00', amount_usd: '22.00', pay_method: null, ledger_id: null,
         status: 'approved', status_ru: 'согласована', created_at: '2026-10-24T09:00:00+00:00', decided_at: '2026-10-24T12:00:00+00:00',
         decision_note: '' }] };
-    const JNOTE = 'Согласие одним действием впускает в приложение И создаёт членство.';
+    // Членства согласие не создаёт с фичи 8 (cafe13-api join.py в бою 410f240): допуск и, при способе оплаты, пополнение
+    // счёта. Прежняя подпись обещала членство — Cafe13KPG#1084; JLIE — её слова, которых на экране быть не должно
+    const JNOTE = 'Согласие одним действием впускает в приложение; членства оно не создаёт.';
+    const JLIE = /созда(ёт|ст) членство|вместе с чеком/;
     const JDECIDE = st => ({ id: 21, status: st, decided_at: '2026-10-27T13:00:00+00:00' });
     Object.assign(LATE_STUBS, { 'join-requests-head': JREQ, 'join-decide-rejected': JDECIDE('rejected') });
     const joinCase = (me, r = {}) => open(true, true, json(200, me), null, null, null, q => {
@@ -13777,7 +14075,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (posts(s, /\/decide$/).length) bad.push(`${n}: согласие ушло с первого нажатия — подтверждения нет (#413)`);
       if (!(await s.p.$('#view [data-action="j-yes:21"]'))) bad.push(`${n}: после «Согласиться» нет шага подтверждения`);
       // фраза E45d с v74 — новая: кнопка «Исключить» на «Членах клуба» появилась (до v74 обещала бы несуществующее)
-      for (const w of ['Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба', 'Не соглашаться', 'Точно согласиться'])
+      if (JLIE.test(await s.view())) bad.push(`${n}: вопрос согласия обещает членство, а сервер его не создаёт (#1084)`);
+      for (const w of ['Согласие впустит человека в приложение — одним действием; членства оно не создаёт.',
+                       'Обратного действия у согласия нет: человека можно только ИСКЛЮЧИТЬ из клуба', 'Не соглашаться', 'Точно согласиться'])
         if (!(await s.view()).includes(w)) bad.push(`${n}: нет «${w}» (кадр E45d)`);
       // подпись под списком при раскрытом вопросе остаётся (E45d)
       if (!(await s.view()).includes(JNOTE)) bad.push(`${n}: подпись о согласии исчезла при раскрытом вопросе (кадр E45d)`);
@@ -13834,6 +14134,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await toJoin(s);
       const t = await s.view();
       if (!t.includes('Просьб нет') || !t.includes(JNOTE)) bad.push(`${n}: пустая очередь не по кадру E45b: ${t.slice(0, 120)}`);
+      if (JLIE.test(t)) bad.push(`${n}: пустая очередь обещает членство или чек, а просьба по 041 приходит без чека (#1084)`);
       await s.ctx.close();
       const n2 = 'join-decided', s2 = await joinCase(OWNER, { list: json(200, { requests: JREQ.requests.slice(2), pending: 0 }) });
       await toJoin(s2);
@@ -13861,7 +14162,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (c.includes('Чек не загрузился') || !(await s.p.$('#view img[alt="Чек"]'))) bad.push(`${n}: после «Повторить» чек не показан`);
       await s.ctx.close();
     }
-    // список не загрузился — форма близнеца E42; одна битая строка — отказ целиком
+    // список не загрузился — форма близнеца E42. Битая строка (Cafe13KPG#1084) выпадает ОДНА и названа:
+    // прежде она гасила главе всю очередь
     {
       const n = 'join-fail', s = await joinCase(OWNER, { list: json(500, { detail: 'x' }) });
       await toJoin(s);
@@ -13871,8 +14173,63 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const s2 = await joinCase(OWNER, { list: json(200, broken) });
       await toJoin(s2);
       const t2 = await s2.view();
-      if (!t2.includes('Просьбы не загрузились') || t2.includes('Ада Доступова')) bad.push(`${n}: битая строка не отвергла ответ целиком`);
+      if (t2.includes('Просьбы не загрузились') || !t2.includes('Ада Доступова')) bad.push(`${n}: битая строка погасила всю очередь (#1084)`);
+      if (!t2.includes('№22 (тип чека без файла)')) bad.push(`${n}: битая строка выпала молча — номера и причины на экране нет`);
+      if (t2.includes('Борис')) bad.push(`${n}: битая строка показана как годная`);
       await s2.ctx.close();
+    }
+    // Cafe13KPG#1084, приёмка: три просьбы — обычная, по 041 без денег и чека (законна: просьба выгнанного
+    // вернуться) и битая. Видны две, у просьбы без денег — кнопки решения, битая названа номером
+    {
+      const n = 'join-bez-deneg', q3 = clone(JREQ);
+      const free = Object.assign(clone(JREQ.requests[0]), { id: 30, tg_user_id: 805, first_name: 'Дарья', last_name: 'Вернувшаяся',
+        said: 'хочу вернуться', receipt_mime: null, receipt_bytes: null, amount_thb: null, amount_usd: null });
+      const junk = Object.assign(clone(JREQ.requests[0]), { id: 31, tg_user_id: 806, first_name: 'Ефим', last_name: 'Битый', amount_thb: 'много' });
+      // приёмка возврата #445 на abf9321 (arhitector-86): битость в USDT и файл без типа — тоже названы, а не показаны
+      const junkUsd = Object.assign(clone(JREQ.requests[0]), { id: 33, tg_user_id: 807, first_name: 'Жанна', last_name: 'Битая', amount_usd: 'много' });
+      const junkMime = Object.assign(clone(JREQ.requests[0]), { id: 34, tg_user_id: 808, first_name: 'Зоя', last_name: 'Битая', receipt_mime: null, receipt_bytes: 5000 });
+      // и остальные виды битости, которые обещает тело PR, — каждый своей строкой и своим названием
+      const junkState = Object.assign(clone(JREQ.requests[0]), { id: 35, tg_user_id: 809, first_name: 'Ирина', last_name: 'Битая', status: 'zombie' });
+      const junkBytes = Object.assign(clone(JREQ.requests[0]), { id: 36, tg_user_id: 810, first_name: 'Кира', last_name: 'Битая', receipt_bytes: null });
+      const junkKind = Object.assign(clone(JREQ.requests[0]), { id: 37, tg_user_id: 811, first_name: 'Лев', last_name: 'Битый', receipt_mime: 'image/gif' });
+      const junkNoId = Object.assign(clone(JREQ.requests[0]), { tg_user_id: 812, first_name: 'Нина', last_name: 'Битая' }); delete junkNoId.id;
+      // приёмка arhitector-aa: по 041 сумма и чек независимы (связана только пара тип↔байты), законных сочетаний
+      // четыре. №21 — всё есть, №30 — ничего; №38 — сумма без чека, №39 — чек без суммы. Обе — полноправные строки
+      const sumOnly = Object.assign(clone(JREQ.requests[0]), { id: 38, tg_user_id: 813, first_name: 'Олег', last_name: 'Безчека',
+        receipt_mime: null, receipt_bytes: null, amount_thb: '2222.00', amount_usd: null });
+      const shotOnly = Object.assign(clone(JREQ.requests[0]), { id: 39, tg_user_id: 814, first_name: 'Полина', last_name: 'Безсуммы',
+        amount_thb: null, amount_usd: null });
+      q3.requests = [q3.requests[0], free, junk, junkUsd, junkMime, junkState, junkBytes, junkKind, junkNoId, sumOnly, shotOnly]; q3.pending = 11;
+      const s = await joinCase(OWNER, { list: json(200, q3) });
+      await toJoin(s);
+      const t = await s.view();
+      if (t.includes('Просьбы не загрузились')) bad.push(`${n}: одна просьба погасила всю очередь`);
+      for (const w of ['Ада Доступова', 'Дарья Вернувшаяся', '«хочу вернуться»', 'Без взноса и без чека', '№31 (сумма не число)',
+                       '№33 (сумма в USDT не число)', '№34 (чек без типа)', '№35 (неизвестное состояние)',
+                       '№36 (тип чека без файла)', '№37 (чек непонятного вида)', 'без номера (нет номера)'])
+        if (!t.includes(w)) bad.push(`${n}: нет «${w}»`);
+      for (const [who, no] of [['Ефим Битый', 31], ['Жанна Битая', 33], ['Зоя Битая', 34], ['Ирина Битая', 35], ['Кира Битая', 36], ['Лев Битый', 37], ['Нина Битая', ' без номера']])
+        if (t.includes(who)) bad.push(`${n}: битая просьба №${no} показана как годная`);
+      const card = await s.p.evaluate(() => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes('Дарья'))[0] || '');
+      if (/฿|USDT|КБ|NaN|null/.test(card)) bad.push(`${n}: у просьбы без денег выдумана сумма или чек: «${card}»`);
+      const cardOf = who => s.p.evaluate(w => [...document.querySelectorAll('#view .card')].map(c => c.textContent).filter(x => x.includes(w))[0] || '', who);
+      const c38 = await cardOf('Олег');
+      if (!c38.includes('Без чека · просили по заявке:') || !c38.includes('2 222 ฿')) bad.push(`${n}: у суммы без чека нет «Без чека · просили по заявке: 2 222 ฿»: «${c38}»`);
+      if (/Без взноса|КБ|NaN|null/.test(c38)) bad.push(`${n}: сумма без чека названа «без взноса» или с чеком: «${c38}»`);
+      const c39 = await cardOf('Полина');
+      if (!c39.includes('Суммы в просьбе нет')) bad.push(`${n}: у чека без суммы нет «Суммы в просьбе нет»: «${c39}»`);
+      if (/฿|NaN|null|Без взноса/.test(c39)) bad.push(`${n}: у чека без суммы выдумана сумма: «${c39}»`);
+      const btn = await s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="j-"]')].map(b => b.getAttribute('data-action')).sort());
+      if (JSON.stringify(btn) !== JSON.stringify(['j-ask:21', 'j-ask:30', 'j-ask:38', 'j-ask:39', 'j-ok:21', 'j-ok:30', 'j-ok:38', 'j-ok:39']))
+        bad.push(`${n}: кнопки решения ${JSON.stringify(btn)}, ждали у 21, 30, 38, 39`);
+      const shots = gets(s, /\/receipt$/).map(c => c.url.replace(/.*requests\//, '')).sort();
+      if (JSON.stringify(shots) !== JSON.stringify(['21/receipt', '39/receipt'])) bad.push(`${n}: чеки спрошены так: ${JSON.stringify(shots)}, ждали у 21 и 39`);
+      await press(s, n, 'j-ok:30'); await press(s, n, 'j-yes:30');
+      const pp = posts(s, /\/join\/requests\/30\/decide$/);
+      if (pp.length !== 1 || JSON.parse(pp[0].body).decision !== 'approved') bad.push(`${n}: решение по просьбе без денег не ушло`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.p.screenshot({ path: `${OUT}/live-join-bez-deneg.png` });
+      await s.ctx.close();
     }
     // Подпись вкладки не переносится в две строки на УЗКОМ окне, 360 px. Перенос на 390 px
     // уже ловит `tabs-vse` (#410, прежде `tabs-vse-sem`) — мутация `white-space: nowrap` → `normal` краснит и его,
@@ -13994,6 +14351,25 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (t.includes(deny)) bad.push(`demo-work ${scr}: в демонстрации отказ «${deny}» вместо экрана`);
         if (s.calls.length !== before) bad.push(`demo-work ${scr}: в демонстрации ушло запросов к серверу: ${s.calls.length - before}`);
       }
+      // «Управление» вне Telegram (Cafe13KPG#935): не отказ «Сюда нельзя», а группа «Бизнесы» на демо-наборе —
+      // строка «Заявки в партнёры» с чипом ждущих (в наборе ждёт одна, 921), под плашкой прототипа; других групп нет,
+      // к серверу не ходит. Живой отказ без прав держит случай manage-live-net ниже
+      {
+        const before = s.calls.length;
+        await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(60);
+        const m = await s.p.evaluate(() => {
+          const d = document.querySelector('#view [data-go="partnerReqs"]');
+          return { cur: current, cnt: d ? ((d.querySelector('.count') || {}).textContent || null) : 'нет строки',
+                   biz: !!document.querySelector('#view [data-go="businesses"]'), proto: !!document.querySelector('#view .proto-strip'),
+                   labels: [...document.querySelectorAll('#view .group > .label')].map(e => e.textContent) };
+        });
+        const t = await s.view();
+        if (m.cur !== 'manage' || t.includes('Сюда нельзя')) bad.push(`demo-work manage: вне Telegram отказ «Сюда нельзя» вместо экрана: ${JSON.stringify(m)}`);
+        if (m.cnt !== '1' || !m.biz) bad.push(`demo-work manage: нет «Бизнесы клуба» и «Заявки в партнёры» со счётчиком 1: ${JSON.stringify(m)}`);
+        if (JSON.stringify(m.labels) !== '["Бизнесы"]') bad.push(`demo-work manage: групп не одна «Бизнесы»: ${JSON.stringify(m.labels)}`);
+        if (!m.proto) bad.push('demo-work manage: нет плашки «Прототип» — примерные данные выданы за живые');
+        if (s.calls.length !== before) bad.push(`demo-work manage: в демонстрации ушло запросов к серверу: ${s.calls.length - before}`);
+      }
       // рецепт карточки — из данных демонстрации, а не пустое поле
       await s.p.evaluate(() => go('barCard', '305'));
       const rc = await s.p.evaluate(() => (document.getElementById('c-recipe') || {}).value);
@@ -14108,6 +14484,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (t.includes(mark)) bad.push(`live-norights ${scr}: в живом режиме без прав нарисован экран («${mark}»)`);
         if (/\[(имя члена|глава клуба|кассир)\]/.test(t)) bad.push(`live-norights ${scr}: в живой режим протекли люди демонстрации`);
       }
+      // manage-live-net (Cafe13KPG#935): демо-вид «Управления» живёт только вне Telegram — в живом без прав прежний отказ
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(250);
+      {
+        const t = await s.view();
+        if (!t.includes('Сюда нельзя')) bad.push(`live-norights manage: в живом режиме без прав нет отказа «Сюда нельзя» (взято: ${t.slice(0, 70).replace(/\s+/g, ' ')})`);
+        if (await s.p.$('#view [data-go="partnerReqs"]')) bad.push('live-norights manage: в живом режиме без прав нарисована «Заявки в партнёры» — демо протекло');
+      }
       await s.ctx.close();
     }
   }
@@ -14157,11 +14540,648 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
+  // ── шаг 43: календарь «смотреть» в живом режиме (miniapp#451; случаи по ревью arhitector-38) ──
+  // Часы фиксированы: остров — вторник 1 декабря 2026, 10:00 (03:00Z). Пояс телефона — Нью-Йорк, где ещё 30 ноября:
+  // день клетки обязан считаться по острову (bkk), а не по телефону. Ивенты — живым ответом /events, тем же
+  // списком, что «Ивенты» (eventList()). Мутанты, которые случай обязан ловить: день по телефону (cal-chasy-kluba),
+  // однодневность (cal-polnoch), снятое «- 1» в calDays (m451a arhitector-38: конец ровно в 00:00 встаёт во второй
+  // день — cal-polnoch-rovno), пустой прошедший день (L9), «назад» с event на «Ивенты», церемонии демо в живом.
+  if (part(2)) {
+    const n = 'calendar';
+    const NOW43 = Date.parse('2026-12-01T03:00:00Z');
+    const CAL_EV = [
+      // 18:30Z 1 декабря — 01:30 2 декабря острова; в Нью-Йорке 13:30 1 декабря
+      EV({ id: 31, title: 'Часы клуба', starts_at: '2026-12-01T18:30:00Z', duration_min: 60 }),
+      // 22:00 3 декабря острова + 300 мин — до 03:00 4 декабря: две клетки
+      EV({ id: 32, title: 'Через полночь', starts_at: '2026-12-03T15:00:00Z', duration_min: 300 }),
+      // 22:00 5 декабря острова + 120 мин — кончается РОВНО в 00:00 6 декабря: одна клетка
+      EV({ id: 33, title: 'До полуночи', starts_at: '2026-12-05T15:00:00Z', duration_min: 120 })
+    ];
+    const s = await open(true, true, json(200, OWNER), null, null, null, evReply(json(200, CAL_EV)), 'America/New_York', NOW43);
+    const tap = async sel => { await s.p.click('#view ' + sel); await s.p.waitForTimeout(150); };
+    await s.p.evaluate(() => go('events')); await s.p.waitForTimeout(200);
+    if (!await s.p.$('#view [data-go="calendar"]')) bad.push(`${n}: на «Ивентах» нет кнопки календаря (V1)`);
+    else {
+      const c0 = s.calls.length;   // запросы ДО календаря — запуск приложения, не его
+      await tap('[data-go="calendar"]');
+      const cells = () => s.p.evaluate(() => {
+        const o = {};
+        document.querySelectorAll('#view .month [data-action^="cal-day:"]').forEach(b => {
+          o[b.dataset.action.slice(8)] = { ev: b.querySelectorAll('.ev').length, tea: b.querySelectorAll('.ev.tea').length };
+        });
+        return o;
+      });
+      const pressed = () => s.p.evaluate(() => { const b = document.querySelector('#view .seg [aria-pressed="true"]'); return b ? b.textContent : null; });
+      const note = () => s.p.evaluate(() => { const d = document.querySelector('#view .daynote'); return d ? d.textContent : ''; });
+      const c = await cells();
+      const ev = d => (c[d] || { ev: -1 }).ev;
+      if (!Object.keys(c).length) bad.push(`${n}: календарь открылся не месяцем — клеток дней нет`);
+      // cal-chasy-kluba
+      if (ev('2026-12-02') !== 1 || ev('2026-12-01') !== 0)
+        bad.push(`cal-chasy-kluba: 18:30Z 1 декабря — это 2 декабря острова; меток в клетке 1-го ${ev('2026-12-01')}, 2-го ${ev('2026-12-02')} (ждали 0 и 1)`);
+      // cal-polnoch
+      if (ev('2026-12-03') !== 1 || ev('2026-12-04') !== 1)
+        bad.push(`cal-polnoch: 22:00 + 300 мин стоит в клетках 3-го ${ev('2026-12-03')}, 4-го ${ev('2026-12-04')} (ждали 1 и 1)`);
+      // cal-polnoch-rovno — m451a
+      if (ev('2026-12-05') !== 1 || ev('2026-12-06') !== 0)
+        bad.push(`cal-polnoch-rovno: 22:00 + 120 мин кончается в 00:00 — клетки 5-го ${ev('2026-12-05')}, 6-го ${ev('2026-12-06')} (ждали 1 и 0)`);
+      // в живом церемоний для «смотреть» нет: списка у сервера нет (teaList пуст), занятость — только в «выбрать»
+      const tea = Object.values(c).reduce((a, x) => a + x.tea, 0);
+      if (tea) bad.push(`cal-tea-api: в живом (списка церемоний у сервера нет) меток церемоний в месяце ${tea}, ждали 0`);
+      await tap('[data-action="cal-day:2026-12-02"]');
+      const t2 = await s.view();
+      if (!t2.includes('Часы клуба')) bad.push(`cal-chasy-kluba: в дне 2 декабря нет ивента «Часы клуба»`);
+      if (/Чайн(ая|ых) церемони/.test(t2)) bad.push(`cal-tea-api: в живом (списка церемоний у сервера нет) в дне 2 декабря есть церемонии: «${t2.slice(0, 160)}»`);
+      // календарь своего запроса не добавляет: месяц и день — без сервера (ивенты уже в eventList())
+      const alien = s.calls.slice(c0);
+      if (alien.length) bad.push(`${n}: календарь звал сервер: ${alien.map(q => q.method + ' ' + q.url).join(', ')}`);
+      // назад с event — в тот же вид и день (не сегодняшний: 3 декабря)
+      await tap('[data-action="cal-view:month"]');
+      await tap('[data-action="cal-day:2026-12-03"]');
+      if (!await s.p.$('#view [data-event="32"]')) bad.push(`cal-nazad: в дне 3 декабря нет строки ивента 32`);
+      else {
+        await tap('[data-event="32"]');
+        await s.p.evaluate(() => window.__back && window.__back()); await s.p.waitForTimeout(250);
+        const pv = await pressed(), nt = await note();
+        if (pv !== 'День' || !nt.includes('3 декабря'))
+          bad.push(`cal-nazad: «назад» с event — вид «${pv}», подпись «${nt}» (ждали «День» и 3 декабря)`);
+      }
+      // L9: прошлое — не «пусто», а «афиша прошлого не показывает»; дальше прошлого месяца назад не листается
+      await tap('[data-action="cal-view:month"]');
+      await tap('[data-action="cal-prev"]');
+      const back2 = await s.p.evaluate(() => { const b = document.querySelector('#view [data-action="cal-prev"]'); return b ? b.disabled : null; });
+      if (back2 !== true) bad.push(`cal-proshloe: на ноябре (весь в прошлом) ‹ не погашена: ${back2}`);
+      await tap('[data-action="cal-day:2026-11-30"]');
+      const t9 = await s.view();
+      if (!t9.includes('Прошедшие ивенты афиша не показывает') || /ни ивентов|свободно/.test(t9))
+        bad.push(`cal-proshloe: прошедший день 30 ноября говорит «${t9.slice(0, 200)}» — ждали L9`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  /* ── БЕЗ ДАТЫ (Cafe13KPG#1097, #1103; слово владельца 25.11.2026, №79: «Даты убирай в обоих местах») ──
+     Срок членства уходит с экранов человека и кассы, срок в ДАННЫХ живёт. Признак даты — общий для всех
+     случаев: число месяца словом, число ЧИСЛАМИ или «до » перед ними. Срочное — через НЕДЕЛЮ от часов
+     прогона: там прежде краснел список людей, и общий срок — самый близкий к старому правилу. */
+  if (part(2)) {
+    const DATA_RE = /\d{1,2}\s+(январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)|\d{2}\.\d{2}\.\d{4}|\bдо\s+\d/i;
+    const NEDELYA = new Date(Date.now() + 7 * 86400000).toISOString();
+    const podpis = s => s.p.evaluate(() => { const e = document.querySelector('.pass .who .col > span');
+      return e ? e.textContent : null; });
+    // пропуск с сетью: экран пропуска (js/11-ekrany-klub.js) и без сети: passCard (js/03-propusk.js)
+    for (const [n, me, passR, saved, lifelong] of [
+      ['bez-daty-propusk', json(200, OWNER), json(200, Object.assign({}, PASS, { lifelong: false, valid_until: NEDELYA })), null, false],
+      ['bez-daty-propusk-bez-seti', 'abort', null, Object.assign({}, SAVED, { lifelong: false, ends: NEDELYA }), false],
+      ['bez-daty-pozhiznenno-propusk', 'abort', null, SAVED, true]]) {
+      const s = await open(true, true, me, null, passR, saved);
+      if (passR) { await s.p.click('[data-go="pass"]'); await s.p.waitForTimeout(200); }
+      const t = await s.view(), pd = await podpis(s), lvl = await s.p.evaluate(() => LEVEL.member);
+      if (pd === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет: «${t.slice(0, 80)}»`);
+      else {
+        const zhdem = lifelong ? lvl + ' · пожизненно' : lvl;
+        if (pd !== zhdem) bad.push(`${n}: под именем «${pd}», ждали «${zhdem}» — без даты и без висящей « · »`);
+        if (DATA_RE.test(t)) bad.push(`${n}: на пропуске дата: «${(t.match(DATA_RE) || [''])[0]}»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // демонстрация: экран пропуска рисует сам (js/11-ekrany-klub.js, ветка без PASS) — «<вид>» без « · до »
+    {
+      const n = 'bez-daty-propusk-demo';
+      const s = await open(false, true, json(200, OWNER));
+      await s.p.waitForTimeout(150);
+      await s.p.evaluate(() => go('pass')); await s.p.waitForTimeout(150);
+      const t = await s.view(), pd = await podpis(s);
+      if (pd === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — пропуска на экране нет: «${t.slice(0, 80)}»`);
+      else if (/ · $| · до|\bдо\s/.test(pd) || DATA_RE.test(pd)) bad.push(`${n}: под именем «${pd}» — дата или висящая « · »`);
+      await s.ctx.close();
+    }
+    // касса: карточка найденного (tillCard, js/05-kassa.js) и строка «Перед приёмом» (E34zh, ответ потерян)
+    const FIN = Object.assign({}, PERSON, { membership_active: true,
+      membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: NEDELYA, lifelong: false } });
+    {
+      const n = 'bez-daty-kassa';
+      const s = await open(true, true, json(200, OWNER), null, null, null, cash({ find: () => json(200, FIN), post: 'abort' }));
+      if (await toPerson(s, n)) {
+        const t = await s.view();
+        const row = await s.p.evaluate(() => { const e = [...document.querySelectorAll('#view .rows > div')]
+          .find(d => /Членство/.test(d.textContent)); return e ? e.querySelector('b').textContent : null; });
+        if (row !== 'Есть') bad.push(`${n}: строка «Членство» на карточке «${row}», ждали «Есть»`);
+        if (DATA_RE.test(t)) bad.push(`${n}: на карточке кассы дата: «${(t.match(DATA_RE) || [''])[0]}»`);
+        if (await toForm(s, n, 'topup')) {
+          await payTopup(s, '500');
+          const t2 = await s.view();
+          if (!t2.includes('Перед приёмом: членство есть, остаток 0 ฿')) bad.push(`${n}: нет «Перед приёмом: членство есть, остаток 0 ฿»`);
+          if (/членство до|Перед приёмом:[^.]*\d{1,2}\s+\S+\s+\d{4}/.test(t2)) bad.push(`${n}: в «Перед приёмом» дата`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // «Членство» (membershipLive, js/10-utility.js): экран вне WIRED, судим его разметку прямо — два членства
+    {
+      const n = 'bez-daty-chlenstvo';
+      const s = await open(true, true, json(200, OWNER));
+      const r = await s.p.evaluate(iso => {
+        DATA.member.memberships = [{ level: 'organizer', until: '1 декабря 2026 г.', lifelong: false, ends: iso },
+                                   { level: 'member', until: null, lifelong: true }];
+        const box = document.createElement('div'); box.innerHTML = membershipLive();
+        return { text: box.textContent, empty: [...box.querySelectorAll('.small')].filter(e => !e.textContent.trim()).length,
+                 life: (box.textContent.match(/Пожизненно/g) || []).length, act: (box.textContent.match(/АКТИВНО/g) || []).length };
+      }, NEDELYA);
+      if (/Действует до/.test(r.text) || DATA_RE.test(r.text)) bad.push(`${n}: на «Членстве» срок: «${(r.text.match(/Действует до.{0,20}/) || r.text.match(DATA_RE) || [''])[0]}»`);
+      if (r.empty) bad.push(`${n}: пустая .small на месте снятой строки (${r.empty})`);
+      if (r.life !== 1) bad.push(`${n}: «Пожизненно» ${r.life} раз, ждали 1 — у пожизненного остаётся (Р2 #453)`);
+      if (r.act !== 2) bad.push(`${n}: «АКТИВНО» ${r.act} раз, ждали 2 — карточки обоих членств`);
+      await s.ctx.close();
+    }
+  }
+
+  /* ── ЗАНЯТОСТЬ КАЛЕНДАРЯ В ЖИВОМ (наряд cafe13kpg-coordinator-3 26.11.2026; api master.py:323 `GET /master/slot-busy`) ──
+     Слово владельца: «если в календаре уже стоят три церемонии на это время, календарь не должен давать возможности
+     даже выбрать это время». Предел — сервера (queries.py TEA_SLOTS = 3, `club_conflict`): ивент закрывает всё,
+     церемоний разом до трёх, ждущий букинг время не держит. Обе стороны: занятое не выбрать, свободное — выбрать.
+     Часы — остров 1 декабря 2026, 10:00; выбор — на 2 декабря (D), полосы считают и 3-е (D1, ночь). */
+  if (part(2)) {
+    const NOWB = Date.parse('2026-12-01T03:00:00Z'), D = '2026-12-02', D1 = '2026-12-03';
+    const T = (d, hm) => d + 'T' + hm + ':00+07:00';
+    const R = (title, occ, d, a, d2, z) => ({ title, occupancy: occ, starts_at: T(d, a), ends_at: T(d2, z) });
+    const PEND = 'букинг мастера ждёт решения';
+    const NOCH = [R('Ночной пуэр', 'tea', D, '23:00', D1, '01:00'), R('Ночной улун', 'tea', D, '23:00', D1, '01:00')];
+    // [имя, ответ о D, ответ о D1 (или код), проверки: [С, До, можно?]]
+    const CASES_B = [
+      ['cal-busy-ivent', [R('Вечер клуба', 'event', D, '18:00', D, '21:00')], [],
+        { band: ['18:00–21:00', 'занято ивентом «Вечер клуба»'], tries: [['19:00', '20:00', false], ['17:00', '18:30', false], ['21:00', '22:00', true]] }],
+      ['cal-busy-tri', [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R('Габа', 'tea', D, '15:00', D, '16:00')], [],
+        { band: ['15:00–16:00', 'церемоний в это время уже 3 из 3'], tries: [['15:30', '16:30', false], ['16:00', '17:00', true]] }],
+      ['cal-busy-dva', [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R(PEND, 'tea', D, '15:00', D, '16:00')], [],
+        { open: ['15:00–16:00', 'церемоний 2 из 3'], tries: [['15:00', '16:00', true]], choose: ['15:00', '16:00'] }],
+      // церемония через полночь приходит в ОБОИХ ответах: дубль дал бы 4 и закрыл ночь
+      ['cal-busy-noch-dubl', NOCH, NOCH, { tries: [['23:30', '00:30', true]] }],
+      // третья — только в ответе о D1: без второго запроса ночь осталась бы открытой
+      ['cal-busy-noch-zavtra', NOCH, NOCH.concat([R('Рассветный', 'tea', D1, '00:15', D1, '00:45')]), { tries: [['23:30', '00:30', false], ['23:30', '00:15', true]] }],
+      ['cal-busy-otkaz', [], 500, { fail: true }],
+      ['cal-busy-ne-ta-data', [], 'ne-ta', { fail: true }]];
+    for (const [n, onD, onD1, want] of CASES_B) {
+      const asked = [];
+      const s = await open(true, true, json(200, OWNER), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (!u.startsWith('/master/slot-busy')) return undefined;
+        asked.push(u);
+        const date = (u.match(/date=([\d-]+)/) || [])[1];
+        const body = date === D ? onD : onD1;
+        if (typeof body === 'number') return json(body, { detail: 'сбой' });
+        if (body === 'ne-ta') return json(200, { place_id: null, place_name: null, date: '2026-12-09', busy: [] });
+        return json(200, { place_id: null, place_name: null, date, busy: body });
+      }, 'Asia/Bangkok', NOWB);
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      const look = () => s.p.evaluate(() => {
+        const v = document.getElementById('view'), b = v.querySelector('[data-action="cal-choose"]');
+        return { text: v.textContent, off: [...v.querySelectorAll('.tband.off')].map(e => ({ t: e.textContent, act: e.hasAttribute('data-action'), btn: e.tagName === 'BUTTON' })),
+                 open: [...v.querySelectorAll('button.tband')].map(e => e.textContent), choose: b ? b.disabled : null };
+      });
+      const want2 = ['/master/slot-busy?date=' + D + '&occupancy=tea', '/master/slot-busy?date=' + D1 + '&occupancy=tea'];
+      if (want2.some(w => !asked.includes(w))) bad.push(`${n}: занятость спрошена не под D и D+1 с occupancy=tea: ${JSON.stringify(asked)}`);
+      let v = await look();
+      if (want.fail) {
+        if (!v.text.includes('Не удалось узнать, какое время занято') || !await s.p.$('#view [data-action="cal-busy-retry"]'))
+          bad.push(`${n}: частичный или чужой ответ не дал L17 с «Повторить»: «${v.text.slice(0, 160)}»`);
+        if (v.off.length || v.open.length || v.choose !== null) bad.push(`${n}: при отказе нарисованы полосы или «Выбрать» (${v.off.length}/${v.open.length}/${v.choose})`);
+      } else if (v.choose === null) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — полос нет: «${v.text.slice(0, 160)}»`);
+      else {
+        if (want.band) {
+          const o = v.off.find(x => x.t.includes(want.band[0]));
+          if (!o || !o.t.includes(want.band[1])) bad.push(`${n}: нет закрытой полосы «${want.band.join(' · ')}»: ${JSON.stringify(v.off)}`);
+          else if (o.act || o.btn) bad.push(`${n}: закрытая полоса нажимается (${o.btn ? 'кнопка' : 'data-action'})`);
+          if (v.open.some(t => t.includes(want.band[0]))) bad.push(`${n}: занятое ${want.band[0]} есть среди открытых полос`);
+        }
+        if (want.open && !v.open.some(t => t.includes(want.open[0]) && t.includes(want.open[1])))
+          bad.push(`${n}: ${want.open[0]} не открыто с «${want.open[1]}»: открытые ${JSON.stringify(v.open)}, закрытые ${JSON.stringify(v.off)}`);
+        for (const [f, t, ok] of want.tries) {
+          await s.p.evaluate(([f, t]) => {
+            for (const [id, x] of [['cal-from', f], ['cal-to', t]]) {
+              const e = document.getElementById(id); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, [f, t]);
+          await s.p.waitForTimeout(150);
+          v = await look();
+          if (v.choose !== !ok) bad.push(`${n}: ${f}–${t} — «Выбрать это время» ${v.choose ? 'погашена' : 'жива'}, ждали ${ok ? 'живую' : 'погашенную'}`);
+          if (!ok && !v.text.includes('Выберите другое время')) bad.push(`${n}: ${f}–${t} занято, а причина не названа`);
+        }
+        if (want.choose) {
+          await s.p.evaluate(([f, t]) => {
+            for (const [id, x] of [['cal-from', f], ['cal-to', t]]) {
+              const e = document.getElementById(id); e.value = x; e.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, want.choose);
+          await s.p.waitForTimeout(150);
+          await s.p.click('#view [data-action="cal-choose"]'); await s.p.waitForTimeout(200);
+          const pk = await s.p.evaluate(() => calPicked('teaHold'));
+          if (!pk || pk.ymd !== D || pk.from !== want.choose[0] || pk.to !== want.choose[1]) bad.push(`${n}: выбор не вернулся форме: ${JSON.stringify(pk)}`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    /* Ответ сервера МЕНЯЕТСЯ между запросами — то, чего таблица выше не умеет (ревью arhitector4-c3 #462):
+       повтор после отказа НАЖИМАЕТСЯ, поздний ответ прежнего дня молчит (CALB.gen), вход спрашивает заново. */
+    const TRI = [R('Пуэр', 'tea', D, '15:00', D, '16:00'), R('Улун', 'tea', D, '15:00', D, '16:00'), R('Габа', 'tea', D, '15:00', D, '16:00')];
+    const BAND3 = ['15:00–16:00', 'церемоний в это время уже 3 из 3'];
+    const hasBand = (v, w) => v.off.some(x => x.t.includes(w[0]) && x.t.includes(w[1]));
+    const lookB = s => s.p.evaluate(() => {
+      const v = document.getElementById('view');
+      return { text: v.textContent, off: [...v.querySelectorAll('.tband.off')].map(e => ({ t: e.textContent })),
+               retry: !!v.querySelector('[data-action="cal-busy-retry"]') };
+    });
+    const openB = async (asked, answer) => open(true, true, json(200, OWNER), null, null, null, q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+      if (!u.startsWith('/master/slot-busy')) return undefined;
+      asked.push(u);
+      return answer((u.match(/date=([\d-]+)/) || [])[1], asked.length);
+    }, 'Asia/Bangkok', NOWB);
+    const okB = (date, busy) => json(200, { place_id: null, place_name: null, date, busy });
+    // 1) cal-busy-povtor: первый ответ о D — 500 (L17), «Повторить» нажата — второй 200, полоса «3 из 3» есть, запросов 4
+    {
+      const n = 'cal-busy-povtor', asked = []; let failD = true;
+      const s = await openB(asked, date => {
+        if (date === D && failD) { failD = false; return json(500, { detail: 'сбой' }); }
+        return okB(date, date === D ? TRI : []);
+      });
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      let v = await lookB(s);
+      if (!v.text.includes('Не удалось узнать, какое время занято') || !v.retry) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — после 500 нет L17 с «Повторить»: «${v.text.slice(0, 160)}»`);
+      else {
+        await s.p.click('#view [data-action="cal-busy-retry"]'); await s.p.waitForTimeout(400);
+        v = await lookB(s);
+        if (asked.length !== 4) bad.push(`${n}: «Повторить» не спросил сервер заново — запросов ${asked.length}, ждали 4: ${JSON.stringify(asked)}`);
+        if (v.retry || !hasBand(v, BAND3)) bad.push(`${n}: после «Повторить» нет полосы «${BAND3.join(' · ')}»: «${v.text.slice(0, 160)}»`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 2) cal-busy-pozdno: вход на D1, ответ о нём задержан; человек листает на D до ответа. Поздний ответ (с тремя
+    //    церемониями на D 15–16) обязан промолчать — иначе на D закрыто то, что сервер о D не говорил.
+    {
+      const n = 'cal-busy-pozdno', asked = [];
+      const s = await openB(asked, (date, k) => k <= 2 && date === D1
+        ? new Promise(ok => setTimeout(() => ok(okB(D1, TRI)), 1200)) : okB(date, []));
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D1);
+      await s.p.waitForTimeout(150);
+      await s.p.click('#view [data-action="cal-prev"]');
+      await s.p.waitForTimeout(1800);
+      const v = await lookB(s);
+      if (asked.length !== 4) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — запросов ${asked.length}, ждали 4 (D1, D1+1, D, D1): ${JSON.stringify(asked)}`);
+      if (!v.text.includes('Ср, 2 декабря')) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — день не D: «${v.text.slice(0, 120)}»`);
+      if (hasBand(v, BAND3)) bad.push(`${n}: поздний ответ о D1 закрыл D: ${JSON.stringify(v.off)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    // 3) cal-busy-vhod: D свободно; ушли с календаря, за это время три церемонии; вход снова — спрошено заново, закрыто
+    {
+      const n = 'cal-busy-vhod', asked = []; let full = false;
+      const s = await openB(asked, date => okB(date, date === D && full ? TRI : []));
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      let v = await lookB(s);
+      if (hasBand(v, BAND3) || asked.length !== 2) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — первый вход: запросов ${asked.length}, полоса ${hasBand(v, BAND3)}`);
+      full = true;
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(200);
+      await s.p.evaluate(d => go('calendar', { pick: 'teaHold', day: d }), D);
+      await s.p.waitForTimeout(400);
+      v = await lookB(s);
+      if (asked.length !== 4) bad.push(`${n}: второй вход не спросил занятость — запросов ${asked.length}, ждали 4`);
+      if (!hasBand(v, BAND3)) bad.push(`${n}: занятое за время вне календаря осталось открытым: ${JSON.stringify(v.off)}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
+  /* ── ДЕМО ПО ПОЯСУ КЛУБА, А НЕ ТЕЛЕФОНА (Cafe13KPG#193; возвраты arhitector5-e9 по #447) ──
+     «Сегодня/Завтра» у демо-ивента (dayWord) и время демо-заказа (nowHM) считаются по острову (bkk()).
+     Часы одни: 2026-12-01 20:30Z — на острове 2 декабря 03:30 (среда). Телефонов два, по обе стороны острова:
+     ЗАПАД — America/New_York: у телефона ещё 1 декабря 15:30. Ловит старый dayWord (день по устройству:
+       «Завтра, среда», «3.12, четверг») и старый nowHM («15:30»).
+     ВОСТОК — Asia/Vladivostok: местная полночь дня острова наступает РАНЬШЕ островной. Ловит снятый 'Z' в
+       dayWord (new Date(iso+'T00:00:00') → полночь Владивостока = 21:00 прошлого дня на острове → «1.12, вторник»),
+       к которому запад слеп (там тот же ответ), и старый nowHM («06:30»).
+     У каждого телефона свой страж: пояс, переставший различать своё направление, даёт «ПРОВЕРКА НЕ ВЫПОЛНЕНА»,
+     а не зелёное (в Asia/Bangkok старый и новый счёт совпадают). */
+  if (part(2)) {
+    const NOWP = Date.parse('2026-12-01T20:30:00Z');
+    const PHONES = [
+      ['demo-poyas-kluba-zapad', 'America/New_York',
+        r => r.phoneDay === 1 && r.phoneH === 15, 'у телефона не 1-е число 15 ч — пояс не западнее острова с другой датой'],
+      ['demo-poyas-kluba-vostok', 'Asia/Vladivostok',
+        r => r.midLocal < Date.parse('2026-12-01T17:00:00Z'), 'местная полночь 2 декабря не раньше островной — пояс не восточнее острова']];
+    for (const [n, tz, differs, why] of PHONES) {
+      const s = await open(true, false, json(200, OWNER), null, null, null, null, tz, NOWP);
+      const r = await s.p.evaluate(() => ({ phoneDay: new Date().getDate(), phoneH: new Date().getHours(),
+        midLocal: new Date('2026-12-02T00:00:00').getTime(),
+        d0: dayWord('2026-12-02'), d1: dayWord('2026-12-03'), d2: dayWord('2026-12-04'), hm: nowHM() }));
+      if (!differs(r)) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — ${why} (${tz}: ${r.phoneDay}-е, ${r.phoneH} ч)`);
+      else {
+        if (r.d0 !== 'Сегодня, среда') bad.push(`${n}: dayWord(день острова 2026-12-02) = «${r.d0}», ждали «Сегодня, среда» — день не по клубу (${tz})`);
+        if (r.d1 !== 'Завтра, четверг') bad.push(`${n}: dayWord(2026-12-03) = «${r.d1}», ждали «Завтра, четверг» (${tz})`);
+        if (r.d2 !== '4.12, пятница') bad.push(`${n}: dayWord(2026-12-04) = «${r.d2}», ждали «4.12, пятница» (${tz})`);
+        if (r.hm !== '03:30') bad.push(`${n}: nowHM() = «${r.hm}», ждали «03:30» (остров), а не часы телефона (${tz})`);
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+
+  // ── фича 10 (Cafe13KPG#1107, рецепт _docs/recept/ekran/moi-biznesy/): «Мои бизнесы» на «Клубе» и карточка дела myBiz.
+  // Слово владельца: «как куратор должен видеть список бизнесов которые я курирую. И проваливаюсь уже в плашку этого
+  // бизнеса я могу менять именно этот бизнес». Граница одного и двух — sostav.md: при одном деле ни одного нового нажатия
+  // шаг 42 (#468, ревью arhitector7-a1): GET /tea/card/mine на входе в «Клуб» — только при открытой двери teaApply
+  // (js/21:648 `&& !closed('teaApply')`, как цена у teaHold). Пара по образцу mq-entry: (а) дверь закрыта — запроса нет;
+  // (б) открыта — ровно один. Мутант mineopen (снять условие) обязан красить только (а): в воротах teaApply открыт всегда.
+  if (part(2)) {
+    const mineAsk = s => s.calls.filter(c => c.method === 'GET' && /\/tea\/card\/mine$/.test(c.url)).length;
+    for (const [n, shut, want] of [['tea-mine-zakryta', true, 0], ['tea-mine-otkryta', false, 1]]) {
+      const s = await open(true, true, json(200, OWNER));
+      await s.p.evaluate(sh => { if (sh) delete WIRED.teaApply; go('guest'); }, shut); await s.p.waitForTimeout(200);
+      const before = mineAsk(s);
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(300);
+      const got = mineAsk(s) - before;
+      if (got !== want) bad.push(`${n}: вход в «Клуб» при ${shut ? 'закрытой' : 'открытой'} двери teaApply — GET /tea/card/mine ${got}, ждали ${want}`);
+      await s.ctx.close();
+    }
+  }
+  if (part(2)) {
+    const CHAI = { id: 9, title: 'Чайная у моря', is_active: true, is_open: true };
+    // дело без гранта (3) и закрытое направление с грантом (5) — в «Мои бизнесы» не попадают
+    const KUH = { id: 3, title: 'Кухня', is_active: true, is_open: true };
+    const OLD = { id: 5, title: 'Старый бар', is_active: false, is_open: false };
+    const who = (roles, member) => { const me = clone(OWNER); me.roles = roles;
+      if (member === false) { me.membership_active = false; me.membership = null; me.memberships = []; } return me; };
+    const CUR2 = [{ role: 'curator', direction_id: 7 }, { role: 'curator', direction_id: 9 }, { role: 'curator', direction_id: 5 }];
+    // st — состояние стенда: открыт ли бар 7 и чай 9; смена открывается POST /shifts/open
+    const route = st => q => {
+      const u = q.url();
+      if (u.endsWith('/directions')) return json(200, [{ id: 7, title: 'Бар', is_active: true, is_open: st.bar }, Object.assign({}, CHAI, { is_open: st.chai }), KUH, OLD]);
+      if (u.includes('/bar/menu')) return json(200, MENU);
+      if (u.includes('/bar/products')) return json(200, []);
+      if (u.includes('/bar/orders') && q.method() === 'GET') return json(200, []);
+      if (u.includes('/membership-requests')) return json(200, { requests: [], pending: 0 });
+      if (u.endsWith('/shifts/open')) { const b = JSON.parse(q.postData()); if (b.direction_id === 9) st.chai = true; if (b.direction_id === 7) st.bar = true;
+        return json(201, { id: 1, direction_id: b.direction_id, member_id: b.member_id, opened_at: '2026-11-26T05:00:00+00:00' }); }
+      return undefined;
+    };
+    const st0 = () => ({ bar: true, chai: true });
+    const mbOpen = async (roles, st, member) => { const s = await open(true, true, json(200, who(roles, member)), null, null, null, route(st || st0()));
+      await s.p.waitForTimeout(400); return s; };
+    const rows = s => s.p.evaluate(() => [...document.querySelectorAll('#view [data-action^="my-biz:"]')].map(b => ({
+      id: b.getAttribute('data-action'), t: (b.querySelector('b') || {}).textContent, pill: b.querySelector('.pill') ? b.querySelector('.pill').textContent : null })));
+    const labels = s => s.p.evaluate(() => [...document.querySelectorAll('#view .group > .label')].map(e => e.textContent));
+    const groupOf = (s, label) => s.p.evaluate(l => { const g = [...document.querySelectorAll('#view .group')].filter(x => (x.querySelector(':scope > .label') || {}).textContent === l)[0];
+      return g ? g.textContent : null; }, label);
+    const cur = s => s.p.evaluate(() => ({ current, pick: BAR_PICK, bar: BAR && BAR.id }));
+    const dirsAsked = s => s.calls.filter(c => c.method === 'GET' && c.url.endsWith('/directions')).length;
+    const qs = (s, path) => s.calls.filter(c => c.method === 'GET' && c.url.includes(path)).map(c => (c.url.match(/direction_id=(\d+)/) || [])[1]);
+    const BAR_ROWS = ['Заказы на баре', 'Карточки меню', 'Доход и расход бара'];
+    const fin = async (s, n) => { if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`); await s.ctx.close(); };
+    const toBiz = async (s, n, id) => {
+      await s.p.click(`#view [data-action="my-biz:${id}"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: строка дела ${id} не нажимается`));
+      await s.p.waitForTimeout(400);
+      const c = await cur(s);
+      if (c.current !== 'myBiz' || c.pick !== id || c.bar !== id) { bad.push(`${n}: строка дела ${id} не открыла его карточку: ${JSON.stringify(c)}`); return false; }
+      return true;
+    };
+
+    // moi-biz-odno: куратор ОДНОГО дела — «Клуб» прежний, нового запроса на входе нет, очередь своего дела одним нажатием
+    {
+      // второй вариант ролей (возврат arhitector5-e9 по #464): куратор сам стоит за баром — два гранта на ОДНО дело
+      for (const [n, roles] of [['moi-biz-odno', [{ role: 'curator', direction_id: 7 }]],
+                                ['moi-biz-odno/bar+curator', [{ role: 'bar', direction_id: 7 }, { role: 'curator', direction_id: 7 }]]]) {
+      const s = await mbOpen(roles);
+      const t = await s.view();
+      if (t.includes('Мои бизнесы')) bad.push(`${n}: при одном деле группа «Мои бизнесы» — лишний шаг`);
+      const w = await groupOf(s, 'Работа');
+      if (!w || BAR_ROWS.some(x => !w.includes(x))) bad.push(`${n}: строки бара в «Работе» не как сегодня: «${w}»`);
+      if (dirsAsked(s) !== 0) bad.push(`${n}: вход на «Клуб» спросил /directions ${dirsAsked(s)} раз — новый запрос у человека с одним делом`);
+      await s.p.click('#view [data-go="barQueue"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Заказы на баре» не нажимаются`));
+      await s.p.waitForTimeout(400);
+      if ((await cur(s)).current !== 'barQueue') bad.push(`${n}: «Заказы на баре» не открыли очередь одним нажатием`);
+      if (JSON.stringify(qs(s, '/bar/orders')) !== '["7"]') bad.push(`${n}: очередь не своего дела: ${JSON.stringify(qs(s, '/bar/orders'))}`);
+      await fin(s, n);
+      }
+    }
+    // moi-biz-dva: куратор «Бара» и «Чая» — группа словами сервера, строк бара в «Работе» нет; «Чай» → карточка «Чая»
+    {
+      const n = 'moi-biz-dva';
+      const s = await mbOpen(CUR2);
+      const r = await rows(s);
+      if (JSON.stringify(r.map(x => [x.id, x.t])) !== JSON.stringify([['my-biz:7', 'Бар'], ['my-biz:9', 'Чайная у моря']]))
+        bad.push(`${n}: строки «Мои бизнесы» не два своих активных дела словами сервера: ${JSON.stringify(r)}`);
+      if (!(await labels(s)).includes('Мои бизнесы')) bad.push(`${n}: нет подписи группы «Мои бизнесы»`);
+      const t = await s.view();
+      BAR_ROWS.forEach(x => { if (t.includes(x)) bad.push(`${n}: «${x}» плоско на «Клубе» при двух делах`); });
+      if (await groupOf(s, 'Работа') !== null) bad.push(`${n}: группа «Работа» без заявок осталась`);
+      if (await toBiz(s, n, 9)) {
+        const l = await labels(s);
+        if (!l.includes('Бизнес «Чайная у моря»')) bad.push(`${n}: подпись карточки не «Бизнес «Чайная у моря»»: ${JSON.stringify(l)}`);
+        if ((await s.view()).includes('Бизнес «Бар»')) bad.push(`${n}: в карточке «Чая» чужое дело`);
+      }
+      await fin(s, n);
+    }
+    // moi-biz-klubnoe-snaruzhi: «Заявки на членство» остаются в «Работе» на «Клубе», в карточке дела их нет. Экран заявок
+    // вне WIRED (вернётся после api) — случай включает его на странице, иначе строки нет ни у кого и запрет не различает
+    {
+      const n = 'moi-biz-klubnoe-snaruzhi';
+      const s = await mbOpen(CUR2.concat([{ role: 'head', direction_id: null }]));
+      await s.p.evaluate(() => { WIRED.memberRequests = 1; go('guest'); go('home'); }); await s.p.waitForTimeout(400);
+      const w = await groupOf(s, 'Работа');
+      if (!w || !w.includes('Заявки на членство')) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — «Заявок на членство» нет в «Работе»: «${w}»`);
+      if (w && BAR_ROWS.some(x => w.includes(x))) bad.push(`${n}: рядом с заявками строки бара: «${w}»`);
+      if ((await groupOf(s, 'Мои бизнесы') || '').includes('Заявки на членство')) bad.push(`${n}: заявки внутри «Мои бизнесы»`);
+      if (await toBiz(s, n, 7) && (await s.view()).includes('Заявки на членство')) bad.push(`${n}: клубное в карточке дела`);
+      await fin(s, n);
+    }
+    // moi-biz-chuzhoe (curator 7 + worker 9 — дело одно) и moi-biz-net (без своих дел): «Клуб» как сегодня
+    for (const [n, roles] of [['moi-biz-chuzhoe', [{ role: 'curator', direction_id: 7 }, { role: 'worker', direction_id: 9 }]], ['moi-biz-net', []]]) {
+      const s = await mbOpen(roles);
+      if ((await s.view()).includes('Мои бизнесы') || (await rows(s)).length) bad.push(`${n}: группа «Мои бизнесы» у человека без двух своих дел`);
+      if (dirsAsked(s) !== 0) bad.push(`${n}: вход на «Клуб» спросил /directions`);
+      if (n === 'moi-biz-chuzhoe' && !(await groupOf(s, 'Работа') || '').includes('Заказы на баре')) bad.push(`${n}: строки бара пропали из «Работы»`);
+      await fin(s, n);
+    }
+    // moi-biz-vnutri-chai + moi-biz-nazad: в карточке «Чая» карточки меню и очередь — «Чая»; назад из barCards — в ту же карточку
+    // (barMoney в FROZEN: человеку туда не войти, и «назад» оттуда не судится — долг разморозки, тело PR)
+    {
+      const n = 'moi-biz-vnutri-chai';
+      const s = await mbOpen(CUR2);
+      if (await toBiz(s, n, 9)) {
+        await s.p.click('#view [data-go="barCards"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Карточки меню» не нажимаются`));
+        await s.p.waitForTimeout(400);
+        if ((await s.view()).includes('Не удалось определить')) bad.push(`${n}: карточки меню «Чая» — с плашкой`);
+        if (!qs(s, '/bar/products').length || qs(s, '/bar/products').some(x => x !== '9')) bad.push(`${n}: карточки спрошены не у «Чая»: ${JSON.stringify(qs(s, '/bar/products'))}`);
+        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(300);
+        const c = await cur(s);
+        if (c.current !== 'myBiz' || c.pick !== 9) bad.push(`moi-biz-nazad: назад с «Карточек меню» не в карточку «Чая»: ${JSON.stringify(c)}`);
+        await s.p.click('#view [data-go="barQueue"]', { timeout: 3000 }).catch(() => bad.push(`${n}: «Заказы на баре» не нажимаются`));
+        await s.p.waitForTimeout(400);
+        const o = qs(s, '/bar/orders');
+        if (!o.length || o.some(x => x !== '9')) bad.push(`${n}: очередь не «Чая»: ${JSON.stringify(o)}`);
+      }
+      await fin(s, n);
+    }
+    // moi-biz-smena: в карточке закрытого «Чая» — «Открыть смену на себя»; после — «открыт», и строка на «Клубе» без «закрыт»
+    {
+      const n = 'moi-biz-smena', st = { bar: true, chai: false };
+      const s = await mbOpen(CUR2, st);
+      const r0 = (await rows(s)).filter(x => x.id === 'my-biz:9')[0];
+      if (!r0 || r0.pill !== 'закрыт') bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — закрытый «Чай» без метки «закрыт»: ${JSON.stringify(r0)}`);
+      if (await toBiz(s, n, 9)) {
+        await s.p.click('#view [data-action="shift-open"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Открыть смену на себя» в карточке закрытого дела`));
+        await s.p.waitForTimeout(500);
+        const p = s.calls.filter(c => c.method === 'POST' && c.url.endsWith('/shifts/open')).map(c => JSON.parse(c.body).direction_id);
+        if (JSON.stringify(p) !== '[9]') bad.push(`${n}: смена открыта не у «Чая»: ${JSON.stringify(p)}`);
+        const pill = await s.p.evaluate(() => (document.querySelector('#view .card.strong .pill') || {}).textContent);
+        if (pill !== 'открыт') bad.push(`${n}: после открытия смены метка «${pill}»`);
+        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(400);
+        const r1 = (await rows(s)).filter(x => x.id === 'my-biz:9')[0];
+        if (!r1 || r1.pill !== null) bad.push(`${n}: на «Клубе» строка «Чая» после открытия смены: ${JSON.stringify(r1)}`);
+      }
+      await fin(s, n);
+    }
+    // moi-biz-smena-dela: корзина «Бара» (выбор на «Услугах») не переезжает в выбранный на «Клубе» «Чай» — один приём bizPick
+    {
+      const n = 'moi-biz-smena-dela';
+      const s = await mbOpen(CUR2);
+      await toBar(s, 7);
+      await s.p.click('[data-action="cart-add:11"]', { timeout: 3000 }).catch(() => {});
+      if (await s.p.evaluate(() => Object.keys(CART).length) !== 1) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — позиция в корзину «Бара» не легла`);
+      await s.p.click('#tabs [data-go="home"]'); await s.p.waitForTimeout(400);
+      if (await toBiz(s, n, 9) && await s.p.evaluate(() => Object.keys(CART).length) !== 0) bad.push(`${n}: корзина «Бара» переехала в «Чай»`);
+      await fin(s, n);
+    }
+    // moi-biz-stary-put (слово coordinator-3): выбор дела на «Услугах» по-прежнему ведёт в МЕНЮ, а очередь — этого дела
+    {
+      const n = 'moi-biz-stary-put';
+      const s = await mbOpen(CUR2);
+      await toBar(s, 9);
+      const c = await cur(s);
+      if (c.current !== 'bar' || c.pick !== 9) bad.push(`${n}: строка «Услуг» привела не в меню «Чая»: ${JSON.stringify(c)}`);
+      if (!qs(s, '/bar/menu').includes('9')) bad.push(`${n}: меню «Чая» не спрошено: ${JSON.stringify(qs(s, '/bar/menu'))}`);
+      await s.p.click('#tabs [data-go="barQueue"]', { timeout: 3000 }).catch(() => bad.push(`${n}: вкладки «Заказы» нет`));
+      await s.p.waitForTimeout(400);
+      const o = qs(s, '/bar/orders');
+      if (!o.length || o.some(x => x !== '9')) bad.push(`${n}: очередь после выбора «Чая» на «Услугах» не его: ${JSON.stringify(o)}`);
+      await fin(s, n);
+    }
+    // moi-biz-plashka-bez-povtora: без своих дел (два активных, грантов нет) — плашка БЕЗ «Повторить»; сбой сети — с ним
+    // (отрицательный контроль); куратор ОДНОГО дела — плашки нет вовсе, меню своего дела (вторая половина, слово coordinator-3)
+    {
+      const n = 'moi-biz-plashka-bez-povtora';
+      for (const [k, roles, dirs] of [['net', [], null], ['set', [], 'abort'], ['odno', [{ role: 'curator', direction_id: 7 }], null]]) {
+        const base = route(st0());
+        const s = await open(true, true, json(200, who(roles)), null, null, null, q => dirs && q.url().endsWith('/directions') ? dirs : base(q));
+        await s.p.waitForTimeout(300);
+        await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(400);
+        const t = await s.view(), btn = !!(await s.p.$('#view [data-action="retry-menu"]'));
+        if (k === 'net' && (!t.includes('Не удалось определить ваш бизнес.') || btn)) bad.push(`${n}: без своих дел — плашка ${t.includes('Не удалось определить')}, «Повторить» ${btn}`);
+        if (k === 'set' && (!t.includes('Меню не загрузилось') || !btn)) bad.push(`${n}: сбой сети без «Повторить» — контроль не различает`);
+        if (k === 'odno' && (t.includes('Не удалось определить') || !t.includes('Эспрессо'))) bad.push(`${n}: куратор одного дела — плашка или нет меню: ${t.slice(0, 160)}`);
+        await fin(s, `${n}/${k}`);
+      }
+    }
+    // moi-biz-bez-vybora: куратор двух дел на меню без выбора — вместо плашки строки его дел, нажатие → карточка дела
+    {
+      const n = 'moi-biz-bez-vybora';
+      const s = await mbOpen(CUR2);
+      await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(500);
+      if ((await s.view()).includes('Не удалось определить')) bad.push(`${n}: куратору двух дел — плашка вместо строк дел`);
+      const r = await rows(s);
+      if (JSON.stringify(r.map(x => x.id)) !== '["my-biz:7","my-biz:9"]') bad.push(`${n}: строки дел вместо плашки: ${JSON.stringify(r)}`);
+      else await toBiz(s, n, 7);
+      await fin(s, n);
+    }
+    // moi-biz-pozdno: список дел приходит ПОСЛЕ отрисовки. (a) «Клуб»: ответ /directions опаздывает — строки встают сами,
+    // без чужого render. (b) меню: на входе в «Клуб» список не пришёл (сбой сети), человек открыл меню — отказ выбирать
+    // перечитывает список (loadMenu → loadBiz), и опоздавший ответ рисует строки дел на меню, а не «Бизнесы не загрузились»
+    {
+      const n = 'moi-biz-pozdno';
+      const later = (ms, r) => new Promise(ok => setTimeout(() => ok(r), ms));
+      for (const k of ['home', 'bar']) {
+        const base = route(st0()); let d = 0, hold = false;
+        const s = await open(true, true, json(200, who(CUR2)), null, null, null, q => {
+          if (!q.url().endsWith('/directions')) return base(q);
+          d++;
+          // вход на «Клуб» спрашивает список не один раз — опаздывают ВСЕ ответы, иначе быстрый второй рисует строки сам.
+          // Только после hold: open() ждёт networkidle, и опоздание на первой загрузке он бы переждал (clean bcde4f6)
+          if (k === 'home') return hold ? later(900, base(q)) : base(q);
+          return d === 1 ? 'abort' : d === 3 ? later(900, base(q)) : base(q);
+        });
+        // новый старт без ожидания сети: load не ждёт /directions, строки обязаны встать по опоздавшему ответу
+        if (k === 'home') { hold = true; await s.p.reload({ waitUntil: 'load' }); }
+        await s.p.waitForTimeout(300);
+        if (k === 'home') {
+          if ((await rows(s)).length) bad.push(`${n}/home: ПРОВЕРКА НЕ ВЫПОЛНЕНА — строки дел до ответа /directions`);
+          await s.p.waitForTimeout(1200);
+          if (JSON.stringify((await rows(s)).map(x => x.id)) !== '["my-biz:7","my-biz:9"]') bad.push(`${n}/home: опоздавший список не нарисован на «Клубе»: ${JSON.stringify(await rows(s))}`);
+        } else {
+          if (!(await s.view()).includes('Бизнесы не загрузились')) bad.push(`${n}/bar: ПРОВЕРКА НЕ ВЫПОЛНЕНА — сбой списка на «Клубе» не показан`);
+          await s.p.evaluate(() => go('bar')); await s.p.waitForTimeout(300);
+          if ((await rows(s)).length) bad.push(`${n}/bar: ПРОВЕРКА НЕ ВЫПОЛНЕНА — строки дел на меню до ответа /directions`);
+          await s.p.waitForTimeout(1200);
+          if (JSON.stringify((await rows(s)).map(x => x.id)) !== '["my-biz:7","my-biz:9"]') bad.push(`${n}/bar: на меню после отказа выбирать нет строк дел: ${JSON.stringify(await rows(s))}`);
+        }
+        await fin(s, `${n}/${k}`);
+      }
+    }
+    // moi-biz-bez-dela (myBiz.md, «Состояния»): вход в карточку без выбранного дела (перезапуск, прямой go) — «Клуб», пустой карточки нет
+    {
+      const n = 'moi-biz-bez-dela';
+      const s = await mbOpen(CUR2);
+      await s.p.evaluate(() => go('guest')); await s.p.waitForTimeout(200);
+      await s.p.evaluate(() => go('myBiz')); await s.p.waitForTimeout(300);
+      const c = await cur(s);
+      if (c.current !== 'home' || c.pick !== null) bad.push(`${n}: вход без выбора не вернул на «Клуб»: ${JSON.stringify(c)}`);
+      await fin(s, n);
+    }
+    // moi-biz-svezhaya-smena: «Чай» закрыт, пока «Клуб» читал список; смену открыли с другого телефона — карточка перечитывает
+    // бар на входе и говорит «открыт», а не старое слово списка
+    {
+      const n = 'moi-biz-svezhaya-smena', st = { bar: true, chai: false };
+      const s = await mbOpen(CUR2, st);
+      st.chai = true;
+      if (await toBiz(s, n, 9)) {
+        await s.p.waitForTimeout(300);
+        const pill = await s.p.evaluate(() => (document.querySelector('#view .card.strong .pill') || {}).textContent);
+        if (pill !== 'открыт') bad.push(`${n}: смена, открытая без нас, в карточке — «${pill}»`);
+      }
+      await fin(s, n);
+    }
+    // moi-biz-b5-b6: «Доход и расход бара» — только у куратора ЭТОГО дела (bar на «Баре» его не видит); «На счёте» — только у
+    // дела из BW.dirs (остаток партнёра), у другого дела строки нет
+    {
+      const n = 'moi-biz-b5-b6';
+      const s = await mbOpen([{ role: 'bar', direction_id: 7 }, { role: 'curator', direction_id: 9 }]);
+      if (await toBiz(s, n, 7)) {
+        if ((await s.view()).includes('Доход и расход бара')) bad.push(`${n}: бар «Бара» видит «Доход и расход бара»`);
+        await s.p.evaluate(() => { BW.dirs = [{ id: 9, title: 'Чайная у моря', wallet: { sum: null, through: null } }]; render(); });
+        if ((await s.view()).includes('На счёте')) bad.push(`${n}: «На счёте» у дела, которого нет в BW.dirs`);
+        await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(400);
+        if (await toBiz(s, n, 9)) {
+          await s.p.evaluate(() => { BW.dirs = [{ id: 9, title: 'Чайная у моря', wallet: { sum: null, through: null } }]; render(); });
+          const t = await s.view();
+          if (!t.includes('Доход и расход бара')) bad.push(`${n}: куратор «Чая» без «Дохода и расхода бара»`);
+          if (!t.includes('На счёте') || !t.includes('доли ещё не назначены')) bad.push(`${n}: нет «На счёте» у дела из BW.dirs`);
+        }
+      }
+      await fin(s, n);
+    }
+  }
+
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.
   if (!MINE && Object.keys(LATE_STUBS).length !== LATE_WANT) bad.push(`shape: ПРОВЕРКА НЕ ВЫПОЛНЕНА — join-заглушек в реестре ${Object.keys(LATE_STUBS).length}, ждали ${LATE_WANT}`);
   checkShapes(LATE_STUBS);
+  settleFz(PENDING_FZ);   // до ids-clean: его строки не следствия клика
   // Номера людей: репозиторий публичный — разрешающий список, tools/ids-clean.cjs.
   bad.push(...require('./ids-clean.cjs').idsClean(ROOT));
 
@@ -14174,8 +15194,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   if (MINE && process.env.ONLY_OUT) require('fs').writeFileSync(process.env.ONLY_OUT, JSON.stringify({
     only: ONLY, src: require('crypto').createHash('sha256').update(require('fs').readFileSync(__filename)).digest('hex'),
     sites: site, run: SITES.run, off: SITES.off, late: Object.keys(LATE_STUBS), late_want: LATE_WANT,
-    skipped: [...SKIPPED], notes, bad, ran }));
+    skipped: [...SKIPPED], nemer: FZ, notes, bad, ran }));
   const whose = MINE ? ` (часть ${ONLY}: случаев ${SITES.run.length} из ${site}; сводку по обеим судит tools/live-svod.cjs)` : '';
+  if (FZ.length) console.log(nemer());
   if (bad.length) { console.log('КРАСНОЕ' + whose + ':\n' + bad.join('\n')); process.exit(1); }
+  if (FZ.length) { console.log('ПРОВЕРКА НЕ ЦЕЛИКОМ: красного нет, но экранов не измерено ' + new Set(FZ.map(f => f.screen)).size + ' (заморожены, список выше)' + whose); process.exit(2); }
   console.log('зелёное: ' + ran + ' прогонов экрана' + (SITES.run.includes(1) ? ' (из них ' + CASES.length + ' табличных)' : '') + whose);   // таблица — случай №1
 })();
