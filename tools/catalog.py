@@ -301,6 +301,11 @@ ABSENT = [
     # «Управлении» — у art_director и админа (`/stats/art`, require_role("art_director")). `дверь`: admin в фикстуре
     # у «владельца» — тот же путь, что у clubStats
     'artStats': 'дверь',
+    # шаг 34 (Cafe13KPG#565, рецепт 34/masterStats, #400): строка «Статистика мастера» в группе «Ивенты» на «Управлении»
+    # сразу под «Свои ивенты», при mayOwnEvents(); отчёт по ивенту — из строки списка L этой страницы (mst-event,
+    # js/21-navigaciya.js), двери data-go у него нет: «за:masterStats», как event ← events
+    'masterStats': 'дверь',
+    'eventReport': 'за:masterStats',
     # шаг 43 (рецепт 43/events.md V1): кнопка «Календарь» на «Ивентах» — у всех, у кого вкладка «Ивенты»
     'calendar': 'дверь',
     # фича 4 (Cafe13KPG#1009, рецепт odobrenie/eventApproval, A0): строка «Ивенты на одобрение» в группе «Ивенты» на
@@ -1355,6 +1360,8 @@ TITLES = {
     'businesses': 'Бизнесы клуба',
     'clubStats': 'Статистика клуба',
     'artStats': 'Статистика арт-директора',
+    'masterStats': 'Статистика мастера',
+    'eventReport': 'Отчёт по ивенту',
     'calendar': 'Календарь',
     # шаг 42, ЧАЙ-A — слова клиента (js/00-slova.js: tea.list.title, tea.book.title, tea.apply.title,
     # tea.hold.title.screen, tea.join.title); у teaMaster в клиенте имя — имя мастера, здесь — род экрана

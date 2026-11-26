@@ -819,12 +819,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // v108) — членство. Делим по СВОЙСТВУ тела экрана; прототип без известного привратника — «не выполнено»,
       // а не молча вне проверки (иначе следующий экран со своим привратником дал бы ложное красное или ничего)
       const split = await s.p.evaluate(() => {
-        const by = { masters: [], member: [], unknown: [] };
+        const by = { masters: [], member: [], own: [], unknown: [] };
         // с v109 PROTO пуст: экраны шага 3 берутся по СВОЙСТВУ имени (`master…`), а подключённость сверяется ниже
         Object.keys(SCREENS).filter(k => /^master/.test(k)).forEach(k => {
           const src = String(SCREENS[k]);
           if (/mayMasters\(\)/.test(src)) by.masters.push(k);
           else if (/DATA\.role === 'guest'/.test(src)) by.member.push(k);
+          // шаг 34: «Моя статистика» (masterStats) стережёт mayMasterStats — свои ивенты, не решение заявок мастеров;
+          // его дверь судит свой случай ms-dver, здесь экран вне проверки по НАЗВАННОМУ привратнику
+          else if (/mayMasterStats\(\)/.test(src)) by.own.push(k);
           else by.unknown.push(k);
         });
         return by;
@@ -4901,6 +4904,337 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (!e || !e.includes((await W(s, 'artStats.events.count')) + '4')) bad.push(`${n}: на экране недели не её «Ивенты»: «${e}»`);
       if (!m || m.includes('777') || !m.includes((await W(s, 'artStats.money.accrued')) + '15 ฿')) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${m}»`);
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
+  // ── шаг 34 (Cafe13KPG#565, рецепты `_docs/recept/ekran/34/masterStats.md` и `34/eventReport.md`, miniapp#400; снимок
+  // формы api#196 на 4d3b5a4): статистика мастера — «Управление» → «Ивенты» → «Статистика мастера» (M0, под «Свои
+  // ивенты»), строка списка L → отчёт по ивенту, ОДИН на все страницы статистики. Слово владельца: «Числа нужны.
+  // Реальные. Если нули - значит нули.» — 0 печатается нулём, null — «нет данных», ключа нет — карточки нет. Слова
+  // судятся по словарю со страницы (SLOVA.ru). Заглушки сверяет страж формы (`stats-master*`, `stats-event-*`).
+  const MS_RESP = x => {
+    x = x || {};
+    return { period: { kind: x.kind || 'month', start: '2026-10-31T17:00:00+00:00', end: '2026-11-30T17:00:00+00:00' },
+      events: x.events || { count: 2, bookings: 7, collected: '2100.00' },
+      payouts: x.payouts || { count: 1, amount: '850.00' },
+      money: Object.assign({ book: 'club_ledger', balance: '1200.00', withdrawable: '1170.00', expected: '340.00', expected_events: 1 }, x.money || {}),
+      list: x.list || [{ id: 52, title: 'Чайная церемония', starts_at: '2026-11-20T12:00:00+00:00', bookings: 4, collected: '1200.00' },
+                       { id: 51, title: 'Утро с гонгом', starts_at: '2026-11-05T03:00:00+00:00', bookings: 3, collected: '900.00' }] };
+  };
+  const ER_RESP = x => {
+    x = x || {};
+    const r = { id: x.id || 52, title: 'Чайная церемония', starts_at: '2026-11-20T12:00:00+00:00', duration_min: 90, place: 'place' in x ? x.place : 'Зал',
+      state: 'done', bookings: x.bookings || { count: 4, places: 10, unlimited: false }, full: !x.guest };
+    if (!x.guest) {
+      r.money = x.money || { book: 'club_ledger', collected: '1200.00', distributed: true, master: '1020.00', club: '180.00' };
+      r.slot_fee = 'slot_fee' in x ? x.slot_fee : '100.00';
+    }
+    return r;
+  };
+  if (part(2)) {
+    const MASTER = clone(OWNER); MASTER.roles = [];
+    MASTER.memberships = [{ level: 'organizer', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }];
+    const msopen = (me, stats, ev) => open(true, true, json(200, me), null, null, null, q => {
+      const u = q.url().replace(/^https:\/\/api\.cafe13\.club/, '');
+      if (q.method() === 'GET' && u.startsWith('/stats/master')) return stats(new URL('https://x' + u).searchParams);
+      const m = u.match(/^\/stats\/event\/(\d+)$/);
+      if (q.method() === 'GET' && m && ev) return ev(Number(m[1]));
+      return undefined;
+    });
+    const W = async (s, k) => s.p.evaluate(k => SLOVA.ru[k], k);
+    const card = async (s, title) => (await s.p.$$eval('#view .card', es => es.map(e => e.textContent))).filter(t => t.startsWith(title))[0] || null;
+    const go34 = async (s, n) => {
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="masterStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери masterStats`));
+      await s.p.waitForTimeout(400);
+    };
+    const sum = async (s, v) => s.p.evaluate(v => bmSum(Number(v)), v);
+    {
+      // ms-razrez + ms-tolko-svoe + ms-klyuchi: разрезы дают свои «Ивентов» и «Выплачено», а счёт — один и тот же;
+      // в запросе нет чужого member_id; кассы, бизнесов и счетов ролей на странице нет; ключа на экране нет
+      const n = 'ms-razrez';
+      const CNT = { day: 1, week: 3, month: 7 }, PAY = { day: '50.00', week: '150.00', month: '850.00' };
+      const BK = { day: 2, week: 5, month: 9 }, COL = { day: '400.00', week: '1500.00', month: '2700.00' }, PCN = { day: 1, week: 2, month: 4 };
+      const s = await msopen(MASTER, p => json(200, MS_RESP({ kind: p.get('period'), events: { count: CNT[p.get('period')], bookings: BK[p.get('period')], collected: COL[p.get('period')] },
+        payouts: { count: PCN[p.get('period')], amount: PAY[p.get('period')] } })));
+      await go34(s, n);
+      const ev = await W(s, 'masterStats.events.title'), mo = await W(s, 'masterStats.money.title'), pa = await W(s, 'masterStats.payouts.title');
+      if (!ev || !mo || !pa) bad.push(`${n}: на странице нет слов masterStats в SLOVA.ru — судить не по чему`);
+      const money = {};
+      for (const p of ['month', 'week', 'day']) {
+        if (p !== 'month') { await s.p.click(`[data-action="mst-period:${p}"]`, { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза ${p}`)); await s.p.waitForTimeout(400); }
+        const e = await card(s, ev), m = await card(s, mo), py = await card(s, pa), v = await s.view();
+        if (!e || !e.includes((await W(s, 'masterStats.events.count')) + CNT[p])) bad.push(`${n}: ${p} — «Ивентов» не своего окна: «${e}»`);
+        if (!py || !py.includes((await W(s, 'masterStats.payouts.amount')) + (await sum(s, PAY[p])))) bad.push(`${n}: ${p} — «Выплачено» не своего окна: «${py}»`);
+        // ненулевые числа сервера каждого поля (мутанты тестирования 1 в #406: литерал вместо поля выживал)
+        if (!e || !e.includes((await W(s, 'masterStats.events.bookings')) + BK[p])) bad.push(`${n}: ${p} — «Записей» не число сервера: «${e}»`);
+        if (!e || !e.includes((await W(s, 'masterStats.events.collected')) + (await sum(s, COL[p])))) bad.push(`${n}: ${p} — «Собрано» не число сервера: «${e}»`);
+        if (!py || !py.includes((await W(s, 'masterStats.payouts.count')) + PCN[p])) bad.push(`${n}: ${p} — число выплат не число сервера: «${py}»`);
+        if (!m || !m.includes((await W(s, 'masterStats.money.balance')) + (await sum(s, '1200.00')))) bad.push(`${n}: ${p} — остаток не число сервера: «${m}»`);
+        if (!m || !m.includes((await W(s, 'masterStats.money.expected')) + (await sum(s, '340.00')))) bad.push(`${n}: ${p} — «Ожидается» не число сервера: «${m}»`);
+        money[p] = m;
+        for (const k of ['masterStats.period.clockNote', 'masterStats.events.cashNote', 'masterStats.money.nowNote'])
+          if (!v.includes(await W(s, k))) bad.push(`${n}: ${p} — нет надписи ${k}`);
+        if (/masterStats\.\w/.test(v)) bad.push(`${n}: ${p} — на экране ключ вместо слова (ms-klyuchi)`);
+        if (/Касс|Бизнес|Счёт роли|Счёт клуба/.test(v)) bad.push(`${n}: ${p} — на странице чужое: касса, бизнесы или счёт роли (ms-tolko-svoe)`);
+      }
+      if (money.month !== money.week || money.week !== money.day) bad.push(`${n}: «Мой счёт» зависит от разреза: ${JSON.stringify(money)}`);
+      const calls = s.calls.filter(c => c.method === 'GET' && /\/stats\/master/.test(c.url));
+      if (calls.length !== 3 || calls.some(c => /member_id|who=|id=/.test(c.url))) bad.push(`${n}: запросы статистики не те: ${calls.map(c => c.url).join(' ')}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ms-vyvod-servera + ms-ozhidaetsya-net + ms-nol-ne-pusto: «Можно вывести» — число сервера как есть; нераспределённых нет
+      // → D1, а не «0 ฿»; 0 — нулём, null — «нет данных»; ивентов нет → E1, списка нет; выплат нет → P1
+      const n = 'ms-nol-ne-pusto';
+      const s = await msopen(MASTER, () => json(200, MS_RESP({ events: { count: 0, bookings: null, collected: null }, payouts: { count: 0, amount: '0.00' },
+        money: { balance: '0.00', withdrawable: null, expected: '0.00', expected_events: 0 }, list: [] })));
+      await go34(s, n);
+      const m = await card(s, await W(s, 'masterStats.money.title')), e = await card(s, await W(s, 'masterStats.events.title'));
+      const py = await card(s, await W(s, 'masterStats.payouts.title')), nd = await W(s, 'masterStats.noData');
+      if (!m || !m.includes((await W(s, 'masterStats.money.balance')) + (await sum(s, '0')))) bad.push(`${n}: остаток 0 не нулём: «${m}»`);
+      if (!m || !m.includes((await W(s, 'masterStats.money.withdrawable')) + nd)) bad.push(`${n}: withdrawable null — не «нет данных»: «${m}»`);
+      if (!m || !m.includes(await W(s, 'masterStats.money.expectedNone')) || m.includes((await W(s, 'masterStats.money.expected')) + (await sum(s, '0'))))
+        bad.push(`${n}: нераспределённых нет — не D1 (ms-ozhidaetsya-net): «${m}»`);
+      if (!e || !e.includes((await W(s, 'masterStats.events.count')) + '0') || !e.includes(await W(s, 'masterStats.events.none'))) bad.push(`${n}: ивентов 0 — не «Ивентов 0» и E1: «${e}»`);
+      if (!py || !py.includes(await W(s, 'masterStats.payouts.none'))) bad.push(`${n}: выплат нет — не P1: «${py}»`);
+      if (!py || !py.includes((await W(s, 'masterStats.payouts.count')) + '0') || py.slice((await W(s, 'masterStats.payouts.title')).length).includes(await W(s, 'masterStats.payouts.amount'))) bad.push(`${n}: выплат 0 — счётчик не нулём или «Выплачено» стоит (пустой блок по счётчику): «${py}»`);
+      if ((await s.view()).includes(await W(s, 'masterStats.list.title'))) bad.push(`${n}: ивентов нет, а список L стоит`);
+      await s.ctx.close();
+      const s2 = await msopen(MASTER, () => json(200, MS_RESP({ money: { withdrawable: '1234.50' } })));
+      await go34(s2, n);
+      const m2 = await card(s2, await W(s2, 'masterStats.money.title'));
+      if (!m2 || !m2.includes((await W(s2, 'masterStats.money.withdrawable')) + (await sum(s2, '1234.50')))) bad.push(`${n}: «Можно вывести» не число сервера (ms-vyvod-servera): «${m2}»`);
+      await s2.ctx.close();
+      // null на КАЖДОМ числе при видимой строке — «нет данных», не 0 (count null: строки записей и собранного стоят)
+      const s3 = await msopen(MASTER, () => json(200, MS_RESP({ events: { count: null, bookings: null, collected: null }, payouts: { count: null, amount: null },
+        money: { balance: null, withdrawable: null, expected: null, expected_events: null }, list: [] })));
+      await go34(s3, n);
+      const nd3 = await W(s3, 'masterStats.noData'), t3 = {
+        'masterStats.events.count': await card(s3, await W(s3, 'masterStats.events.title')), 'masterStats.events.bookings': 0, 'masterStats.events.collected': 0,
+        'masterStats.payouts.amount': await card(s3, await W(s3, 'masterStats.payouts.title')), 'masterStats.payouts.count': 0,
+        'masterStats.money.balance': await card(s3, await W(s3, 'masterStats.money.title')), 'masterStats.money.withdrawable': 0, 'masterStats.money.expected': 0 };
+      let last3 = null;
+      for (const k of Object.keys(t3)) {
+        if (t3[k] === 0) t3[k] = last3; last3 = t3[k];
+        if (!t3[k] || !t3[k].includes((await W(s3, k)) + nd3)) bad.push(`${n}: ${k} null — не «нет данных»: «${t3[k]}»`);
+      }
+      if (/\d\s?฿/.test(await s3.view())) bad.push(`${n}: при null везде на странице есть сумма`);
+      if (s3.errs.length) bad.push(`${n}: ошибки страницы (null везде) ${s3.errs.join('; ')}`);
+      await s3.ctx.close();
+      // литерала числа в .num разметки экрана нет (признак рецепта)
+      const src = fs.readFileSync(ROOT + '/js/18-ekrany-mastera.js', 'utf8');
+      if (/class="num">[0-9]/.test(src)) bad.push(`${n}: в разметке экранов мастера литерал числа в .num`);
+    }
+    {
+      // ms-spisok + er-vhod + er-doli-servera + er-bez-imen: строк списка столько, сколько «Ивентов»; строка ведёт в отчёт
+      // СВОЕГО ивента; доли — числа сервера; имён записавшихся нет и их не спрашивают; назад — тот же период (неделя)
+      const n = 'ms-spisok';
+      const s = await msopen(MASTER, p => json(200, MS_RESP({ kind: p.get('period') })), id => json(200, ER_RESP({ id })));
+      await go34(s, n);
+      await s.p.click('[data-action="mst-period:week"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза week`));
+      await s.p.waitForTimeout(400);
+      const rows = await s.p.$$eval('#view [data-action^="mst-event:"]', b => b.map(x => x.getAttribute('data-action')));
+      if (JSON.stringify(rows) !== JSON.stringify(['mst-event:51', 'mst-event:52'])) bad.push(`${n}: строки L ${JSON.stringify(rows)} — ждали 2 (= Ивентов) от ранних`);
+      const rt = await s.p.$$eval('#view [data-action^="mst-event:"]', b => b.map(x => x.textContent));
+      for (const [i, bk, c] of [[0, 3, '900.00'], [1, 4, '1200.00']]) {
+        const w = await s.p.evaluate(a => slovo('masterStats.list.row', { date: '', bookings: a }), bk);
+        if (!rt[i] || !rt[i].includes(await sum(s, c)) || !rt[i].includes(w.replace(/^ · /, ''))) bad.push(`${n}: строка L ${i} — не числа сервера (${bk}, ${c}): «${rt[i]}»`);
+      }
+      await s.p.click('#view [data-action="mst-event:52"]', { timeout: 3000 }).catch(() => bad.push(`${n}: строку L не нажать`));
+      await s.p.waitForTimeout(400);
+      const evc = s.calls.filter(c => /\/stats\/event\//.test(c.url)).map(c => c.url.replace(/^https:\/\/api\.cafe13\.club/, ''));
+      if (JSON.stringify(evc) !== '["/stats/event/52"]') bad.push(`${n}: отчёт спросил не свой ивент (er-vhod): ${JSON.stringify(evc)}`);
+      if ((await s.p.$eval('#title', e => e.textContent).catch(() => null)) !== 'Чайная церемония') bad.push(`${n}: заголовок отчёта — не title ивента`);
+      const mc = await card(s, await W(s, 'eventReport.money.title'));
+      if (!mc || !mc.includes((await W(s, 'eventReport.money.master')) + (await sum(s, '1020.00'))) || !mc.includes((await W(s, 'eventReport.money.club')) + (await sum(s, '180.00'))))
+        bad.push(`${n}: доли не числа сервера (er-doli-servera): «${mc}»`);
+      if (!mc || !mc.includes(await W(s, 'eventReport.money.cashNote'))) bad.push(`${n}: под деньгами нет N1`);
+      if (s.calls.some(c => /bookings|attendees|\/events\/52$/.test(c.url))) bad.push(`${n}: отчёт спрашивает записавшихся (er-bez-imen)`);
+      await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(400);
+      const pr = await s.p.$eval('[data-action="mst-period:week"]', e => e.getAttribute('aria-pressed')).catch(() => null);
+      if (pr !== 'true') bad.push(`${n}: назад из отчёта — не тот же период (неделя): aria-pressed=${pr}`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+      // null в строке L: в строке числа всегда (форма api#196), null — битый ответ: отказ целиком, не 0 и не строка
+      for (const f of ['bookings', 'collected']) {
+        const L = MS_RESP().list.map(x => Object.assign({}, x)); L[0][f] = null;
+        const s4 = await msopen(MASTER, () => json(200, MS_RESP({ list: L })));
+        await go34(s4, n);
+        const v4 = await s4.view();
+        if (!v4.includes(await W(s4, 'masterStats.error')) || (await s4.p.$('#view [data-action^="mst-event:"]'))) bad.push(`${n}: строка L с ${f} null — не отказ целиком`);
+        await s4.ctx.close();
+      }
+    }
+    {
+      // er-ne-raspredelen + er-nol-ne-pusto + er-gost + er-chuzhoy + er-klyuchi
+      const n = 'er-sostoyaniya';
+      const ER = [
+        ['er-ne-raspredelen', ER_RESP({ money: { book: 'club_ledger', collected: '1200.00', distributed: false, master: null, club: null } })],
+        ['er-nol-ne-pusto', ER_RESP({ bookings: { count: 0, places: 0, unlimited: true }, slot_fee: null, place: null })],
+        ['er-gost', ER_RESP({ guest: true, bookings: { count: 0, places: 12, unlimited: false } })],
+        ['er-polnyj', ER_RESP()],
+        ['er-null', ER_RESP({ bookings: { count: null, places: null, unlimited: false }, money: { book: 'club_ledger', collected: null, distributed: true, master: null, club: null }, slot_fee: null })]];
+      for (const [k, body] of ER) {
+        const s = await msopen(MASTER, () => json(200, MS_RESP()), () => json(200, body));
+        await s.p.evaluate(() => go('eventReport', 52)); await s.p.waitForTimeout(400);
+        const v = await s.view(), mc = await card(s, await W(s, 'eventReport.money.title')), nd = await W(s, 'eventReport.noData');
+        const bc = await card(s, await W(s, 'eventReport.bookings.title'));
+        if (/eventReport\.\w/.test(v)) bad.push(`${n} ${k}: на экране ключ вместо слова (er-klyuchi)`);
+        if (k === 'er-ne-raspredelen') {
+          if (!mc || !mc.includes(await W(s, 'eventReport.money.notYet')) || mc.includes(await W(s, 'eventReport.money.master')) || /0 ฿/.test(mc.replace(/1\s?200 ฿/, '')))
+            bad.push(`${n} ${k}: нераспределённый — не M1: «${mc}»`);
+        } else if (k === 'er-nol-ne-pusto') {
+          if (!bc || !bc.includes((await W(s, 'eventReport.bookings.count')) + '0')) bad.push(`${n} ${k}: записей 0 — не нулём: «${bc}»`);
+          if (!bc || !bc.includes((await W(s, 'eventReport.bookings.places')) + (await W(s, 'eventReport.bookings.noLimit')))) bad.push(`${n} ${k}: unlimited — не «без предела»: «${bc}»`);
+          if (!v.includes((await W(s, 'eventReport.slot')) + nd)) bad.push(`${n} ${k}: slot_fee null — не «нет данных»`);
+          if (v.includes((await W(s, 'eventReport.slot')) + (await sum(s, '0')))) bad.push(`${n} ${k}: slot_fee null напечатан нулём`);
+        } else if (k === 'er-polnyj') {
+          // ненулевые числа сервера каждого поля отчёта: записей 4, мест 10, собрано 1200, доли мастера и клуба, слот 100
+          const want = [[bc, 'eventReport.bookings.count', '4'], [bc, 'eventReport.bookings.places', '10'], [mc, 'eventReport.money.collected', await sum(s, '1200.00')],
+            [mc, 'eventReport.money.master', await sum(s, '1020.00')], [mc, 'eventReport.money.club', await sum(s, '180.00')], [v, 'eventReport.slot', await sum(s, '100.00')]];
+          for (const [t, key, val] of want) if (!t || !t.includes((await W(s, key)) + val)) bad.push(`${n} ${k}: ${key} не ${val}: «${t}»`);
+        } else if (k === 'er-null') {
+          const want = [[bc, 'eventReport.bookings.count'], [bc, 'eventReport.bookings.places'], [mc, 'eventReport.money.collected'],
+            [mc, 'eventReport.money.master'], [mc, 'eventReport.money.club'], [v, 'eventReport.slot']];
+          for (const [t, key] of want) if (!t || !t.includes((await W(s, key)) + nd)) bad.push(`${n} ${k}: ${key} null — не «нет данных»: «${t}»`);
+          if (/\d\s?฿/.test(v)) bad.push(`${n} ${k}: при null везде в отчёте есть сумма`);
+        } else {
+          if (mc || v.includes(await W(s, 'eventReport.slot')) || v.includes(nd)) bad.push(`${n} ${k}: у зрителя без ключей money/slot_fee стоит карточка денег, слота или «нет данных»`);
+          if (!bc || !bc.includes((await W(s, 'eventReport.bookings.count')) + '0') || !bc.includes((await W(s, 'eventReport.bookings.places')) + '12')) bad.push(`${n} ${k}: записи зрителя не числами сервера: «${bc}»`);
+        }
+        if (s.errs.length) bad.push(`${n} ${k}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // er-chuzhoy: прямой адрес чужого ивента — 403 словами сервера, без чисел
+      const D = 'отчёт по ивенту видит автор, арт-директор, глава и админ';
+      const s = await msopen(MASTER, () => json(200, MS_RESP()), () => json(403, { detail: D }));
+      await s.p.evaluate(() => go('eventReport', 77)); await s.p.waitForTimeout(400);
+      const v = await s.p.$eval('#view .deny .verbatim', e => e.textContent).catch(() => null);
+      if (v !== D) bad.push(`${n} er-chuzhoy: отказ «${v}», ждали словами сервера`);
+      if (await card(s, await W(s, 'eventReport.bookings.title'))) bad.push(`${n} er-chuzhoy: при 403 стоят числа`);
+      await s.ctx.close();
+    }
+    {
+      // ms-retry: «Повторить» на ошибке masterStats перечитывает — второй GET /stats/master и числа на экране. Вход в
+      // ошибку — путь строки L с null (тот же, что судит masterStats.error выше). Паритет с as-retry шага 32 (ревью #406:
+      // мутант mRt «кнопка без перечитывания» жил — нажатия не было ни у одного случая)
+      const n = 'ms-retry';
+      const L = MS_RESP().list.map(x => Object.assign({}, x)); L[0].bookings = null;
+      let k = 0;
+      const s = await msopen(MASTER, () => ++k === 1 ? json(200, MS_RESP({ list: L })) : json(200, MS_RESP()));
+      await go34(s, n);
+      if (!(await s.view()).includes(await W(s, 'masterStats.error'))) bad.push(`${n}: битый ответ — не «не загрузилось», нажимать нечего`);
+      await s.p.click('[data-action="mst-retry"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Повторить»`));
+      await s.p.waitForTimeout(400);
+      if (k !== 2) bad.push(`${n}: «Повторить» не спросило /stats/master заново (запросов ${k})`);
+      const e = await card(s, await W(s, 'masterStats.events.title'));
+      if (!e || !e.includes((await W(s, 'masterStats.events.count')) + '2')) bad.push(`${n}: «Повторить» не перечитало — чисел нет: «${e}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // er-oshibka-retry: битый ответ /stats/event/{id} — на экране eventReport.error и «Повторить» (вида ошибки отчёта
+      // не судил ни один случай); нажатие — второй GET того же id и доли сервера. Мутант mRt ревью #406 жил без него
+      const n = 'er-oshibka-retry';
+      let k = 0;
+      const s = await msopen(MASTER, () => json(200, MS_RESP()), id => ++k === 1 ? json(200, { id }) : json(200, ER_RESP({ id })));
+      await s.p.evaluate(() => go('eventReport', 52)); await s.p.waitForTimeout(400);
+      const v = await s.view();
+      if (!v.includes(await W(s, 'eventReport.error'))) bad.push(`${n}: битый отчёт — не «не загрузилось»: «${v.slice(0, 120)}»`);
+      if (await card(s, await W(s, 'eventReport.money.title'))) bad.push(`${n}: при битом отчёте стоят деньги`);
+      await s.p.click('[data-action="er-retry"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет «Повторить»`));
+      await s.p.waitForTimeout(400);
+      const ev = s.calls.filter(c => /\/stats\/event\//.test(c.url)).map(c => c.url.replace(/^https:\/\/api\.cafe13\.club/, ''));
+      if (JSON.stringify(ev) !== '["/stats/event/52","/stats/event/52"]') bad.push(`${n}: «Повторить» не спросило отчёт заново: ${JSON.stringify(ev)}`);
+      const mc = await card(s, await W(s, 'eventReport.money.title'));
+      if (!mc || !mc.includes((await W(s, 'eventReport.money.master')) + (await sum(s, '1020.00')))) bad.push(`${n}: «Повторить» не перечитало — долей нет: «${mc}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ms-period: ‹ уходит запросом с `at` РАНЬШЕ текущего при том же period, и на экране числа прошлого окна; › погашена
+      // на текущем, после ‹ — нет, и возвращает в текущий месяц (ревью #406: случаев на ‹ › не было, мутант «at не
+      // сдвигается» жил). Образец — stats-razrez шага 31
+      const n = 'ms-period';
+      let first = null;
+      const s = await msopen(MASTER, p => { first = first || p.get('at');
+        return json(200, MS_RESP({ kind: p.get('period'), events: { count: String(p.get('at')).slice(0, 7) === String(first).slice(0, 7) ? 7 : 2, bookings: 9, collected: '2700.00' } })); });
+      await go34(s, n);
+      const ev = await W(s, 'masterStats.events.title'), cnt = await W(s, 'masterStats.events.count');
+      const q = () => s.calls.filter(c => c.method === 'GET' && /\/stats\/master/.test(c.url)).map(c => new URL(c.url).searchParams);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(first || '')) bad.push(`${n}: первый запрос без дня at: «${first}»`);
+      if (!(await s.p.$('[data-action="mst-next"][disabled]'))) bad.push(`${n}: › не погашена на текущем периоде`);
+      await s.p.click('[data-action="mst-prev"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет ‹`)); await s.p.waitForTimeout(400);
+      const prev = q().slice(-1)[0];
+      if (!prev || prev.get('period') !== 'month' || !(String(prev.get('at')).slice(0, 7) < String(first).slice(0, 7))) bad.push(`${n}: ‹ не спросила прошлый месяц: ${prev && prev.toString()}`);
+      const e1 = await card(s, ev);
+      if (!e1 || !e1.includes(cnt + '2')) bad.push(`${n}: после ‹ на экране не числа прошлого окна: «${e1}»`);
+      if (await s.p.$('[data-action="mst-next"][disabled]')) bad.push(`${n}: › погашена на прошлом периоде`);
+      await s.p.click('[data-action="mst-next"]', { timeout: 3000 }).catch(() => bad.push(`${n}: › не нажать`)); await s.p.waitForTimeout(400);
+      const nx = q().slice(-1)[0], e2 = await card(s, ev);
+      if (!nx || String(nx.get('at')).slice(0, 7) !== String(first).slice(0, 7) || nx.get('period') !== 'month') bad.push(`${n}: › не вернула к текущему месяцу: ${nx && nx.toString()}`);
+      if (!e2 || !e2.includes(cnt + '7')) bad.push(`${n}: после › не числа текущего окна: «${e2}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ms-pozdniy: ответ месяца задержан, неделя пришла раньше — на экране числа недели (держит `gen !== MST.gen` в
+      // loadMasterStats); er-pozdniy ниже — то же для `gen !== ER.gen` в loadEventReport. Загрузчики разного вида —
+      // по случаю на каждый (ревью #406). Образец — art-pozdniy
+      const n = 'ms-pozdniy';
+      let landed = false;
+      const s = await msopen(MASTER, p => p.get('period') === 'month'
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, MS_RESP({ kind: 'month', events: { count: 77, bookings: 9, collected: '2700.00' } }))); }, 1500))
+        : json(200, MS_RESP({ kind: p.get('period'), events: { count: 4, bookings: 5, collected: '1500.00' } })));
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-go="masterStats"]', { timeout: 3000 }).catch(() => bad.push(`${n}: на «Управлении» нет двери masterStats`));
+      await s.p.waitForTimeout(100);
+      await s.p.click('[data-action="mst-period:week"]', { timeout: 3000 }).catch(() => bad.push(`${n}: нет разреза week`));
+      await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: ответ месяца пришёл раньше запроса недели — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный ответ месяца так и не пришёл — гонки не было`);
+      const e = await card(s, await W(s, 'masterStats.events.title'));
+      if (!e || e.includes('77') || !e.includes((await W(s, 'masterStats.events.count')) + '4')) bad.push(`${n}: поздний ответ месяца лёг на неделю: «${e}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // er-pozdniy: отчёт ивента 51 задержан, назад и вход в 52 — на экране доли 52, не поздние 51
+      const n = 'er-pozdniy';
+      let landed = false;
+      const s = await msopen(MASTER, p => json(200, MS_RESP({ kind: p.get('period') })), id => id === 51
+        ? new Promise(r => setTimeout(() => { landed = true; r(json(200, ER_RESP({ id: 51, money: { book: 'club_ledger', collected: '900.00', distributed: true, master: '777.00', club: '123.00' } }))); }, 1500))
+        : json(200, ER_RESP({ id })));
+      await go34(s, n);
+      await s.p.click('#view [data-action="mst-event:51"]', { timeout: 3000 }).catch(() => bad.push(`${n}: строку L 51 не нажать`));
+      await s.p.waitForTimeout(100);
+      await s.p.evaluate(() => goBack()); await s.p.waitForTimeout(300);
+      await s.p.click('#view [data-action="mst-event:52"]', { timeout: 3000 }).catch(() => bad.push(`${n}: строку L 52 не нажать`));
+      await s.p.waitForTimeout(300);
+      if (landed) bad.push(`${n}: отчёт 51 пришёл раньше входа в 52 — гонки не было, случай гарда не проверяет`);
+      await s.p.waitForTimeout(1600);
+      if (!landed) bad.push(`${n}: задержанный отчёт 51 так и не пришёл — гонки не было`);
+      const mc = await card(s, await W(s, 'eventReport.money.title'));
+      if (!mc || mc.includes('777') || !mc.includes((await W(s, 'eventReport.money.master')) + (await sum(s, '1020.00')))) bad.push(`${n}: поздний отчёт 51 лёг на 52: «${mc}»`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      // ms-dver: без своих ивентов двери M0 нет — арт-директор группу «Ивенты» видит (artStats), своих ивентов не ведёт;
+      // прямой вход — «Сюда нельзя» без запроса. Положительный контроль — мастер (тот же go34 выше)
+      const n = 'ms-dver';
+      const ART = clone(OWNER); ART.roles = [{ role: 'art_director', direction_id: null }];
+      const s = await msopen(ART, () => json(200, MS_RESP()));
+      await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(300);
+      if (!(await s.p.$('#view [data-go="artStats"]'))) bad.push(`${n}: у арт-директора нет группы «Ивенты» — контроль мёртв`);
+      const own = await s.p.evaluate(() => mayOwnEvents());
+      if (own) bad.push(`${n}: фикстура арт-директора ведёт свои ивенты — контроль не различает`);
+      if (await s.p.$('#view [data-go="masterStats"]')) bad.push(`${n}: дверь «Статистика мастера» без своих ивентов`);
+      await s.p.evaluate(() => go('masterStats')); await s.p.waitForTimeout(300);
+      if (!(await s.view()).includes(await W(s, 'masterStats.denyTitle')) || s.calls.some(c => /\/stats\/master/.test(c.url))) bad.push(`${n}: экран открылся без своих ивентов или ручку спросили`);
       await s.ctx.close();
     }
   }
@@ -13519,6 +13853,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // шаг 32 (Cafe13KPG#563): заглушки случаев `art-*` против снимка api 65e62d8
     'stats-art-month-2019-03': AS_RESP(),
     'stats-art-empty-day': AS_RESP({ kind: 'day', events: { count: 0, bookings: null, collected: null }, masters: [] }),
+    // шаг 34 (Cafe13KPG#565): заглушки случаев `ms-*` и `er-*` против снимка api 4d3b5a4 (api#196)
+    'stats-master': MS_RESP(), 'stats-master-empty': MS_RESP({ events: { count: 0, bookings: null, collected: null }, payouts: { count: 0, amount: '0.00' }, list: [] }),
+    'stats-event-full': ER_RESP(), 'stats-event-undistributed': ER_RESP({ money: { book: 'club_ledger', collected: '1200.00', distributed: false, master: null, club: null } }),
+    'stats-event-guest': ER_RESP({ guest: true }),
     // фича 4 (Cafe13KPG#1009): заглушки случаев `odobr-*` против снимка api 410f240 (cafe13-api#187)
     'events-pending-approval': [ODOBR.PROW(41, 'Вечер работника')],
     'event-approve': ODOBR.DEC(41, true), 'event-reject': ODOBR.DEC(41, false, 'не наш формат')
