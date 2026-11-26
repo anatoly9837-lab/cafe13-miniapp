@@ -251,7 +251,7 @@ const LIVE_SHOTS = [
        weekday: 4, weekday_ru: 'четверг', start_local: '19:00', hours: 2, hours_extra: 0, duration_min: 120, amount: '100',
        occupancy: 'event', price: '0.00', ask_donation: false, filmed: false, status: 'pending',
        status_ru: 'ждёт решения', created_at: '2026-10-27T03:00:00+00:00', decided_at: null, decision_note: '',
-       paid_till: null, paid_until: null, starts_at: '2026-10-30T12:00:00+00:00' }] },
+       paid_till: null, paid_until: null, starts_at: '2026-10-30T12:00:00+00:00', photos: [] }] },
      '/master/price': { amount: '100', hours: 2, hours_included: 2, duration_min: 120, share: '100' },
      // своя карточка чайного мастера: «карточки нет» (status none), как у живого мастера без подачи. Без этой строки ручка
      // отвечает 404 и «Клуб» рисует плашку «Карточка не загрузилась», которой в бою нет (js/22:123–130; форма — chay-svoya.cjs:63)

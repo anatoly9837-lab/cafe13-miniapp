@@ -33,7 +33,10 @@ Object.assign(SCREENS, {
     // «Ивенты», а не «Мероприятия» — слово владельца 29.10.2026 по прототипу: «Не мероприятия а ивенты»
     // шаг 4: «Свои ивенты» — в той же группе, у всякого, кто ведёт свои (мастер, организатор, работник)
     var own = mayOwnEvents() ? '<button type="button" class="listitem" data-go="organizer"><span class="grow"><b>Свои ивенты</b>' +
-        '<span class="small">Записавшиеся, места и описание</span></span>' + svg(ICON.chev, 'chev') + '</button>' : '';
+        '<span class="small">Записавшиеся, места и описание</span></span>' + svg(ICON.chev, 'chev') + '</button>' +
+        // шаг 34 (рецепт 34/masterStats, M0): статистика мастера — сразу под «Свои ивенты», по тому же условию
+        '<button type="button" class="listitem" data-go="masterStats"><span class="grow"><b>' + esc(slovo('masterStats.door')) + '</b></span>' +
+        svg(ICON.chev, 'chev') + '</button>' : '';
     var art = mayMasters() || own ? '<div class="group"><span class="label">Ивенты</span>' +
       (mayMasters() ? '<button type="button" class="listitem" data-go="masters"><span class="grow"><b>Слоты и мастера</b>' +
         '<span class="small">' + waitSub(MR.pending, 'Заявки в мастера, ивенты, слоты') + '</span></span>' +
@@ -70,8 +73,7 @@ Object.assign(SCREENS, {
   // ── шаг 13 (Cafe13KPG#889): рецепт `_docs/recept/ekran/13-zayavka-v-partnyory.md` (cafe13-miniapp#257) ──
   // R2: форма. Цена и остаток — до нажатия; «спишется» — число сервера, своей арифметики нет
   partnerApply: function () {
-    if (LIVE && DATA.role === 'guest') return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
-      '<span class="small">Заявку в партнёры подаёт член клуба.</span></div></div>';
+    // фича 7 (№49 «а», рецепт 13/partnerApply): гость получает ту же форму, что член; без денег — 409 сервера
     var p = PR.price, bal = msBalance();
     var err = PR.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(PR.err) + '</span></div>' : '';
     return '<div class="field"><label for="pr-title">Название бизнеса</label><input id="pr-title" value="' + esc(PR.title) + '">' +

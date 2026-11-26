@@ -142,9 +142,43 @@ mark() { keep_why="${keep_why:+$keep_why; }$1"; }
 #   • код выхода 0, а строка не «сошлась»       → КРАСНОЕ «код съеден»;
 #   • код ≠ 0, а строка говорит другой код      → КРАСНОЕ «код и приговор спорят».
 # Печатает строку функция итог_самопроверки / itogSamoproverki в каждом приборе.
+#
+# ⚠ ГРАММАТИКА СУДИТ ФОРМУ, НЕ ПРАВДУ (Cafe13KPG#1122, мутант mR arhitector16-9d):
+# `return итог_самопроверки(0)` поверх провала давал «сошлась», rc=0 — по грамматике
+# безупречно, а в логе «бед 7». Приговор, напечатанный из ПЕРЕМЕННОЙ, лжёт согласованно с
+# кодом выхода, и сверка строки с кодом этого не видит. Поэтому — две сверки с ИСХОДОМ,
+# и они ловят РАЗНОЕ (замер n1122, мутанты на check-sostav.py):
+#   • МЕСТО ВЫЗОВА (статика исходника): ровно одно, вида
+#         return|sys.exit(|process.exit(  итог_самопроверки|itogSamoproverki ( самопроверка()|samoproverka() )
+#     Иное → КРАСНОЕ. Ловит съеденное на входе — в т.ч. `итог(0)` БЕЗ прогона случаев
+#     (мутант mN): провалов в выводе тогда нет, и сверка ниже слепа.
+#   • ПРОВАЛ СЛУЧАЯ В ВЫВОДЕ (признак SP_PROVAL): приговор «сошлась», а в логе строка провала
+#     случая → КРАСНОЕ «приговор лжёт». Ловит ложь ВНУТРИ самопроверки (`return 0` при
+#     «БЕДА» выше, мутант mV), где место вызова цело и статика слепа.
+# Признак — формы, которыми 17 приборов печатают провал СЛУЧАЯ в точке сравнения («бед N»
+# печатают лишь 2 из 16 — одного счётчика мало). Замер 26.11: на чистом дереве 0 строк по
+# 16 логам; мутант «путь провала + итог(0)» — каждый из 16 краснеет этой сверкой (J0 выживал
+# у всех 16). ⚠ Новый прибор обязан печатать провал случая одной из этих форм: иначе его
+# ложь внутри самопроверки этой сверке не видна — мерить мутантом, а не верить.
 # Выход: sp_ishod = зелёное | красное | не-выполнена | не-измерен; sp_pochemu — текст.
-sudit_sp() { # <прибор> <лог> <код выхода>
-    local p=$1 log=$2 rc=$3 last kod
+SP_PROVAL='^[[:space:]]*РАЗОШЛОСЬ:|(^|[[:space:]])БЕДА([[:space:]:(]|$)|[[:space:]]ПРОВАЛ$|^КОНТРОЛЬ ПРОВАЛЕН|^САМОПРОВЕРКА (ПРОВАЛЕНА|КРАСНАЯ)|^КРАСНОЕ самопроверки:|^самопроверка РАЗОШЛАСЬ:|бед [1-9]'
+sp_mesto_vyzova() { # <исходник> → пусто, если место вызова итога по форме; иначе — почему нет
+    local vyz n dobro
+    vyz=$(grep -nE '(итог_самопроверки|itogSamoproverki)\(' "$1" | grep -vE '^[0-9]+:[[:space:]]*(def |function )')
+    n=$(printf '%s\n' "$vyz" | grep -c .)
+    dobro=$(printf '%s\n' "$vyz" | grep -cE '(return |sys\.exit\(|process\.exit\()(итог_самопроверки|itogSamoproverki)\((самопроверка|samoproverka)\(\)\)')
+    [ "$n" -eq 1 ] && [ "$dobro" -eq 1 ] && return
+    printf 'мест вызова итога %s, по форме «return|exit( итог(самопроверка())» %s: %s' \
+        "$n" "$dobro" "$(printf '%s' "$vyz" | tr -s ' \n' ' ' | cut -c1-120)"
+}
+sudit_sp() { # <прибор> <лог> <код выхода>   (исходник — $T/tools/<прибор>)
+    local p=$1 log=$2 rc=$3 last kod mesto proval
+    mesto=$(sp_mesto_vyzova "$T/tools/$p")
+    if [ -n "$mesto" ]; then
+        sp_ishod=красное
+        sp_pochemu="МЕСТО ВЫЗОВА ИТОГА не по форме (Cafe13KPG#1122) — приговору верить нельзя: $mesto"
+        return
+    fi
     last=$(grep -v '^[[:space:]]*$' "$log" | tail -1)
     if   [ "$last" = "самопроверка $p: сошлась" ]; then kod=0
     elif [ "$last" = "самопроверка $p: РАЗОШЛАСЬ — код 1" ]; then kod=1
@@ -159,6 +193,9 @@ sudit_sp() { # <прибор> <лог> <код выхода>
         sp_ishod=красное
         if [ "$rc" -eq 0 ]; then sp_pochemu="КОД СЪЕДЕН: вышла 0, а приговор «$last»"
         else sp_pochemu="код и приговор спорят: вышла $rc, а приговор «$last»"; fi
+    elif [ "$kod" -eq 0 ] && proval=$(grep -E "$SP_PROVAL" "$log" | head -1) && [ -n "$proval" ]; then
+        sp_ishod=красное
+        sp_pochemu="ПРИГОВОР ЛЖЁТ (Cafe13KPG#1122): «сошлась», а в выводе провал случая — «$(printf '%s' "$proval" | sed 's/^[[:space:]]*//' | cut -c1-120)» (строк провала $(grep -cE "$SP_PROVAL" "$log"))"
     elif [ "$kod" -eq 0 ]; then sp_ishod=зелёное; sp_pochemu=$last
     elif [ "$kod" -eq 1 ]; then sp_ishod=красное; sp_pochemu=$last
     else sp_ishod=не-выполнена; sp_pochemu=$last
@@ -603,8 +640,10 @@ verdict 'screens.html равна пересборке из входов дере
 # с 26.11.2026 строят свой репозиторий во временном каталоге и проходят на `git archive`.
 # ⚠ check-recepty.py самопроверкой поднимает контейнеры образа playwright: ворота и так
 # держат слот батареи, но шаг 18 этим образ занимает.
+# ⚠ pered-pokazom.cjs (с 26.11.2026, Cafe13KPG#1121) — прибор «показывать можно»: самопроверка судит
+# его ИТОГОВУЮ строку и шаг дыма на подставном вызове — ни git, ни сети, ни docker она не зовёт.
 step '18. самопроверки приборов — --самопроверка каждого (приговор)'
-SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py teksty.py v-oblasti.py'
+SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pered-pokazom.cjs pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py teksty.py v-oblasti.py'
 SP_V_SHAGE_5='check-stages.py'
 SP_ZHDUT_GIT=''
 not_done18=''
