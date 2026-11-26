@@ -1731,6 +1731,32 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
         await s.ctx.close();
       }
+      // 2а. фича 7: гость не только ВИДИТ форму, но и ПОДАЁТ (свидетель — мутант mGS arhitector18-9d: кнопка гостю погашена
+      // и sendPartner у гостя выходит сразу — partner-gost этого не различал, отправку судил только partner-podacha с членом)
+      {
+        const n = 'partner-gost-podacha', G = clone(OWNER); G.membership = null; G.membership_active = false; G.memberships = [];
+        const o = { price: () => json(200, { amount: '2600.00' }), posted: [], decided: [] };
+        let sent = false; o.mine = () => sent ? [preq(31, 'pending')] : [];
+        o.post = () => { sent = true; return json(201, preq(31, 'pending')); };
+        const s = await open(true, true, json(200, G), null, null, null, partnerApi(o));
+        await s.p.waitForTimeout(400);
+        const role = await s.p.evaluate(() => DATA.role);
+        if (role !== 'guest') bad.push(`${n}: фикстура не гость — DATA.role ${JSON.stringify(role)}, случай судил бы члена`);
+        if (await tapIf(s, n, '#view [data-action="pr-apply"]', '«Я партнёр»')) {
+          await s.p.waitForTimeout(300);
+          await s.p.fill('#pr-title', 'Гостевая кофейня'); await s.p.fill('#pr-about', 'От гостя');
+          const off = await s.p.$eval('#view [data-action="pr-send"]', b => b.disabled).catch(() => null);
+          if (off !== false) bad.push(`${n}: у гостя с деньгами (3170 при цене 2600) «Подать заявку» ${off === null ? 'нет' : 'погашена'}`);
+          else if (await tapIf(s, n, '#view [data-action="pr-send"]', '«Подать заявку»')) {
+            await s.p.waitForTimeout(500);
+            if (JSON.stringify(o.posted) !== JSON.stringify([{ title: 'Гостевая кофейня', about: 'От гостя' }])) bad.push(`${n}: от гостя ушло ${JSON.stringify(o.posted)} — ждали ровно один POST /partner/request`);
+            const t = await s.view();
+            if (!t.includes('Заявка отправлена')) bad.push(`${n}: у гостя после подачи нет вспышки «Заявка отправлена»`);
+          }
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
       {
         const n = 'partner-vne-tg', o = { price: () => json(200, { amount: '2600.00' }), posted: [], decided: [] };
         const s = await open(false, true, json(200, OWNER), null, null, null, partnerApi(o));
