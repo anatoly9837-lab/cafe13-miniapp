@@ -144,7 +144,10 @@ function fromEvents(d) {
       // не называет; нет поля или битое — фразы о границе нет, числа «Вернётся» остаются
       refundUntil: typeof e.full_refund_until === 'string' && !isNaN(Date.parse(e.full_refund_until)) ? new Date(e.full_refund_until) : null,
       place: pname, placeId: pid,
-      approval: appr, rejectNote: typeof e.reject_note === 'string' ? e.reject_note : ''
+      approval: appr, rejectNote: typeof e.reject_note === 'string' ? e.reject_note : '',
+      // шаг 42 (api#225, миграция 045): вид занятия; поля нет — сервер до 045, всё ивенты. Церемония открывается
+      // экраном teaJoin (js/22-ekrany-chay.js); запись и список записавшихся — те же функции, что у ивента
+      occ: e.occupancy === 'tea' ? 'tea' : 'event'
     });
   }
   return out.sort(function (a, b) { return a.at - b.at; });
@@ -203,7 +206,7 @@ function loadEvents() {
        Поймал случай `bookings-gost`: запустить загрузку и перерисовать по
        ответу — ДВА разных перечня экранов, и добавить надо в оба. */
     if (current === 'home' || current === 'events' || current === 'event'
-        || current === 'bookings') render();
+        || current === 'bookings' || current === 'teaJoin') render();   // шаг 42: церемония — ивент вида tea
   });
 }
 
@@ -223,6 +226,8 @@ var BOOK_ERR = '';         // чем кончилась неудачная по�
 var BOOK_ASK = false;      // у отмены спрашивают: место уходит другому и может не вернуться
 
 function cap(t) { return t ? t[0].toUpperCase() + t.slice(1) : ''; }
+// Фраза человека с точкой в конце: свою точку не удваиваем, «!», «?» и «…» не трогаем (Cafe13KPG#725)
+function sentence(t) { t = cap(String(t).trim()); return t ? (/[.!?…]$/.test(t) ? t : t + '.') : ''; }
 
 /* «Записываться пока не нужно» — слово владельца 30.10.2026 (Cafe13KPG#670, шаг 4): афиша открыта всем, а
    записывается только человек с ЖИВЫМ членством. По свойству, а не по роли: членство есть и у мастера,
@@ -327,7 +332,7 @@ function afterBooking(r, id, want) {
       BOOK_ERR = detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r);
       haptic('warn');
     }
-    if (current === 'event' || current === 'events' || current === 'home') render();
+    if (current === 'event' || current === 'events' || current === 'home' || current === 'teaJoin') render();
   });
 }
 
@@ -535,7 +540,7 @@ function loadSigned(e) {
     var got = r.status === 200 ? fromSigned(r.data) : null;
     if (got) SIGNED = { eid: e.eid, state: 'ok', taken: got.taken, rows: got.rows };
     else SIGNED = { eid: e.eid, state: signedFail(r), taken: 0, rows: null };
-    if (current === 'event') render();
+    if (current === 'event' || current === 'teaJoin') render();
   });
 }
 

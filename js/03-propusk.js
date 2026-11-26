@@ -146,7 +146,7 @@ function passCard(p, photo) {
           ? '<span class="avatar photo" style="--photo:url(&quot;' + esc(photo) + '&quot;)">' + буква + '</span>'
           : '<span class="avatar">' + буква + '</span>') +
         '<span class="col"><b style="font-size:19px;font-family:Prata,Georgia,serif">' + esc(p.name) + '</b>' +
-        '<span style="font-size:12px;color:#B8B6AE">' + esc(p.level) + ' · ' + esc(p.lifelong ? 'пожизненно' : 'до ' + ruDate(p.ends)) + '</span></span>' +
+        '<span style="font-size:12px;color:#B8B6AE">' + esc(p.level + (p.lifelong ? ' · пожизненно' : '')) + '</span></span>' +
       '</div>' +
       '<div class="code-box">' + qrSvg(p.code) + '</div>' +
       '<span class="num-big">' + esc(p.code.replace('-', ' · ')) + '</span>' +

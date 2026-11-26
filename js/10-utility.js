@@ -23,16 +23,17 @@ function val(id) {
   var el = document.getElementById(id);
   return el ? el.value.trim() : '';
 }
+/* День из формы демо-ивента — «сегодня» и «завтра» по поясу клуба (bkk() из js/09-afisha.js), а не телефона
+   (Cafe13KPG#193): гость из другого пояса видел «Завтра» у ивента, который на острове сегодня. iso — день клуба;
+   полночь UTC этого дня на острове — 07:00 того же дня, поэтому bkk() отдаёт тот же день и его день недели. */
 function dayWord(iso) {
   if (!iso) return 'Скоро';
-  var d = new Date(iso + 'T00:00:00');
+  var d = new Date(iso + 'T00:00:00Z');
   if (isNaN(d)) return 'Скоро';
-  var days = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
-  var today = new Date(); today.setHours(0,0,0,0);
-  var diff = Math.round((d - today) / 86400000);
-  if (diff === 0) return 'Сегодня, ' + days[d.getDay()];
-  if (diff === 1) return 'Завтра, ' + days[d.getDay()];
-  return d.getDate() + '.' + (d.getMonth() + 1) + ', ' + days[d.getDay()];
+  var p = bkk(d), now = new Date(), x = p.ymd.split('-');
+  if (p.ymd === bkk(now).ymd) return 'Сегодня, ' + p.dow;
+  if (p.ymd === bkk(new Date(now.getTime() + 86400000)).ymd) return 'Завтра, ' + p.dow;
+  return Number(x[2]) + '.' + Number(x[1]) + ', ' + p.dow;
 }
 function partOf(t) {
   var h = parseInt((t || '19:00').split(':')[0], 10);
@@ -66,7 +67,7 @@ function membershipLive() {
   var top = member
     ? have.map(function (m) {
         return '<div class="card strong"><div class="row top"><div class="col"><h2>' + esc(LEVEL[m.level]) + '</h2>' +
-          '<span class="small">' + esc(untilText(m)) + '</span></div><span class="pill on">АКТИВНО</span></div></div>';
+          (untilText(m) ? '<span class="small">' + esc(untilText(m)) + '</span>' : '') + '</div><span class="pill on">АКТИВНО</span></div></div>';
       }).join('')
     : !rq ? '<div class="card quiet"><div class="col"><b>Членства нет</b>' +
         '<span class="small">Услугами острова можно пользоваться и так; пропуск в клуб выдаётся по членству.</span></div></div>'
@@ -231,6 +232,8 @@ function organizerLive() {
   // наполненность — только по ивентам С ограничением: у безлимитного доли от мест нет
   var signed = 0, seats = 0, signedLim = 0, dueIfPaid = 0, unl = false;
   mine.forEach(function (e) {
+    // числа — под заголовком «впереди»: кончившееся в них не входит, в списке ниже остаётся с пометкой (Cafe13KPG#361)
+    if (e.done) return;
     var t = takenOf(e);
     signed += t;
     if (e.unl) unl = true; else { seats += e.of; signedLim += t; }
@@ -239,7 +242,7 @@ function organizerLive() {
   return (FLASH ? flash() : '') +
     '<div class="group"><span class="label">Ваши мероприятия впереди</span>' +
       '<div class="rows">' +
-        '<div><span class="small">Событий</span><b class="num">' + mine.length + '</b></div>' +
+        '<div><span class="small">Событий</span><b class="num">' + mine.filter(function (e) { return !e.done; }).length + '</b></div>' +
         '<div><span class="small">Записалось</span><b class="num">' + signed + (unl ? '' : ' из ' + seats) + '</b></div>' +
         '<div><span class="small">Наполненность</span><b class="num">' +
           (seats ? Math.round(signedLim / seats * 100) + ' %' : unl ? '—' : '0 %') + '</b></div>' +

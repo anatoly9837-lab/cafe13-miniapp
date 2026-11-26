@@ -55,10 +55,10 @@ guest	E43	в тесте	—	2026-10-27	—
 pass	E50	в тесте	—	2026-10-27	—
 membership	E38	не готов	—	2026-10-27	—
 memberRequests	E42	не готов	Cafe13KPG#415	2026-10-27	—
-joinQueue	E45	не готов	Cafe13KPG#413	2026-10-28	—
-topupQueue	E56	не готов	Cafe13KPG#583	2026-10-29	—
-topupReq	E56b	не готов	Cafe13KPG#583	2026-10-29	—
-manage	E46	не готов	Cafe13KPG#413	2026-10-28	—
+joinQueue	E45	в тесте	Cafe13KPG#413	2026-11-26	—
+topupQueue	E56	в тесте	Cafe13KPG#583	2026-11-26	—
+topupReq	E56b	в тесте	Cafe13KPG#583	2026-11-26	—
+manage	E46	в тесте	Cafe13KPG#413	2026-11-26	—
 events	E60	в тесте	—	2026-10-27	—
 event	E37,E62,E66	в тесте	—	2026-10-27	—
 bookings	E40	в тесте	—	2026-10-27	—
@@ -123,6 +123,16 @@ roleAccount	—	в тесте	Cafe13KPG#557	2026-11-20	_docs/recept/ekran/27/rol
 clubStats	—	в тесте	Cafe13KPG#688	2026-11-24	_docs/recept/ekran/31/clubStats.md
 artStats	—	в тесте	Cafe13KPG#563	2026-11-24	_docs/recept/ekran/32/artStats.md
 eventApproval	—	в тесте	Cafe13KPG#1009	2026-11-24	_docs/recept/ekran/odobrenie/eventApproval.md
+myBiz	—	в тесте	Cafe13KPG#1107	2026-11-26	_docs/recept/ekran/moi-biznesy/myBiz.md
+calendar	—	в тесте	Cafe13KPG#1114	2026-11-26	_docs/recept/ekran/43/calendar.md
+teaMasters	—	в тесте	#1114	2026-11-26	_docs/recept/ekran/42/teaMasters.md
+teaMaster	—	в тесте	#1114	2026-11-26	_docs/recept/ekran/42/teaMaster.md
+teaBook	—	не готов	—	2026-11-26	_docs/recept/ekran/42/teaBook.md
+teaApply	—	в тесте	#1114	2026-11-26	_docs/recept/ekran/42/teaApply.md
+teaHold	—	в тесте	Cafe13KPG#1114	2026-11-26	_docs/recept/ekran/42/teaHold.md
+teaJoin	—	в тесте	#1114	2026-11-26	_docs/recept/ekran/42/teaJoin.md
+teaReqs	—	в тесте	#1114	2026-11-26	_docs/recept/ekran/42/teaReqs.md
+teaReq	—	в тесте	#1114	2026-11-26	_docs/recept/ekran/42/teaReq.md
 # ⚠ Ниже — экраны, кадры которых НАРИСОВАНЫ, а кода в клиенте нет вовсе
 # (Cafe13KPG#859, замер мой 05.11.2026: ключа SCREENS с таким предметом в
 # стволе клиента нет ни одного). Имя словами — по правилу заголовка этого

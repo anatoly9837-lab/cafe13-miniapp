@@ -71,7 +71,12 @@ const ALLOW = {
 // Общая фикстура людей у api и клиента: 200000001…200000014.
 for (let i = 1; i <= 14; i++) ALLOW[String(2e8 + i)] = 'выдуманный человек общей фикстуры';
 
-const SKIP_DIRS = new Set(['.git', 'node_modules']);
+// Пропуск ПО ИМЕНИ ЗАПИСИ, а не только каталога: в worktree `.git` — ФАЙЛ
+// со строкой `gitdir: <путь>`, а путь выбирает харнесс, не автор правки
+// (`/tmp/claude-1001/…/<id>/…`). Прежняя проверка `isDirectory() && имя`
+// этот файл читала, и страж краснел от МЕСТА прогона (Cafe13KPG#615, замер
+// frontend-53 25.11.2026). Различающая пара — в selfCheck ниже.
+const SKIP = new Set(['.git', 'node_modules']);
 // Дата и время вырезаются только в ДОПУСТИМЫХ значениях: форма без диапазонов
 // пропускала номер, записанный «датой» с месяцем 73 или «временем» 91:82, а год
 // без диапазона — любой номер вида ГГГГ-ММ-ДД (подлоги в SELF ниже), —
@@ -200,7 +205,8 @@ function selfCheck() {
 function walk(dir, out) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const f = path.join(dir, e.name);
-    if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(f, out); }
+    if (SKIP.has(e.name)) continue;
+    if (e.isDirectory()) walk(f, out);
     else if (e.isFile()) out.push(f);
   }
   return out;
@@ -208,8 +214,30 @@ function walk(dir, out) {
 
 // → строки отказа: самопроверка, затем «файл:строка: число …».
 function idsClean(root) {
-  const self = selfCheck();
+  const self = selfCheck().concat(selfCheckTree());
   if (self.length) return self;
+  return scanTree(root);
+}
+
+/* Различающая пара ОБХОДА (Cafe13KPG#615): номер в публикуемом файле
+   ловится, тот же номер в `gitdir:` worktree — нет. Номер собран из частей,
+   чтобы не лежать литералом в этом файле. */
+function selfCheckTree() {
+  const номер = ['91', '82', '73', '64', '5'].join('');
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ids-clean-'));
+  try {
+    fs.writeFileSync(path.join(dir, '.git'), 'gitdir: /x/' + номер + '/.git/worktrees/w\n');
+    fs.writeFileSync(path.join(dir, 'utechka.txt'), 'id ' + номер + '\n');
+    fs.writeFileSync(path.join(dir, 'chisto.txt'), 'без цифр\n');   // каталог не пуст, даже если обход потерял утечку
+    const где = scanTree(dir).map(s => s.split(':')[0]);
+    const плохо = [];
+    if (!где.includes('utechka.txt')) плохо.push('ids-clean самопроверка: номер в публикуемом файле прошёл зелёным');
+    if (где.includes('.git')) плохо.push('ids-clean самопроверка: `.git`-файл worktree дал красное — страж краснеет от пути прогона (Cafe13KPG#615)');
+    return плохо;
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+function scanTree(root) {
   const files = walk(root, []);
   if (!files.length) throw new Error('в ' + root + ' нет ни одного файла — проверять нечего');
   const bad = [];
