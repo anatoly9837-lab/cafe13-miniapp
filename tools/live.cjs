@@ -1073,6 +1073,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // поля заявки с api#225 (снимок fb13e0f): длительность минутами, занятость, цена входа, съёмка, просьба о донате;
     // 'event' = поля нет (js/07 r.tea), клиент читает hours — минуты с ним согласны
     duration_min: 120, occupancy: 'event', price: '0.00', ask_donation: false, filmed: false,
+    // снимки (api#231, снимок 913eeef): в дампе всегда [], клиент читает [] как «поля нет» (fotoFrom, js/09)
+    photos: [],
     status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено' }[status],
     created_at: '2026-10-29T10:00:00+07:00', decided_at: null, decision_note: '', paid_till: null, paid_until: null,
     starts_at: MAT(7) }, extra || {});
@@ -7034,7 +7036,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     my_booking_paid: null, my_amount_due: null,
     // фича 4 (api #176, снимок events-afisha* на 4428e6d): одобрение в строке ивента. По умолчанию — одобрен, как всё,
     // что миграция 040 застала опубликованным; ждущий и отклонённый задают своё (`over`, случаи odobr-*)
-    approval: 'approved', reject_note: null
+    approval: 'approved', reject_note: null,
+    // снимки события (api#231, снимок events-afisha* на 913eeef): в дампе []; [] ≡ «поля нет» (fotoFrom, js/09)
+    photos: []
   }, over);
   const AFISHA = [
     EV({ id: 1, title: 'Утро у воды', starts_at: atBkk(0, 10), duration_min: 60, kind: 'free',
