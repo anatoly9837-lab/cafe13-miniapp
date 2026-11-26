@@ -759,9 +759,10 @@ function fromOrder(d, items) {
    кнопкой, текст сервера как есть, выбор человека не теряется. Отказ при
    покупке в одно нажатие из меню переносит позицию в корзину — там видно
    и причину, и что именно не купилось. */
-var DENY = '';
-function denyInCart(items, text) {
+var DENY = '', DENY_CODE = '';
+function denyInCart(items, text, code) {
   DENY = text;
+  DENY_CODE = code || '';
   if (current !== 'barCart') {
     CART = {};
     items.forEach(function (x) { CART[x.id] = x.n; });
@@ -776,7 +777,7 @@ function placeOrder(items, place, pay) {
     denyInCart(items, 'Бар закрыт: смена не открыта — заказ не отправлен.');
     return;
   }
-  DENY = '';
+  DENY = ''; DENY_CODE = '';
   BUSY = true;
   render();
   api('POST', '/bar/orders', {
@@ -807,9 +808,9 @@ function placeOrder(items, place, pay) {
       return;
     }
     // нехватка — баланс мог устареть; закрытый бар и снятая позиция — меню и смена
-    if (/^на счёте/.test(detail)) refreshMe();
+    if (codeOf(r) === 'insufficient_funds') refreshMe();
     if (r.status === 409) loadMenu();
-    denyInCart(items, detail || 'Заказ не отправлен: сервер ответил кодом ' + r.status + '.');
+    denyInCart(items, detail || 'Заказ не отправлен: сервер ответил кодом ' + r.status + '.', codeOf(r));
   });
 }
 

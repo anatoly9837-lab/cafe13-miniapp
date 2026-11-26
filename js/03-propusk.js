@@ -98,7 +98,7 @@ function loadPass() {
       // Фича 1 «ДВЕРЬ» (Cafe13KPG#1009, дополнение 2): причины «членство не активно» больше нет — активировать нечего,
       // а двери на пропуск у человека без членства нет вовсе (решение №45). Прочий 403 — отказ пропуску без слов причины
       if (r.status === 403 && !TEST.on) dropPass();
-      if (r.status === 403 && r.data && r.data.detail === 'доступа нет' && !TEST.on) { go('noAccess'); return; }
+      if (r.status === 403 && codeOf(r) === 'no_access' && !TEST.on) { go('noAccess'); return; }
       PASS_FAIL = r.status === 403 ? 'Сервер отказал в пропуске.'
                 : r.status === 0 ? 'Сервер не ответил.'
                 : r.status === 200 ? 'Ответ сервера не разобран.'
