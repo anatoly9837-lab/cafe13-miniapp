@@ -209,7 +209,7 @@ Object.assign(SCREENS, {
         '<div class="note">' + svg(ICON.info) +
           '<span>Спишем со счёта сразу, когда заказ создан, — не при выдаче. Наличные бар не принимает. Пополнить можно у хостес. Отменить заказ может только бар — тогда деньги вернутся на счёт.</span></div></div>' +
       (DENY ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(DENY) + '</span></div>' +
-              (/^на счёте/.test(DENY) ? '<button type="button" class="btn quiet" data-go="topup">Пополнить счёт</button>' : '') : '') +
+              (DENY_CODE === 'insufficient_funds' ? '<button type="button" class="btn quiet" data-go="topup">Пополнить счёт</button>' : '') : '') +
       '<div class="sum"><span class="small">Итого</span><b class="big num">' + money(cartSum()) + ' ฿</b></div>' +
       '<button type="button" class="btn dup-main" data-action="send-order"' + (BUSY ? ' disabled' : '') + '>' + (BUSY ? 'Отправляем…' : 'Купить') + '</button>';
   },
