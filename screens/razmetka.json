@@ -1,37 +1,37 @@
 {
- "снято": "2026-11-26T11:48:43.532Z",
+ "снято": "2026-11-26T21:36:23.958Z",
  "слепки_страницы": {
-  "index.html": "274b99be097263a4ce54e07a441146be3c8631ef6285e02acb4a191bb7b952aa",
+  "index.html": "f50200918ce9185bbd871e03b25425bba2611edc4795f006fa5e2a0d42024544",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
-  "styles.css": "6a6aa8b9939ed9c1a3332c1ca150cee32f1e3c35aae15586149e925d06cc4ea4",
+  "styles.css": "7a8104b0cc81f02098ff3fd454804e037cbff68277b75f059d69ce08534910e7",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/00-slova.js": "2b5aaf80ecd9ce4ff56c0b7f9e1355abb00563d4b6768256e40a21fa1a77b7f6",
-  "js/01-osnova.js": "836d8179f34eef5dfa70e72fe80af2d8d516b5beef2fe04b1852a07083016507",
-  "js/02-chlenstvo.js": "c0a769ddc11136567a01ed0ecf6d90e6d8848f96587e6ca357816995426ca606",
-  "js/03-propusk.js": "ce4d0a0039bfb28c37efe7474400cba025d55f7dfba2200941fe1e9a765fc5e7",
-  "js/04-bar.js": "06540e5d3bcda2a0c07f55368ff461c36d09de6409ef5f1e387a9035fa37f538",
-  "js/05-kassa.js": "0aa4ac7c20436a65238af33d0f646eff55acad208ecdaf4cc2858f69562f785e",
-  "js/06-lyudi.js": "0e48ae83ff229e56901c9730010cf10e7290eca5a6f247f7a6bbb8509b637000",
-  "js/07-mastera.js": "226174951a55082fbc4819ca87037fa73c32901bdae04926b4c25d4467c2f286",
-  "js/08-kartochki.js": "cd61ca109cfa622fbb58ca397126d1c2e1fffa6f85a72525c2106c6bd78a3f2a",
-  "js/09-afisha.js": "f420fd0f3aaedd399851010623725cd6130e599191511e3ce42923682a4e2e30",
+  "js/00-slova.js": "23aef8ca1a7044cc8445cf51ec32202e5fdb55687ef7183a6d2b6d86e5fec232",
+  "js/01-osnova.js": "652205e0f4ff4a2901b750aead5147a82674d5e86eb415694f0d9183255a3bc6",
+  "js/02-chlenstvo.js": "5c788850ae6ca37e7b21eb1264539a5f8fa4ec84b6837eedd9187b3f455cfdc6",
+  "js/03-propusk.js": "631fddcd9b44d3cb21c5fc6eb2d3f1a5356040eabbc02959bd1b173b5ba715b4",
+  "js/04-bar.js": "ee374e4c2b0e75ad1a3844b31eb30cb85fe93d31c7f8c584fa9894bf294e23e3",
+  "js/05-kassa.js": "1ed786ec939806f695613094b07a23fa3f9751b6f7a6041b24cae50c9266ce1f",
+  "js/06-lyudi.js": "6e916b14fb638c2ac47d9dd8be3b9f6c7928d3492e966fc75a3f489e67955719",
+  "js/07-mastera.js": "6873794cde19da65cafaf8e45591793ebf6edba88f019c0885f0682ba46843e5",
+  "js/08-kartochki.js": "ae00a3f9435fdb97bb2c05163b5c25c2ae247373fcbbed9c76669630f9153b39",
+  "js/09-afisha.js": "e37a1177896752b47fbd45ab925d9fc797ddd0e7e9eea9b9929cc6137f80930c",
   "js/10-utility.js": "f7045fd73f8de8f22c3cee4e55a9ca3bb29c93805503736c8cdd10de1dbedb2a",
   "js/11-ekrany-klub.js": "8432f909ea33b3aec177779728b7e346c909da0de915f86df65a283b31b13bda",
   "js/12-ekrany-afisha.js": "1278f91ae6fef12f557a4a36db6492204b69da36e6dade71a927bd7851e4a78a",
   "js/13-ekrany-kassa.js": "2bc86afc2624e458fd8d2a58783d832cba89fc796350217ab7502b076b019af3",
-  "js/14-ekrany-meropriyatiya.js": "4185d8620e3e22de5c83d0e1b01478d9deb914a6f3a6aa41ff4e0557c3fb7c89",
+  "js/14-ekrany-meropriyatiya.js": "9f86e925a0db274431001cb934b6346d67140213b9f5c9ac44638cf3371aedc1",
   "js/15-ekrany-partner-soglasie.js": "0737612312e6cc7d89f1d0dd0418d6f2ce82b1a10eb2045c87b31c5fa05aeffd",
-  "js/16-ekrany-bar.js": "a8e42dde2e635d5a0e0271fe356d08b95c22d23a29de81b53185a0af80a86205",
-  "js/17-ekrany-upravlenie.js": "f001df34e51b6146e3151002d7369608124fd629a30b129074c27063a620aed2",
-  "js/18-ekrany-mastera.js": "db3f81961a4927efb708a92d75be34463f09a1b5f1330c66b25f2310fd462e0b",
+  "js/16-ekrany-bar.js": "1c9ee86c2bc30170357f11979f9134d51720322d803f241044a82d87f851b0fe",
+  "js/17-ekrany-upravlenie.js": "3ac678623387f7884a2f41134561d01afe6ed3d5bd813bfad67738a895145fcf",
+  "js/18-ekrany-mastera.js": "e1cb862d3c6d926488ba5a65837c5a58fc3caba0073906c02d3205871776f256",
   "js/19-ekrany-lyudi.js": "8b1561bd88cb3070f158bf41a495e7e66aebd589b5542dced0f3ae902684bb55",
   "js/20-ekrany-sluzhebnye.js": "a0ba85da42addb3bd5db360b936456d5c59dd075c9ebc1a55ef4d2cbd3d96810",
-  "js/21-navigaciya.js": "f35e40ecbf9ad8744f1158bd74f5a38ef5bd11446b8ea01aca5e00a273fcbb6b",
-  "js/22-ekrany-chay.js": "3d7ec8dea0c0083c71c0660535a778c8fbc196c7c2fb330cd900079e95912666",
+  "js/21-navigaciya.js": "d503873306b22404fe905120250c8cd6975089230155ce8c638ad97102fb793a",
+  "js/22-ekrany-chay.js": "fd7f55587c02f3b401be2c98a40f6f28dcce79bc6afc988419eca42311880b76",
   "js/23-kalendar.js": "6eb1aaceeecc48f5e31128af3cd86e30ab1da0c04142ff8716bfe88466272f53",
-  "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
+  "js/22-zapusk.js": "4dbec659d0863609a6f338bf0261457af93f18a4cdcf559a3f8a2bd2ad5efcd9"
  },
  "шрифты": {
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": {
@@ -42,10 +42,6 @@
    "байт": 19224,
    "слепок": "blifkimhjehajheh"
   },
-  "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExN8hA.woff2": {
-   "байт": 37916,
-   "слепок": "jkgjnakkehdemeac"
-  },
   "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExd8hLxR.woff2": {
    "байт": 22032,
    "слепок": "bhnaeimkafmlbcbi"
@@ -53,9 +49,13 @@
   "https://fonts.gstatic.com/s/prata/v22/6xKhdSpbNNCT-sWLCm7JLQ.woff2": {
    "байт": 13132,
    "слепок": "ddjcnofkdidnokmg"
+  },
+  "https://fonts.gstatic.com/s/golostext/v7/q5uCsoe9Lv5t7Meb31EcExN8hA.woff2": {
+   "байт": 37916,
+   "слепок": "jkgjnakkehdemeac"
   }
  },
- "свод_слепков": "745f00e2445339dac109b7be18ce6c0e9ea872de0c833526c3c964dfb0631263",
+ "свод_слепков": "9fd05209a6fc78c8bee0ad4244a7c17462a7105928aeba8426c7cec075136d02",
  "область": "вся отрисованная страница — шапка оболочки, #view и вкладки. Класс ОБОЛОЧКИ есть на каждом экране, и его присутствие об экране ничего не доказывает: сверка это печатает",
  "предел": "ОДИН снятый вид каждого экрана. Состояния рецепта (отказ, пусто, отправка, вспышка) опись не снимает, и класс, живущий только в них, сверке «не измерен», а не зелёный",
  "экраны": {
@@ -1162,16 +1162,28 @@
      "видимых": 1
     },
     "col": {
-     "всего": 1,
-     "видимых": 1
+     "всего": 2,
+     "видимых": 2
     },
     "small": {
-     "всего": 5,
-     "видимых": 5
+     "всего": 6,
+     "видимых": 6
     },
     "field": {
      "всего": 3,
      "видимых": 3
+    },
+    "card": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "label": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "btn quiet": {
+     "всего": 1,
+     "видимых": 1
     },
     "note": {
      "всего": 1,
@@ -1766,8 +1778,8 @@
      "видимых": 1
     },
     "small": {
-     "всего": 6,
-     "видимых": 6
+     "всего": 7,
+     "видимых": 7
     },
     "mf": {
      "всего": 1,
@@ -1792,6 +1804,22 @@
     "rows": {
      "всего": 2,
      "видимых": 2
+    },
+    "card": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "col": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "label": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "btn quiet": {
+     "всего": 1,
+     "видимых": 1
     },
     "btn": {
      "всего": 1,
@@ -2222,12 +2250,12 @@
      "видимых": 1
     },
     "field": {
-     "всего": 5,
-     "видимых": 5
+     "всего": 8,
+     "видимых": 8
     },
     "small": {
-     "всего": 5,
-     "видимых": 5
+     "всего": 6,
+     "видимых": 6
     },
     "seg wrap": {
      "всего": 1,
@@ -2246,6 +2274,10 @@
      "видимых": 1
     },
     "pill": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "label": {
      "всего": 1,
      "видимых": 1
     },
@@ -2834,8 +2866,8 @@
      "видимых": 1
     },
     "small": {
-     "всего": 6,
-     "видимых": 6
+     "всего": 7,
+     "видимых": 7
     },
     "mf": {
      "всего": 1,
@@ -2860,6 +2892,22 @@
     "rows": {
      "всего": 2,
      "видимых": 2
+    },
+    "card": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "col": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "label": {
+     "всего": 1,
+     "видимых": 1
+    },
+    "btn quiet": {
+     "всего": 1,
+     "видимых": 1
     },
     "deny": {
      "всего": 1,
