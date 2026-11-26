@@ -12,6 +12,8 @@
 //   vorota — загрузка включена в живом (FOTO_ON), хотя в бою ручек нет;  tri3 — «Добавить фото» при трёх;
 //   bolshe8 — файл больше 8 МБ уходит на сервер;  szhat — сжатие сервером молча;  zhdyot — подача при грузящемся кадре;
 //   pervym — «Сделать первым» ставит кадр в конец;  otkaz — отказ сервера переписан клиентом.
+//   mV (мутант ревьюера #486; ссылка на ревью — в теле PR) — гейт `LIVE && FOTO_ON` снят у fotoBody: правка несогласованного
+//   события в бою шлёт photo_ids, а боевой EventEdit — extra="forbid" (a6d4d4c events.py:92) → 422.
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path');
 const root = process.argv[2], mutant = process.argv[3] || '';
@@ -37,6 +39,7 @@ const MUT = {
   zhdyot: ['js/18-ekrany-mastera.js', "(fotoBusy('masterApply') && !MR.busy ? fotoWaitBtn()", "(false ? fotoWaitBtn()"],
   pervym: ['js/09-afisha.js', 'b.list.splice(b.list.indexOf(f), 1); b.list.unshift(f);', 'b.list.splice(b.list.indexOf(f), 1); b.list.push(f);'],
   otkaz: ['js/09-afisha.js', 'gone(); b.err = denyText(r); b.verb = true;', "gone(); b.err = 'Не получилось'; b.verb = true;"],
+  mV: ['js/09-afisha.js', 'function fotoBody(form, body) { if (LIVE && FOTO_ON && FOTO[form])', 'function fotoBody(form, body) { if (FOTO[form])'],
 };
 if (mutant && !MUT[mutant] && mutant !== 'kvadrat') { console.error('нет такого мутанта: ' + mutant); process.exit(2); }
 let k;
@@ -189,6 +192,20 @@ check('foto-ne-foto: не картинка — P8', blk().includes('Это не 
   R("FOTO = {};"); h = edit([], 'approved');
   check('foto-pravka-zamorozheny-pusto: «Фото» и F6, альбома и P4 нет',
     (h.includes('>Фото<') ? 'P1' : 'нет P1') + (h.includes(F6) ? ', F6' : '') + (h.includes('<div class="album') ? ', альбом' : '') + (h.includes('Добавить фото') ? ', P4' : ''), 'P1, F6');
+  // ── ворота правки (находка mV): в живом при FOTO_ON = false «Сохранить» несогласованного не шлёт photo_ids.
+  // Экран правки зовёт fotoOf('eventEdit') без fotoForm() — набор формы в живом есть всегда; судит только гейт fotoBody.
+  // свой ждущий согласования вечер ведущего с правом на события (grant curator) — экран правки открыт, «Сохранить» живо
+  R("LIVE = true; FOTO_ON = false; FOTO = {}; DATA.grants = [{ role: 'curator' }]; render = function () {};");
+  const sent = [];
+  ctx.api = (m, u, body) => { sent.push({ m, u, body }); return new Promise(() => {}); };
+  ctx.__e = ev(P(2), { approval: 'pending', organizer_id: 4242 });
+  R("eventList = function () { return [__e]; }; eventById = function () { return __e; }; EDT.id = __e.id;");
+  check('ворота-pravka: живой — экран правки своего ждущего открыт', /data-action="edt-save"/.test(R("SCREENS.eventEdit(__e.id)")) ? 'открыт' : 'отказ', 'открыт');
+  R("EDT.busy = false; EDT.seats = '10'; EDT.about = ''; EDT.price = '0'; editSave();");
+  const post = sent.find(c => c.m === 'POST' && /^\/events\/\d+\/edit$/.test(c.u));
+  check('ворота-pravka: живой, FOTO_ON = false — набор формы есть (гейт держит один fotoBody)', R("FOTO.eventEdit ? 'есть' : 'нет'"), 'есть');
+  check('ворота-pravka: живой, FOTO_ON = false — правка несогласованного: photo_ids не уходит',
+    post ? ('photo_ids' in post.body ? 'уходит (бой: 422 extra=forbid)' : 'не уходит') : 'запроса правки нет', 'не уходит');
   const red = ok.filter(x => !x).length;
   console.log(red ? `КРАСНОЕ: ${red} из ${ok.length}` : `ЗЕЛЁНОЕ: ${ok.length} из ${ok.length}`);
   process.exit(red ? 1 : 0);
