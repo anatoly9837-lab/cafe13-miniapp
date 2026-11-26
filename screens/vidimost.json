@@ -1,14 +1,14 @@
 {
- "снято": "2026-11-26T09:43:13.420Z",
+ "снято": "2026-11-26T11:48:47.120Z",
  "слепки_страницы": {
-  "index.html": "dd006764ba7eb3ed3879d585815f06d5940290bd479ee99f524a16aa850b3923",
+  "index.html": "274b99be097263a4ce54e07a441146be3c8631ef6285e02acb4a191bb7b952aa",
   "https://telegram.org/js/telegram-web-app.js": "— вне дерева (сеть)",
   "https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600;700&display=swap": "— вне дерева (сеть)",
   "styles.css": "6a6aa8b9939ed9c1a3332c1ca150cee32f1e3c35aae15586149e925d06cc4ea4",
   "img/watermark.png": "cc8106ff2e9909d6d8c29086468f6d7fbc5b8576efe8997914d6e0d4da65abea",
   "vendor/qrcode-1.4.4.js": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
-  "js/00-slova.js": "01c620b2d749ab77255a365c84305211dc90ef305ba81324b37d45ae45ff98f8",
-  "js/01-osnova.js": "a2d0aae31cbb6ee5d47bf9a22dde8f5b56371a39a33871e82878cf5bbdcd8e5e",
+  "js/00-slova.js": "2b5aaf80ecd9ce4ff56c0b7f9e1355abb00563d4b6768256e40a21fa1a77b7f6",
+  "js/01-osnova.js": "836d8179f34eef5dfa70e72fe80af2d8d516b5beef2fe04b1852a07083016507",
   "js/02-chlenstvo.js": "c0a769ddc11136567a01ed0ecf6d90e6d8848f96587e6ca357816995426ca606",
   "js/03-propusk.js": "ce4d0a0039bfb28c37efe7474400cba025d55f7dfba2200941fe1e9a765fc5e7",
   "js/04-bar.js": "06540e5d3bcda2a0c07f55368ff461c36d09de6409ef5f1e387a9035fa37f538",
@@ -29,11 +29,11 @@
   "js/19-ekrany-lyudi.js": "8b1561bd88cb3070f158bf41a495e7e66aebd589b5542dced0f3ae902684bb55",
   "js/20-ekrany-sluzhebnye.js": "a0ba85da42addb3bd5db360b936456d5c59dd075c9ebc1a55ef4d2cbd3d96810",
   "js/21-navigaciya.js": "f35e40ecbf9ad8744f1158bd74f5a38ef5bd11446b8ea01aca5e00a273fcbb6b",
-  "js/22-ekrany-chay.js": "fdd96c4e5d802fcf78ed333746562f79e975c096d92d72c8c98ce70dcebf8acb",
+  "js/22-ekrany-chay.js": "3d7ec8dea0c0083c71c0660535a778c8fbc196c7c2fb330cd900079e95912666",
   "js/23-kalendar.js": "6eb1aaceeecc48f5e31128af3cd86e30ab1da0c04142ff8716bfe88466272f53",
   "js/22-zapusk.js": "b91b58f917bd595fb9eea7e78a13612f234cb9d815d19962f11c8f3e27ed54ef"
  },
- "свод_слепков": "441589a803d1c0b3ca9e672545a023f1deafe736d4d04a0b8607182693c40a41",
+ "свод_слепков": "745f00e2445339dac109b7be18ce6c0e9ea872de0c833526c3c964dfb0631263",
  "предел": "вывод по коду клиента, не наблюдение под человеком",
  "роли_откуда": "люди club_test по замеру devops5 27.10.2026 06:29:59 UTC (только чтение), НЕ ПЕРЕМЕРЕНЫ: роли и членство — как были в тот день, а не сегодня (Cafe13KPG#788)",
  "роли_api": {
