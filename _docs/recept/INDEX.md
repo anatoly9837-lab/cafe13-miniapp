@@ -74,9 +74,9 @@
 | `42` | `masters` | — | 2454 | 4 | 2 |
 | `42` | `razvilki` | — | 7294 | 3 | 0 |
 | `42` | `sostav-dovody` | — | 3991 | 2 | 0 |
-| `42` | `sostav` | — | 10095 | 4 | 0 |
+| `42` | `sostav` | — | 10141 | 4 | 0 |
 | `42` | `teaApply-dovody` | — | 4738 | 11 | 0 |
-| `42` | `teaApply` | — | 7257 | 6 | 20 |
+| `42` | `teaApply` | — | 7174 | 6 | 20 |
 | `42` | `teaBook-dovody` | — | 4825 | 8 | 0 |
 | `42` | `teaBook` | — | 7974 | 7 | 16 |
 | `42` | `teaHold-dovody` | — | 7902 | 11 | 0 |
@@ -84,7 +84,7 @@
 | `42` | `teaJoin-dovody` | — | 3670 | 8 | 0 |
 | `42` | `teaJoin` | — | 7300 | 6 | 20 |
 | `42` | `teaMaster-dovody` | — | 3339 | 6 | 0 |
-| `42` | `teaMaster` | — | 6671 | 9 | 11 |
+| `42` | `teaMaster` | — | 6726 | 9 | 11 |
 | `42` | `teaMasters-dovody` | — | 1634 | 0 | 0 |
 | `42` | `teaMasters` | — | 4427 | 8 | 5 |
 | `42` | `teaReq-dovody` | — | 1612 | 0 | 0 |
@@ -110,6 +110,12 @@
 | `bez-daty` | `sostav` | — | 4437 | 4 | 0 |
 | `dver` | `home` | — | 10398 | 8 | 0 |
 | `dver` | `sostav` | — | 2456 | 4 | 0 |
+| `foto` | `event` | — | 3840 | 3 | 2 |
+| `foto` | `eventNew` | — | 650 | 0 | 0 |
+| `foto` | `masterApply` | — | 4648 | 3 | 9 |
+| `foto` | `sostav-dovody` | — | 3603 | 7 | 0 |
+| `foto` | `sostav` | — | 6456 | 4 | 0 |
+| `foto` | `teaHold` | — | 603 | 0 | 0 |
 | `master` | `home` | — | 6776 | 8 | 10 |
 | `master` | `masterApply` | — | 15817 | 9 | 22 |
 | `master` | `sostav` | — | 4524 | 4 | 0 |
