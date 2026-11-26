@@ -13,6 +13,7 @@
 //   mL — в форме один язык рецепта вместо трёх;        mO — «Создать выключенной» шлёт ещё и смену состояния.
 //   mW — цепочку сторожит свежесть списка (CARDS.gen), а не личность (ревью #496 п.2);  mC — carry теряется, если ушли в список;
 //   mW3, mW4 — снята охрана WHO после ответа на рецепт / на смену состояния;
+//   mF — предпросмотр не выводит FLASH: в демонстрации «в меню»/«выключенной» немые (ворота #496 a0b6fe5);
 //   mI — цепочка не слышит смену личности (WHO);  mD — в демонстрации «та же группа?» формы заведения — «Это демонстрация» (100e4a9 снят).
 'use strict';
 const vm = require('vm'), path = require('path');
@@ -33,6 +34,7 @@ const MUT = {
   mC: ['js/21-navigaciya.js', "var keep = CARD.carry || (current === 'barCard' ? { note: CARD.note } : null);", "var keep = current === 'barCard' ? (CARD.carry || { note: CARD.note }) : null;"],
   mW3: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n          if (!(rr.status", "\n          if (!(rr.status"],
   mW4: ['js/08-kartochki.js', "if (who !== WHO) { CARD.busy = false; return; }\n        if (!(rs.status", "\n        if (!(rs.status"],
+  mF: ['js/16-ekrany-bar.js', "  return (!LIVE && FLASH ? flash() : '') +\n    '<div class=\"note\">'", "  return '' +\n    '<div class=\"note\">'"],
   mD: ['js/21-navigaciya.js', " && !(/^c-group-(theirs|mine)$/.test(a) && !CARD.edit)) {", ") {"],
   mL: ['js/16-ekrany-bar.js', 'CARD_LANGS.map(function (l) {\n            return \'<div class="field"><label for="c-rec-\'', 'CARD_LANGS.slice(0, 1).map(function (l) {\n            return \'<div class="field"><label for="c-rec-\''],
   mO: ['js/08-kartochki.js', "if (!target) { land(slovo('barCard.done.off')); return; }", ';'],
@@ -231,6 +233,20 @@ const btn = (h, a) => { const m = h.match(new RegExp('<button[^>]*data-action="'
   check('card44-demo-gruppa: у правки черновика — «Это демонстрация»', R("FLASH ? FLASH.text : ''"), 'Это демонстрация');
   check('card44-demo-gruppa: запросов нет', posts(), []);
   R("LIVE = true; FLASH = null; CARD.edit = 0;");
+
+  // card44-demo-predprosmotr (ворота #496 a0b6fe5, шаг 1 demo-press, Cafe13KPG#338): в демонстрации «в меню» и
+  // «выключенной» отвечают на ПРЕДПРОСМОТРЕ плашкой «Это демонстрация» — разметка экрана меняется, запросов нет.
+  // Без вывода FLASH в cardPreviewHtml нажатие не меняло экран (немая кнопка) — так ворота и покраснели.
+  for (const a of ['c-add', 'c-off']) {
+    start(false); R("LIVE = false; FLASH = null; CARD.text = { ru: 'рецепт' }; go('barCard', 'preview')");
+    const h0 = html();
+    R("doAction('" + a + "')"); await tick();
+    const h1 = html();
+    check('card44-demo-predprosmotr: «' + a + '» — экран тот же, разметка сменилась, плашка «Это демонстрация» на нём',
+      [R('current + ":" + param'), h1 !== h0, h1.includes('Это демонстрация') && !h0.includes('Это демонстрация')], ['barCard:preview', true, true]);
+    check('card44-demo-predprosmotr: «' + a + '» — запросов нет', posts(), []);
+  }
+  R("LIVE = true; FLASH = null;");
 
   const bad = ok.filter(x => !x).length;
   console.log((bad ? 'КРАСНОЕ: ' + bad : 'ЗЕЛЁНОЕ: 0') + ' из ' + ok.length);

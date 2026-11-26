@@ -248,9 +248,9 @@ function cardCreate(menu) {
       if (!target) { land(slovo('barCard.done.off')); return; }
       api('POST', '/bar/products/' + id + '/state', { state: target }).then(function (rs) {
         if (who !== WHO) { CARD.busy = false; return; }
-        if (!(rs.status === 200 && rs.data && rs.data.state === target)) { land(slovo(target === 'active' ? 'barCard.part.active' : 'barCard.part.review'), denyText(rs)); return; }
+        if (!(rs.status === 200 && rs.data && rs.data.state === target)) { land(target === 'active' ? slovo('barCard.part.active') : slovo('barCard.part.review'), denyText(rs)); return; }
         mark(target);
-        land(slovo(target === 'active' ? 'barCard.done.active' : 'barCard.done.review'));
+        land(target === 'active' ? slovo('barCard.done.active') : slovo('barCard.done.review'));
       });
     };
     next();

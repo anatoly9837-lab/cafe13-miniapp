@@ -60,8 +60,11 @@ function cardPreviewHtml(deny, lock) {
             mins: mins, photo: false, shot: 'none' };
   var po = cardPartnerOnly(), has = cardRecipeLangs().length > 0;
   var busy = function (k, word) { return CARD.busy && CARD.press === k ? slovo('barCard.preview.busy') : word; };
-  var main = slovo(po ? 'barCard.preview.add' : 'barCard.preview.review');
-  return '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('barCard.preview.note')) + '</span></div>' +
+  var main = po ? slovo('barCard.preview.add') : slovo('barCard.preview.review');
+  // в демонстрации «в меню» и «выключенной» отвечают плашкой «Это демонстрация» (DEMO_SENDS, js/21): без неё нажатие
+  // ничего не меняет на экране — немая кнопка (Cafe13KPG#338, ворота #496 a0b6fe5, шаг 1 demo-press)
+  return (!LIVE && FLASH ? flash() : '') +
+    '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('barCard.preview.note')) + '</span></div>' +
     '<div class="group"><span class="label">' + esc(slovo('barCard.preview.row')) + '</span>' +
       '<span class="label">' + esc(v['c-group']) + '</span>' +
       '<div class="card"><div class="row top"><span class="plain drinkbtn">' + tile(d) +
