@@ -98,10 +98,12 @@ const CASES = [
     // «Свой бизнес в клубе» (шаг 13, Cafe13KPG#889): /partner/requests/mine и /partner/price (цена — только с сервера);
     // 7 — плюс GET /master/price без часов: цена церемонии для двери «провести церемонию» (js/21 loadTeaHoldPrice).
     // Основание: дверь teaHold включена этим PR, цена запрашивается законно
-    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 7],
+    // 8 — плюс GET /tea/card/mine (#468). Основание: дверь teaApply включена этим PR, блок „Чайный мастер“ читает свою карточку — GET /tea/card/mine (js/21:648, только при открытой двери)
+    ['Действует до', 'Пожизненно', 'Активно', 'Звуковая практика', '1 250', 'Вы записаны', 'god_mentor', 'ещё не подключено'], 8],
   // кабинет — дверью (HAS_CABINET), срок «14 ноября 2026» — разбором (RAZBOR); на «Клубе» срока нет (#1096)
   // 7 — как у owner-lifelong: цена церемонии (дверь teaHold включена этим PR, цена запрашивается законно)
-  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 7],
+  // 8 — как у owner-lifelong, плюс GET /tea/card/mine (#468). Основание: дверь teaApply включена этим PR, блок „Чайный мастер“ читает свою карточку — GET /tea/card/mine
+  ['finite', true, true, json(200, finite), [], ['Пожизненно', 'Действует до', '14 ноября', 'Активно'], 8],
   ['no-sign-401', true, true, json(401, { detail: 'подпись не принята' }),
     ['Подпись не принята'], ['Доступ снят'], 1],
   ['stranger-403', true, true, json(403, { detail: 'доступа нет' }),
@@ -3014,7 +3016,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // + два запроса блока букинга на «Клубе» (/master/requests/mine, /master/price?hours=2)
     // + два блока «Свой бизнес в клубе» (шаг 13): /partner/requests/mine, /partner/price
     // + цена церемонии /master/price без часов. Основание: дверь teaHold включена этим PR, цена запрашивается законно
-    if (s.calls.length !== 8) bad.push(`retry: запросов ${s.calls.length}, ждали 8 (/me, /me, /events, /master/requests/mine, /master/price?hours=2, /partner/requests/mine, /partner/price, /master/price)`);
+    // + GET /tea/card/mine (#468). Основание: дверь teaApply включена этим PR, блок „Чайный мастер“ читает свою карточку — GET /tea/card/mine
+    if (s.calls.length !== 9) bad.push(`retry: запросов ${s.calls.length}, ждали 9 (/me, /me, /events, /master/requests/mine, /master/price?hours=2, /partner/requests/mine, /partner/price, /master/price, /tea/card/mine)`);
     await s.ctx.close();
   }
 
@@ -14863,6 +14866,21 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // ── фича 10 (Cafe13KPG#1107, рецепт _docs/recept/ekran/moi-biznesy/): «Мои бизнесы» на «Клубе» и карточка дела myBiz.
   // Слово владельца: «как куратор должен видеть список бизнесов которые я курирую. И проваливаюсь уже в плашку этого
   // бизнеса я могу менять именно этот бизнес». Граница одного и двух — sostav.md: при одном деле ни одного нового нажатия
+  // шаг 42 (#468, ревью arhitector7-a1): GET /tea/card/mine на входе в «Клуб» — только при открытой двери teaApply
+  // (js/21:648 `&& !closed('teaApply')`, как цена у teaHold). Пара по образцу mq-entry: (а) дверь закрыта — запроса нет;
+  // (б) открыта — ровно один. Мутант mineopen (снять условие) обязан красить только (а): в воротах teaApply открыт всегда.
+  if (part(2)) {
+    const mineAsk = s => s.calls.filter(c => c.method === 'GET' && /\/tea\/card\/mine$/.test(c.url)).length;
+    for (const [n, shut, want] of [['tea-mine-zakryta', true, 0], ['tea-mine-otkryta', false, 1]]) {
+      const s = await open(true, true, json(200, OWNER));
+      await s.p.evaluate(sh => { if (sh) delete WIRED.teaApply; go('guest'); }, shut); await s.p.waitForTimeout(200);
+      const before = mineAsk(s);
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(300);
+      const got = mineAsk(s) - before;
+      if (got !== want) bad.push(`${n}: вход в «Клуб» при ${shut ? 'закрытой' : 'открытой'} двери teaApply — GET /tea/card/mine ${got}, ждали ${want}`);
+      await s.ctx.close();
+    }
+  }
   if (part(2)) {
     const CHAI = { id: 9, title: 'Чайная у моря', is_active: true, is_open: true };
     // дело без гранта (3) и закрытое направление с грантом (5) — в «Мои бизнесы» не попадают
