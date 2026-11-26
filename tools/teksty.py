@@ -78,14 +78,14 @@ def itog(stroka, kod):
     sys.exit(kod)
 
 
-def itog_samoproverki(kod, pochemu=''):
-    if pochemu:
-        print(pochemu)
-    if kod == 0:
-        itog(f'самопроверка {ME}: сошлась', 0)
-    if kod == 1:
-        itog(f'самопроверка {ME}: РАЗОШЛАСЬ — код 1', 1)
-    itog(f'самопроверка {ME}: НЕ ВЫПОЛНЕНА — код {kod}', kod)
+def итог_самопроверки(код):
+    """Контракт шага 18 ворот (Cafe13KPG#1118, #1122): ПОСЛЕДНЯЯ строка самопроверки — её приговор,
+    из ТОГО ЖЕ кода, каким прибор выходит. Вызывается ровно в одном месте — в main, выходом из
+    приговора над самопроверкой без аргументов. Причины печатает самопроверка ДО этой строки.
+    ⚠ Пример вызова в этой прозе не писать: судья шага 18 считает места вызова grep'ом по исходнику."""
+    print(f'самопроверка {ME}: ' + ('сошлась' if код == 0 else 'РАЗОШЛАСЬ — код 1' if код == 1
+                                   else f'НЕ ВЫПОЛНЕНА — код {код}'), flush=True)
+    return код
 
 
 # ── разбор JS ────────────────────────────────────────────────────────────────────────────────────
@@ -554,18 +554,29 @@ def run_on(root, *args):
     return r.returncode, r.stdout + r.stderr
 
 
+КОРЕНЬ = ''   # дерево самопроверки; ставит main до вызова самопроверка()
+
+
+def самопроверка():
+    """0 — все случаи сошлись; 1 — разошёлся хоть один (каждый печатается строкой «РАЗОШЛОСЬ: …»);
+    2 — не выполнена (причина печатается)."""
+    try:
+        return samoproverka(КОРЕНЬ)
+    except (Sboy, OSError) as e:
+        print(f'самопроверка не выполнена: {e}')
+        return 2
+
+
 def samoproverka(root):
     base = os.path.join(os.environ.get('HOME', '/nonexistent'), '.cache', 'cafe13-teksty')
-    try:
-        os.makedirs(base, exist_ok=True)
-        w = tempfile.mkdtemp(prefix='sp-', dir=base)
-    except OSError as e:
-        itog_samoproverki(2, f'не создан рабочий каталог: {e}')
+    os.makedirs(base, exist_ok=True)
+    for d in ('js', 'tools', 'texts'):
+        if not os.path.isdir(os.path.join(root, d)):
+            raise Sboy(f'в дереве нет {d}/')
+    w = tempfile.mkdtemp(prefix='sp-', dir=base)
     bad = []
     try:
         for d in ('js', 'tools', 'texts'):
-            if not os.path.isdir(os.path.join(root, d)):
-                itog_samoproverki(2, f'в дереве нет {d}/')
             shutil.copytree(os.path.join(root, d), os.path.join(w, d))
         shutil.copy(os.path.join(root, 'index.html'), w)
         target = os.path.join(w, 'js/20-ekrany-sluzhebnye.js')
@@ -577,8 +588,9 @@ def samoproverka(root):
         def case(name, want_rc, want_line=None):
             rc, log = run_on(w)
             ok = rc == want_rc and (want_line is None or any(l.startswith(want_line) for l in log.splitlines()))
-            print(f'{name}: код {rc} (ждали {want_rc})' + (f', строка «{want_line}…» ' + ('есть' if ok else 'НЕТ') if want_line else '')
-                  + (' — сходится' if ok else ' — РАСХОДИТСЯ'))
+            print(('' if ok else 'РАЗОШЛОСЬ: ') + f'{name}: код {rc} (ждали {want_rc})'
+                  + (f', строка «{want_line}…» ' + ('есть' if ok else 'НЕТ') if want_line else '')
+                  + (' — сходится' if ok else ''))
             if not ok:
                 bad.append(name)
                 print('   ' + '\n   '.join(log.strip().splitlines()[-4:]))
@@ -603,7 +615,7 @@ def samoproverka(root):
         live = next((l for l in lines[1:] if l and '\tjs/20-ekrany-sluzhebnye.js:' in l), None)
         if live is None:
             bad.append('S6')
-            print('S6: в таблице нет строки из js/20-ekrany-sluzhebnye.js — случай не поставить — РАСХОДИТСЯ')
+            print('РАЗОШЛОСЬ: S6: в таблице нет строки из js/20-ekrany-sluzhebnye.js — случай не поставить')
         else:
             gde = live.split('\t')[5]
             open(tbl, 'w', encoding='utf-8').write('\n'.join(l for l in lines if l != live))
@@ -615,7 +627,7 @@ def samoproverka(root):
         case('S9 строка без перевода', 1, f'КРАСНОЕ {TABLE}:{k + 1}: строка без перевода')
         k = next((no for no, l in enumerate(lines[1:], 1) if l and '{' in l.split('\t')[1] and l.split('\t')[7] == 'машинный'), None)
         if k is None:
-            bad.append('S10'); print('S10: в таблице нет переведённой строки с подстановкой — случай не поставить — РАСХОДИТСЯ')
+            bad.append('S10'); print('РАЗОШЛОСЬ: S10: в таблице нет переведённой строки с подстановкой — случай не поставить')
         else:
             c = lines[k].split('\t'); c[3] = PH.sub('', c[3])
             open(tbl, 'w', encoding='utf-8').write('\n'.join(lines[:k] + ['\t'.join(c)] + lines[k + 1:]))
@@ -633,8 +645,9 @@ def samoproverka(root):
     finally:
         shutil.rmtree(w, ignore_errors=True)
     if bad:
-        itog_samoproverki(1, f'разошлись: {", ".join(bad)}')
-    itog_samoproverki(0)
+        print(f'разошлись: {", ".join(bad)}')
+        return 1
+    return 0
 
 
 def main(argv):
@@ -646,10 +659,9 @@ def main(argv):
         itog(f'ПРОВЕРКА НЕ ВЫПОЛНЕНА: tools/{ME} [<дерево>] [{"|".join(sorted(known))}]', 2)
     flag = flags[0] if flags else ''
     if flag == '--самопроверка':
-        try:
-            samoproverka(root)
-        except (Sboy, OSError) as e:
-            itog_samoproverki(2, str(e))
+        global КОРЕНЬ
+        КОРЕНЬ = root
+        sys.exit(итог_самопроверки(самопроверка()))
     try:
         if flag == '--собрать':
             sys.exit(sobrat_v_tablicu(root))
