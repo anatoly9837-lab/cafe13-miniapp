@@ -107,6 +107,30 @@ const SHA = /(?<![0-9a-f])(?=[0-9a-f]*[a-f])(?:[0-9a-f]{64}|[0-9a-f]{40})(?![0-9
 const HEX = /\b0x[0-9a-f]+\b/gi;
 const RUN = /\d(?:[ \t_.\-/()+]{0,2}\d)+/g;
 
+/* Ключ таблицы переводов (tools/teksty.py key_for): `t.` + первые 8 знаков sha1
+   русского текста СВОЕЙ строки. Каждый пятый такой ключ несёт 7+ цифр подряд, и
+   с шагом 41 (#495) страж краснел на 78 строках texts/perevody.tsv — ствол
+   7b078a9 встал (Cafe13KPG, замер руки #497 26.11.2026). Вырезается ТОЛЬКО:
+   - в файле texts/perevody.tsv (в любом другом файле та же строка красная);
+   - в первой колонке, ровно `t.` + 8 знаков [0-9a-f] перед табуляцией;
+   - если ключ РАВЕН sha1 текста второй колонки этой же строки (после снятия
+     экранирования \t \n \\). Это доказательство, а не форма: номер
+     человека, записанный ключом, с отпечатком своего текста не совпадёт.
+   Остальные колонки строки проверяются как обычно. Подлоги — selfCheckKey. */
+const PEREVODY = 'texts/perevody.tsv';
+const PEREVOD_KEY = /^t\.([0-9a-f]{8})\t([^\t]*)\t/;
+const sha8 = s => require('crypto').createHash('sha1').update(s, 'utf8').digest('hex').slice(0, 8);
+const unesc = s => s.replace(/\\(.)/g, (_, c) => (c === 't' ? '\t' : c === 'n' ? '\n' : c));
+// Один на обход и самопроверку: подлог «тот же ключ в другом файле» идёт через него же.
+const keyedFile = rel => rel.split(path.sep).join('/') === PEREVODY;
+function cutPerevodKey(line) {
+  const m = line.match(PEREVOD_KEY);
+  if (!m || sha8(unesc(m[2])) !== m[1]) return line;
+  // режется ровно совпадение (`t.` + 8 знаков), а не первые 10 знаков строки: без якоря `^`
+  // срез по числу отрезал бы то, что стоит ПЕРЕД ключом, — номер (подлог arhitector24, #499)
+  return line.slice(0, m.index) + 't. ' + line.slice(m.index + 10);
+}
+
 // Строка → числа из 7+ цифр, которых нет в списке: [[запись, цифры], …].
 function scan(line) {
   const t = line.replace(SVG, ' ').replace(SHA, ' ')
@@ -214,7 +238,7 @@ function walk(dir, out) {
 
 // → строки отказа: самопроверка, затем «файл:строка: число …».
 function idsClean(root) {
-  const self = selfCheck().concat(selfCheckTree());
+  const self = selfCheck().concat(selfCheckTree(), selfCheckKey());
   if (self.length) return self;
   return scanTree(root);
 }
@@ -237,6 +261,35 @@ function selfCheckTree() {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
+/* Подлоги на вырезание ключа таблицы переводов. Ключ из 7+ цифр ищется
+   перебором, а не пишется литералом, — иначе он стоял бы в этом файле. */
+function selfCheckKey() {
+  let ru = '', k = '';
+  for (let i = 0; i < 100000 && !/\d{7}/.test(k); i++) { ru = 'Свидетель ключа ' + i; k = sha8(ru); }
+  let ru0 = '', k0 = '';
+  for (let i = 0; i < 100000 && (!k0 || /\d{2}/.test(k0)); i++) { ru0 = 'Свидетель без цифр ' + i; k0 = sha8(ru0); }
+  const номер = ['91', '82', '73', '64'].join('');
+  const tail = '\ten\tth\tmy\tjs/x.js:1\t\tмашинный';
+  const случаи = [
+    ['ключ — отпечаток своего текста', PEREVODY, 't.' + k + '\t' + ru + tail, false],
+    ['тот же ключ в ДРУГОМ файле', 'js/x.tsv', 't.' + k + '\t' + ru + tail, true],
+    ['ключ не от своего текста', PEREVODY, 't.' + k + '\t' + ru + '!' + tail, true],
+    ['номер человека ключом', PEREVODY, 't.' + номер + '\t' + ru + tail, true],
+    // ключ ВЕРНЫЙ и без 7 цифр, номер стоит ПЕРЕД ним: вырезание обязано его не тронуть
+    ['номер перед верным ключом', PEREVODY, номер + '567\tt.' + k0 + '\t' + ru0 + tail, true],
+    // ключ верный и из 7 цифр, но НЕ в первой колонке: вырезается только первая колонка (якорь `^`)
+    ['верный ключ не в первой колонке', PEREVODY, 'x\tt.' + k + '\t' + ru + tail, true],
+    ['номер в тексте строки с верным ключом', PEREVODY, 't.' + k + '\t' + ru + tail.replace('en', 'id ' + номер + '5'), true],
+  ];
+  const плохо = [];
+  if (!/\d{7}/.test(k)) плохо.push('ids-clean самопроверка: не нашёлся текст с ключом из 7 цифр — подлоги ключа не поставить');
+  for (const [имя, файл, строка, red] of случаи) {
+    const got = scan(keyedFile(файл) ? cutPerevodKey(строка) : строка).length > 0;
+    if (got !== red) плохо.push(`ids-clean самопроверка: «${имя}» ${red ? 'прошёл зелёным' : 'дал красное на законном'}`);
+  }
+  return плохо;
+}
+
 function scanTree(root) {
   const files = walk(root, []);
   if (!files.length) throw new Error('в ' + root + ' нет ни одного файла — проверять нечего');
@@ -244,8 +297,9 @@ function scanTree(root) {
   for (const f of files) {
     const buf = fs.readFileSync(f);
     if (buf.subarray(0, 8192).includes(0)) continue;             // двоичный — предел, назван в шапке
+    const keyed = keyedFile(path.relative(root, f));
     buf.toString('utf8').split('\n').forEach((line, i) => {
-      for (const [raw, d] of scan(line))
+      for (const [raw, d] of scan(keyed ? cutPerevodKey(line) : line))
         bad.push(`${path.relative(root, f)}:${i + 1}: «${raw}» — ${d.length} цифр (${d}) не в разрешённом списке tools/ids-clean.cjs. Номер человека в публичный репозиторий не кладём; если это не человек — внесите в список С ПРИЧИНОЙ, а не разбивайте запись на части: страж ловит свойство, разбивка его не лечит, а прячет`);
     });
   }
