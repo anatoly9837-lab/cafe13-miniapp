@@ -247,10 +247,11 @@ const LIVE_SHOTS = [
    'по пришедшему непустому списку. Ручки партнёрства фикстуры не имеют (404) — их блок на снимке в виде отказа.',
    [],
    { '/master/requests/mine': { requests: [{ id: 821, title: 'Ждущий вечер', about: '', seats: 8, place_id: 1, place_name: 'Зал',
-       weekday: 4, weekday_ru: 'четверг', start_local: '19:00', hours: 2, hours_extra: 0, amount: '100', status: 'pending',
+       weekday: 4, weekday_ru: 'четверг', start_local: '19:00', hours: 2, hours_extra: 0, duration_min: 120, amount: '100',
+       occupancy: 'event', price: '0.00', ask_donation: false, filmed: false, status: 'pending',
        status_ru: 'ждёт решения', created_at: '2026-10-27T03:00:00+00:00', decided_at: null, decision_note: '',
        paid_till: null, paid_until: null, starts_at: '2026-10-30T12:00:00+00:00' }] },
-     '/master/price': { amount: '100', hours: 2, hours_included: 2 } }],
+     '/master/price': { amount: '100', hours: 2, hours_included: 2, duration_min: 120, share: '100' } }],
   ['68-no-access', 'noAccess', null, 'Ваш доступ в приложение снят', 'Служебное',
    'Нет доступа: выгнанный просит главу клуба вернуть его (фича 8, рецепт `_docs/recept/ekran/popolnenie/noAccess.md`, J1–J2) — без денег, суммы, чека и кассы. ' +
    '⚠ Снимок ЖИВОГО режима на фикстуре: вид рисуется только по ответу `GET /join`; форма — по снимку api `join-info-none` (страж формы съёмки), ' +
@@ -265,7 +266,7 @@ const LIVE_SHOTS = [
    'заглушка `ODOBR.PROW` из `tools/live.cjs`. Признак — «Вечер работника»: название из фикстуры, без неё экран печатал бы загрузку.',
    ['art_director'],
    { '/events/pending-approval': [{ id: 41, title: 'Вечер работника', starts_at: '2026-12-04T12:00:00+00:00', duration_min: 90,
-       seats: 10, kind: 'paid', price: '400.00', place_id: null, organizer_id: 987654,
+       seats: 10, kind: 'paid', price: '400.00', place_id: null, organizer_id: 987654, occupancy: 'event',
        organizer_first_name: 'Работник', organizer_last_name: 'Клуба' }] }],
   ['78-withdraw', 'withdraw', null, 'Сколько вывести, ฿', 'Мастер',
    'Вывод денег мастером (шаг 25, Cafe13KPG#1077): остаток счёта, поле суммы и список своих запросов. ⚠ Снимок ЖИВОГО режима ' +
