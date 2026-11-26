@@ -32,10 +32,23 @@ function teaMineBlock() {
     '<button type="button" class="btn quiet" data-go="teaApply">' + esc(slovo('home.tea.open')) + '</button></div></div>';
 }
 
+// остаток бизнеса строкой (шаг 20, рецепт 20/ostatok.md): в блоке партнёра на «Клубе» и в карточке дела (фича 10, B6).
+// Только если дело есть в BW.dirs: у куратора прочерка нет — строки нет
+function bizWallet(biz) {
+  var d = (BW.dirs || []).filter(function (x) { return x.id === biz; })[0];
+  if (!d) return '';
+  return walletRow('На счёте', d.wallet, { 'null': 'доли ещё не назначены', wait: 'доля будет зачислена по закрытию месяца',
+      zero: 'по закрытым месяцам зачислять было нечего' }) +
+    (d.wallet === undefined ? '<span class="small">Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».</span>' : '');
+}
+
 var SCREENS = {
 
   home: function () {
     var next = LIVE ? null : DATA.upcoming[0];
+    // фича 10 (рецепт moi-biznesy/home.md): у куратора двух дел и больше строки бара уезжают из «Работы» в карточку дела;
+    // при одном деле «Клуб» прежний, ни одного нового нажатия
+    var many = manyBiz(), barHere = DATA.barSide && !many;
     return (FLASH ? flash() : '') +
       // Cafe13KPG#1096 (слово владельца 25.11.2026: «мы пока отменили членство и это устаревшее штука»): плашки
       // членства — вид, «Активно», срок — на «Клубе» НЕТ ни у кого. Снят только показ: данные /me и ручки не тронуты.
@@ -75,22 +88,19 @@ var SCREENS = {
         ('<button type="button" class="listitem" data-go="bizMoney"><span class="grow"><b>Деньги бизнеса</b>' +
           '<span class="small">Чистая, ваша доля и доля клуба — за месяц</span></span>' + svg(ICON.chev, 'chev') + '</button>'),
         // остаток — СТРОКОЙ в карточке своего бизнеса (слово владельца «в карточке бизнеса»); договор — 20/ostatok.md
-        function (biz) {
-          var d = (BW.dirs || []).filter(function (x) { return x.id === biz; })[0];
-          if (!d) return '';
-          return walletRow('На счёте', d.wallet, { 'null': 'доли ещё не назначены', wait: 'доля будет зачислена по закрытию месяца',
-              zero: 'по закрытым месяцам зачислять было нечего' }) +
-            (d.wallet === undefined ? '<span class="small">Остаток сервер пока не отдаёт — у ручки нет поля. Прочерк значит «не спросили», а не «ноль».</span>' : '');
-        }) +
+        bizWallet) +
       rolePanel() +
 
       (LIVE ? myRoles() +
+        // фича 10: «Мои бизнесы» — на месте «Работы», перед ней; строка дела — выбор приёмом bizPick и вход в myBiz
+        (many ? '<div class="group"><span class="label">Мои бизнесы</span>' + myBizList() + '</div>' : '') +
         // Одна группа «Работа»: бар и «Заявки на членство» (кадр E42g, Cafe13KPG#428) —
         // при барной роли строка главы клуба встаёт в ту же группу, а не во вторую «Работу».
         // «Люди» отсюда уехали во вкладку «Управление» (E46, Cafe13KPG#413): рабочее
         // не живёт внутри клиентского; в E42g они стояли здесь — кадр старше решения.
-        (DATA.barSide || mayRequests() && WIRED.memberRequests ? '<div class="group"><span class="label">Работа</span>' +
-          (DATA.barSide ? '<button type="button" class="listitem accent" data-go="barQueue">' +
+        // При двух делах и больше в ней остаются только «Заявки на членство»: это клубное, к делу не привязано
+        (barHere || mayRequests() && WIRED.memberRequests ? '<div class="group"><span class="label">Работа</span>' +
+          (barHere ? '<button type="button" class="listitem accent" data-go="barQueue">' +
             '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
             svg(ICON.chev, 'chev') + '</button>' +
           (mayCards() && !workerOnly() ? '<button type="button" class="listitem" data-go="barCards">' +
@@ -112,6 +122,26 @@ var SCREENS = {
         '<button type="button" class="btn quiet" data-go="events">Вся афиша</button></div>' +
         DATA.events.slice(0, 2).map(eventRow).join('') +
       '</div>');
+  },
+
+  /* фича 10 (рецепт moi-biznesy/myBiz.md): карточка дела — рабочие строки ЭТОГО дела. Дело выбрано до входа приёмом
+     bizPick: BAR и BAR_PICK — оно. Без выбора сюда не входят (go ведёт на «Клуб»); строки — прежние строки «Клуба» */
+  myBiz: function () {
+    if (!BAR || BAR.id !== BAR_PICK) return '';
+    var id = BAR.id;
+    return shiftBlock() +
+      '<div class="group"><span class="label clamp2">Бизнес «' + esc(BAR.title) + '»</span>' +
+        '<button type="button" class="listitem accent" data-go="barQueue">' +
+          '<span class="grow"><b>Заказы на баре</b><span class="small">Очередь: принять, готово, выдан</span></span>' +
+          svg(ICON.chev, 'chev') + '</button>' +
+        (mayCards() && !workerOnly() ? '<button type="button" class="listitem" data-go="barCards">' +
+          '<span class="grow"><b>Карточки меню</b><span class="small">Новые позиции и утверждение</span></span>' +
+          svg(ICON.chev, 'chev') + '</button>' : '') +
+        (grant('curator', id) || grant('admin') ? '<button type="button" class="listitem" data-go="barMoney">' +
+          '<span class="grow"><b>Доход и расход бара</b><span class="small">Выручка и затраты руками, с комментарием</span></span>' +
+          svg(ICON.chev, 'chev') + '</button>' : '') +
+        bizWallet(id) +
+      '</div>';
   },
 
   guest: function () {

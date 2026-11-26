@@ -352,6 +352,8 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               calendar: 1,
               // шаг 42: «провести церемонию» — дверь на «Клубе» и в карточке мастера, выбор времени — календарь выше
               teaHold: 1,
+              // фича 10 (Cafe13KPG#1107, рецепт moi-biznesy/myBiz.md): карточка дела — на /directions и ручках бара, новых нет
+              myBiz: 1,
               // фича 4 (Cafe13KPG#1009, рецепт odobrenie/; api #176 fc474be, миграция 040): очередь одобрения ивентов
               eventApproval: 1,
               // шаги 27/29/30: счёт роли (форма — проект в Cafe13KPG#557, миграция 037)

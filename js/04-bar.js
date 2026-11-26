@@ -42,17 +42,53 @@ function loadBiz() {
     var all = r.status === 200 ? dirsOf(r.data) : undefined;
     if (all) { KLUB_BIZ.list = all.filter(function (x) { return x.is_active; }); KLUB_BIZ.fail = ''; }
     else { KLUB_BIZ.list = null; KLUB_BIZ.fail = r.status === 200 ? failText(r) : denyText(r); }
-    if (current === 'guest') render();
+    // фича 10: тот же список рисует группа «Мои бизнесы» на «Клубе» и строки дел вместо плашки меню
+    if (current === 'guest' || current === 'home' || current === 'bar') render();
   });
 }
-function bizPick(id) {
+/* фича 10 (рецепт moi-biznesy/sostav.md, «Граница одного и двух»): «свои дела» — активные направления, на которые у
+   человека есть грант bar или curator. Пока список не пришёл, их считают по грантам. Работник (worker) сюда не входит (Р2) */
+function myDirs() {
+  if (KLUB_BIZ.list === null) return null;
+  return KLUB_BIZ.list.filter(function (x) { return grant('bar', x.id) || grant('curator', x.id); });
+}
+function myGrantDirs() {
+  var ids = [];
+  (DATA.grants || []).forEach(function (g) {
+    if ((g.role === 'bar' || g.role === 'curator') && typeof g.dir === 'number' && ids.indexOf(g.dir) < 0) ids.push(g.dir);
+  });
+  return ids;
+}
+function manyBiz() {
+  if (!LIVE) return false;
+  var d = myDirs();
+  return (d ? d.length : myGrantDirs().length) >= 2;
+}
+// строки дел, а пока список не пришёл — загрузка (H3) или отказ словами сервера с «Повторить» (H4), как на «Услугах»
+function myBizList() {
+  if (myDirs()) return myBizRows();
+  return KLUB_BIZ.fail ? '<div class="card strong"><h2>Бизнесы не загрузились</h2><p class="verbatim">' + esc(KLUB_BIZ.fail) + '</p>' +
+      '<button type="button" class="btn" data-action="klub-biz-retry">Повторить</button></div>'
+    : '<div class="card quiet"><span class="small">Загружаем бизнесы…</span></div>';
+}
+// строка дела (H2 рецепта home.md): название — слово сервера, метка только «закрыт», ведёт в карточку дела myBiz
+function myBizRows() {
+  return (myDirs() || []).map(function (b) {
+    return '<button type="button" class="listitem" data-action="my-biz:' + b.id + '">' +
+      '<span class="grow"><b class="clamp2">' + esc(b.title) + '</b></span>' +
+      (b.is_open ? '' : '<span class="pill">закрыт</span>') + svg(ICON.chev, 'chev') + '</button>';
+  }).join('');
+}
+/* Выбор дела — ОДИН приём на «Услугах» (меню бара) и на «Клубе» (карточка дела, фича 10): второго состояния выбора нет.
+   to — экран после выбора; без него — меню бара, как с шага 19 */
+function bizPick(id, to) {
   var x = (KLUB_BIZ.list || []).filter(function (b) { return b.id === id; })[0];
   if (!x) return;
   // корзина — позиции ОДНОГО бизнеса: при смене выбора она не переезжает в чужое меню
   if (BAR_PICK !== id) { CART = {}; MENU_STATE = ''; DATA.bar.menu = []; DATA.bar.mine = null; MINE_NONE = false; }
   BAR_PICK = id;
   BAR = { id: x.id, open: x.is_open, title: x.title };
-  go('bar');
+  go(to || 'bar');
 }
 
 var MENU_STATE = '';       // '' — не грузили, 'loading', 'ok', иначе текст отказа
@@ -136,6 +172,8 @@ var WHO = 0;
    перечитанная смена потерялась бы), — или если BAR пуст: done('') обещает
    вызывающему непустой BAR (смена читает BAR.open). */
 var BAR_SEQ = 0, BAR_SEEN = 0, BAR_OK = 0;
+// отказ выбирать (ни одного дела или два без выбора), а не сбой: повтор его не меняет — «Повторить» под ним нет (фича 10)
+var NOBIZ = 'Не удалось определить ваш бизнес.';
 function loadBar(done) {
   var who = WHO, seq = ++BAR_SEQ;
   api('GET', '/directions').then(function (r) {
@@ -144,7 +182,7 @@ function loadBar(done) {
     if (b) { if (seq > BAR_OK || !BAR) { BAR = b; BAR_OK = Math.max(BAR_OK, seq); } }
     else if (seq > BAR_SEEN) BAR = null;
     BAR_SEEN = Math.max(BAR_SEEN, seq);
-    done(b ? '' : b === null ? 'Не удалось определить ваш бизнес.' : failText(r));
+    done(b ? '' : b === null ? NOBIZ : failText(r));
   });
 }
 
@@ -154,6 +192,8 @@ function loadMenu() {
     if (err) {
       DATA.bar.menu = [];
       MENU_STATE = err;
+      // фича 10: у куратора двух дел вместо плашки — строки его дел; им нужен список /directions с названиями
+      if (err === NOBIZ && manyBiz() && KLUB_BIZ.list === null) loadBiz();
       if (current === 'bar' || current === 'drink' || current === 'barRecipe') render();
       return;
     }
@@ -289,6 +329,8 @@ function shiftAct(open) {
                       : failText(r) };
       }
       haptic(!err && BAR.open === open ? 'ok' : 'warn');
+      // фича 10: смену открывают и в карточке дела (myBiz) — loadQueue рисует только очередь, карточка ждала бы чужого render
+      if (current !== 'barQueue') render();
       loadQueue();
     });
   });
