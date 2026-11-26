@@ -1,6 +1,6 @@
 {
  "bar-day": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/day?direction_id=N",
   "shape": {
    "by_state": [
@@ -56,7 +56,7 @@
   "status": 200
  },
  "bar-expense": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/expenses",
   "shape": {
    "amount": null,
@@ -70,7 +70,7 @@
   "status": 201
  },
  "bar-income": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/income",
   "shape": {
    "amount": null,
@@ -84,7 +84,7 @@
   "status": 201
  },
  "booking-403-door": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bookings",
   "shape": {
    "code": null,
@@ -93,7 +93,7 @@
   "status": 403
  },
  "booking-409-no-money-nonmember": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bookings",
   "shape": {
    "code": null,
@@ -102,7 +102,7 @@
   "status": 409
  },
  "booking-cancel": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bookings/N/cancel",
   "shape": {
    "id": null,
@@ -113,7 +113,7 @@
   "status": 200
  },
  "booking-cancel-denied-staff": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bookings/N/cancel",
   "shape": {
    "detail": null
@@ -121,7 +121,7 @@
   "status": 403
  },
  "booking-cancel-refund": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bookings/N/cancel",
   "shape": {
    "id": null,
@@ -132,7 +132,7 @@
   "status": 200
  },
  "booking-create": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bookings",
   "shape": {
    "amount_due": null,
@@ -144,7 +144,7 @@
   "status": 201
  },
  "booking-create-paid": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bookings",
   "shape": {
    "amount_due": null,
@@ -156,7 +156,7 @@
   "status": 201
  },
  "bookings-409-own": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bookings",
   "shape": {
    "detail": null
@@ -164,7 +164,7 @@
   "status": 409
  },
  "directions-curator": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /directions",
   "shape": [
    {
@@ -185,7 +185,7 @@
   "status": 200
  },
  "directions-curator2": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /directions",
   "shape": [
    {
@@ -206,7 +206,7 @@
   "status": 200
  },
  "directions-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /directions",
   "shape": [
    {
@@ -219,7 +219,7 @@
   "status": 200
  },
  "directions-ops-director": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /directions",
   "shape": [
    {
@@ -240,7 +240,7 @@
   "status": 200
  },
  "directions-workers": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /directions/N/workers",
   "shape": {
    "direction_id": null,
@@ -261,7 +261,7 @@
   "status": 200
  },
  "directions-workers-404": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /directions/N/workers",
   "shape": {
    "detail": null
@@ -269,7 +269,7 @@
   "status": 404
  },
  "directions-workers-assign": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /directions/N/workers",
   "shape": {
    "elsewhere": null,
@@ -285,7 +285,7 @@
   "status": 201
  },
  "directions-workers-assign-404-person": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /directions/N/workers",
   "shape": {
    "detail": null
@@ -293,7 +293,7 @@
   "status": 404
  },
  "directions-workers-assign-409-again": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /directions/N/workers",
   "shape": {
    "detail": null
@@ -301,7 +301,7 @@
   "status": 409
  },
  "directions-workers-assign-409-unpaid": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /directions/N/workers",
   "shape": {
    "detail": null
@@ -309,7 +309,7 @@
   "status": 409
  },
  "directions-workers-revoke": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /directions/N/workers/N/revoke",
   "shape": {
    "direction_id": null,
@@ -319,7 +319,7 @@
   "status": 200
  },
  "directions-workers-revoke-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /directions/N/workers/N/revoke",
   "shape": {
    "detail": null
@@ -327,13 +327,14 @@
   "status": 409
  },
  "event-approval-create": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "ask_donation": null,
    "id": null,
    "kind": null,
    "occupancy": null,
+   "photos": [],
    "place_id": null,
    "price": null,
    "seats": null,
@@ -344,13 +345,14 @@
   "status": 201
  },
  "event-approval-create-2": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "ask_donation": null,
    "id": null,
    "kind": null,
    "occupancy": null,
+   "photos": [],
    "place_id": null,
    "price": null,
    "seats": null,
@@ -361,7 +363,7 @@
   "status": 201
  },
  "event-approve": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/approve",
   "shape": {
    "approval": null,
@@ -374,7 +376,7 @@
   "status": 200
  },
  "event-approve-403": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/approve",
   "shape": {
    "detail": null
@@ -382,7 +384,7 @@
   "status": 403
  },
  "event-approve-again-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/approve",
   "shape": {
    "detail": null
@@ -390,7 +392,7 @@
   "status": 409
  },
  "event-approve-rejected-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/approve",
   "shape": {
    "detail": null
@@ -398,7 +400,7 @@
   "status": 409
  },
  "event-bookings-denied": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/N/bookings",
   "shape": {
    "detail": null
@@ -406,7 +408,7 @@
   "status": 403
  },
  "event-bookings-organizer": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/N/bookings",
   "shape": {
    "bookings": [
@@ -430,7 +432,7 @@
   "status": 200
  },
  "event-bookings-worker": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/N/bookings",
   "shape": {
    "bookings": [
@@ -454,7 +456,7 @@
   "status": 200
  },
  "event-cancel": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/cancel",
   "shape": {
    "bookings_cancelled": null,
@@ -465,13 +467,14 @@
   "status": 200
  },
  "event-create": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "ask_donation": null,
    "id": null,
    "kind": null,
    "occupancy": null,
+   "photos": [],
    "place_id": null,
    "price": null,
    "seats": null,
@@ -482,7 +485,7 @@
   "status": 201
  },
  "event-create-422": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "detail": [
@@ -505,13 +508,14 @@
   "status": 422
  },
  "event-create-by-level": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "ask_donation": null,
    "id": null,
    "kind": null,
    "occupancy": null,
+   "photos": [],
    "place_id": null,
    "price": null,
    "seats": null,
@@ -522,7 +526,7 @@
   "status": 201
  },
  "event-create-denied": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "detail": null
@@ -530,13 +534,14 @@
   "status": 403
  },
  "event-create-in-place": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "ask_donation": null,
    "id": null,
    "kind": null,
    "occupancy": null,
+   "photos": [],
    "place_id": null,
    "place_name": null,
    "price": null,
@@ -548,7 +553,7 @@
   "status": 201
  },
  "event-distribute": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/distribute",
   "shape": {
    "art_amount": null,
@@ -572,7 +577,7 @@
   "status": 201
  },
  "event-distribute-again-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/distribute",
   "shape": {
    "detail": null
@@ -580,7 +585,7 @@
   "status": 409
  },
  "event-distribute-denied-organizer": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/distribute",
   "shape": {
    "detail": null
@@ -588,7 +593,7 @@
   "status": 403
  },
  "event-donate": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/donate",
   "shape": {
    "amount": null,
@@ -599,7 +604,7 @@
   "status": 201
  },
  "event-donate-again-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/donate",
   "shape": {
    "detail": null
@@ -607,7 +612,7 @@
   "status": 409
  },
  "event-edit-200": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/edit",
   "shape": {
    "about": null,
@@ -615,6 +620,7 @@
    "duration_min": null,
    "id": null,
    "kind": null,
+   "photos": [],
    "place_id": null,
    "price": null,
    "seats": null,
@@ -625,7 +631,7 @@
   "status": 200
  },
  "event-edit-200-master": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/edit",
   "shape": {
    "about": null,
@@ -633,6 +639,7 @@
    "duration_min": null,
    "id": null,
    "kind": null,
+   "photos": [],
    "place_id": null,
    "price": null,
    "seats": null,
@@ -643,7 +650,7 @@
   "status": 200
  },
  "event-edit-403-not-organizer": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/edit",
   "shape": {
    "detail": null
@@ -651,7 +658,7 @@
   "status": 403
  },
  "event-edit-409-price": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/edit",
   "shape": {
    "detail": null
@@ -659,7 +666,7 @@
   "status": 409
  },
  "event-edit-409-seats": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/edit",
   "shape": {
    "detail": null
@@ -667,7 +674,7 @@
   "status": 409
  },
  "event-edit-422-fixed": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/edit",
   "shape": {
    "detail": null
@@ -675,7 +682,7 @@
   "status": 422
  },
  "event-money-after": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/N/money",
   "shape": {
    "ask_donation": null,
@@ -724,7 +731,7 @@
   "status": 200
  },
  "event-money-art-director": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/N/money",
   "shape": {
    "ask_donation": null,
@@ -762,7 +769,7 @@
   "status": 200
  },
  "event-money-denied-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/N/money",
   "shape": {
    "detail": null
@@ -770,7 +777,7 @@
   "status": 403
  },
  "event-money-organizer": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/N/money",
   "shape": {
    "ask_donation": null,
@@ -808,7 +815,7 @@
   "status": 200
  },
  "event-place-busy-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "detail": null
@@ -816,7 +823,7 @@
   "status": 409
  },
  "event-reject": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/reject",
   "shape": {
    "approval": null,
@@ -829,7 +836,7 @@
   "status": 200
  },
  "event-reject-422-no-note": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/reject",
   "shape": {
    "detail": null
@@ -837,7 +844,7 @@
   "status": 422
  },
  "events-403-master": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events",
   "shape": {
    "detail": null
@@ -845,7 +852,7 @@
   "status": 403
  },
  "events-afisha": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events",
   "shape": [
    {
@@ -869,6 +876,7 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "photos": [],
     "place_id": null,
     "place_name": null,
     "price": null,
@@ -883,7 +891,7 @@
   "status": 200
  },
  "events-afisha-booked": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events",
   "shape": [
    {
@@ -907,6 +915,7 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "photos": [],
     "place_id": null,
     "place_name": null,
     "price": null,
@@ -921,7 +930,7 @@
   "status": 200
  },
  "events-afisha-paid": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events",
   "shape": [
    {
@@ -945,6 +954,7 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "photos": [],
     "place_id": null,
     "place_name": null,
     "price": null,
@@ -959,7 +969,7 @@
   "status": 200
  },
  "events-afisha-with-place": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events",
   "shape": [
    {
@@ -983,6 +993,7 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "photos": [],
     "place_id": null,
     "place_name": null,
     "price": null,
@@ -997,7 +1008,7 @@
   "status": 200
  },
  "events-hide": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/hide",
   "shape": {
    "id": null,
@@ -1006,7 +1017,7 @@
   "status": 200
  },
  "events-history-member": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/history",
   "shape": [
    {
@@ -1030,6 +1041,7 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "photos": [],
     "place_id": null,
     "place_name": null,
     "price": null,
@@ -1044,7 +1056,7 @@
   "status": 200
  },
  "events-history-member-may-thank": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/history",
   "shape": [
    {
@@ -1068,6 +1080,7 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "photos": [],
     "place_id": null,
     "place_name": null,
     "price": null,
@@ -1082,7 +1095,7 @@
   "status": 200
  },
  "events-history-organizer": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/history",
   "shape": [
    {
@@ -1106,6 +1119,7 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "photos": [],
     "place_id": null,
     "place_name": null,
     "price": null,
@@ -1120,7 +1134,7 @@
   "status": 200
  },
  "events-history-staff": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/history",
   "shape": [
    {
@@ -1144,6 +1158,7 @@
     "organizer_first_name": null,
     "organizer_id": null,
     "organizer_last_name": null,
+    "photos": [],
     "place_id": null,
     "place_name": null,
     "price": null,
@@ -1158,7 +1173,7 @@
   "status": 200
  },
  "events-pending-approval": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/pending-approval",
   "shape": [
    {
@@ -1179,7 +1194,7 @@
   "status": 200
  },
  "events-pending-approval-403": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/pending-approval",
   "shape": {
    "detail": null
@@ -1187,7 +1202,7 @@
   "status": 403
  },
  "events-show": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /events/N/show",
   "shape": {
    "id": null,
@@ -1196,7 +1211,7 @@
   "status": 200
  },
  "events-undistributed-art-director": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/undistributed",
   "shape": [
    {
@@ -1240,7 +1255,7 @@
   "status": 200
  },
  "events-undistributed-denied-organizer": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/undistributed",
   "shape": {
    "detail": null
@@ -1248,7 +1263,7 @@
   "status": 403
  },
  "events-undistributed-with-distributed": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /events/undistributed?with_distributed=true",
   "shape": [
    {
@@ -1292,7 +1307,7 @@
   "status": 200
  },
  "join-decide-rejected": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /join/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -1302,7 +1317,7 @@
   "status": 200
  },
  "join-info-mine": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /join",
   "shape": {
    "about_token": null,
@@ -1328,7 +1343,7 @@
   "status": 200
  },
  "join-info-none": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /join",
   "shape": {
    "about_token": null,
@@ -1346,7 +1361,7 @@
   "status": 200
  },
  "join-request-create": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /join/request",
   "shape": {
    "created_at": null,
@@ -1356,7 +1371,7 @@
   "status": 201
  },
  "join-request-money-410": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /join/request",
   "shape": {
    "detail": null
@@ -1364,7 +1379,7 @@
   "status": 410
  },
  "join-request-pending-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /join/request",
   "shape": {
    "detail": null
@@ -1372,7 +1387,7 @@
   "status": 409
  },
  "join-requests-denied": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /join/requests",
   "shape": {
    "detail": null
@@ -1380,7 +1395,7 @@
   "status": 403
  },
  "join-requests-head": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /join/requests",
   "shape": {
    "pending": null,
@@ -1409,7 +1424,7 @@
   "status": 200
  },
  "master-decide-400-no-note": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/requests/N/decide",
   "shape": {
    "detail": null
@@ -1417,7 +1432,7 @@
   "status": 400
  },
  "master-decide-409-decided": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/requests/N/decide",
   "shape": {
    "detail": null
@@ -1425,7 +1440,7 @@
   "status": 409
  },
  "master-decide-409-legacy": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/requests/N/decide",
   "shape": {
    "detail": null
@@ -1433,7 +1448,7 @@
   "status": 409
  },
  "master-decide-409-own": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/requests/N/decide",
   "shape": {
    "detail": null
@@ -1441,7 +1456,7 @@
   "status": 409
  },
  "master-decide-approved": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -1454,7 +1469,7 @@
   "status": 200
  },
  "master-decide-rejected": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -1467,7 +1482,7 @@
   "status": 200
  },
  "master-price": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/price?hours=N",
   "shape": {
    "amount": null,
@@ -1479,7 +1494,7 @@
   "status": 200
  },
  "master-price-422": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/price?duration_min=N",
   "shape": {
    "detail": null
@@ -1487,7 +1502,7 @@
   "status": 422
  },
  "master-renew-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/requests/N/periods",
   "shape": {
    "detail": null
@@ -1495,7 +1510,7 @@
   "status": 409
  },
  "master-request-201": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "about": null,
@@ -1512,6 +1527,7 @@
    "occupancy": null,
    "paid_till": null,
    "paid_until": null,
+   "photos": [],
    "place_id": null,
    "place_name": null,
    "price": null,
@@ -1527,7 +1543,7 @@
   "status": 201
  },
  "master-request-201-max": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "about": null,
@@ -1544,6 +1560,7 @@
    "occupancy": null,
    "paid_till": null,
    "paid_until": null,
+   "photos": [],
    "place_id": null,
    "place_name": null,
    "price": null,
@@ -1559,7 +1576,7 @@
   "status": 201
  },
  "master-request-201-no-membership": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "about": null,
@@ -1576,6 +1593,7 @@
    "occupancy": null,
    "paid_till": null,
    "paid_until": null,
+   "photos": [],
    "place_id": null,
    "place_name": null,
    "price": null,
@@ -1591,7 +1609,7 @@
   "status": 201
  },
  "master-request-201-over-pending": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "about": null,
@@ -1608,6 +1626,7 @@
    "occupancy": null,
    "paid_till": null,
    "paid_until": null,
+   "photos": [],
    "place_id": null,
    "place_name": null,
    "price": null,
@@ -1623,7 +1642,7 @@
   "status": 201
  },
  "master-request-201-second": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "about": null,
@@ -1640,6 +1659,7 @@
    "occupancy": null,
    "paid_till": null,
    "paid_until": null,
+   "photos": [],
    "place_id": null,
    "place_name": null,
    "price": null,
@@ -1655,7 +1675,7 @@
   "status": 201
  },
  "master-request-201-tea": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "about": null,
@@ -1672,6 +1692,7 @@
    "occupancy": null,
    "paid_till": null,
    "paid_until": null,
+   "photos": [],
    "place_id": null,
    "place_name": null,
    "price": null,
@@ -1687,7 +1708,7 @@
   "status": 201
  },
  "master-request-403-door": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "code": null,
@@ -1696,7 +1717,7 @@
   "status": 403
  },
  "master-request-404-no-place": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "detail": null
@@ -1704,7 +1725,7 @@
   "status": 404
  },
  "master-request-409-no-money": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "code": null,
@@ -1713,7 +1734,7 @@
   "status": 409
  },
  "master-request-409-no-money-no-membership": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "code": null,
@@ -1722,7 +1743,7 @@
   "status": 409
  },
  "master-request-409-past": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "detail": null
@@ -1730,7 +1751,7 @@
   "status": 409
  },
  "master-request-409-place-hidden": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "detail": null
@@ -1738,7 +1759,7 @@
   "status": 409
  },
  "master-request-422-step": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/request",
   "shape": {
    "detail": [
@@ -1756,7 +1777,7 @@
   "status": 422
  },
  "master-requests-403": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/requests",
   "shape": {
    "detail": null
@@ -1764,7 +1785,7 @@
   "status": 403
  },
  "master-requests-mine-approved": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/requests/mine",
   "shape": {
    "requests": [
@@ -1783,6 +1804,7 @@
      "occupancy": null,
      "paid_till": null,
      "paid_until": null,
+     "photos": [],
      "place_id": null,
      "place_name": null,
      "price": null,
@@ -1800,7 +1822,7 @@
   "status": 200
  },
  "master-requests-mine-empty": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/requests/mine",
   "shape": {
    "requests": [
@@ -1819,6 +1841,7 @@
      "occupancy": null,
      "paid_till": null,
      "paid_until": null,
+     "photos": [],
      "place_id": null,
      "place_name": null,
      "price": null,
@@ -1836,7 +1859,7 @@
   "status": 200
  },
  "master-requests-mine-pending": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/requests/mine",
   "shape": {
    "requests": [
@@ -1855,6 +1878,7 @@
      "occupancy": null,
      "paid_till": null,
      "paid_until": null,
+     "photos": [],
      "place_id": null,
      "place_name": null,
      "price": null,
@@ -1872,7 +1896,7 @@
   "status": 200
  },
  "master-requests-mine-rejected": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/requests/mine",
   "shape": {
    "requests": [
@@ -1891,6 +1915,7 @@
      "occupancy": null,
      "paid_till": null,
      "paid_until": null,
+     "photos": [],
      "place_id": null,
      "place_name": null,
      "price": null,
@@ -1908,7 +1933,7 @@
   "status": 200
  },
  "master-requests-queue": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/requests",
   "shape": {
    "pending": null,
@@ -1930,6 +1955,7 @@
      "occupancy": null,
      "paid_till": null,
      "paid_until": null,
+     "photos": [],
      "place_id": null,
      "place_name": null,
      "price": null,
@@ -1948,7 +1974,7 @@
   "status": 200
  },
  "master-slot-busy": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/slot-busy?place_id=N&date=D",
   "shape": {
    "busy": [
@@ -1966,7 +1992,7 @@
   "status": 200
  },
  "master-slot-busy-422": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/slot-busy?place_id=N&date=D&start_local=N:N:N",
   "shape": {
    "detail": null
@@ -1974,7 +2000,7 @@
   "status": 422
  },
  "master-slot-busy-time": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/slot-busy?place_id=N&date=D&start_local=N:N&hours=N",
   "shape": {
    "busy": [
@@ -1999,7 +2025,7 @@
   "status": 200
  },
  "master-slots": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/slots",
   "shape": {
    "masters_without_slot": [],
@@ -2029,7 +2055,7 @@
   "status": 200
  },
  "master-slots-hide": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/slots/N/hide",
   "shape": {
    "request_id": null,
@@ -2039,7 +2065,7 @@
   "status": 200
  },
  "master-slots-show": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /master/slots/N/show",
   "shape": {
    "request_id": null,
@@ -2049,7 +2075,7 @@
   "status": 200
  },
  "me-curator": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /me",
   "shape": {
    "balance": null,
@@ -2080,7 +2106,7 @@
   "status": 200
  },
  "me-member": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /me",
   "shape": {
    "balance": null,
@@ -2118,7 +2144,7 @@
   "status": 200
  },
  "menu-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/menu?direction_id=N",
   "shape": [
    {
@@ -2137,7 +2163,7 @@
   "status": 200
  },
  "occupancy-day": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /places/occupancy?day=N-N-N",
   "shape": {
    "day_end": null,
@@ -2171,7 +2197,7 @@
   "status": 200
  },
  "order-create": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/orders",
   "shape": {
    "created_at": null,
@@ -2186,7 +2212,7 @@
   "status": 201
  },
  "order-state-curator": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/orders/N/state",
   "shape": {
    "id": null,
@@ -2198,7 +2224,7 @@
   "status": 200
  },
  "order-state-worker": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/orders/N/state",
   "shape": {
    "id": null,
@@ -2208,7 +2234,7 @@
   "status": 200
  },
  "orders-curator": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/orders?direction_id=N",
   "shape": [
    {
@@ -2240,7 +2266,7 @@
   "status": 200
  },
  "orders-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/orders?direction_id=N",
   "shape": [
    {
@@ -2272,7 +2298,7 @@
   "status": 200
  },
  "orders-worker": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/orders?direction_id=N",
   "shape": [
    {
@@ -2310,7 +2336,7 @@
   "status": 200
  },
  "partner-decide-400-no-note": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /partner/requests/N/decide",
   "shape": {
    "detail": null
@@ -2318,7 +2344,7 @@
   "status": 400
  },
  "partner-decide-409-own": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /partner/requests/N/decide",
   "shape": {
    "detail": null
@@ -2326,7 +2352,7 @@
   "status": 409
  },
  "partner-decide-approved": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /partner/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -2341,7 +2367,7 @@
   "status": 200
  },
  "partner-decide-rejected": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /partner/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -2354,7 +2380,7 @@
   "status": 200
  },
  "partner-directions": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /partner/directions",
   "shape": {
    "directions": [
@@ -2372,7 +2398,7 @@
   "status": 200
  },
  "partner-price": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /partner/price",
   "shape": {
    "amount": null
@@ -2380,7 +2406,7 @@
   "status": 200
  },
  "partner-renew-201": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /directions/N/periods",
   "shape": {
    "active": null,
@@ -2397,7 +2423,7 @@
   "status": 201
  },
  "partner-renew-403-not-partner": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /directions/N/periods",
   "shape": {
    "detail": null
@@ -2405,7 +2431,7 @@
   "status": 403
  },
  "partner-request-201": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /partner/request",
   "shape": {
    "about": null,
@@ -2424,7 +2450,7 @@
   "status": 201
  },
  "partner-request-409-pending": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /partner/request",
   "shape": {
    "detail": null
@@ -2432,7 +2458,7 @@
   "status": 409
  },
  "partner-requests-mine": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /partner/requests/mine",
   "shape": {
    "requests": [
@@ -2455,7 +2481,7 @@
   "status": 200
  },
  "partner-requests-ops-director": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /partner/requests",
   "shape": {
    "pending": null,
@@ -2483,7 +2509,7 @@
   "status": 200
  },
  "pass-member": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /pass",
   "shape": {
    "first_name": null,
@@ -2497,7 +2523,7 @@
   "status": 200
  },
  "people-head": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /people",
   "shape": {
    "count": null,
@@ -2531,7 +2557,7 @@
   "status": 200
  },
  "places": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /places",
   "shape": [
    {
@@ -2544,7 +2570,7 @@
   "status": 200
  },
  "product-about-at-limit": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products",
   "shape": {
    "direction_id": null,
@@ -2559,7 +2585,7 @@
   "status": 201
  },
  "product-about-too-long": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products",
   "shape": {
    "detail": [
@@ -2577,7 +2603,7 @@
   "status": 422
  },
  "product-create": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products",
   "shape": {
    "direction_id": null,
@@ -2592,7 +2618,7 @@
   "status": 201
  },
  "product-edit": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "PATCH /bar/products/N",
   "shape": {
    "about": null,
@@ -2611,7 +2637,7 @@
   "status": 200
  },
  "product-fulltext-too-long": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products",
   "shape": {
    "detail": [
@@ -2629,7 +2655,7 @@
   "status": 422
  },
  "product-state-denied-worker": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products/N/state",
   "shape": {
    "detail": null
@@ -2637,7 +2663,7 @@
   "status": 403
  },
  "product-state-draft-denied-worker": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products/N/state",
   "shape": {
    "detail": null
@@ -2645,7 +2671,7 @@
   "status": 403
  },
  "product-state-draft-from-active": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products/N/state",
   "shape": {
    "detail": null
@@ -2653,7 +2679,7 @@
   "status": 409
  },
  "product-state-draft-no-note": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products/N/state",
   "shape": {
    "detail": null
@@ -2661,7 +2687,7 @@
   "status": 422
  },
  "product-state-returned": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products/N/state",
   "shape": {
    "decided_at": null,
@@ -2672,7 +2698,7 @@
   "status": 200
  },
  "product-state-review": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products/N/state",
   "shape": {
    "decided_at": null,
@@ -2683,7 +2709,7 @@
   "status": 200
  },
  "product-state-review-2": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /bar/products/N/state",
   "shape": {
    "decided_at": null,
@@ -2694,7 +2720,7 @@
   "status": 200
  },
  "products-list-bad-state": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products?direction_id=N&state=draft,nosuchstate",
   "shape": {
    "detail": null
@@ -2702,7 +2728,7 @@
   "status": 422
  },
  "products-list-curator": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products?direction_id=N&state=draft,review,active,hidden",
   "shape": [
    {
@@ -2730,7 +2756,7 @@
   "status": 200
  },
  "products-list-denied-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products?direction_id=N&state=draft,review,active,hidden",
   "shape": {
    "detail": null
@@ -2738,7 +2764,7 @@
   "status": 403
  },
  "products-list-state-too-long": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products?direction_id=N&state=draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft,draft",
   "shape": {
    "detail": [
@@ -2756,7 +2782,7 @@
   "status": 422
  },
  "products-list-worker": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products?direction_id=N&state=draft,review,active,hidden",
   "shape": [
    {
@@ -2784,7 +2810,7 @@
   "status": 200
  },
  "recipe-denied-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products/N/recipe?lang=th",
   "shape": {
    "detail": null
@@ -2792,7 +2818,7 @@
   "status": 403
  },
  "recipe-en-fallback": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products/N/recipe?lang=en",
   "shape": {
    "asked_lang": null,
@@ -2805,7 +2831,7 @@
   "status": 200
  },
  "recipe-net": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products/N/recipe?lang=th",
   "shape": {
    "detail": null
@@ -2813,7 +2839,7 @@
   "status": 404
  },
  "recipe-no-lang": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products/N/recipe",
   "shape": {
    "asked_lang": null,
@@ -2826,7 +2852,7 @@
   "status": 200
  },
  "recipe-th": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /bar/products/N/recipe?lang=th",
   "shape": {
    "asked_lang": null,
@@ -2839,7 +2865,7 @@
   "status": 200
  },
  "stats-art-empty-day": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/art?period=day&at=N-N-N",
   "shape": {
    "events": {
@@ -2865,7 +2891,7 @@
   "status": 200
  },
  "stats-art-month-2019-03": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/art?period=month&at=N-N-N",
   "shape": {
    "events": {
@@ -2898,7 +2924,7 @@
   "status": 200
  },
  "stats-club-empty-day": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/club?period=day&at=N-N-N",
   "shape": {
    "business": {
@@ -3014,7 +3040,7 @@
   "status": 200
  },
  "stats-club-month-2020-03": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/club?period=month&at=N-N-N",
   "shape": {
    "business": {
@@ -3134,7 +3160,7 @@
   "status": 200
  },
  "stats-club-month-now": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/club?period=month",
   "shape": {
    "business": {
@@ -3263,7 +3289,7 @@
   "status": 200
  },
  "stats-event-403": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/event/N",
   "shape": {
    "detail": null
@@ -3271,7 +3297,7 @@
   "status": 403
  },
  "stats-event-full": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/event/N",
   "shape": {
    "bookings": {
@@ -3298,7 +3324,7 @@
   "status": 200
  },
  "stats-event-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/event/N",
   "shape": {
    "bookings": {
@@ -3317,7 +3343,7 @@
   "status": 200
  },
  "stats-event-undistributed": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/event/N",
   "shape": {
    "bookings": {
@@ -3344,7 +3370,7 @@
   "status": 200
  },
  "stats-master": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/master?period=month&at=N-N-N",
   "shape": {
    "events": {
@@ -3381,7 +3407,7 @@
   "status": 200
  },
  "stats-master-empty": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/master?period=month&at=N-N-N",
   "shape": {
    "events": {
@@ -3410,7 +3436,7 @@
   "status": 200
  },
  "stats-me": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/me?period=month&at=N-N-N",
   "shape": {
    "events": {
@@ -3442,7 +3468,7 @@
   "status": 200
  },
  "stats-me-empty": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/me?period=month&at=N-N-N",
   "shape": {
    "events": {
@@ -3467,7 +3493,7 @@
   "status": 200
  },
  "stats-ops": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/ops?period=month&at=N-N-N",
   "shape": {
    "businesses": [
@@ -3498,7 +3524,7 @@
   "status": 200
  },
  "stats-ops-403": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/ops",
   "shape": {
    "detail": null
@@ -3506,7 +3532,7 @@
   "status": 403
  },
  "stats-ops-day": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/ops?period=day",
   "shape": {
    "businesses": [
@@ -3537,7 +3563,7 @@
   "status": 200
  },
  "stats-ops-month-closed": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/ops?period=month&at=N-N-N",
   "shape": {
    "businesses": [
@@ -3579,7 +3605,7 @@
   "status": 200
  },
  "stats-partner-403": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/partner?direction_id=N&period=month",
   "shape": {
    "detail": null
@@ -3587,7 +3613,7 @@
   "status": 403
  },
  "stats-partner-closed": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/partner?direction_id=N&period=month&at=N-N-N",
   "shape": {
    "business": {
@@ -3618,7 +3644,7 @@
   "status": 200
  },
  "stats-partner-day": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/partner?direction_id=N&period=day",
   "shape": {
    "business": {
@@ -3649,7 +3675,7 @@
   "status": 200
  },
  "stats-partner-open": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /stats/partner?direction_id=N&period=month&at=N-N-N",
   "shape": {
    "business": {
@@ -3680,7 +3706,7 @@
   "status": 200
  },
  "tea-card-decide": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /tea/cards/N/decide",
   "shape": {
    "about": null,
@@ -3698,7 +3724,7 @@
   "status": 200
  },
  "tea-card-mine-edit": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /tea/card/mine",
   "shape": {
    "card": {
@@ -3727,7 +3753,7 @@
   "status": 200
  },
  "tea-card-mine-none": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /tea/card/mine",
   "shape": {
    "card": null,
@@ -3738,7 +3764,7 @@
   "status": 200
  },
  "tea-card-mine-pending": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /tea/card/mine",
   "shape": {
    "card": {
@@ -3758,7 +3784,7 @@
   "status": 200
  },
  "tea-card-mine-rejected": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /tea/card/mine",
   "shape": {
    "card": {
@@ -3778,7 +3804,7 @@
   "status": 200
  },
  "tea-card-submit": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /tea/card",
   "shape": {
    "about": null,
@@ -3793,7 +3819,7 @@
   "status": 201
  },
  "tea-cards-queue": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /tea/cards",
   "shape": {
    "cards": [
@@ -3828,7 +3854,7 @@
   "status": 200
  },
  "tea-master-card": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /tea/masters/N",
   "shape": {
    "about": null,
@@ -3843,7 +3869,7 @@
   "status": 200
  },
  "tea-master-price-share": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /master/price?duration_min=N",
   "shape": {
    "amount": null,
@@ -3855,7 +3881,7 @@
   "status": 200
  },
  "tea-masters": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /tea/masters",
   "shape": [
    {
@@ -3872,13 +3898,13 @@
   "status": 200
  },
  "tea-masters-empty": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /tea/masters",
   "shape": [],
   "status": 200
  },
  "till-arrivals": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /till/arrivals",
   "shape": {
    "arrivals": [
@@ -3895,7 +3921,7 @@
   "status": 200
  },
  "till-arrive": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /till/arrive",
   "shape": {
    "created_at": null,
@@ -3904,7 +3930,7 @@
   "status": 201
  },
  "till-by-member-404": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /till/by-member/N",
   "shape": {
    "detail": null
@@ -3912,7 +3938,7 @@
   "status": 404
  },
  "till-by-member-denied-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /till/by-member/N",
   "shape": {
    "detail": null
@@ -3920,7 +3946,7 @@
   "status": 403
  },
  "till-by-member-nopass": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /till/by-member/N",
   "shape": {
    "balance": null,
@@ -3936,7 +3962,7 @@
   "status": 200
  },
  "till-by-pass": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /till/by-pass/XIII-N",
   "shape": {
    "balance": null,
@@ -3972,7 +3998,7 @@
   "status": 200
  },
  "till-by-pass-denied-guest": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /till/by-pass/XIII-N",
   "shape": {
    "detail": null
@@ -3980,7 +4006,7 @@
   "status": 403
  },
  "till-by-pass-no-bookings": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /till/by-pass/XIII-N",
   "shape": {
    "balance": null,
@@ -4007,7 +4033,7 @@
   "status": 200
  },
  "till-event": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /till",
   "shape": {
    "amount": null,
@@ -4022,7 +4048,7 @@
   "status": 201
  },
  "till-event-paid-by-account-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /till",
   "shape": {
    "detail": null
@@ -4030,7 +4056,7 @@
   "status": 409
  },
  "till-membership-410": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /till",
   "shape": {
    "detail": null
@@ -4038,7 +4064,7 @@
   "status": 410
  },
  "till-topup": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /till",
   "shape": {
    "amount": null,
@@ -4052,7 +4078,7 @@
   "status": 201
  },
  "till-topup-arrival": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /till",
   "shape": {
    "amount": null,
@@ -4067,7 +4093,7 @@
   "status": 201
  },
  "till-topup-arrival-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /till",
   "shape": {
    "detail": null
@@ -4075,7 +4101,7 @@
   "status": 409
  },
  "topup-decide-approved": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /topup/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -4086,7 +4112,7 @@
   "status": 200
  },
  "topup-decide-rejected": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /topup/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -4097,7 +4123,7 @@
   "status": 200
  },
  "topup-history-mine": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /topup/requests/mine",
   "shape": {
    "history": [
@@ -4119,7 +4145,7 @@
   "status": 200
  },
  "topup-request-create": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /topup/request",
   "shape": {
    "amount": null,
@@ -4131,7 +4157,7 @@
   "status": 201
  },
  "topup-request-pending-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /topup/request",
   "shape": {
    "detail": null
@@ -4139,7 +4165,7 @@
   "status": 409
  },
  "topup-request-under-min": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /topup/request",
   "shape": {
    "detail": null
@@ -4147,7 +4173,7 @@
   "status": 422
  },
  "topup-requests-denied": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /topup/requests",
   "shape": {
    "detail": null
@@ -4155,7 +4181,7 @@
   "status": 403
  },
  "topup-requests-holder": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /topup/requests",
   "shape": {
    "pending": null,
@@ -4183,7 +4209,7 @@
   "status": 200
  },
  "topup-requests-mine": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /topup/requests/mine",
   "shape": {
    "history": [
@@ -4218,7 +4244,7 @@
   "status": 200
  },
  "withdraw-accounts-ops": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/accounts",
   "shape": {
    "accounts": [
@@ -4239,7 +4265,7 @@
   "status": 200
  },
  "withdraw-accounts-partner": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/accounts",
   "shape": {
    "accounts": [
@@ -4260,7 +4286,7 @@
   "status": 200
  },
  "withdraw-accounts-partner-pending": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/accounts",
   "shape": {
    "accounts": [
@@ -4285,7 +4311,7 @@
   "status": 200
  },
  "withdraw-accounts-role": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/accounts",
   "shape": {
    "accounts": [
@@ -4306,7 +4332,7 @@
   "status": 200
  },
  "withdraw-cancel": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/requests/N/cancel",
   "shape": {
    "decided_at": null,
@@ -4317,7 +4343,7 @@
   "status": 200
  },
  "withdraw-decide-approved": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -4332,7 +4358,7 @@
   "status": 200
  },
  "withdraw-decide-business": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/requests/N/decide",
   "shape": {
    "decided_at": null,
@@ -4347,7 +4373,7 @@
   "status": 200
  },
  "withdraw-mine": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/requests/mine",
   "shape": {
    "balance": null,
@@ -4372,7 +4398,7 @@
   "status": 200
  },
  "withdraw-mine-club": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/requests/mine",
   "shape": {
    "balance": null,
@@ -4397,7 +4423,7 @@
   "status": 200
  },
  "withdraw-queue-admin": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/requests",
   "shape": {
    "pending": null,
@@ -4430,7 +4456,7 @@
   "status": 200
  },
  "withdraw-queue-admin-club": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/requests",
   "shape": {
    "pending": null,
@@ -4463,7 +4489,7 @@
   "status": 200
  },
  "withdraw-queue-denied-master": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "GET /withdraw/requests",
   "shape": {
    "detail": null
@@ -4471,7 +4497,7 @@
   "status": 403
  },
  "withdraw-request": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/request",
   "shape": {
    "account": null,
@@ -4487,7 +4513,7 @@
   "status": 201
  },
  "withdraw-request-403-club": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/request",
   "shape": {
    "detail": null
@@ -4495,7 +4521,7 @@
   "status": 403
  },
  "withdraw-request-403-door": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/request",
   "shape": {
    "code": null,
@@ -4504,7 +4530,7 @@
   "status": 403
  },
  "withdraw-request-business": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/request",
   "shape": {
    "account": null,
@@ -4520,7 +4546,7 @@
   "status": 201
  },
  "withdraw-request-cancelled-later": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/request",
   "shape": {
    "account": null,
@@ -4536,7 +4562,7 @@
   "status": 201
  },
  "withdraw-request-not-earned-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/request",
   "shape": {
    "detail": null
@@ -4544,7 +4570,7 @@
   "status": 409
  },
  "withdraw-request-ops": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/request",
   "shape": {
    "account": null,
@@ -4560,7 +4586,7 @@
   "status": 201
  },
  "withdraw-request-over-balance-409": {
-  "api_sha": "fb13e0f9f5863784f477981ca54c05ab9b5edc25",
+  "api_sha": "913eeefdab3695f4ee97572ad0c0e2cbc21ed9d6",
   "request": "POST /withdraw/request",
   "shape": {
    "detail": null
