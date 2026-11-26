@@ -9,11 +9,13 @@
 //   kvadrat — у кадра нет квадрата (aspect-ratio снят: «грузится» сдвигает карточку);
 //   oshibka — не загрузившийся кадр не прячется (битая картинка вместо пустого квадрата);
 //   frozen — F6 видят все, а не автор;  master — вид «два кадра» и у карточки мастера;
-//   vorota — загрузка включена в живом (FOTO_ON), хотя в бою ручек нет;  tri3 — «Добавить фото» при трёх;
+//   vorota — закрытый masterApply открыт в живом (карта FOTO_ON);  tri3 — «Добавить фото» при трёх;
 //   bolshe8 — файл больше 8 МБ уходит на сервер;  szhat — сжатие сервером молча;  zhdyot — подача при грузящемся кадре;
 //   pervym — «Сделать первым» ставит кадр в конец;  otkaz — отказ сервера переписан клиентом.
-//   mV (мутант ревьюера #486; ссылка на ревью — в теле PR) — гейт `LIVE && FOTO_ON` снят у fotoBody: правка несогласованного
+//   mV (мутант ревьюера #486; ссылка на ревью — в теле PR) — гейт `LIVE && fotoOn(form)` снят у fotoBody: правка несогласованного
 //   события в бою шлёт photo_ids, а боевой EventEdit — extra="forbid" (a6d4d4c events.py:92) → 422.
+//   chay — закрытый teaHold открыт в живом (снимки ушли бы на карточку ивента без просмотра);
+//   obshchij — карта FOTO_ON подменена общим флагом (все экраны — как eventNew): teaHold и masterApply открываются.
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path');
 const root = process.argv[2], mutant = process.argv[3] || '';
@@ -32,14 +34,16 @@ const MUT = {
   oshibka: ['js/22-ekrany-chay.js', "t.style.visibility = 'hidden';", ';'],
   frozen: ['js/09-afisha.js', "(isMyEvent(e) && e.approval === 'approved' ? '<span class=\"small\">' + esc(slovo('foto.frozen'))", "(e.approval === 'approved' ? '<span class=\"small\">' + esc(slovo('foto.frozen'))"],
   master: ['js/22-ekrany-chay.js', 'function teaAlbum(shots, edit, pair) {', 'function teaAlbum(shots, edit, pair) { pair = true;'],
-  vorota: ['js/09-afisha.js', 'var FOTO_ON = false;', 'var FOTO_ON = true;'],
+  vorota: ['js/09-afisha.js', 'teaHold: false, masterApply: false };', 'teaHold: false, masterApply: true };'],
   tri3: ['js/09-afisha.js', "(n < FOTO_MAX ? '<label", "(n <= FOTO_MAX ? '<label"],
   bolshe8: ['js/09-afisha.js', "if (file.size > FOTO_IN_MAX) { b.err = slovo('foto.tooBig'); fotoRedraw(form); return; }", ''],
   szhat: ['js/09-afisha.js', 'if (d.squeezed === true) f.squeezed = true;', ''],
   zhdyot: ['js/18-ekrany-mastera.js', "(fotoBusy('masterApply') && !MR.busy ? fotoWaitBtn()", "(false ? fotoWaitBtn()"],
   pervym: ['js/09-afisha.js', 'b.list.splice(b.list.indexOf(f), 1); b.list.unshift(f);', 'b.list.splice(b.list.indexOf(f), 1); b.list.push(f);'],
   otkaz: ['js/09-afisha.js', 'gone(); b.err = denyText(r); b.verb = true;', "gone(); b.err = 'Не получилось'; b.verb = true;"],
-  mV: ['js/09-afisha.js', 'function fotoBody(form, body) { if (LIVE && FOTO_ON && FOTO[form])', 'function fotoBody(form, body) { if (FOTO[form])'],
+  mV: ['js/09-afisha.js', 'function fotoBody(form, body) { if (LIVE && fotoOn(form) && FOTO[form])', 'function fotoBody(form, body) { if (FOTO[form])'],
+  chay: ['js/09-afisha.js', 'teaHold: false, masterApply: false };', 'teaHold: true, masterApply: false };'],
+  obshchij: ['js/09-afisha.js', 'function fotoOn(form) { return FOTO_ON[form] === true; }', 'function fotoOn(form) { return FOTO_ON.eventNew === true; }'],
 };
 if (mutant && !MUT[mutant] && mutant !== 'kvadrat') { console.error('нет такого мутанта: ' + mutant); process.exit(2); }
 let k;
@@ -119,10 +123,24 @@ ctx.__c = { id: 7, name: 'М', about: 'A', price: '600', mins: 90, status: 'appr
 [1, 2, 3].forEach((n, i) => { ctx.__c.shots = ['/s1.jpg', '/s2.jpg', '/s3.jpg'].slice(0, n);
   check('П0 карточка мастера, кадров ' + n + ' — побайтно как df86750', R('teaCardHtml(__c,{book:false})') === MASTER_DF86750[i] ? 'та же' : 'другая', 'та же'); });
 
-// ── ворота: в живом загрузки нет, пока сервер боя без ручек ──
+// ── ворота: в живом masterApply закрыт (арт-директор приложенного не видит; Cafe13KPG#1123) ──
 R("FOTO = {};");
 check('ворота: живой режим — блока «Фото» в форме нет', R("fotoBlock('masterApply', 'Добавить фото')") === '' ? 'нет' : 'есть', 'нет');
 check('ворота: живой режим — photo_ids в подачу не идёт', 'photo_ids' in R("fotoBody('masterApply', {})") ? 'идёт' : 'нет', 'нет');
+// ── разделение карты (Cafe13KPG#1123): в живом открыты eventNew и eventEdit, закрыты teaHold и masterApply — одним
+// замером на карте как в выкладке: блок «Фото» в форме, photo_ids в подаче, снятие черновика POST /photos/{id}/delete
+{
+  const dropped = []; const api0 = ctx.api; ctx.api = (m, u) => { dropped.push(m + ' ' + u); return new Promise(() => {}); };
+  const door = form => {
+    R("FOTO = {}"); const blok = R("fotoBlock('" + form + "', 'Добавить фото')") !== '';
+    R("fotoOf('" + form + "', null, [{ id: 5, url: '/x5.jpg' }])"); const ids = 'photo_ids' in R("fotoBody('" + form + "', {})");
+    dropped.length = 0; R("fotoDrop('" + form + "', 5)"); const drop = dropped.length > 0;
+    return form + ': ' + (blok && ids && drop ? 'открыт' : !blok && !ids && !drop ? 'закрыт' : 'вразнобой (блок ' + blok + ', ids ' + ids + ', снятие ' + drop + ')');
+  };
+  check('ворота-karta: живой — открыт там, где есть показ; закрыт там, где снимок уйдёт без просмотра',
+    ['eventNew', 'eventEdit', 'teaHold', 'masterApply'].map(door).join('; '), 'eventNew: открыт; eventEdit: открыт; teaHold: закрыт; masterApply: закрыт');
+  ctx.api = api0; R("FOTO = {}");
+}
 
 // ── форма (masterApply.md), витрина ──
 R("LIVE = false; FOTO = {}; current = 'нигде';");
@@ -154,7 +172,7 @@ check('foto-ne-foto: не картинка — P8', blk().includes('Это не 
 
 (async () => {
   // живой режим с включённой загрузкой — так, как станет после выкладки
-  R("LIVE = true; FOTO_ON = true; FOTO = {}; box = null;");
+  R("LIVE = true; FOTO_ON.masterApply = true; FOTO = {}; box = null;");
   box();
   const flush = () => new Promise(r => setImmediate(r));
   // P7 в живом: клиент судит 8 МБ до отправки — запроса нет вовсе (сервер судит тот же предел сам)
@@ -192,10 +210,11 @@ check('foto-ne-foto: не картинка — P8', blk().includes('Это не 
   R("FOTO = {};"); h = edit([], 'approved');
   check('foto-pravka-zamorozheny-pusto: «Фото» и F6, альбома и P4 нет',
     (h.includes('>Фото<') ? 'P1' : 'нет P1') + (h.includes(F6) ? ', F6' : '') + (h.includes('<div class="album') ? ', альбом' : '') + (h.includes('Добавить фото') ? ', P4' : ''), 'P1, F6');
-  // ── ворота правки (находка mV): в живом при FOTO_ON = false «Сохранить» несогласованного не шлёт photo_ids.
+  // ── ворота правки (находка mV): в живом при закрытом eventEdit «Сохранить» несогласованного не шлёт photo_ids.
   // Экран правки зовёт fotoOf('eventEdit') без fotoForm() — набор формы в живом есть всегда; судит только гейт fotoBody.
+  // В выкладке eventEdit открыт — здесь он закрыт в карте нарочно: судится сам гейт, а не значение карты.
   // свой ждущий согласования вечер ведущего с правом на события (grant curator) — экран правки открыт, «Сохранить» живо
-  R("LIVE = true; FOTO_ON = false; FOTO = {}; DATA.grants = [{ role: 'curator' }]; render = function () {};");
+  R("LIVE = true; FOTO_ON.eventEdit = false; FOTO = {}; DATA.grants = [{ role: 'curator' }]; render = function () {};");
   const sent = [];
   ctx.api = (m, u, body) => { sent.push({ m, u, body }); return new Promise(() => {}); };
   ctx.__e = ev(P(2), { approval: 'pending', organizer_id: 4242 });
@@ -203,8 +222,8 @@ check('foto-ne-foto: не картинка — P8', blk().includes('Это не 
   check('ворота-pravka: живой — экран правки своего ждущего открыт', /data-action="edt-save"/.test(R("SCREENS.eventEdit(__e.id)")) ? 'открыт' : 'отказ', 'открыт');
   R("EDT.busy = false; EDT.seats = '10'; EDT.about = ''; EDT.price = '0'; editSave();");
   const post = sent.find(c => c.m === 'POST' && /^\/events\/\d+\/edit$/.test(c.u));
-  check('ворота-pravka: живой, FOTO_ON = false — набор формы есть (гейт держит один fotoBody)', R("FOTO.eventEdit ? 'есть' : 'нет'"), 'есть');
-  check('ворота-pravka: живой, FOTO_ON = false — правка несогласованного: photo_ids не уходит',
+  check('ворота-pravka: живой, eventEdit закрыт — набор формы есть (гейт держит один fotoBody)', R("FOTO.eventEdit ? 'есть' : 'нет'"), 'есть');
+  check('ворота-pravka: живой, eventEdit закрыт — правка несогласованного: photo_ids не уходит',
     post ? ('photo_ids' in post.body ? 'уходит (бой: 422 extra=forbid)' : 'не уходит') : 'запроса правки нет', 'не уходит');
   const red = ok.filter(x => !x).length;
   console.log(red ? `КРАСНОЕ: ${red} из ${ok.length}` : `ЗЕЛЁНОЕ: ${ok.length} из ${ok.length}`);

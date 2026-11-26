@@ -906,12 +906,12 @@ function loadPartnerPrice() {
 }
 // «до ДД.ММ.ГГГГ» — день МОМЕНТА `paid_till` по часам клуба, без вычитания дня: «до» читается исключающе (рецепт R1)
 function prTill(iso) { var x = bkk(new Date(iso)).ymd.split('-'); return x[2] + '.' + x[1] + '.' + x[0]; }
-// блок «Свой бизнес в клубе» на «Клубе» (рецепт R1): у гостя и вне Telegram — пусто.
+// блок «Свой бизнес в клубе» на «Клубе» (рецепт R1): вне Telegram — пусто; гость видит его как член (фича 7, №49 «а», рецепт 13/home)
 // door — дверь «Работники» (шаг 14): разметку держит `home`, сюда она приходит готовой и встаёт в ПОСЛЕДНЮЮ карточку
 // согласованного бизнеса — одна на все бизнесы
 // wallet(biz) — строка остатка карточки (шаг 20): разметку держит `home`, как и дверь
 function partnerOffer(door, wallet) {
-  if (!LIVE || DATA.role === 'guest') return '';
+  if (!LIVE) return '';
   if (PR.mineState === '') loadMinePartner();
   if (PR.price === undefined) loadPartnerPrice();
   if (PR.mineState === 'loading' && !PR.mine) return '';
