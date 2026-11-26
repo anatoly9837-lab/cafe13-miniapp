@@ -178,7 +178,8 @@ const LIVE_ME = (roles) => ({
   membership: { level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true },
   memberships: [{ level: 'member', starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, lifelong: true }],
   membership_active: true, membership_request: null, balance: 3170,
-  roles: roles.map(r => ({ role: r, direction_id: null }))
+  // роль строкой — без направления; объектом { role, direction_id } — грант на дело (фича 10: myBiz)
+  roles: roles.map(r => typeof r === 'string' ? { role: r, direction_id: null } : r)
 });
 const LIVE_SHOTS = [
   // [имя, экран, довод, признак, группа, подпись, роли, { префикс ручки: тело ответа 200 }]
@@ -283,6 +284,21 @@ const LIVE_SHOTS = [
        balance: '1200.00', account: 'personal', book: 'ledger', role: null, direction_id: null, direction_title: null,
        ledger_id: null, payout_id: null, member_id: 5, first_name: 'Проба', last_name: 'Очереди', username: null,
        created_at: '2026-11-20T10:00:00+00:00', decided_at: null, decided_by: null, decision_note: null, self_decided: null }] } }],
+  /* фича 10 (Cafe13KPG#1107, рецепт `_docs/recept/ekran/moi-biznesy/myBiz.md`): карточка дела. Прямого входа у экрана НЕТ —
+     `go('myBiz')` без выбранного дела уводит на «Клуб» (js/21-navigaciya.js:562), а группа «Мои бизнесы» есть только в
+     живом режиме (`manyBiz`, js/04-bar.js:62). Поэтому вид снимается так, как входит человек: «Клуб» → строка дела
+     (девятое поле — щелчок), и съёмка проверяет, что открылся именно myBiz этого дела. */
+  ['80-my-biz', 'myBiz', null, 'Бизнес «Чайная у моря»', 'Бар · куратор',
+   'Карточка дела (фича 10, рецепт `_docs/recept/ekran/moi-biznesy/myBiz.md`): рабочие строки ОДНОГО выбранного дела — ' +
+   'заказы, карточки меню, доход и расход. Вход — строка дела в группе «Мои бизнесы» на «Клубе»; группа есть у куратора или ' +
+   'бара ДВУХ активных дел и больше, при одном деле строки стоят на «Клубе», как прежде. ⚠ Снимок ЖИВОГО режима на ' +
+   'фикстуре: куратор «Бара» (7) и «Чайной у моря» (9), снят вход в «Чайную». Признак — «Бизнес «Чайная у моря»»: ' +
+   'название выбранного дела словом сервера, то есть он держит и сам выбор, и то, что открылось не первое дело списка.',
+   [{ role: 'curator', direction_id: 7 }, { role: 'curator', direction_id: 9 }],
+   { '/directions': [{ id: 7, title: 'Бар', is_active: true, is_open: true },
+                     { id: 9, title: 'Чайная у моря', is_active: true, is_open: true }],
+     '/bar/orders': [] },
+   '#view [data-action="my-biz:9"]'],
 ];
 /* Страж формы живого съёма (координатор 24.11.2026: фикстура не должна стать ВТОРЫМ источником правды о сервере).
    Каждая фикстура обязана совпасть ключами хотя бы с одним снимком api той же ручки (`tools/api-keys.json`, ответ 200):
@@ -656,7 +672,7 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
       HapticFeedback: { notificationOccurred: function () {}, selectionChanged: function () {} },
       BackButton: { onClick: function () {}, offClick: function () {}, show: function () {}, hide: function () {} },
       MainButton: { setText: function () {}, show: function () {}, hide: function () {}, onClick: function () {}, offClick: function () {} } } };`;
-    for (const [name, screen, prm, marker, group, caption, roles, ручки] of LIVE_SHOTS) {
+    for (const [name, screen, prm, marker, group, caption, roles, ручки, щелчок] of LIVE_SHOTS) {
       const lctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'ru-RU' });
       await lctx.clock.setFixedTime(new Date(FIXED_NOW));
       await lctx.addInitScript(() => { try { localStorage.setItem('cafe13.consent', '0.1'); } catch (e) {} });
@@ -679,14 +695,20 @@ if (!/^ru_RU/.test(process.env.LC_ALL || process.env.LANG || '')) {
       await lp.goto('file:///app/index.html', { waitUntil: 'networkidle' });
       const живой = await lp.evaluate(() => typeof API_ON !== 'undefined' && API_ON === true && LIVE === true);
       if (!живой) bad.push(name + ': живой режим не включился (API_ON/LIVE ложны) — снимок был бы демо');
-      await lp.evaluate(([s, q]) => go(s, q), [screen, prm]);
+      if (щелчок) {
+        // вход щелчком с «Клуба»: экран без прямого входа (myBiz) — как у человека, и открыться обязан именно он
+        await lp.evaluate(() => go('home'));
+        try { await lp.click(щелчок, { timeout: 4000 }); } catch (e) { bad.push(name + ': на «Клубе» нечем войти — «' + щелчок + '» не нажимается'); }
+        const где = await lp.evaluate(() => current);
+        if (где !== screen) bad.push(name + ': щелчок открыл «' + где + '», а не «' + screen + '»');
+      } else await lp.evaluate(([s, q]) => go(s, q), [screen, prm]);
       try { await lp.waitForFunction((m) => document.getElementById('view').textContent.includes(m), marker, { timeout: 4000 }); } catch (e) {}
       await lp.evaluate(() => document.fonts.ready);
       const t = await text(lp);
       if (t.indexOf(marker) === -1) bad.push(name + ': признака «' + marker + '» на экране нет (взято: ' + t.slice(0, 60).replace(/\s+/g, ' ') + '…)');
       if (безФикстуры.length) console.log('  ' + name + ': ручки без фикстуры (ответ 404): ' + [...new Set(безФикстуры)].join(', '));
       await shot(name, lp);
-      разметка[name] = { экран: screen, довод: prm || null, роль: 'живой: ' + roles.join('+'), тема: 'светлая', классы: await классы(lp) };
+      разметка[name] = { экран: screen, довод: prm || null, роль: 'живой: ' + roles.map(r => typeof r === 'string' ? r : r.role + '@' + r.direction_id).join('+'), тема: 'светлая', классы: await классы(lp) };
       manifest.push({ file: name + '.png', group, caption, screen });
       await lctx.close();
     }
