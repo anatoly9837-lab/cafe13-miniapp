@@ -1113,6 +1113,7 @@ function afishaHome() {
    видит (fromMasterReq photos не читает, masterReqs/masterReq альбома не рисуют). Закрытый экран в живом: блока
    «Фото» в форме нет, `photo_ids` не уходит. Показ снимков на карточке от флага не зависит: нет `photos` в
    ответе — блока нет (F5). Вне Telegram (витрина, опись) блок виден везде и в сеть не ходит. */
+// экрана нет в карте — он закрыт: fotoOn ждёт строгое true, новая форма с загрузкой открывается только строкой здесь
 var FOTO_ON = { eventNew: true, eventEdit: true, teaHold: false, masterApply: false };
 function fotoOn(form) { return FOTO_ON[form] === true; }
 var FOTO_URL = { up: function () { return '/photos'; }, del: function (id) { return '/photos/' + id + '/delete'; } };
