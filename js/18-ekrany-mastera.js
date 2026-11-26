@@ -13,10 +13,12 @@ Object.assign(SCREENS, {
     var n = MR.pending;
     return (FLASH ? flash() : '') + '<div class="group"><span class="label">Слоты и мастера</span>' +
       entry('data-go="masterReqs"', 'Заявки в мастера', waitSub(n, 'Кто просится в мастера'), waitMark(n)) +
+      // шаг 42 (рецепт 42/masters.md): вторым — очередь карточек чайных мастеров; число до ответа — не ноль
+      entry('data-go="teaReqs"', esc(slovo('masters.tea.title')), esc(waitSub(TQ.pending, slovo('masters.tea.sub'))), waitMark(TQ.pending)) +
       entry('data-go="masterEvents"', 'Ивенты', 'выключить или включить в афише') +
       entry('data-go="masterList"', 'Мастера', 'их слоты в расписании') +
-      /* Входов РОВНО ТРИ: «выдать» слот или ответственность нет — всё через заявку (слова владельца 29.10.2026:
-         «арт директор не может начать / он может только согласовать») */
+      /* Входов четыре, все — согласование: «выдать» слот, ответственность или карточку нет — всё через заявку
+         (слова владельца 29.10.2026: «арт директор не может начать / он может только согласовать») */
     '</div>';
   },
 
@@ -276,4 +278,140 @@ Object.assign(SCREENS, {
         '<span class="small" style="text-align:center">Деньги уйдут сразу: обратного действия в приложении нет.</span>'
       : '<div class="note">' + svg(ICON.info) + '<span>Делить нечего: собранное ушло ' + esc(payDay(r.at, false)) + '.</span></div>');
   },
+});
+
+/* ── шаг 42: очередь карточек чайных мастеров (рецепты 42/teaReqs.md, 42/teaReq.md) ───────────────────────
+   Зритель — арт-директор (mayMasters). Решение — только на `teaReq`, где видна вся карточка; в строке очереди кнопок нет.
+   Разметка карточки (R2) — ОДНА, у руки ЧАЙ-A: teaCardHtml(c, {book:false}), разбор — teaCardFrom(raw), js/22-ekrany-chay.js.
+   ⚠ Ручек шага 42 на api main НЕТ: адреса ниже — заглушка клиента под проверки, сверить с PR сервера, когда он выйдет.
+   Форма строки очереди: { id, status: pending|approved|rejected, kind: new|edit, iso (подана), done (решена),
+   card (как teaCardFrom), prev (у правки — что сейчас в «Услугах»), changed: ['photo','about','price'] } */
+var TQ_API = { list: '/tea/cards/requests', approve: '/tea/cards/requests/{id}/approve', reject: '/tea/cards/requests/{id}/reject' };
+var TQ = { list: null, fail: '', pending: null, gen: 0, busy: false, err: '', note: '', gone: 0 };
+var TQ_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
+// включено в живом здесь, а не в js/02: файл 02 вне наряда руки. До ручек сервера экран честно скажет «не загрузились»
+WIRED.teaReqs = 1; WIRED.teaReq = 1;
+
+function tqFrom(raw) {
+  if (!raw || typeof raw !== 'object' || (typeof raw.id !== 'number' && typeof raw.id !== 'string')) return null;
+  if (!TQ_ST[raw.status]) return null;
+  var card = typeof teaCardFrom === 'function' ? teaCardFrom(raw.card || raw) : null;
+  if (!card) return null;
+  return { id: String(raw.id), status: raw.status, kind: raw.kind === 'edit' ? 'edit' : 'new', iso: raw.created_at || raw.iso || '',
+    done: raw.decided_at || raw.done || '', card: card, prev: raw.prev && typeof teaCardFrom === 'function' ? teaCardFrom(raw.prev) : null,
+    changed: Array.isArray(raw.changed) ? raw.changed : [], note: typeof raw.note === 'string' ? raw.note : '' };
+}
+function tqDemo() {
+  var all = typeof teaCardsDemo === 'function' ? teaCardsDemo() : [];
+  return all.map(function (c, i) {
+    return { id: String(c.id), status: c.status === 'denied' ? 'rejected' : c.status === 'approved' ? 'approved' : 'pending', kind: 'new',
+      iso: c.iso || '', done: c.done || '', card: c, prev: null, changed: [], note: '' };
+  });
+}
+function tqCount() { TQ.pending = TQ.list ? TQ.list.filter(function (q) { return q.status === 'pending'; }).length : null; }
+function loadTeaQueue() {
+  if (!LIVE) { if (!TQ.list) { TQ.list = tqDemo(); tqCount(); } return; }
+  var gen = ++TQ.gen; TQ.fail = '';
+  api('GET', TQ_API.list).then(function (r) {
+    if (gen !== TQ.gen) return;
+    var arr = r.status === 200 && r.data && Array.isArray(r.data.items) ? r.data.items : r.status === 200 && Array.isArray(r.data) ? r.data : null;
+    var list = arr && arr.map(tqFrom);
+    if (list && list.every(Boolean)) { TQ.list = list; } else { TQ.list = null; TQ.fail = r.status === 403 ? denyText(r) : failText(r); }
+    tqCount();
+    if ({ masters: 1, teaReqs: 1, teaReq: 1, manage: 1 }[current]) render();
+  });
+}
+function tqById(id) { return (TQ.list || []).filter(function (q) { return q.id === String(id); })[0]; }
+
+// вход: очередь — на каждый вход на «Слоты и мастера» и в очередь (рецепт «Перечитать на входе»); заявка — поля с нуля
+function tqGo(screen, p) {
+  if ((screen === 'masters' || screen === 'teaReqs' || screen === 'manage') && current !== screen && mayMasters()) loadTeaQueue();
+  if (screen === 'teaReq' && (current !== 'teaReq' || param !== p)) { TQ.err = ''; TQ.note = ''; TQ.gone = 0; if (!TQ.list) loadTeaQueue(); }
+}
+function tqGrab() { var f = document.getElementById('tc-note'); if (f) TQ.note = f.value; }
+function tqAction(a, arg) {
+  if (a === 'tc-retry') { loadTeaQueue(); render(); return true; }
+  if (a === 'tc-open') { go('teaReq', arg); return true; }
+  // R10 «К очереди»: действием, а не data-go — вход в очередь на «Слотах» ровно один (признак masters.md)
+  if (a === 'tc-back') { go('teaReqs'); return true; }
+  // «Повторить» блока «Чайный мастер» на «Клубе» (js/11): загрузка — руки ЧАЙ-A
+  if (a === 'tc-mine-retry') { if (typeof loadTeaMine === 'function') { TEA.mineFail = ''; loadTeaMine(); } render(); return true; }
+  if (a !== 'tc-yes' && a !== 'tc-no') return false;
+  tqGrab();
+  var q = tqById(arg);
+  if (!q || TQ.busy) return true;
+  var yes = a === 'tc-yes';
+  if (!LIVE) {
+    FLASH = { text: 'Это демонстрация', note: 'В Telegram это ушло бы на сервер клуба. Здесь ничего не отправлено и не записано.' };
+    haptic('warn'); render(); return true;
+  }
+  TQ.busy = true; TQ.err = ''; render();
+  var body = yes ? {} : (TQ.note.trim() ? { note: TQ.note.trim() } : {});
+  api('POST', (yes ? TQ_API.approve : TQ_API.reject).replace('{id}', encodeURIComponent(q.id)), body).then(function (r) {
+    TQ.busy = false;
+    if (r.status === 200 || r.status === 201 || r.status === 204) {
+      TQ.note = '';
+      FLASH = { text: yes ? slovo('teaReq.done.yes') : slovo('teaReq.done.no'), note: '' };
+      loadTeaQueue(); go('teaReqs'); return;
+    }
+    // R10: карточку уже решил другой арт-директор — сервер отвечает 409; поле R3 сохраняется при любом отказе
+    if (r.status === 409) { TQ.gone = q.id; loadTeaQueue(); render(); return; }
+    TQ.err = detailOf(r) || failText(r); render();
+  });
+  return true;
+}
+
+Object.assign(SCREENS, {
+
+  // рецепт 42/teaReqs.md: ждущие сверху (вход на teaReq), решённые ниже — тихие, без перехода
+  teaReqs: function () {
+    if (LIVE && !mayMasters()) return SCREENS.masters();
+    if (!TQ.list) return TQ.fail ? '<div class="card strong"><h2>' + esc(slovo('teaReqs.fail.title')) + '</h2><p class="verbatim">' + esc(TQ.fail) + '</p>' +
+        '<button type="button" class="btn" data-action="tc-retry">' + esc(slovo('teaReqs.fail.retry')) + '</button></div>'
+      : '<div class="card quiet"><span class="small">' + esc(slovo('teaReqs.loading')) + '</span></div>';
+    var wait = TQ.list.filter(function (q) { return q.status === 'pending'; });
+    var past = TQ.list.filter(function (q) { return q.status !== 'pending'; });
+    var ava = function (q) { var u = q.card.shots && q.card.shots[0]; return u ? '<img class="avatar" alt="" src="' + esc(u) + '">' : ''; };
+    if (!wait.length && !past.length) return (FLASH ? flash() : '') + '<div class="card quiet"><div class="col"><b>' + esc(slovo('teaReqs.empty.title')) + '</b>' +
+      '<span class="small">' + esc(slovo('teaReqs.empty.sub')) + '</span></div></div>';
+    return (FLASH ? flash() : '') +
+      (wait.length ? '<div class="group"><span class="label">' + esc(slovo('teaReqs.wait')) + '</span>' + wait.map(function (q) {
+        return '<button type="button" class="listitem" data-action="tc-open:' + esc(q.id) + '">' + ava(q) +
+          '<span class="grow"><b class="clamp1">' + esc(q.card.name) + '</b><span class="small">' +
+            esc((q.kind === 'edit' ? slovo('teaReqs.kind.edit') : slovo('teaReqs.kind.new')) + ' · ' + topupDay(q.iso, true)) + '</span></span>' +
+          '<span class="st wait">' + esc(slovo('teaReqs.st.wait')) + '</span>' + svg(ICON.chev, 'chev') + '</button>';
+      }).join('') + '</div>' : '') +
+      (past.length ? '<div class="group"><span class="label">' + esc(slovo('teaReqs.past')) + '</span>' + past.map(function (q) {
+        return '<div class="listitem"><span class="grow"><b class="clamp1">' + esc(q.card.name) + '</b><span class="small">' + esc(topupDay(q.done, true)) + '</span></span>' +
+          '<span class="st ' + TQ_ST[q.status] + '">' + esc((q.status === 'approved' ? slovo('teaReqs.st.ok') : slovo('teaReqs.st.no'))) + '</span></div>';
+      }).join('') + '</div>' : '');
+  },
+
+  // рецепт 42/teaReq.md: арт-директор только решает — полей карточки на экране нет; отказ слов не требует
+  teaReq: function (id) {
+    if (LIVE && !mayMasters()) return SCREENS.masters();
+    if (!TQ.list) return SCREENS.teaReqs();
+    var q = tqById(id);
+    if (!q || TQ.gone === q.id || q.status !== 'pending') return '<div class="card quiet"><div class="col"><b>' + esc(slovo('teaReq.gone')) + '</b>' +
+      '<button type="button" class="btn quiet" data-action="tc-back">' + esc(slovo('teaReq.gone.back')) + '</button></div></div>';
+    var off = TQ.busy ? ' disabled aria-disabled="true"' : '';
+    var CH = { photo: slovo('teaReq.edit.photo'), about: slovo('teaReq.edit.about'), price: slovo('teaReq.edit.price') };
+    var changed = q.changed.filter(function (k) { return CH[k]; }).map(function (k) { return CH[k]; });
+    var card = typeof teaCardHtml === 'function' ? teaCardHtml(q.card, { book: false }) : '';
+    return (FLASH ? flash() : '') +
+      '<span class="small">' + esc(slovo('teaReq.sub')) + '</span>' +
+      (q.kind === 'edit' ? '<div class="card quiet"><div class="col"><b>' + esc(slovo('teaReq.edit.title')) + '</b>' +
+          (q.prev ? '<span class="small">' + esc(q.prev.about) + '</span><b class="num">' + esc(q.prev.price) + ' ฿</b>' : '') +
+          (changed.length ? '<span class="small">' + esc(slovo('teaReq.edit.changed', { what: changed.join(' / ') })) + '</span>' : '') +
+        '</div></div>' : '') +
+      card +
+      '<div class="card"><div class="field"><label for="tc-note">' + esc(slovo('teaReq.note.label')) + '</label>' +
+        '<textarea id="tc-note" rows="3" maxlength="500"' + off + '>' + esc(TQ.note) + '</textarea>' +
+        '<span class="small">' + esc(slovo('teaReq.note.sub')) + '</span></div></div>' +
+      (TQ.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(TQ.err) + '</span></div>' : '') +
+      '<div class="row">' +
+        '<button type="button" class="btn ghost" data-action="tc-no:' + esc(q.id) + '"' + off + '>' + esc(slovo('teaReq.no')) + '</button>' +
+        '<button type="button" class="btn" data-action="tc-yes:' + esc(q.id) + '"' + off + '>' + esc(slovo('teaReq.yes')) + '</button>' +
+      '</div>';
+  }
 });
