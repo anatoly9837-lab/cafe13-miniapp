@@ -5,7 +5,8 @@
 //   stub   — очередь на прежних адресах-заглушках (/tea/cards/requests, /approve, /reject);
 //   items  — очередь читает r.data.items, а не r.data.cards;
 //   list   — каталог без адреса (TEA_URL.list = null);
-//   gone409 — 409 «свою карточку решает другой арт-директор» показывается как «уже решена».
+//   gone409 — 409 «свою карточку решает другой арт-директор» показывается как «уже решена»;
+//   reload409 — на 409 очередь не перечитывается: решённая другим строка остаётся «ждущей» (П10, мутант arhitector7-a1).
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
 if (!root) { console.error('корень клиента первым аргументом'); process.exit(2); }
@@ -44,6 +45,8 @@ if (mutant === 'stub') s18 = sub(s18, "var TQ_API = { list: '/tea/cards', decide
   "var TQ_API = { list: '/tea/cards/requests', decide: '/tea/cards/requests/{id}/approve' };");
 if (mutant === 'items') s18 = sub(s18, 'Array.isArray(r.data.cards) ? r.data.cards', 'Array.isArray(r.data.items) ? r.data.items');
 if (mutant === 'list') s22 = sub(s22, "var TEA_URL = { list: function () { return '/tea/masters'; },", 'var TEA_URL = { list: null,');
+if (mutant === 'reload409') s18 = sub(s18, 'TQ.err = detailOf(r) || failText(r); loadTeaQueue(); render(); return; }',
+  'TQ.err = detailOf(r) || failText(r); render(); return; }');
 if (mutant === 'gone409') s18 = sub(s18, 'if (r.status === 409) { TQ.err = detailOf(r) || failText(r); loadTeaQueue(); render(); return; }',
   'if (r.status === 409) { TQ.gone = q.id; loadTeaQueue(); render(); return; }');
 vm.runInContext(s22, ctx, { filename: '22' });
@@ -84,6 +87,14 @@ decideReply = { status: 409, data: { detail: 'свою карточку реша
 R("TQ.busy = false; TQ.err = ''; TQ.gone = 0; tqAction('tc-yes', '12')");
 check('П9 409 «свою» — слова сервера, не «решена»', R("(TQ.err || '-') + ' / gone=' + (TQ.gone === '12' ? 'да' : 'нет')"),
   'свою карточку решает другой арт-директор / gone=нет');
+// П10: 409 «уже решена» — очередь перечитывается, и второй GET /tea/cards отдаёт строку решённой (решил другой арт-директор)
+const q = SERVER['GET /tea/cards'].data;
+SERVER['GET /tea/cards'] = { status: 200, data: { pending: 0, cards: q.cards.map(c => c.id === 11 || c.id === 12
+  ? Object.assign({}, c, { status: 'approved', status_ru: 'согласовано', decided_at: '2026-11-26T03:00:00Z', live: null }) : c) } };
+decideReply = { status: 409, data: { detail: 'карточка уже решена: согласовано' } };
+calls.length = 0; R("TQ.busy = false; TQ.err = ''; tqAction('tc-yes', '11')");
+check('П10 409 «уже решена» — перечитка, строка решена', String(calls.filter(c => c.m === 'GET' && c.u === '/tea/cards').length) + ' / ' +
+  R("tqById('11') ? tqById('11').status : 'нет'"), '1 / approved');
 
 const red = ok.filter(x => !x).length;
 console.log(red ? `КРАСНОЕ: ${red} из ${ok.length}` : `ЗЕЛЁНОЕ: ${ok.length} из ${ok.length}`);

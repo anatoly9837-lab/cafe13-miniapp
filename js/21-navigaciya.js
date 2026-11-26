@@ -645,7 +645,7 @@ function go(screen, p) {
   // шаг 3: каждый вход — свежие данные сервера
   if (screen === 'home' && current !== 'home' && LIVE) { MR.mineState = ''; }
   // шаг 42 (рецепт 42/home.md, «Перечитать на входе»): своя карточка чайного мастера — на каждый вход, и в демо
-  if (screen === 'home' && current !== 'home' && typeof loadTeaMine === 'function') { TEA.mine = null; TEA.mineFail = ''; loadTeaMine(); }
+  if (screen === 'home' && current !== 'home' && typeof loadTeaMine === 'function' && !closed('teaApply')) { TEA.mine = null; TEA.mineFail = ''; loadTeaMine(); }
   // H0 (рецепт 42/home.md): цена заявки церемонии — на каждый вход; загрузка у руки ЧАЙ-A. Свои заявки церемонии — в MR.mine.
   // Пока teaHold закрыт, кнопки церемонии нет (js/07 masterOffer) — и запроса цены нет: зонд 26.11 нашёл лишний GET /master/price
   if (screen === 'home' && current !== 'home' && typeof loadTeaHoldPrice === 'function' && !closed('teaHold')) loadTeaHoldPrice();
