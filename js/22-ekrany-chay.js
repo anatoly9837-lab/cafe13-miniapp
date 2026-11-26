@@ -33,7 +33,12 @@ var TEA = { list: null, listFail: '', listGen: 0,
             share: null, amount: null, priceFail: '', priceGen: 0 };
 
 /* ── разбор ───────────────────────────────────────────────────────────────────────────────────────────────── */
-function teaPrice(v) { return typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? v : null; }
+/* Деньги сервера: сегодня pydantic отдаёт Decimal СТРОКОЙ ("100"), но конечное неотрицательное число принимается
+   тоже — иначе доля числом стала бы null, и грань №78 у teaHold пропала бы молча (tools/chay-dolya.cjs, Д6). */
+function teaPrice(v) {
+  var t = typeof v === 'number' && isFinite(v) ? String(v) : v;
+  return typeof t === 'string' && /^\d+(\.\d+)?$/.test(t) ? t : null;
+}
 /* Карточка мастера: номер мастера, имя, описание, цена СТРОКОЙ, длительность в минутах, число кадров. Кадр — адрес
    СЕРВЕРА клуба (teaShotUrl): из ответа берутся только перечисленные поля, всё прочее отбрасывается. Кадров
    не больше TEA_SHOTS_MAX — галерея показывает три. */
@@ -296,9 +301,10 @@ function teaBookSend() {
 }
 function teaHoldReady() {
   var e = Number(THF.entry);
-  // доля не пришла (её поля в /master/price пока нет) — нижней грани у входа нет, судит сервер
+  // TEA.share — число (teaLoadPrice: Number) или null. При null `e >= null` истинно для любого входа, прошедшего
+  // регулярку: без доли нижнюю грань №78 держит сервер, клиент её не выдумывает (константы 100 нет).
   return !THF.busy && typeof TEA.amount === 'number' && /^\d+(\.\d+)?$/.test(String(THF.entry).trim()) &&
-    (typeof TEA.share !== 'number' || e >= TEA.share) && !!teaPick('teaHold', THF.stale) && !teaHoldShort();
+    e >= TEA.share && !!teaPick('teaHold', THF.stale) && !teaHoldShort();
 }
 function teaHoldShort() { var b = teaBal(); return LIVE && typeof TEA.amount === 'number' && b !== null && TEA.amount > b ? TEA.amount - b : 0; }
 function teaHoldSend() {
