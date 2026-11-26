@@ -6,7 +6,8 @@
    координатором — go('calendar', {pick: 'teaHold'|'teaBook'}), выбранное — calPicked(откуда).
 
    Ручки сервера (api app/routers/tea.py, бой d23e45d): каталог, чужая карточка, своя карточка и подача — в TEA_URL
-   ниже. Кадра и брони мастера на сервере НЕТ (POST /tea/bookings → 404, кадры — «отдельная часть», tea.py:21):
+   ниже. Кадра на сервере НЕТ (кадры — «отдельная часть», tea.py:21); бронь (POST /tea/bookings, GET /tea/bookings/mine)
+   есть на стволе api a6d4d4c, но не в бою (d23e45d → 404):
    их адреса пусты, и пока адреса нет, живой режим этого запроса не делает; teaBook в WIRED не стоит (дверь K5
    гаснет сама, teaCardHtml). Разбор ответа — в одном месте (teaCardFrom и соседи).
    Демонстрация — набор teaCardsDemo() в той форме, которую ждём от разбора.
@@ -22,6 +23,8 @@
 var TEA_URL = { list: function () { return '/tea/masters'; },
                 card: function (id) { return '/tea/masters/' + encodeURIComponent(id); },
                 shot: null, mine: function () { return '/tea/card/mine'; }, myBooks: null, book: null,
+                // myBooks — GET /tea/bookings/mine (api a6d4d4c): ВСЕ брони гостя, без номера мастера в пути; в бою api
+                // ещё d23e45d, где ручки нет, — адрес ставится вместе с включением teaBook, не раньше (наряд 26.11)
                 apply: function () { return '/tea/card'; },
                 hold: function () { return '/master/request'; }, price: function () { return '/master/price'; } };
 function teaLive(k) { return LIVE && typeof TEA_URL[k] === 'function'; }
@@ -131,25 +134,32 @@ function loadTeaMine() {
     teaRerender({ home: 1, teaApply: 1, teaMaster: 1, teaBook: 1 });
   });
 }
-/* Свои брони у мастера (B11): [{at, mins, master: wait|ok|no, art: wait|ok|no, refund: строка|null}] */
+/* Свои брони (B11, B12) — форма api a6d4d4c `tea_bookings._row`: {id, master_id, starts_at, duration_min, price
+   строкой, status: pending|approved|rejected, note, refunded}. Решает ОДИН — арт-директор; полей master/art у
+   сервера нет. Отказ возвращает ВСЮ цену (№86 «а»): refund = price, если refunded. →
+   {master, at, mins, st: wait|ok|no, refund: строка|null, note} */
+var TEA_BOOK_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
 function teaBookFrom(b) {
   var at = b && typeof b.starts_at === 'string' ? Date.parse(b.starts_at) : NaN;
-  var ok = { wait: 1, ok: 1, no: 1 };
-  if (isNaN(at) || !(b.duration_min > 0) || !ok[b.master] || !ok[b.art]) return null;
-  return { at: at, mins: b.duration_min, master: b.master, art: b.art, refund: teaPrice(b.refund) };
+  var st = b && TEA_BOOK_ST.hasOwnProperty(b.status) ? TEA_BOOK_ST[b.status] : null;
+  if (isNaN(at) || !(b.duration_min > 0) || !st || typeof b.master_id !== 'number') return null;
+  return { master: b.master_id, at: at, mins: b.duration_min, st: st,
+           refund: st === 'no' && b.refunded === true ? teaPrice(b.price) : null,
+           note: typeof b.note === 'string' ? b.note : '' };
 }
 function teaLoadBooks(id) {
   if (!LIVE) {
     if (!TEA.books[id] && String(id) === '801')
-      TEA.books[id] = [{ at: Date.parse(ymdAdd(bkk(new Date()).ymd, 3) + 'T17:00:00+07:00'), mins: 90, master: 'ok', art: 'wait', refund: null }];
+      TEA.books[id] = [{ master: 801, at: Date.parse(ymdAdd(bkk(new Date()).ymd, 3) + 'T17:00:00+07:00'), mins: 90, st: 'wait', refund: null, note: '' }];
     return;
   }
   if (!teaLive('myBooks')) return;
   var gen = ++TEA.booksGen;
-  api('GET', TEA_URL.myBooks(id)).then(function (r) {
+  api('GET', TEA_URL.myBooks()).then(function (r) {
     if (gen !== TEA.booksGen) return;
+    // список гостя по всем мастерам, новые сверху; у экрана — брони ЭТОГО мастера (номер карточки, не Telegram id)
     var got = r.status === 200 && Array.isArray(r.data) ? r.data.map(teaBookFrom) : null;
-    TEA.books[id] = got && got.every(Boolean) ? got : null;
+    TEA.books[id] = got && got.every(Boolean) ? got.filter(function (b) { return String(b.master) === String(id); }) : null;
     teaRerender({ teaBook: 1 });
   });
 }
@@ -456,11 +466,11 @@ Object.assign(SCREENS, {
     var pick = teaPick('teaBook', TB.stale), bal = teaBal(), price = Number(c.price);
     var short = LIVE && bal !== null && price > bal ? Math.round((price - bal) * 100) / 100 : 0;
     var books = (TEA.books[c.id] || []).map(function (b) {
-      var mw = { wait: slovo('tea.book.stWait'), ok: slovo('tea.book.stMasterOk'), no: slovo('tea.book.stNo') }, aw = { wait: slovo('tea.book.stWait'), ok: slovo('tea.book.stArtOk'), no: slovo('tea.book.stNo') };
-      return '<div class="card quiet"><div class="col"><b>' + esc(teaWhen(b.at, b.mins)) + '</b>' +
-        '<div class="row"><span class="small">' + esc(slovo('tea.book.master')) + '</span><span class="st ' + b.master + '">' + esc(mw[b.master]) + '</span></div>' +
-        '<div class="row"><span class="small">' + esc(slovo('tea.book.art')) + '</span><span class="st ' + b.art + '">' + esc(aw[b.art]) + '</span></div>' +
-        (b.master === 'no' && b.refund ? '<span class="small">' + esc(slovo('tea.book.refund', { sum: money(b.refund) })) + '</span>' : '') +
+      var sw = { wait: slovo('tea.book.stWait'), ok: slovo('tea.book.stOk'), no: slovo('tea.book.stNo') };
+      return '<div class="card quiet"><div class="col">' +
+        '<div class="row"><b>' + esc(teaWhen(b.at, b.mins)) + '</b><span class="st ' + b.st + '">' + esc(sw[b.st]) + '</span></div>' +
+        (b.st === 'no' && b.refund ? '<span class="small">' + esc(slovo('tea.book.refund', { sum: money(b.refund) })) + '</span>' : '') +
+        (b.st === 'no' && b.note ? '<span class="said">' + esc(b.note) + '</span>' : '') +
       '</div></div>';
     }).join('');
     return '<span class="small">' + esc(c.name) + ' · ' + esc(slovo('tea.book.sub')) + ' <span class="num">' + esc(money(c.price)) + ' ฿</span></span>' +
