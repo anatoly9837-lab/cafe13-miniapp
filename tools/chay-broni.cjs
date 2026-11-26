@@ -1,11 +1,13 @@
 // Случаи «текст K4b и свои брони» (шаг 42) без браузера: node tools/chay-broni.cjs <корень клиента> [мутант]
 // Форма ответа — сервер cafe13-api a6d4d4c, app/routers/tea_bookings.py: GET /tea/bookings/mine → список _row()
-// {id, master_id, master_name, starts_at, duration_min, price строкой, status pending|approved|rejected, status_ru,
-//  note, refunded, created_at, decided_at} — ВСЕ брони гостя, новые сверху. Решает только арт-директор (decide).
+// {id, master_id, master_name, starts_at, duration_min, price строкой, status pending|master_ok|approved|rejected,
+//  status_ru, note, refunded, created_at, decided_at, master_ok_at} — ВСЕ брони гостя, новые сверху. master_ok — api#239
+//  b6f3d0c (мастер согласился, решает арт-директор); в бою 913eeef его ещё нет.
 // Мутанты (каждый обязан дать КРАСНОЕ и rc=1, и только на своих случаях):
 //   master   — K4b снова обещает отказ мастера («Если мастер откажет…»): краснеет Т1 и только он;
 //   masterart — разбор ждёт полей master/art, как до сверки с a6d4d4c: свои брони отбрасываются целиком (Т2–Т4);
 //   nofilter — брони чужого мастера не отсеиваются (Т3);
+//   nomasterok — master_ok (api#239, цепочка №98) снят с TEA_BOOK_ST: бронь в master_ok обнуляет весь список (Т7);
 //   notealways — слова арт-директора .said и под согласованной (Т6; мутант arhitector11-57): сервер принимает note
 //   при любом решении (master.Decision), а рецепт B12 показывает .said только под отказом.
 const vm = require('vm'), fs = require('fs');
@@ -30,6 +32,7 @@ if (mutant === 'master') slova = sub(slova, 'Если арт-директор о
 if (mutant === 'masterart') src = sub(src, "|| !st || typeof b.master_id !== 'number') return null;",
   "|| !st || typeof b.master_id !== 'number' || !({ wait: 1, ok: 1, no: 1 })[b.master] || !({ wait: 1, ok: 1, no: 1 })[b.art]) return null;");
 if (mutant === 'notealways') src = sub(src, "(b.st === 'no' && b.note ?", "(b.note ?");
+if (mutant === 'nomasterok') src = sub(src, "pending: 'wait', master_ok: 'wait', approved:", "pending: 'wait', approved:");
 if (mutant === 'nofilter') src = sub(src, '? got.filter(function (b) { return String(b.master) === String(id); }) : null;', '? got : null;');
 vm.runInContext(slova, ctx, { filename: '00' });
 vm.runInContext(fs.readFileSync(root + '/js/10-utility.js', 'utf8'), ctx, { filename: '10' });
@@ -42,8 +45,9 @@ const card = id => ({ master_id: id, name: 'Образец', about: 'Пуэр.',
 // строка брони ровно в форме tea_bookings._row (очередь — без guest_name)
 const row = (id, master, st, over) => Object.assign({ id, master_id: master, master_name: 'Образец',
   starts_at: '2026-12-02T12:07:00Z', duration_min: 90, price: '600.00', status: st,
-  status_ru: { pending: 'ждёт решения', approved: 'согласовано', rejected: 'отклонено, деньги возвращены на счёт' }[st],
-  note: null, refunded: false, created_at: '2026-11-26T01:00:00Z', decided_at: null }, over || {});
+  status_ru: { pending: 'ждёт решения', master_ok: 'мастер согласился, ждёт арт-директора', approved: 'согласовано', rejected: 'отклонено, деньги возвращены на счёт' }[st],
+  note: null, refunded: false, created_at: '2026-11-26T01:00:00Z', decided_at: null,
+  master_ok_at: st === 'master_ok' ? '2026-11-26T01:30:00Z' : null }, over || {});
 const ok = [];
 const check = (name, got, want) => { ok.push(got === want); console.log((got === want ? '✓ ' : '✗ ') + name + ' — ' + got + (got === want ? '' : ', ждали ' + want)); };
 const load = (id, data) => { reply = { status: 200, data }; R(`TEA.books = {}; teaLoadBooks(${id})`); return R(`TEA.books[${id}]`); };
@@ -80,6 +84,12 @@ const h6 = screen(3);
 check('Т6 согласованная со словами — без .said и возврата',
   (h6.includes(words('tea.book.stOk')) ? 'согласована' : '-') + '/' + (h6.includes('class="said"') ? 'said' : 'нет') + '/' +
   (h6.includes('вернулись на счёт') ? 'возврат' : 'нет'), 'согласована/нет/нет');
+// Т7 (находка архитектора на ревью api#239): бронь в master_ok рядом с ждущей мастера — список НЕ пустеет,
+// обе в нём, у гостя обе «ждёт согласования» (решения арт-директора ещё нет)
+const b7 = load(3, [row(28, 3, 'master_ok'), row(27, 3, 'pending')]);
+check('Т7 master_ok — список не пустеет', b7 ? b7.map(b => b.st).join(',') : 'отброшено', 'wait,wait');
+const h7 = screen(3);
+check('Т7 B11 обе строки «ждёт согласования»', String(h7.split(words('tea.book.stWait')).length - 1), '2');
 
 const red = ok.filter(x => !x).length;
 console.log(red ? `КРАСНОЕ: ${red} из ${ok.length}` : `ЗЕЛЁНОЕ: ${ok.length} из ${ok.length}`);
