@@ -197,9 +197,11 @@ const btn = (h, a) => { const m = h.match(new RegExp('<button[^>]*data-action="'
   // card44-smena-lichnosti: смена личности (WHO++) посреди цепочки — цепочка обрывается, чужой карточки не открывает
   start(true); R("CARD.text = { ru: 'рецепт' }; go('barCard', 'preview')");
   ctx.api = (m, u, body) => { const p = api0(m, u, body);
-    return /\/bar\/products$/.test(u) ? p.then(r => { R("WHO++; current = 'home'; param = null;"); return r; }) : p; };
+    return /\/bar\/products$/.test(u) ? p.then(r => { R("WHO++; CARDS.list = null; current = 'home'; param = null;"); return r; }) : p; };
   R("doAction('c-add')"); await tick(); ctx.api = api0;
   check('card44-smena-lichnosti: после 201 запросов нет, экран не уведён, busy снят', [posts(), R("current + ':' + CARD.busy")], [['P'], 'home:false']);
+  // список новой личности не получает чужую рождённую карточку (смена личности обнуляет CARDS.list, js/05)
+  check('card44-smena-lichnosti: в списке новой личности чужой карточки нет', R('CARDS.list'), null);
 
   // card44-demo-gruppa (ревью #496, п.3; правка 100e4a9): в демонстрации ответ «та же группа?» формы ЗАВЕДЕНИЯ ничего
   // не шлёт и ведёт на предпросмотр; у правки черновика (CARD.edit) он шлёт PATCH — там «Это демонстрация»
