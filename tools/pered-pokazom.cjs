@@ -55,14 +55,106 @@ const path = require('path');
 
 const ROOT = process.env.APP || path.resolve(__dirname, '..');
 const IMAGE = 'agenthost/playwright:1.59.1';
-const KEYS = ['--без-дыма'];
-const argv = process.argv.slice(2), alien = argv.filter(a => !KEYS.includes(a));
+const KEYS = ['--без-дыма', '--самопроверка'];
+const first = s => String(s || '').split('\n').filter(Boolean).slice(0, 4).join(' | ');
+
+/* Три куска прибора — ЧИСТЫЕ функции, и обычный прогон зовёт ровно их (Cafe13KPG#1121): самопроверка
+   судит тот же код, которым прибор говорит «показывать можно», а не его пересказ.
+     klyuchi(argv)              — разбор ключей: незнакомый → alien (опечатка в `--без-дыма` иначе подняла бы браузер);
+     dym(noSmoke, run, est)     — шаг дыма; `run(cmd, args)` и `est()` («playwright рядом?») подаются снаружи;
+     itog(rows, noSmoke)        — код ворот и ИТОГОВАЯ строка. Здесь живёт условие, на котором выжил мутант
+                                  `mF` ревьюера (`gc === 0 && NO_SMOKE` → `&& false`: ложное «показывать можно»).
+   «Показывать можно» печатается только при мереном дыме: ключ снят ИЛИ строки дыма-ворот нет — нельзя. */
+function klyuchi(argv) {
+  return { alien: argv.filter(a => !KEYS.includes(a)), noSmoke: argv.includes('--без-дыма'), samo: argv.includes('--самопроверка') };
+}
+function dym(noSmoke, run, est) {
+  if (noSmoke) return { kind: 'снят', name: 'дым', rc: 2, text: 'снят ключом --без-дыма: браузер не поднимался, дым НЕ мерен' };
+  const r = est() ? run('node', [ROOT + '/tools/smoke.cjs'])
+    : run('docker', ['run', '--rm', '-v', ROOT + ':/app:ro', '--entrypoint', 'node', IMAGE, '/app/tools/smoke.cjs']);
+  return { kind: 'ворота', name: 'дым', rc: [0, 1, 2].includes(r.rc) ? r.rc : 2, text: first(r.out) };
+}
+function itog(rows, noSmoke) {
+  const gates = rows.filter(x => x.kind === 'ворота');
+  const gc = gates.some(x => x.rc === 1) ? 1 : gates.some(x => x.rc === 2) ? 2 : 0;
+  const dymMeren = gates.some(x => x.name === 'дым');
+  return { gc, line: `ВОРОТА: ${gc} — ` + (gc === 0 && noSmoke ? 'номер версии и имена зелёные; ДЫМ НЕ МЕРЕН (--без-дыма) — показывать по этому прогону НЕЛЬЗЯ, показ только по прогону без ключа'
+    : gc === 0 && !dymMeren ? 'номер версии и имена зелёные; строки дыма в воротах НЕТ — показывать по этому прогону НЕЛЬЗЯ'
+    : gc === 0 ? 'показывать можно'
+    : gc === 1 ? 'НЕ ПОКАЗЫВАТЬ: есть красное'
+    : 'НЕ ПОКАЗЫВАТЬ: красного нет, но не всё измерено — «не выполнено» не равно «зелёное»') };
+}
+
+/* САМОПРОВЕРКА (Cafe13KPG#1121) — таблица случаев В РЕПОЗИТОРИИ: прежние случаи автора `--без-дыма` были разовыми
+   и вне репо и судили код выхода, вызов docker и строку номера — по этим трём `k0` и `mF` неразличимы. Здесь
+   судится ИТОГОВАЯ СТРОКА. Без git, сети и docker: `run` — подставной и считает вызовы. Провал случая печатается
+   «  РАЗОШЛОСЬ: …» (форма, которую видит шаг 18 ворот). ⚠ Предел (Cafe13KPG#1124): обычный прогон, переставший
+   звать itog()/dym() и печатающий свою строку, этой самопроверке не виден — это явная ложь в диффе, её держит ревью. */
+const MOZHNO = 'показывать можно';
+const R = (kind, name, rc) => ({ kind, name, rc, text: 'случай' });
+const SNYAT = { kind: 'снят', name: 'дым', rc: 2, text: 'снят' };
+const ITOG_SLUCHAI = [
+  // [имя, ряды, ключ без дыма, ждём код, ждём «показывать можно», ждём причину в строке — так случай видит, КАКОЙ заслон сказал «нельзя»]
+  ['mF: без дыма, номер и имена зелёные — «показывать можно» НЕ печатается', [SNYAT, R('ворота', 'имена и id', 0), R('ворота', 'номер версии', 0)], true, 0, false, 'ДЫМ НЕ МЕРЕН (--без-дыма)'],
+  ['контроль: дым мерен, всё зелёное — «показывать можно»', [R('ворота', 'дым', 0), R('ворота', 'имена и id', 0), R('ворота', 'номер версии', 0)], false, 0, true, 'показывать можно'],
+  ['без ключа, но строки дыма нет — «показывать можно» НЕ печатается', [R('ворота', 'имена и id', 0), R('ворота', 'номер версии', 0)], false, 0, false, 'строки дыма в воротах НЕТ'],
+  ['без дыма, номер красный — 1', [SNYAT, R('ворота', 'имена и id', 0), R('ворота', 'номер версии', 1)], true, 1, false, 'есть красное'],
+  ['без дыма, номер не выполнен — 2', [SNYAT, R('ворота', 'имена и id', 0), R('ворота', 'номер версии', 2)], true, 2, false, 'не всё измерено'],
+  ['дым красный — 1', [R('ворота', 'дым', 1), R('ворота', 'имена и id', 0), R('ворота', 'номер версии', 0)], false, 1, false, 'есть красное'],
+  ['дым не выполнен — 2', [R('ворота', 'дым', 2), R('ворота', 'имена и id', 0), R('ворота', 'номер версии', 0)], false, 2, false, 'не всё измерено'],
+  ['красное важнее «не выполнено» — 1', [R('ворота', 'дым', 0), R('ворота', 'имена и id', 1), R('ворота', 'номер версии', 2)], false, 1, false, 'есть красное'],
+  ['предел 1 в код не входит — 0', [R('ворота', 'дым', 0), R('ворота', 'имена и id', 0), R('ворота', 'номер версии', 0), R('предел', 'отставание описи', 1)], false, 0, true, 'показывать можно'],
+];
+function samoproverka() {
+  const bedy = []; let n = 0;
+  const sud = (imya, ladno, pechat) => { n++; console.log(`  ${ladno ? 'сошлось' : 'РАЗОШЛОСЬ'}: ${imya} → ${pechat}`); if (!ladno) bedy.push(imya); };
+  const sluchaj = (imya, f) => { try { f(); } catch (e) { sud(imya, false, 'исключение: ' + String(e.message).split('\n')[0]); } };
+  for (const [imya, ryady, bez, kod, mozhno, prichina] of ITOG_SLUCHAI) sluchaj(imya, () => {
+    const t = itog(ryady, bez), est = t.line.includes(MOZHNO);
+    sud(imya, t.gc === kod && est === mozhno && t.line.startsWith(`ВОРОТА: ${kod} — `) && t.line.includes(prichina), `код ${t.gc}, «${t.line.slice(0, 70)}»`);
+  });
+  const podstava = rc => { const zv = []; return { zv, run: (cmd, args) => { zv.push([cmd, args]); return { rc, out: 'ответ' }; } }; };
+  sluchaj('дым под ключом: ни одного вызова, строка «снят»', () => {
+    const p = podstava(0), r = dym(true, p.run, () => { throw new Error('playwright спрошен под ключом'); });
+    sud('дым под ключом: ни одного вызова, строка «снят»', p.zv.length === 0 && r.kind === 'снят', `вызовов ${p.zv.length}, вид ${r.kind}`);
+  });
+  sluchaj('дым без playwright рядом: один docker run образа на smoke.cjs', () => {
+    const p = podstava(0), r = dym(false, p.run, () => false), a = (p.zv[0] || [])[1] || [];
+    sud('дым без playwright рядом: один docker run образа на smoke.cjs', p.zv.length === 1 && p.zv[0][0] === 'docker' && a.includes(IMAGE)
+      && a.includes('/app/tools/smoke.cjs') && r.kind === 'ворота' && r.rc === 0, `вызовов ${p.zv.length}, ${(p.zv[0] || [''])[0]}, rc ${r.rc}`);
+  });
+  sluchaj('дым с playwright рядом: node smoke.cjs, docker не зовётся', () => {
+    const p = podstava(1), r = dym(false, p.run, () => true);
+    sud('дым с playwright рядом: node smoke.cjs, docker не зовётся', p.zv.length === 1 && p.zv[0][0] === 'node' && r.rc === 1, `вызовов ${p.zv.length}, ${(p.zv[0] || [''])[0]}, rc ${r.rc}`);
+  });
+  sluchaj('дым: чужой код выхода — «не выполнено», не зелёное', () => {
+    const r = dym(false, podstava(7).run, () => true);
+    sud('дым: чужой код выхода — «не выполнено», не зелёное', r.rc === 2, `rc ${r.rc}`);
+  });
+  for (const [imya, argv, alien, bez] of [
+    ['ключ --без-дыма снимает дым', ['--без-дыма'], 0, true],
+    ['без ключей дым мерится', [], 0, false],
+    ['опечатка в ключе — отказ, дым не снят', ['--без-дым'], 1, false],
+  ]) sluchaj(imya, () => { const k = klyuchi(argv); sud(imya, k.alien.length === alien && k.noSmoke === bez, `чужих ${k.alien.length}, без дыма ${k.noSmoke}`); });
+  if (n === 0) { console.log('  случаев не прогнано ни одного — мерить нечем'); return 2; }
+  console.log(`случаев ${n}, бед ${bedy.length}` + (bedy.length ? ' — ' + bedy.join('; ') : ''));
+  return bedy.length ? 1 : 0;
+}
+// Контракт шага 18 ворот (Cafe13KPG#1118): ПОСЛЕДНЯЯ строка — приговор, из того же кода, каким прибор выходит.
+function itogSamoproverki(kod) {
+  console.log(`самопроверка ${path.basename(__filename)}: ${kod === 0 ? 'сошлась' : kod === 1 ? 'РАЗОШЛАСЬ — код 1' : 'НЕ ВЫПОЛНЕНА — код ' + kod}`);
+  return kod;
+}
+
+const K = klyuchi(process.argv.slice(2)), alien = K.alien;
 if (alien.length) {
   console.log(`НЕ ВЫПОЛНЕНО: незнакомый ключ ${alien.join(' ')} — знаю только ${KEYS.join(' ')}; ничего не мерено`);
   console.log('КОД: 2');
   process.exit(2);
 }
-const NO_SMOKE = argv.includes('--без-дыма');
+// `--самопроверка` — ПЕРВЫМ и одна: ничего из обычного прогона (git, docker, check-opis) не зовётся
+if (K.samo) process.exit(itogSamoproverki(samoproverka()));
+const NO_SMOKE = K.noSmoke;
 const rows = [];
 const say = (kind, name, rc, text) => rows.push({ kind, name, rc, text });
 
@@ -72,16 +164,9 @@ function run(cmd, args) {
   if (r.error) return { rc: 2, out: 'не запустился: ' + r.error.message };
   return { rc: r.status === null ? 2 : r.status, out };
 }
-const first = s => String(s || '').split('\n').filter(Boolean).slice(0, 4).join(' | ');
 
 // 1. дым. С ключом — ни smoke.cjs, ни docker: строка «снят», в код выхода не входит
-if (NO_SMOKE) say('снят', 'дым', 2, 'снят ключом --без-дыма: браузер не поднимался, дым НЕ мерен');
-else {
-  let here = true; try { require.resolve('playwright'); } catch (e) { here = false; }
-  const r = here ? run('node', [ROOT + '/tools/smoke.cjs'])
-    : run('docker', ['run', '--rm', '-v', ROOT + ':/app:ro', '--entrypoint', 'node', IMAGE, '/app/tools/smoke.cjs']);
-  say('ворота', 'дым', [0, 1, 2].includes(r.rc) ? r.rc : 2, first(r.out));
-}
+rows.push(dym(NO_SMOKE, run, () => { try { require.resolve('playwright'); return true; } catch (e) { return false; } }));
 // 2. имена и id — без флага «необязательно»: этих ворот не снимает ничто
 try {
   const found = require(ROOT + '/tools/ids-clean.cjs').idsClean(ROOT);
@@ -181,13 +266,9 @@ else {
 const WORD = { 0: 'зелёное', 1: 'КРАСНОЕ', 2: 'НЕ ВЫПОЛНЕНО' };
 for (const x of rows) console.log(x.kind === 'снят' ? `ВОРОТА ${x.name}: СНЯТ — ${x.text}`
   : `${x.kind === 'ворота' ? 'ВОРОТА' : 'ПРЕДЕЛ'} ${x.name}: ${WORD[x.rc]} — ${x.text}`);
-const gates = rows.filter(x => x.kind === 'ворота'), lim = rows.find(x => x.kind === 'предел');
-const gc = gates.some(x => x.rc === 1) ? 1 : gates.some(x => x.rc === 2) ? 2 : 0;
-const rc = gc;   // предел — предупреждение (решение владельца 29.10.2026), в код выхода не входит
-console.log(`ВОРОТА: ${gc} — ` + (gc === 0 && NO_SMOKE ? 'номер версии и имена зелёные; ДЫМ НЕ МЕРЕН (--без-дыма) — показывать по этому прогону НЕЛЬЗЯ, показ только по прогону без ключа'
-  : gc === 0 ? 'показывать можно'
-  : gc === 1 ? 'НЕ ПОКАЗЫВАТЬ: есть красное'
-  : 'НЕ ПОКАЗЫВАТЬ: красного нет, но не всё измерено — «не выполнено» не равно «зелёное»'));
+const lim = rows.find(x => x.kind === 'предел'), IT = itog(rows, NO_SMOKE);
+const rc = IT.gc;   // предел — предупреждение (решение владельца 29.10.2026), в код выхода не входит
+console.log(IT.line);
 // при 0 — строки прибора как есть, без своего суждения: «в пределе» было бы неправдой при отставании на пороге
 // (с #165 прибор отвечает 0 и при «отставание 3 (порог 3)» и сам говорит «публикации не держит»).
 // При 1 — предупреждение; публикацию предел не держит ни при каком коде

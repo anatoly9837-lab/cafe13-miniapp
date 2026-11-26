@@ -640,8 +640,10 @@ verdict 'screens.html равна пересборке из входов дере
 # с 26.11.2026 строят свой репозиторий во временном каталоге и проходят на `git archive`.
 # ⚠ check-recepty.py самопроверкой поднимает контейнеры образа playwright: ворота и так
 # держат слот батареи, но шаг 18 этим образ занимает.
+# ⚠ pered-pokazom.cjs (с 26.11.2026, Cafe13KPG#1121) — прибор «показывать можно»: самопроверка судит
+# его ИТОГОВУЮ строку и шаг дыма на подставном вызове — ни git, ни сети, ни docker она не зовёт.
 step '18. самопроверки приборов — --самопроверка каждого (приговор)'
-SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py v-oblasti.py'
+SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pered-pokazom.cjs pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py v-oblasti.py'
 SP_V_SHAGE_5='check-stages.py'
 SP_ZHDUT_GIT=''
 not_done18=''
