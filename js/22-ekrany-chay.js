@@ -299,7 +299,11 @@ function teaLoadQueue() {
     if (got && got.every(Boolean) && typeof d.master_ok === 'number') { TBQ.list = got; TBQ.masterOk = d.master_ok; }
     else { TBQ.list = null; TBQ.masterOk = null; TBQ.fail = r.status === 403 ? denyText(r) : failText(r); }
     // бронь пропала из перечитанной очереди — назад в очередь, состояние не выдумывается (teaBookReq «Состояния»)
-    if (current === 'teaBookReq' && TBQ.list && !teaQueueById(param)) { go('teaBooks'); return; }
+    // leaving — от повторного входа: go('teaBooks') сам перечитывает очередь, пока current ещё teaBookReq
+    if (current === 'teaBookReq' && TBQ.list && !teaQueueById(param)) {
+      if (!TBQ.leaving) { TBQ.leaving = true; go('teaBooks'); TBQ.leaving = false; }
+      return;
+    }
     teaRerender({ masters: 1, teaBooks: 1, teaBookReq: 1 });
   });
 }
@@ -614,7 +618,7 @@ function teaAction(a, arg) {
   if (a === 'tea-tome-refuse-send') { haptic(); teaRefuseSend(Number(arg)); return true; }
   if (a === 'tea-books-open') { haptic(); go('teaBookReq', Number(arg)); return true; }
   if (a === 'tea-books-retry') { teaLoadQueue(); render(); return true; }
-  // U10 «К очереди» — действием, а не data-go: вход в очередь data-go="teaBooks" ровно один (признак masters.md)
+  // U10 «К очереди» — действием, а не data-go: вход в очередь на «Слотах» ровно один (признак masters.md)
   if (a === 'tea-books-back') { go('teaBooks'); return true; }
   if (a === 'tea-books-yes' || a === 'tea-books-no') { haptic(); teaDecideSend(Number(arg), a === 'tea-books-yes'); return true; }
   if (a === 'tea-hold-cal') { teaGrab(); go('calendar', { pick: 'teaHold' }); return true; }
@@ -762,10 +766,11 @@ Object.assign(SCREENS, {
     var b = teaQueueById(id);
     if (!b) return SCREENS.teaBooks();
     var sum = money(b.price), head = FLASH ? flash() : '';
-    var line = function (k, v) { return '<div><span class="small">' + esc(slovo(k)) + '</span>' + v + '</div>'; };
-    var top = '<div class="rows">' + line('tea.bookReq.master', '<b class="clamp1">' + esc(b.masterName) + '</b>') +
-        line('tea.bookReq.when', '<b>' + esc(teaWhen(b.at, b.mins)) + '</b>') +
-        line('tea.bookReq.paid', '<b class="num">' + esc(sum) + ' ฿</b>') + '</div>' +
+    // подпись — готовым словом, а не ключом: ключ перевода только литералом (сборщик текстов читает код, live slova-klyuchi)
+    var line = function (word, v) { return '<div><span class="small">' + esc(word) + '</span>' + v + '</div>'; };
+    var top = '<div class="rows">' + line(slovo('tea.bookReq.master'), '<b class="clamp1">' + esc(b.masterName) + '</b>') +
+        line(slovo('tea.bookReq.when'), '<b>' + esc(teaWhen(b.at, b.mins)) + '</b>') +
+        line(slovo('tea.bookReq.paid'), '<b class="num">' + esc(sum) + ' ฿</b>') + '</div>' +
       '<span class="st ' + b.st + '"><span class="verbatim">' + esc(b.word) + '</span></span>';
     if (!teaMayDecide(b)) return head + top +
       '<div class="card quiet"><div class="col"><b>' + esc(b.status === 'pending' ? slovo('tea.bookReq.notYet') : slovo('tea.bookReq.decided')) + '</b>' +

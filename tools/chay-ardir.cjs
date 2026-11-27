@@ -141,6 +141,7 @@ check('vozvrat-vidno заголовок — имя гостя', R(`TITLES.teaBoo
 // tea-bron-reshit-da
 enterList([row(81, 'master_ok')]); openReq(81);
 calls.length = 0; bodies.length = 0; hold = true; reply = { status: 200, data: row(81, 'approved', { decided_at: '2026-11-27T03:00:00Z' }) };
+queue = Q([reply.data]);   // очередь после решения — как отдал бы сервер: go('teaBooks') её перечитывает
 R(`teaAction('tea-books-yes', '81')`);
 h = req();
 check('reshit-da сразу: запрос и гашение', calls.join(',') + ' ' + bodies.join('') + ' ' + (/tea-books-yes:81" disabled/.test(h) && /tea-books-no:81" disabled/.test(h) && h.includes('Отправляем…') ? 'погашены' : 'живые'),
@@ -156,6 +157,7 @@ enterList([row(91, 'master_ok', { price: '600.00' })]); openReq(91);
 R(`TBQ.note = '  Клуб закрыт на ремонт.  '`);
 calls.length = 0; bodies.length = 0;
 reply = { status: 200, data: row(91, 'rejected', { refunded: true, price: '700.00', note: 'Клуб закрыт на ремонт.' }) };
+queue = Q([reply.data]);
 R(`teaAction('tea-books-no', '91')`);
 check('reshit-net тело', bodies.join(''), '{"decision":"rejected","note":"Клуб закрыт на ремонт."}');
 h = R(`SCREENS[current](param)`);
@@ -164,6 +166,7 @@ check('reshit-net в «Решённых» строка возврата', seg(h,
 // отказ без refunded — весть словом сервера, без обещания денег
 enterList([row(92, 'master_ok')]); openReq(92);
 reply = { status: 200, data: row(92, 'rejected', { refunded: false, status_ru: 'отклонено (образец без возврата)' }) };
+queue = Q([reply.data]);
 R(`teaAction('tea-books-no', '92')`);
 h = R(`SCREENS[current](param)`);
 check('reshit-net без refunded — слово сервера', h.includes('<flash>отклонено (образец без возврата)</flash>') ? 'слово' : h.slice(0, 120), 'слово');
