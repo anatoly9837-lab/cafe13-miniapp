@@ -15732,11 +15732,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.focus('#kb-ta');
       await s.p.keyboard.type('раз');
       await s.p.keyboard.press('Enter');
+      // фокус читается СРАЗУ после Enter: набор кириллицы ниже идёт через insertText, и Chromium возвращает фокус
+      // в textarea по оставшемуся выделению — прочитанный после набора фокус blur() не видит (проба m-tag 27.11)
+      const taFocus = await s.p.evaluate(() => document.activeElement.id);
       await s.p.keyboard.type('два');
-      const ta = await s.p.evaluate(() => ({ focus: document.activeElement.id, v: document.getElementById('kb-ta').value,
+      const ta = await s.p.evaluate(() => ({ v: document.getElementById('kb-ta').value,
                                               hint: document.getElementById('kb-ta').getAttribute('enterkeyhint'),
                                               own: document.getElementById('kb-own').getAttribute('enterkeyhint') }));
-      if (ta.focus !== 'kb-ta') bad.push(`${n}: Enter в textarea снял фокус — перенос строки сломан`);
+      if (taFocus !== 'kb-ta') bad.push(`${n}: Enter в textarea снял фокус — перенос строки сломан`);
       if (ta.v !== 'раз\nдва') bad.push(`${n}: Enter в textarea не перенёс строку: ${JSON.stringify(ta.v)}`);
       if (ta.hint !== null) bad.push(`${n}: textarea получила enterkeyhint="${ta.hint}"`);
       if (ta.own !== 'search') bad.push(`${n}: заданную полем подсказку «search» перетёрло: «${ta.own}»`);
