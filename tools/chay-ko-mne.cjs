@@ -46,11 +46,11 @@ if (mutant === 'chej') src = sub(src, "my !== null && b.master === my; }", "my !
 if (mutant === 'nopending') src = sub(src, "return b.status === 'pending' && my !== null", "return my !== null");
 if (mutant === 'norefund') src = sub(src, "(b.status === 'rejected' && b.refunded && b.price !== null ?", "(false ?");
 if (mutant === 'refbusy') src = sub(src, "if (TTM.busy !== null || !b || !teaMayAccept(b) || TTM.open !== id) return;", "if (!b || !teaMayAccept(b) || TTM.open !== id) return;");
-if (mutant === 'refnodeny') src = sub(src, "FLASH = slovo(nb.refunded ? 'tea.toMe.refusedDone' : 'tea.toMe.refusedPlain'); haptic('ok'); }\n    else { TTM.deny[id] = denyText(r);", "FLASH = slovo(nb.refunded ? 'tea.toMe.refusedDone' : 'tea.toMe.refusedPlain'); haptic('ok'); }\n    else {");
-if (mutant === 'refwipe') src = sub(src, "FLASH = slovo(nb.refunded ? 'tea.toMe.refusedDone' : 'tea.toMe.refusedPlain'); haptic('ok'); }\n    else { TTM.deny[id]", "FLASH = slovo(nb.refunded ? 'tea.toMe.refusedDone' : 'tea.toMe.refusedPlain'); haptic('ok'); }\n    else { TTM.note = ''; TTM.deny[id]");
+if (mutant === 'refnodeny') src = sub(src, "FLASH = (nb.refunded ? slovo('tea.toMe.refusedDone') : slovo('tea.toMe.refusedPlain')); haptic('ok'); }\n    else { TTM.deny[id] = denyText(r);", "FLASH = (nb.refunded ? slovo('tea.toMe.refusedDone') : slovo('tea.toMe.refusedPlain')); haptic('ok'); }\n    else {");
+if (mutant === 'refwipe') src = sub(src, "FLASH = (nb.refunded ? slovo('tea.toMe.refusedDone') : slovo('tea.toMe.refusedPlain')); haptic('ok'); }\n    else { TTM.deny[id]", "FLASH = (nb.refunded ? slovo('tea.toMe.refusedDone') : slovo('tea.toMe.refusedPlain')); haptic('ok'); }\n    else { TTM.note = ''; TTM.deny[id]");
 if (mutant === 'maxlen') src = sub(src, 'maxlength="500"', 'maxlength="501"');
 if (mutant === 'minerender') src = sub(src, "teaBook: 1, teaToMe: 1 });   // teaToMe", "teaBook: 1 });   // teaToMe");
-if (mutant === 'flashrefund') src = sub(src, "slovo(nb.refunded ? 'tea.toMe.refusedDone' : 'tea.toMe.refusedPlain')", "slovo('tea.toMe.refusedDone')");
+if (mutant === 'flashrefund') src = sub(src, "(nb.refunded ? slovo('tea.toMe.refusedDone') : slovo('tea.toMe.refusedPlain'))", "slovo('tea.toMe.refusedDone')");
 if (mutant === 'nomasterok') src = sub(src, "pending: 'wait', master_ok: 'wait', approved:", "pending: 'wait', approved:");
 vm.runInContext(slova, ctx, { filename: '00' });
 vm.runInContext(fs.readFileSync(root + '/js/10-utility.js', 'utf8'), ctx, { filename: '10' });

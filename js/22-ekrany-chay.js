@@ -249,7 +249,7 @@ function teaRefuseSend(id) {
     TTM.busy = null;
     var nb = r.status === 200 ? teaToMeFrom(r.data) : null;
     // весть о деньгах — по refunded ответа, как T10 (замечание arhitector32): не вернул — не обещаем
-    if (nb && TEA.toMe) { swap(nb); TTM.open = null; TTM.note = ''; FLASH = slovo(nb.refunded ? 'tea.toMe.refusedDone' : 'tea.toMe.refusedPlain'); haptic('ok'); }
+    if (nb && TEA.toMe) { swap(nb); TTM.open = null; TTM.note = ''; FLASH = (nb.refunded ? slovo('tea.toMe.refusedDone') : slovo('tea.toMe.refusedPlain')); haptic('ok'); }
     else { TTM.deny[id] = denyText(r); haptic('warn'); teaLoadToMe(); }
     if (current === 'teaToMe') render();
   });
