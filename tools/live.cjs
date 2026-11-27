@@ -1406,9 +1406,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // своя заявка — по номеру из СВОИХ /master/requests/mine. Слово владельца 27.11.2026: арт-директор решает
     // и свою (сервер cafe13-api#240, `_may_decide_own`); `admin` без роли арт-директора свою не решает — у него
     // кнопок нет, слова «Свою заявку решает арт-директор.». Признак — `mayDecideOwnMaster()`, вызовом.
-    for (const [n, roles, decides] of [['offer-own-ad', ['art_director'], true], ['offer-own-admin', ['admin'], false]]) {
+    // offer-other-admin (возврат arhitector30, мутант `own &&` снят): у ЧУЖОЙ заявки admin кнопки обязаны быть —
+    // иначе «своя» заметка закрыла бы ему решение по всем заявкам. 501 в очереди, но не в его mine.
+    for (const [n, roles, decides, mine] of [['offer-own-ad', ['art_director'], true, true], ['offer-own-admin', ['admin'], false, true],
+                                           ['offer-other-admin', ['admin'], true, false]]) {
       const own = mreq(501, 'pending'), decided = [];
-      const o = { mine: () => [own], queue: [Object.assign({ first_name: '[арт-директор]', last_name: '', username: 'ab' }, own)], posted: [] };
+      const o = { mine: () => (mine ? [own] : []), queue: [Object.assign({ first_name: '[арт-директор]', last_name: '', username: 'ab' }, own)], posted: [] };
       const api = masterApi(o);
       const s = await open(true, true, json(200, mem(9000, roles)), null, null, null, q => {
         const m = q.url().replace(/^https?:\/\/[^/]+/, '').match(/^\/master\/requests\/(\d+)\/decide$/);
@@ -1421,15 +1424,16 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.evaluate(() => go('masterReq', 501)); await s.p.waitForTimeout(300);
       const t = await s.view();
       const pred = await s.p.evaluate(() => mayDecideOwnMaster());
-      if (pred !== decides) bad.push(`${n}: mayDecideOwnMaster() = ${pred}, ждали ${decides}`);
+      const ownWant = roles.includes('art_director');
+      if (pred !== ownWant) bad.push(`${n}: mayDecideOwnMaster() = ${pred}, ждали ${ownWant}`);
       const btn = await s.p.$('#view [data-action="ms-yes:501"]');
       if (decides) {
-        if (!btn || !(await s.p.$('#view [data-action="ms-ask:501"]'))) bad.push(`${n}: у своей заявки арт-директора нет «Согласовать»/«Отказать» — свою он не решит`);
-        if (t.includes('Свою заявку решает')) bad.push(`${n}: арт-директору сказано, что свою решает кто-то другой`);
+        if (!btn || !(await s.p.$('#view [data-action="ms-ask:501"]'))) bad.push(`${n}: у заявки нет «Согласовать»/«Отказать» — решить её нечем`);
+        if (t.includes('Свою заявку решает')) bad.push(`${n}: решающему сказано, что заявку решает кто-то другой`);
         if (btn) {
           await tapIf(s, n, '#view [data-action="ms-yes:501"]', '«Согласовать»'); await s.p.waitForTimeout(300);
           if (decided.length !== 1 || decided[0].id !== 501 || decided[0].b.decision !== 'approved')
-            bad.push(`${n}: согласие своей заявки ушло не одним POST на 501: ${JSON.stringify(decided)}`);
+            bad.push(`${n}: согласие заявки ушло не одним POST на 501: ${JSON.stringify(decided)}`);
         }
       } else {
         if (await s.p.$('#view [data-action^="ms-yes"], #view [data-action^="ms-no"], #view [data-action^="ms-ask"]')) bad.push(`${n}: у своей заявки не арт-директора есть «Согласовать»/«Отказать» — сервер ответит 409`);
