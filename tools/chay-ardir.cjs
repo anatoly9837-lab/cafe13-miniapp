@@ -18,12 +18,18 @@
 //   s2pending  — метка S2 по числу pending, а не master_ok;
 //   busy       — teaDecideSend не спрашивает TBQ.busy (второе нажатие при висящем ответе);
 //   nabor      — слушатель input не сохраняет tbr-note: перерисовка ответом очереди стирает «Слова гостю» (arhitektor34).
+// Мутанты и случаи b-* — ревьюера arhitektor34 (ревью #505, ~/.cache/arhitektor34/p505/mut.py, svidetel-505.cjs), перенесены сюда:
+//   u12drop, u12status (U12 под U10), inoy, inoywipe (иной отказ: U9, поле цело), noteyes (согласие без слов), backgo (U10 → teaBooks),
+//   gen (поздний старый ответ очереди), noteleak (поля с нуля), sendpred, renderpred, decgroup, filternull;
+//   nolistnull — РАВНОСИЛЕН голове в синхронной заглушке (рецепт этого не обещает), ждём rc=0.
+// Коды: 0 — зелёное, 1 — КРАСНОЕ, 2 — ПРОВЕРКА НЕ ВЫПОЛНЕНА (код не загрузился или случай упал, Cafe13KPG#1137).
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
 if (!root) { console.error('корень клиента первым аргументом'); process.exit(2); }
-const known = ['', 'nabor', 'always', 'norefund', 'refstatus', 'ownword', 'flashsum', 'flashrefund', 'u10word', 'nonote', 's2pending', 'busy'];
+const known = ['', 'nabor', 'u12drop', 'u12status', 'inoy', 'inoywipe', 'noteyes', 'backgo', 'gen', 'noteleak', 'nolistnull', 'sendpred', 'renderpred', 'decgroup', 'filternull', 'always', 'norefund', 'refstatus', 'ownword', 'flashsum', 'flashrefund', 'u10word', 'nonote', 's2pending', 'busy'];
 if (!known.includes(mutant)) { console.error('не знаю мутанта: ' + mutant); process.exit(2); }
-let queue = null, reply = null, hold = false, held = null;
+let queue = null, reply = null, hold = false, held = null, holdQ = false;
+const heldQ = [];
 const calls = [], bodies = [], gos = [];
 const ctx = { console, Date, Math, JSON, Object, Number, String, Array, RegExp, isNaN, parseInt, isFinite,
   document: { addEventListener(ev, f) { (ctx.__on[ev] = ctx.__on[ev] || []).push(f); }, getElementById() { return null; } }, window: {}, __on: {},
@@ -41,8 +47,10 @@ const ctx = { console, Date, Math, JSON, Object, Number, String, Array, RegExp, 
   // ответы по АДРЕСУ: очередь — queue, решение — reply (грабля #504: один ответ на всё даёт ложное красное)
   api(m, u, b) { calls.push(m + ' ' + u); if (b !== undefined) bodies.push(JSON.stringify(b));
     const r = /\/tea\/bookings$/.test(u) ? queue : reply, isQ = /\/tea\/bookings$/.test(u);
-    return { then(f) { if (hold && !isQ) held = () => f(r); else f(r); } }; } };
+    return { then(f) { if (isQ && holdQ) heldQ.push(() => f(r)); else if (hold && !isQ) held = () => f(r); else f(r); } }; } };
 vm.createContext(ctx);
+// упавший случай (исключение) — «ПРОВЕРКА НЕ ВЫПОЛНЕНА», код 2, а не КРАСНОЕ: rc=1 значит только «проверка сказала нет» (Cafe13KPG#1137)
+process.on('uncaughtException', e => { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: случай упал — ' + (e && e.message || e)); process.exit(2); });
 const sub = (src, a, b) => { if (!src.includes(a)) throw 'подмена не применилась: ' + a.slice(0, 60); const out = src.replace(a, b); if (out === src) throw 'подлог не изменил текст'; console.log('подлог наложен: ' + mutant); return out; };
 const slova = fs.readFileSync(root + '/js/00-slova.js', 'utf8');
 let src = fs.readFileSync(root + '/js/22-ekrany-chay.js', 'utf8');
@@ -56,10 +64,28 @@ if (mutant === 'u10word') src = sub(src, "if (r.status === 409) { TBQ.list = nul
 if (mutant === 'nonote') src = sub(src, "note: yes ? '' : String(TBQ.note || '').trim() }", "note: '' }");
 if (mutant === 's2pending') src = sub(src, "TBQ.list = got; TBQ.masterOk = d.master_ok; }", "TBQ.list = got; TBQ.masterOk = d.pending; }");
 if (mutant === 'nabor') src = sub(src, "  if (t.id === 'tbr-note') TBQ.note = t.value;", "  if (false) TBQ.note = t.value;");
+const M34 = {
+  u12drop: ["(b.status === 'rejected' && b.refunded ? '<span class=\"small\">' + esc(slovo('tea.toMe.refunded', { sum: sum })) + '</span>' : '') +", "'' +"],
+  u12status: ["(b.status === 'rejected' && b.refunded ? '<span class=\"small\">' + esc(slovo('tea.toMe.refunded', { sum: sum }))", "(b.status === 'rejected' ? '<span class=\"small\">' + esc(slovo('tea.toMe.refunded', { sum: sum }))"],
+  inoy: ["TBQ.err = denyText(r); haptic('warn');", "TBQ.err = r.status === 409 ? denyText(r) : ''; haptic('warn');"],
+  inoywipe: ["TBQ.err = denyText(r); haptic('warn');", "TBQ.err = denyText(r); haptic('warn'); if (r.status !== 409) TBQ.note = '';"],
+  noteyes: ["note: yes ? '' : String(TBQ.note || '').trim() }", "note: String(TBQ.note || '').trim() }"],
+  backgo: ["if (a === 'tea-books-back') { go('teaBooks'); return true; }", "if (a === 'tea-books-back') { go('masters'); return true; }"],
+  gen: ["api('GET', TEA_URL.queue()).then(function (r) {\n    if (gen !== TBQ.gen) return;\n", "api('GET', TEA_URL.queue()).then(function (r) {\n"],
+  nolistnull: ["if (r.status === 409) { TBQ.list = null; teaLoadQueue(); }", "if (r.status === 409) { teaLoadQueue(); }"],
+  noteleak: ["TBQ.err = ''; TBQ.note = ''; TBQ.busy = null;\n    if (!TBQ.list)", "TBQ.busy = null;\n    if (!TBQ.list)"],
+  sendpred: ["if (TBQ.busy !== null || !b || !teaMayDecide(b)) return;", "if (TBQ.busy !== null || !b) return;"],
+  renderpred: ["if (!teaMayDecide(b)) return head + top +", "if (false) return head + top +"],
+  decgroup: ["var dec = L.filter(teaMayDecide);", "var dec = L.filter(function (b) { return b.st === 'wait'; });"],
+  filternull: ["if (got && got.every(Boolean) && typeof d.master_ok", "if (got && (got = got.filter(Boolean)) && typeof d.master_ok"],
+};
+if (M34[mutant]) src = sub(src, M34[mutant][0], M34[mutant][1]);
 if (mutant === 'busy') src = sub(src, "if (TBQ.busy !== null || !b || !teaMayDecide(b)) return;", "if (!b || !teaMayDecide(b)) return;");
-vm.runInContext(slova, ctx, { filename: '00' });
-vm.runInContext(fs.readFileSync(root + '/js/10-utility.js', 'utf8'), ctx, { filename: '10' });
-vm.runInContext(src, ctx, { filename: '22' });
+try {
+  vm.runInContext(slova, ctx, { filename: '00' });
+  vm.runInContext(fs.readFileSync(root + '/js/10-utility.js', 'utf8'), ctx, { filename: '10' });
+  vm.runInContext(src, ctx, { filename: '22' });
+} catch (e) { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: код не загрузился — ' + e); process.exit(2); }
 const R = c => vm.runInContext(c, ctx);
 R(`flash = function () { var t = FLASH; FLASH = null; return '<flash>' + (typeof t === 'string' ? t : t.text) + '</flash>'; }`);
 // go — как js/21: крючок teaGo ДО смены current/param
@@ -221,6 +247,34 @@ enterList([row(161, 'master_ok')]); openReq(161);
 queue = Q([row(161, 'master_ok')]); R(`teaLoadQueue()`);
 h = req();
 check('nabor «Слова гостю» после перерисовки', h.includes('>Слово-образец гостю</textarea>') ? 'цело' : 'стёрто', 'цело');
+
+// ── случаи arhitektor34 (svidetel-505.cjs), на обещания рецепта teaBookReq, у которых случая не было ──
+const fire = (t, ev) => (ctx.__on[t] || []).forEach(f => f(ev));
+enterList([row(171, 'rejected', { refunded: true })]); openReq(171); h = req();
+check('b-u12 решённая отказом с возвратом: U10 и U12', (h.includes('Эту бронь уже решили.') ? 'U10' : '-') + '/' + (h.includes('<span class="small">600.00 ฿ вернулись гостю на счёт.</span>') ? 'U12' : '-'), 'U10/U12');
+enterList([row(172, 'rejected', { refunded: false })]); openReq(172); h = req();
+check('b-u12-bez отказ без refunded: U10 без U12', (h.includes('Эту бронь уже решили.') ? 'U10' : '-') + '/' + (h.includes('вернулись гостю') ? 'U12' : 'нет'), 'U10/нет');
+enterList([row(173, 'master_ok')]); openReq(173); R(`TBQ.note = 'черновик'`);
+reply = { status: 403, data: { detail: 'решение по брони церемонии чужими глазами не делается' } }; calls.length = 0;
+R(`teaAction('tea-books-no', '173')`); h = req();
+check('b-inoy 403: U9 печатью / поле цело / кнопки', (h.includes('<span class="verbatim">Решение по брони церемонии чужими глазами не делается.</span>') ? 'U9' : '-') + '/' +
+  (h.includes('>черновик</textarea>') ? 'цело' : 'стёрто') + '/' + (hasBtns(h) && !/tea-books-no:173" disabled/.test(h) ? 'живые' : '-'), 'U9/цело/живые');
+enterList([row(174, 'master_ok')]); openReq(174); R(`TBQ.note = 'только при отказе'`);
+reply = { status: 200, data: row(174, 'approved') }; queue = Q([reply.data]); bodies.length = 0;
+R(`teaAction('tea-books-yes', '174')`);
+check('b-noteyes согласие слов гостю не шлёт (U2 «увидит, если откажете»)', bodies.join(''), '{"decision":"approved","note":""}');
+enterList([row(175, 'pending')]); openReq(175); R(`teaAction('tea-books-back')`);
+check('b-back U10 «К очереди» → teaBooks', R('current'), 'teaBooks');
+enterList([row(176, 'master_ok')]);
+holdQ = true; heldQ.length = 0; queue = Q([row(176, 'master_ok')]); R(`teaLoadQueue()`);
+queue = Q([row(176, 'approved')]); R(`teaLoadQueue()`);
+heldQ[1](); heldQ[0](); holdQ = false;
+check('b-gen поздний ответ старого запроса не затирает новый', R(`teaQueueById(176).status`), 'approved');
+enterList([row(177, 'master_ok'), row(178, 'master_ok')]); openReq(177); R(`TBQ.note = 'для первой'; TBQ.err = 'Отказ первой.'`);
+R(`go('teaBooks')`); openReq(178); h = req();
+check('b-leak вход в другую бронь: поле и отказ с нуля', (h.includes('для первой') ? 'поле течёт' : 'поле чисто') + '/' + (h.includes('Отказ первой') ? 'отказ течёт' : 'отказ чист'), 'поле чисто/отказ чист');
+R(`TTM.note = ''`); fire('input', { target: { id: 'ttm-note', value: 'набор мастера' } });
+check('b-nabor-ttm КОНТРОЛЬ приёма: teaToMe ловит набор', R('TTM.note'), 'набор мастера');
 
 // бронь пропала из перечитанной очереди — назад в очередь
 enterList([row(151, 'master_ok')]); openReq(151);
