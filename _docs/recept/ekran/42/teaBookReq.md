@@ -121,13 +121,14 @@
 
 **Проверки** (`tools/chay-ardir.cjs`, без браузера):
 
-- `tea-bron-reshit-da` — бронь в `master_ok`: `U5` шлёт `POST /tea/bookings/<id>/decide` с `{decision: 'approved', note}` → `teaBooks`, `U7`, бронь из ответа в «Решённых»;
+- `tea-bron-reshit-da` — бронь в `master_ok`: `U5` шлёт `POST /tea/bookings/<id>/decide` с `{decision: 'approved', note: ''}` (слова гостю уходят только с отказом: `U2` «Увидит, если откажете») → `teaBooks`, `U7`, бронь из ответа в «Решённых»;
 - `tea-bron-reshit-net` — отказ со словами → тело несёт `decision: 'rejected'` и набранные слова; ответ `refunded = true` → `U8` `Вы отказали. <price> ฿ вернулись гостю на счёт.` с ценой ИЗ ОТВЕТА;
 - `tea-bron-vozvrat-vidno` — до нажатия: сумма в `U4` и на `U6` равна цене брони;
 - `tea-bron-master-ne-soglasilsya` — бронь в `pending`: `U5` и `U6` нет, `U10` `Мастер ещё не согласился…`;
 - `tea-bron-409-pending` — 409 «мастер ещё не согласился», в перечитанной очереди бронь в `pending` → `U10` того же слова, кнопок нет;
 - `tea-bron-nelzya-soglasovat` — 409 «клуб занят…», перечитанная: бронь в `master_ok` → `U9` словами сервера, `U6` жив, `U2` сохранено;
 - `tea-bron-uzhe` — 409, перечитанная: бронь `approved` → `U10` `Эту бронь уже решили.`;
+- `tea-bron-nabor` — набранное в `U2` переживает перерисовку экрана ответом очереди (находка `arhitektor34`);
 - `tea-bron-svoya` — 409 «свою бронь решает другой…», перечитанная: бронь в `master_ok` → `U9` словами сервера, `U10` нет.
 
 Мутанты (предсказания — в файл до прогона): `teaMayDecide` истинен всегда →

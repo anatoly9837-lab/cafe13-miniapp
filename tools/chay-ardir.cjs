@@ -16,16 +16,17 @@
 //   u10word    — после 409 решение по слову отказа, без перечитывания очереди;
 //   nonote     — тело отказа без набранных слов;
 //   s2pending  — метка S2 по числу pending, а не master_ok;
-//   busy       — teaDecideSend не спрашивает TBQ.busy (второе нажатие при висящем ответе).
+//   busy       — teaDecideSend не спрашивает TBQ.busy (второе нажатие при висящем ответе);
+//   nabor      — слушатель input не сохраняет tbr-note: перерисовка ответом очереди стирает «Слова гостю» (arhitektor34).
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
 if (!root) { console.error('корень клиента первым аргументом'); process.exit(2); }
-const known = ['', 'always', 'norefund', 'refstatus', 'ownword', 'flashsum', 'flashrefund', 'u10word', 'nonote', 's2pending', 'busy'];
+const known = ['', 'nabor', 'always', 'norefund', 'refstatus', 'ownword', 'flashsum', 'flashrefund', 'u10word', 'nonote', 's2pending', 'busy'];
 if (!known.includes(mutant)) { console.error('не знаю мутанта: ' + mutant); process.exit(2); }
 let queue = null, reply = null, hold = false, held = null;
 const calls = [], bodies = [], gos = [];
 const ctx = { console, Date, Math, JSON, Object, Number, String, Array, RegExp, isNaN, parseInt, isFinite,
-  document: { addEventListener() {}, getElementById() { return null; } }, window: {},
+  document: { addEventListener(ev, f) { (ctx.__on[ev] = ctx.__on[ev] || []).push(f); }, getElementById() { return null; } }, window: {}, __on: {},
   SCREENS: {}, TITLES: {}, LIVE: true, current: 'masters', param: null, FLASH: null, haptic() {}, render() {},
   svg: () => '', ICON: {}, mayMasters: () => true, closed: () => false,
   waitMark: n => typeof n === 'number' && n > 0 ? '<span class="count">' + n + '</span>' : '',
@@ -54,6 +55,7 @@ if (mutant === 'flashrefund') src = sub(src, ": nb.status === 'rejected' && nb.r
 if (mutant === 'u10word') src = sub(src, "if (r.status === 409) { TBQ.list = null; teaLoadQueue(); }", "if (r.status === 409) { TBQ.list = TBQ.list.map(function (x) { return String(x.id) === String(id) ? Object.assign({}, x, { status: 'approved', st: 'ok' }) : x; }); }");
 if (mutant === 'nonote') src = sub(src, "note: yes ? '' : String(TBQ.note || '').trim() }", "note: '' }");
 if (mutant === 's2pending') src = sub(src, "TBQ.list = got; TBQ.masterOk = d.master_ok; }", "TBQ.list = got; TBQ.masterOk = d.pending; }");
+if (mutant === 'nabor') src = sub(src, "  if (t.id === 'tbr-note') TBQ.note = t.value;", "  if (false) TBQ.note = t.value;");
 if (mutant === 'busy') src = sub(src, "if (TBQ.busy !== null || !b || !teaMayDecide(b)) return;", "if (!b || !teaMayDecide(b)) return;");
 vm.runInContext(slova, ctx, { filename: '00' });
 vm.runInContext(fs.readFileSync(root + '/js/10-utility.js', 'utf8'), ctx, { filename: '10' });
@@ -212,6 +214,13 @@ queue = Q([row(141, 'master_ok')]);
 R(`teaAction('tea-books-yes', '141')`);
 h = req();
 check('svoya U9, U10 нет, кнопки живые', (h.includes('Свою бронь решает другой арт-директор.') ? 'U9' : '-') + '/' + (h.includes('Эту бронь уже решили.') || h.includes('Мастер ещё не согласился') ? 'U10' : 'нет') + '/' + (hasBtns(h) ? 'кнопки' : '-'), 'U9/нет/кнопки');
+
+// tea-bron-nabor: набранное в U2 переживает перерисовку ответом очереди (находка arhitektor34)
+enterList([row(161, 'master_ok')]); openReq(161);
+(ctx.__on.input || []).forEach(f => f({ target: { id: 'tbr-note', value: 'Слово-образец гостю' } }));
+queue = Q([row(161, 'master_ok')]); R(`teaLoadQueue()`);
+h = req();
+check('nabor «Слова гостю» после перерисовки', h.includes('>Слово-образец гостю</textarea>') ? 'цело' : 'стёрто', 'цело');
 
 // бронь пропала из перечитанной очереди — назад в очередь
 enterList([row(151, 'master_ok')]); openReq(151);

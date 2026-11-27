@@ -467,6 +467,7 @@ document.addEventListener('input', function (ev) {
     var b = document.getElementById('thf-send'); if (b) { b.disabled = !teaHoldReady(); b.setAttribute('aria-disabled', String(b.disabled)); }
   }
   if (t.id === 'ttm-note') TTM.note = t.value;     // T8: набранное переживает перерисовку
+  if (t.id === 'tbr-note') TBQ.note = t.value;     // U2: «Слова гостю» переживают перерисовку ответом очереди (находка arhitektor34)
   if (t.id === 'taf-price') {
     TAF.price = t.value;
     var bx = document.getElementById('taf-share'); if (bx) bx.innerHTML = teaShareLine(TAF.price, 'apply');
