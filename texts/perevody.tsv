@@ -1840,3 +1840,4 @@ tea.toMe.noteLabel	Причина — её увидит гость. Можно �
 tea.toMe.refunded	{sum} ฿ вернулись гостю на счёт.	{sum} ฿ returned to the guest's account.	{sum} ฿ ถูกคืนเข้าบัญชีของแขกแล้ว	{sum} ฿ ကို ဧည့်သည်၏ အကောင့်သို့ ပြန်အမ်းပြီးပါပြီ။	js/00-slova.js:204		машинный
 tea.toMe.refusedDone	Вы отказались. Деньги вернулись гостю на счёт.	You declined. The money returned to the guest's account.	คุณปฏิเสธแล้ว เงินถูกคืนเข้าบัญชีของแขกแล้ว	သင် ငြင်းပယ်ပြီးပါပြီ။ ငွေကို ဧည့်သည်၏ အကောင့်သို့ ပြန်အမ်းပြီးပါပြီ။	js/00-slova.js:205		машинный
 t.bde36fc8	отклонено, деньги возвращены на счёт	declined, money returned to the account	ถูกปฏิเสธ คืนเงินเข้าบัญชีแล้ว	ငြင်းပယ်ပြီး ငွေကို အကောင့်သို့ ပြန်အမ်းပြီး	js/22-ekrany-chay.js:243		машинный
+tea.toMe.refusedPlain	Вы отказались.	You declined.	คุณปฏิเสธแล้ว	သင် ငြင်းပယ်ပြီးပါပြီ။	js/00-slova.js:206		машинный

@@ -137,7 +137,7 @@ function loadTeaMine() {
     var live = d && d.live ? teaCardFrom(d.live) : null;
     if (st) TEA.mine = { status: st, note: typeof d.note === 'string' ? d.note : '', card: card, live: live };
     else TEA.mineFail = failText(r);
-    teaRerender({ home: 1, teaApply: 1, teaMaster: 1, teaBook: 1 });
+    teaRerender({ home: 1, teaApply: 1, teaMaster: 1, teaBook: 1, teaToMe: 1 });   // teaToMe: кнопки — по своему номеру
   });
 }
 /* Свои брони (B11, B12) — форма api `tea_bookings._row`: {id, master_id, starts_at, duration_min, price
@@ -248,7 +248,8 @@ function teaRefuseSend(id) {
   api('POST', TEA_URL.refuse(id), { note: String(TTM.note || '').trim() }).then(function (r) {
     TTM.busy = null;
     var nb = r.status === 200 ? teaToMeFrom(r.data) : null;
-    if (nb && TEA.toMe) { swap(nb); TTM.open = null; TTM.note = ''; FLASH = slovo('tea.toMe.refusedDone'); haptic('ok'); }
+    // весть о деньгах — по refunded ответа, как T10 (замечание arhitector32): не вернул — не обещаем
+    if (nb && TEA.toMe) { swap(nb); TTM.open = null; TTM.note = ''; FLASH = slovo(nb.refunded ? 'tea.toMe.refusedDone' : 'tea.toMe.refusedPlain'); haptic('ok'); }
     else { TTM.deny[id] = denyText(r); haptic('warn'); teaLoadToMe(); }
     if (current === 'teaToMe') render();
   });
