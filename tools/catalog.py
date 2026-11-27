@@ -416,6 +416,10 @@ ABSENT = [
     # teaToMe (рецепт 42/teaToMe.md, №98): «никто» ЗАКОННО, как teaBook — вне WIRED, открывается вместе с ним решением
     # координатора; вход T0 «Брони ко мне» — [data-go] в блоке «Чайный мастер» на «Клубе» у согласованной карточки
     'teaToMe': 'никто',
+    # teaBooks, teaBookReq (рецепты 42/teaBooks.md, 42/teaBookReq.md, №98): «никто» ЗАКОННО, как teaToMe — вне WIRED,
+    # дверь S2 на «Слотах и мастерах» открывает координатор отдельной строкой; в живом входа нет (closed('teaBooks'))
+    'teaBooks': 'никто',
+    'teaBookReq': 'никто',
     # вход «Чайные мастера» на «Услугах и баре» — [data-go], всем, у кого есть «Услуги» (js/11 teaEntry); обход его находит
     'teaMasters': 'дверь',
     # строка мастера в списке — [data-action] tea-open, список приходит с сервера
@@ -1369,7 +1373,7 @@ TITLES = {
     'calendar': 'Календарь',
     # шаг 42, ЧАЙ-A — слова клиента (js/00-slova.js: tea.list.title, tea.book.title, tea.apply.title,
     # tea.hold.title.screen, tea.join.title); у teaMaster в клиенте имя — имя мастера, здесь — род экрана
-    'teaMasters': 'Чайные мастера', 'teaMaster': 'Карточка мастера', 'teaBook': 'Бронь мастера', 'teaToMe': 'Брони ко мне',
+    'teaMasters': 'Чайные мастера', 'teaMaster': 'Карточка мастера', 'teaBook': 'Бронь мастера', 'teaToMe': 'Брони ко мне', 'teaBooks': 'Брони церемоний', 'teaBookReq': 'Решение по брони церемонии',
     'teaApply': 'Карточка чайного мастера', 'teaHold': 'Чайная церемония · заявка', 'teaJoin': 'Чайная церемония',
     'eventApproval': 'Ивенты на одобрение',
     'partnerApply': 'Заявка в партнёры · подача', 'partnerReqs': 'Заявки в партнёры', 'partnerReq': 'Заявка в партнёры · решение',
