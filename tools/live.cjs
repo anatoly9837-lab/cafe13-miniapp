@@ -15624,6 +15624,167 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
   }
 
+  /* ── клавиатуру есть чем убрать (слово владельца 27.11.2026: «на iPhone не приложением нет кнопки скрыть клавиатуру») ──
+     Замер на 1c46b50: способов убрать клавиатуру 0 (blur, focusout, key*, enterkeyhint, <form> — по нулю).
+     klaviatura-hint: КАЖДОЕ однострочное поле с клавиатурой из ТЕКСТА клиента получает enterkeyhint="done" — строкой на поле;
+       поле без клавиатуры (файл, дата, время) и textarea — НЕ получают. Тип судит своя таблица случая, не KBD_NO клиента.
+     klaviatura-enter: на настоящем экране (serviceNew) подсказка стоит после render(); Enter снимает фокус, набранное
+       остаётся, узел тот же (перерисовки нет), запросов нет; в Telegram 9.1+ зовётся hideKeyboard.
+       Обратные половины: Enter в textarea фокус НЕ снимает (перенос строки), Enter посреди набора слога (isComposing,
+       keyCode 229) — тоже нет, другая клавиша — нет; заданную полем подсказку не перетирает.
+     ⚠ Браузер в контейнере — не iPhone: что клавиатура УШЛА, видит только владелец на телефоне. Здесь — механизм. */
+  if (part(2)) {
+    const n = 'klaviatura-hint';
+    const KBD = new Set(['', 'text', 'search', 'number', 'tel', 'email', 'url', 'password']), NOKBD = new Set(['file', 'date', 'time']);
+    const tags = [];
+    for (const f of KL.files) {
+      if (!f.file.startsWith('js/')) continue;
+      const re = /<(input|textarea)\b([^<]*)/g; let m;
+      while ((m = re.exec(f.text))) {
+        const id = (m[2].match(/\bid="([\w-]*)/) || [])[1] || '', type = m[1] === 'textarea' ? 'textarea' : ((m[2].match(/\btype="(\w+)"/) || [])[1] || '');
+        tags.push({ at: `${f.file}:${f.text.slice(0, m.index).split('\n').length}`, id, type, tag: m[1] });
+      }
+    }
+    const odd = tags.filter(t => t.tag === 'input' && !KBD.has(t.type) && !NOKBD.has(t.type));
+    odd.forEach(t => bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — ${t.at} поле type="${t.type}": решить, есть ли у него клавиатура, и вписать в таблицу случая`));
+    const want = tags.filter(t => t.tag === 'input' && KBD.has(t.type));
+    if (want.length < 40) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — однострочных с клавиатурой в тексте клиента ${want.length}, на 1c46b50 было 44: разбор разметки ослеп`);
+    const s = await open(true, false, json(200, OWNER), null, null, null);
+    const got = await s.p.evaluate(list => {
+      if (typeof kbdHints !== 'function') return null;
+      const w = document.createElement('div');
+      w.innerHTML = list.map((t, i) => t.tag === 'textarea' ? `<textarea data-k="${i}"></textarea>`
+        : `<input data-k="${i}"${t.type ? ` type="${t.type}"` : ''}>`).join('');
+      kbdHints(w);
+      return [...w.querySelectorAll('[data-k]')].map(e => e.getAttribute('enterkeyhint'));
+    }, tags);
+    if (!got) bad.push(`${n}: в клиенте нет kbdHints — ставить подсказку нечем`);
+    else {
+      let done = 0;
+      tags.forEach((t, i) => {
+        const kbd = t.tag === 'input' && KBD.has(t.type);
+        if (kbd && got[i] === 'done') done += 1;
+        if (kbd && got[i] !== 'done') bad.push(`${n}: ${t.at} #${t.id || '?'}[${t.type || 'без type'}] — нет enterkeyhint="done", «Готово» на клавиатуре не будет`);
+        if (!kbd && got[i] !== null) bad.push(`${n}: ${t.at} #${t.id || '?'}[${t.type}] — enterkeyhint="${got[i]}" у поля ${t.tag === 'textarea' ? 'с переносом строки' : 'без клавиатуры'}`);
+      });
+      console.log(`${n}: полей в тексте клиента ${tags.length}, однострочных с клавиатурой ${want.length}, с «Готово» ${done}`);
+    }
+    await s.ctx.close();
+  }
+  if (part(2)) {
+    const n = 'klaviatura-enter';
+    const s = await open(true, false, json(200, OWNER), null, null, null);
+    await s.p.evaluate(() => { window.__hk = 0; Telegram.WebApp.hideKeyboard = function () { window.__hk += 1; }; go('serviceNew'); });
+    await s.p.waitForTimeout(150);
+    if (!(await s.p.$('#s-title'))) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — экран serviceNew без поля #s-title, нажимать не в чем`);
+    else {
+      const hints = await s.p.$$eval('#view input', e => e.map(x => x.id + '=' + x.getAttribute('enterkeyhint')));
+      if (JSON.stringify(hints) !== '["s-title=done","s-about=done","s-price=done","s-contact=done"]')
+        bad.push(`${n}: после render() у полей serviceNew подсказки ${JSON.stringify(hints)}, ждали done у всех четырёх`);
+      const before = s.calls.length;
+      await s.p.fill('#s-about', 'Чайная церемония');
+      await s.p.fill('#s-title', 'Йога у моря');
+      await s.p.evaluate(() => { document.getElementById('s-title').__mine = 1; });
+      const press = async (sel, init) => {
+        await s.p.focus(sel);
+        // keyCode в KeyboardEventInit Chromium не берёт — ставится свойством на событие, иначе 229 был бы нулём
+        await s.p.evaluate(([sel, init]) => {
+          const ev = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: init.key, isComposing: !!init.isComposing });
+          if (init.keyCode) Object.defineProperty(ev, 'keyCode', { get: () => init.keyCode });
+          document.querySelector(sel).dispatchEvent(ev);
+        }, [sel, init]);
+        await s.p.waitForTimeout(60);
+        return s.p.evaluate(sel => document.activeElement === document.querySelector(sel), sel);
+      };
+      // обратные половины — ДО главного нажатия: hideKeyboard от них не зовётся
+      if (!(await press('#s-title', { key: 'Enter', isComposing: true }))) bad.push(`${n}: Enter посреди набора слога (isComposing) снял фокус — слово не дописать`);
+      if (!(await press('#s-title', { key: 'Enter', keyCode: 229 }))) bad.push(`${n}: Enter набора слога (keyCode 229) снял фокус — слово не дописать`);
+      if (!(await press('#s-title', { key: 'a' }))) bad.push(`${n}: обычная клавиша сняла фокус`);
+      if (await s.p.evaluate(() => window.__hk) !== 0) bad.push(`${n}: hideKeyboard позван без Enter`);
+      await s.p.focus('#s-title');
+      await s.p.keyboard.press('Enter');
+      await s.p.waitForTimeout(100);
+      const after = await s.p.evaluate(() => {
+        const el = document.getElementById('s-title');
+        return { focus: document.activeElement === el, same: !!(el && el.__mine), v: el && el.value,
+                 about: document.getElementById('s-about').value, current, hk: window.__hk };
+      });
+      if (after.focus) bad.push(`${n}: Enter в однострочном поле не снял фокус — «Готово» клавиатуру не уберёт`);
+      if (!after.same) bad.push(`${n}: Enter перерисовал экран — поле подменено новым узлом`);
+      if (after.v !== 'Йога у моря' || after.about !== 'Чайная церемония') bad.push(`${n}: после Enter набранное потеряно: «${after.v}», «${after.about}»`);
+      if (after.current !== 'serviceNew') bad.push(`${n}: Enter увёл с экрана на ${after.current}`);
+      if (s.calls.length !== before) bad.push(`${n}: Enter отправил запросы: ${s.calls.slice(before).map(c => c.method + ' ' + c.url).join('; ')}`);
+      if (after.hk !== 1) bad.push(`${n}: в Telegram 9.1+ Enter позвал hideKeyboard ${after.hk} раз, ждали 1`);
+      // клиент Telegram старше 9.1: метода у него нет — не зовём; фокус Enter снимает всё равно (blur — основа)
+      await s.p.evaluate(() => { window.__ver = Telegram.WebApp.isVersionAtLeast; Telegram.WebApp.isVersionAtLeast = v => parseFloat(v) <= 7; });
+      await s.p.focus('#s-about');
+      await s.p.keyboard.press('Enter');
+      await s.p.waitForTimeout(60);
+      const old = await s.p.evaluate(() => ({ focus: document.activeElement && document.activeElement.id, hk: window.__hk }));
+      if (old.hk !== 1) bad.push(`${n}: Telegram 7.0 — hideKeyboard позван (${old.hk - 1} раз), а метода в этой версии нет`);
+      if (old.focus === 's-about') bad.push(`${n}: Telegram 7.0 — Enter не снял фокус: blur обязан работать без hideKeyboard`);
+      // textarea: Enter — перенос строки; подсказка, заданная полем, не перетирается.
+      // Версия снова 9.1+: в textarea Enter не зовёт и hideKeyboard — клавиатура посреди описания не уходит (ревью arhitector31, a-tahk)
+      await s.p.evaluate(() => {
+        Telegram.WebApp.isVersionAtLeast = window.__ver;
+        const v = document.getElementById('view');
+        v.insertAdjacentHTML('beforeend', '<textarea id="kb-ta"></textarea><input id="kb-own" type="search" enterkeyhint="search"><input id="kb-empty">');
+        kbdHints(v);
+      });
+      if (!(await s.p.evaluate(() => Telegram.WebApp.isVersionAtLeast('9.1'))))
+        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — версия 9.1+ не вернулась, textarea судится не в том Telegram`);
+      const hk0 = await s.p.evaluate(() => window.__hk);
+      await s.p.focus('#kb-ta');
+      await s.p.keyboard.type('раз');
+      await s.p.keyboard.press('Enter');
+      // фокус читается СРАЗУ после Enter: набор кириллицы ниже идёт через insertText, и Chromium возвращает фокус
+      // в textarea по оставшемуся выделению — прочитанный после набора фокус blur() не видит (проба m-tag 27.11)
+      const taFocus = await s.p.evaluate(() => document.activeElement.id);
+      const taHk = await s.p.evaluate(() => window.__hk) - hk0;
+      await s.p.keyboard.type('два');
+      const ta = await s.p.evaluate(() => ({ v: document.getElementById('kb-ta').value,
+                                              hint: document.getElementById('kb-ta').getAttribute('enterkeyhint'),
+                                              own: document.getElementById('kb-own').getAttribute('enterkeyhint') }));
+      if (taFocus !== 'kb-ta') bad.push(`${n}: Enter в textarea снял фокус — перенос строки сломан`);
+      if (ta.v !== 'раз\nдва') bad.push(`${n}: Enter в textarea не перенёс строку: ${JSON.stringify(ta.v)}`);
+      if (ta.hint !== null) bad.push(`${n}: textarea получила enterkeyhint="${ta.hint}"`);
+      if (ta.own !== 'search') bad.push(`${n}: заданную полем подсказку «search» перетёрло: «${ta.own}»`);
+      if (taHk !== 0) bad.push(`${n}: в Telegram 9.1+ Enter в textarea позвал hideKeyboard (${taHk}) — клавиатура уходит посреди описания`);
+      // пустое поле: открыл, ничего не набрал, нажал «Готово» — клавиатура обязана уйти (ревью arhitector31, a-empty)
+      await s.p.focus('#kb-empty');
+      if (await s.p.evaluate(() => document.getElementById('kb-empty').value) !== '')
+        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — поле #kb-empty не пустое`);
+      await s.p.keyboard.press('Enter');
+      await s.p.waitForTimeout(60);
+      if (await s.p.evaluate(() => document.activeElement && document.activeElement.id) === 'kb-empty')
+        bad.push(`${n}: Enter в ПУСТОМ однострочном поле не снял фокус — «Готово» без набора клавиатуру не уберёт`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+  // klaviatura-vne-tg: ровно жалоба владельца — «не приложением». Вне Telegram (platform 'unknown') hideKeyboard не зовём,
+  // а Enter снимает фокус всё равно: blur — основа, Telegram — довесок
+  if (part(2)) {
+    const n = 'klaviatura-vne-tg';
+    const s = await open(false, false, json(200, OWNER), null, null, null);
+    await s.p.evaluate(() => { window.__hk = 0; Telegram.WebApp.hideKeyboard = function () { window.__hk += 1; }; go('serviceNew'); });
+    await s.p.waitForTimeout(150);
+    const pre = await s.p.evaluate(() => ({ tg: inTelegram(), f: !!document.getElementById('s-title') }));
+    if (pre.tg || !pre.f) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — страница ${pre.tg ? 'считает себя внутри Telegram' : 'без поля #s-title'}`);
+    else {
+      if (await s.p.getAttribute('#s-title', 'enterkeyhint') !== 'done') bad.push(`${n}: вне Telegram у #s-title нет enterkeyhint="done"`);
+      await s.p.fill('#s-title', 'Йога у моря');
+      await s.p.keyboard.press('Enter');
+      await s.p.waitForTimeout(60);
+      const r = await s.p.evaluate(() => ({ focus: document.activeElement && document.activeElement.id, v: document.getElementById('s-title').value, hk: window.__hk }));
+      if (r.focus === 's-title') bad.push(`${n}: вне Telegram Enter не снял фокус — у владельца клавиатура осталась бы`);
+      if (r.v !== 'Йога у моря') bad.push(`${n}: вне Telegram после Enter набранное потеряно: «${r.v}»`);
+      if (r.hk !== 0) bad.push(`${n}: вне Telegram позван hideKeyboard (${r.hk})`);
+    }
+    if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
+
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.

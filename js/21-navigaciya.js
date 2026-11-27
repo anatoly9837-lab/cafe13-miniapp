@@ -466,9 +466,37 @@ function render() {
 
   sunButton();
   tgChrome();
+  kbdHints(view);
   // место берётся ДО подмены разметки: после неё высота страницы другая, и браузер уже сдвинул бы его
   window.scrollTo(0, same ? y : 0);
 }
+
+/* ── клавиатуру есть чем убрать (слово владельца 27.11.2026) ──
+   «Когда пользуешься с iPhone не приложением, там нет кнопки скрыть клавиатуру». Замер 27.11 на 1c46b50: у 69 полей
+   не было ни одного способа — ни blur, ни Enter, ни <form>. Чиним тем, что работает ВЕЗДЕ, а не одним Telegram:
+   WebApp.hideKeyboard вне приложения не существует, а жаловался владелец именно там.
+   1) однострочному полю с клавиатурой — enterkeyhint="done": клавиша возврата становится «Готово»;
+   2) Enter в таком поле снимает фокус — «Готово» действительно закрывает; в Telegram сверху hideKeyboard (9.1+).
+   Ставится по СВОЙСТВУ поля после каждой перерисовки, а не перечнем id: новое поле получит «Готово» само.
+   textarea здесь НЕТ нарочно: Enter в описании и рецепте — перенос строки; им нужна видимая кнопка — отдельная работа.
+   Без клавиатуры (файл, дата, время, флажки) — тоже нет: у них своё окно выбора. */
+var KBD_NO = { file: 1, date: 1, time: 1, 'datetime-local': 1, month: 1, week: 1, checkbox: 1, radio: 1, range: 1, color: 1,
+  hidden: 1, button: 1, submit: 1, reset: 1, image: 1 };
+function kbdLine(el) {
+  return !!el && el.tagName === 'INPUT' && !KBD_NO[(el.getAttribute('type') || 'text').toLowerCase()];
+}
+function kbdHints(root) {
+  [].forEach.call(root.querySelectorAll('input'), function (el) {
+    if (kbdLine(el) && !el.hasAttribute('enterkeyhint')) el.setAttribute('enterkeyhint', 'done');
+  });
+}
+document.addEventListener('keydown', function (ev) {
+  // набор слога (тайский, бирманский, японский) Enter подтверждает слово — снимать фокус посреди набора нельзя
+  if (ev.key !== 'Enter' || ev.isComposing || ev.keyCode === 229 || !kbdLine(ev.target)) return;
+  ev.preventDefault();
+  ev.target.blur();          // значение остаётся в поле: перерисовки нет, отправки нет
+  tgHideKeyboard();
+});
 
 /* ── рабочие экраны в демонстрации (Cafe13KPG#409) ─────
    Вне Telegram девять экранов бара, кассы и «Людей» рисовали отказ по праву:
