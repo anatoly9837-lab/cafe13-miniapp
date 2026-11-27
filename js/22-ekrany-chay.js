@@ -134,11 +134,14 @@ function loadTeaMine() {
     teaRerender({ home: 1, teaApply: 1, teaMaster: 1, teaBook: 1 });
   });
 }
-/* Свои брони (B11, B12) — форма api a6d4d4c `tea_bookings._row`: {id, master_id, starts_at, duration_min, price
-   строкой, status: pending|approved|rejected, note, refunded}. Решает ОДИН — арт-директор; полей master/art у
-   сервера нет. Отказ возвращает ВСЮ цену (№86 «а»): refund = price, если refunded. →
+/* Свои брони (B11, B12) — форма api `tea_bookings._row`: {id, master_id, starts_at, duration_min, price
+   строкой, status: pending|master_ok|approved|rejected, note, refunded}. Цепочка №98 (api#239): pending — ждёт
+   мастера, master_ok — мастер согласился, ждёт арт-директора; решает арт-директор. Полей master/art у сервера нет.
+   ⚠ master_ok обязан быть в TEA_BOOK_ST: незнакомый status отбрасывает ВЕСЬ ответ (every(Boolean)), и одна
+   бронь в master_ok обнулила бы список гостя. У гостя master_ok — то же «ждёт согласования» (B11 — одно
+   состояние на бронь, решения ещё нет). Отказ возвращает ВСЮ цену (№86 «а»): refund = price, если refunded. →
    {master, at, mins, st: wait|ok|no, refund: строка|null, note} */
-var TEA_BOOK_ST = { pending: 'wait', approved: 'ok', rejected: 'no' };
+var TEA_BOOK_ST = { pending: 'wait', master_ok: 'wait', approved: 'ok', rejected: 'no' };
 function teaBookFrom(b) {
   var at = b && typeof b.starts_at === 'string' ? Date.parse(b.starts_at) : NaN;
   var st = b && TEA_BOOK_ST.hasOwnProperty(b.status) ? TEA_BOOK_ST[b.status] : null;
