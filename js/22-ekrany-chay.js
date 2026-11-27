@@ -30,6 +30,7 @@ var TEA_URL = { list: function () { return '/tea/masters'; },
                 // и tea_bookings.accept, бой a04c4dd. Экран вне WIRED: открывается вместе с teaBook, решением координатора
                 toMe: function () { return '/tea/bookings/to-me'; },
                 accept: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/accept'; },
+                refuse: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/refuse'; },
                 hold: function () { return '/master/request'; }, price: function () { return '/master/price'; } };
 function teaLive(k) { return LIVE && typeof TEA_URL[k] === 'function'; }
 
@@ -179,9 +180,10 @@ function teaToMeFrom(b) {
   if (!x || typeof b.id !== 'number' || typeof b.status_ru !== 'string') return null;
   x.id = b.id; x.status = b.status; x.word = b.status_ru; x.price = teaPrice(b.price);
   x.guest = typeof b.guest_name === 'string' ? b.guest_name : '';
+  x.refunded = b.refunded === true;      // T10: отказ вернул ВСЮ цену гостю (tea_bookings._refund)
   return x;
 }
-/* Кнопка «Согласиться» (T4) — ТОЛЬКО через этот предикат: бронь ждёт мастера И она к МОЕЙ карточке (master_id —
+/* Кнопки «Согласиться» (T4) и «Отказаться» (T7) — ТОЛЬКО через этот предикат (обе половины одного решения): бронь ждёт мастера И она к МОЕЙ карточке (master_id —
    номер первой подачи, teaMyId). Сервер отдаёт чужому 403 (tea_bookings._own_booking), но кнопка, обречённая на
    отказ, — ложь экрана. Номера своей карточки нет — кнопки нет ни у одной брони. */
 function teaMyMaster() { return LIVE ? teaMyId() : TEA_TOME_DEMO_ME; }
@@ -195,7 +197,7 @@ function teaToMeDemo() {
     { id: 9002, master: 801, at: d(4, '19:00'), mins: 90, st: 'wait', status: 'master_ok', word: 'мастер согласился, ждёт арт-директора', price: '600', guest: 'Гость клуба', refund: null, note: '' }
   ];
 }
-var TTM = { busy: null, deny: {} };
+var TTM = { busy: null, deny: {}, open: null, note: '' };   // open — бронь с раскрытым отказом (T8), note — набранное
 function teaLoadToMe() {
   if (!LIVE) { if (!TEA.toMe) TEA.toMe = teaToMeDemo(); TEA.toMeFail = ''; return; }
   TEA.toMe = null; TEA.toMeFail = '';
@@ -225,6 +227,28 @@ function teaAcceptSend(id) {
     TTM.busy = null;
     var nb = r.status === 200 ? teaToMeFrom(r.data) : null;
     if (nb && TEA.toMe) { swap(nb); FLASH = slovo('tea.toMe.done'); haptic('ok'); }
+    else { TTM.deny[id] = denyText(r); haptic('warn'); teaLoadToMe(); }
+    if (current === 'teaToMe') render();
+  });
+}
+/* Отказ (T9): два шага — T7 только раскрывает поле, деньги уходят здесь. 200 — строка из ответа (rejected, T10);
+   отказ сервера — слова под бронью, набранное остаётся. Тело — MasterRefusal {note} (≤ 500, необязательно). */
+function teaRefuseSend(id) {
+  var b = (TEA.toMe || []).filter(function (x) { return x.id === id; })[0];
+  if (TTM.busy !== null || !b || !teaMayAccept(b) || TTM.open !== id) return;
+  var el = document.getElementById('ttm-note'); if (el) TTM.note = el.value;
+  var swap = function (nb) { TEA.toMe = TEA.toMe.map(function (x) { return x.id === id ? nb : x; }); };
+  delete TTM.deny[id];
+  if (!LIVE) {
+    swap(Object.assign({}, b, { status: 'rejected', st: 'no', word: 'отклонено, деньги возвращены на счёт', refunded: true }));
+    TTM.open = null; TTM.note = ''; FLASH = { text: slovo('tea.toMe.refusedDone'), note: slovo('tea.demoNote') }; haptic('ok'); render(); return;
+  }
+  if (typeof TEA_URL.refuse !== 'function') { TTM.deny[id] = slovo('tea.noApi'); render(); return; }
+  TTM.busy = id; render();
+  api('POST', TEA_URL.refuse(id), { note: String(TTM.note || '').trim() }).then(function (r) {
+    TTM.busy = null;
+    var nb = r.status === 200 ? teaToMeFrom(r.data) : null;
+    if (nb && TEA.toMe) { swap(nb); TTM.open = null; TTM.note = ''; FLASH = slovo('tea.toMe.refusedDone'); haptic('ok'); }
     else { TTM.deny[id] = denyText(r); haptic('warn'); teaLoadToMe(); }
     if (current === 'teaToMe') render();
   });
@@ -349,6 +373,7 @@ document.addEventListener('input', function (ev) {
     var box = document.getElementById('thf-share'); if (box) box.innerHTML = teaShareLine(THF.entry, 'hold');
     var b = document.getElementById('thf-send'); if (b) { b.disabled = !teaHoldReady(); b.setAttribute('aria-disabled', String(b.disabled)); }
   }
+  if (t.id === 'ttm-note') TTM.note = t.value;     // T8: набранное переживает перерисовку
   if (t.id === 'taf-price') {
     TAF.price = t.value;
     var bx = document.getElementById('taf-share'); if (bx) bx.innerHTML = teaShareLine(TAF.price, 'apply');
@@ -454,7 +479,7 @@ function teaGo(screen, p) {
     teaLoadCard(id); teaLoadBooks(id);        // и на возврат из календаря (рецепт «Перечитать на входе»)
   }
   if (screen === 'teaToMe') {
-    if (current !== 'teaToMe') TTM = { busy: null, deny: {} };
+    if (current !== 'teaToMe') TTM = { busy: null, deny: {}, open: null, note: '' };
     if (LIVE && !TEA.mine && !TEA.mineFail) loadTeaMine();     // свой номер мастера — для teaMayAccept
     teaLoadToMe();
   }
@@ -488,6 +513,10 @@ function teaAction(a, arg) {
   if (a === 'tea-book-send') { teaBookSend(); return true; }
   if (a === 'tea-tome-accept') { haptic(); teaAcceptSend(Number(arg)); return true; }
   if (a === 'tea-tome-retry') { teaLoadToMe(); render(); return true; }
+  if (a === 'tea-tome-refuse') { var rb = (TEA.toMe || []).filter(function (x) { return x.id === Number(arg); })[0];
+    if (rb && teaMayAccept(rb) && TTM.busy === null) { TTM.open = rb.id; TTM.note = ''; render(); } return true; }
+  if (a === 'tea-tome-refuse-cancel') { TTM.open = null; TTM.note = ''; render(); return true; }
+  if (a === 'tea-tome-refuse-send') { haptic(); teaRefuseSend(Number(arg)); return true; }
   if (a === 'tea-hold-cal') { teaGrab(); go('calendar', { pick: 'teaHold' }); return true; }
   if (a === 'tea-hold-send') { teaHoldSend(); return true; }
   if (a === 'tea-price-retry') { teaGrab(); teaLoadPrice(); render(); return true; }
@@ -508,6 +537,19 @@ function teaJoinEvent(id) {
   return { id: c.id, eid: null, occ: 'tea', title: c.title, at: c.at, mins: c.mins, time: p.hm, until: z.hm, master: c.host,
            seats: c.free === null ? null : c.free, of: c.of, unl: c.of === null, taken: 0, kind: 'paid', price: c.price,
            about: '', booked: !!c.booked, approval: 'approved', done: false, demoMine: c.vis === 'mine' };
+}
+
+/* T4 и T7, а при раскрытом отказе — T8, T9, T9a. Зовётся только под teaMayAccept. */
+function teaToMeButtons(b, busy) {
+  var off = TTM.busy !== null ? ' disabled aria-disabled="true"' : '';
+  if (TTM.open === b.id) return '<div class="field"><label for="ttm-note">' + esc(slovo('tea.toMe.noteLabel')) + '</label>' +
+      '<textarea id="ttm-note" rows="3" maxlength="500">' + esc(TTM.note) + '</textarea></div>' +
+    '<div class="row"><button type="button" class="btn ghost" data-action="tea-tome-refuse-send:' + esc(b.id) + '"' + off + '>' +
+      esc(busy ? slovo('tea.sending') : slovo('tea.toMe.refuseSend')) + '</button>' +
+    '<button type="button" class="btn quiet" data-action="tea-tome-refuse-cancel"' + off + '>' + esc(slovo('tea.toMe.refuseCancel')) + '</button></div>';
+  return '<div class="row"><button type="button" class="btn" data-action="tea-tome-accept:' + esc(b.id) + '"' + off + '>' +
+      esc(busy ? slovo('tea.sending') : slovo('tea.toMe.accept')) + '</button>' +
+    '<button type="button" class="btn ghost" data-action="tea-tome-refuse:' + esc(b.id) + '"' + off + '>' + esc(slovo('tea.toMe.refuse')) + '</button></div>';
 }
 
 /* ── экраны ───────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -576,8 +618,8 @@ Object.assign(SCREENS, {
       return '<div class="card" data-tome="' + esc(b.id) + '"><div class="col">' +
         '<div class="row"><b>' + esc(teaWhen(b.at, b.mins)) + '</b><span class="st ' + b.st + '"><span class="verbatim">' + esc(b.word) + '</span></span></div>' +
         '<div class="row"><span class="small clamp1">' + esc(b.guest) + '</span>' + (b.price !== null ? '<b class="num">' + esc(money(b.price)) + ' ฿</b>' : '') + '</div>' +
-        (teaMayAccept(b) ? '<button type="button" class="btn" data-action="tea-tome-accept:' + esc(b.id) + '"' + (busy || TTM.busy !== null ? ' disabled aria-disabled="true"' : '') + '>' +
-          esc(busy ? slovo('tea.sending') : slovo('tea.toMe.accept')) + '</button>' : '') +
+        (b.status === 'rejected' && b.refunded && b.price !== null ? '<span class="small">' + esc(slovo('tea.toMe.refunded', { sum: money(b.price) })) + '</span>' : '') +
+        (teaMayAccept(b) ? teaToMeButtons(b, busy) : '') +
         (TTM.deny[b.id] ? teaDeny(TTM.deny[b.id], true) : '') +
       '</div></div>';
     }).join('');

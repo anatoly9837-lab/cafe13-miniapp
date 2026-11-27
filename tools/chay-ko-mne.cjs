@@ -8,11 +8,12 @@
 //   chej       — teaMayAccept не спрашивает «чей мастер»: кнопка у чужой брони (краснеет С2);
 //   nopending  — teaMayAccept не спрашивает состояние: кнопка у брони, уже ушедшей арт-директору (С1, после согласия);
 //   nomasterok — master_ok снят с TEA_BOOK_ST: бронь в master_ok отбрасывает весь список (С3; и С1 — ответ accept
-//                в master_ok не разбирается).
+//                в master_ok не разбирается);
+//   norefund   — строка T10 «… ฿ вернулись гостю на счёт.» снята: краснеют С7 (после отказа) и С8 (возврат в списке).
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
 if (!root) { console.error('корень клиента первым аргументом'); process.exit(2); }
-const known = ['', 'chej', 'nopending', 'nomasterok'];
+const known = ['', 'chej', 'nopending', 'nomasterok', 'norefund'];
 if (!known.includes(mutant)) { console.error('не знаю мутанта: ' + mutant); process.exit(2); }
 let reply = null, list = null, hold = false, held = null;   // reply — ответ на согласие, list — на GET to-me
 const calls = [];
@@ -35,6 +36,7 @@ const slova = fs.readFileSync(root + '/js/00-slova.js', 'utf8');
 let src = fs.readFileSync(root + '/js/22-ekrany-chay.js', 'utf8');
 if (mutant === 'chej') src = sub(src, "my !== null && b.master === my; }", "my !== null; }");
 if (mutant === 'nopending') src = sub(src, "return b.status === 'pending' && my !== null", "return my !== null");
+if (mutant === 'norefund') src = sub(src, "(b.status === 'rejected' && b.refunded && b.price !== null ?", "(false ?");
 if (mutant === 'nomasterok') src = sub(src, "pending: 'wait', master_ok: 'wait', approved:", "pending: 'wait', approved:");
 vm.runInContext(slova, ctx, { filename: '00' });
 vm.runInContext(fs.readFileSync(root + '/js/10-utility.js', 'utf8'), ctx, { filename: '10' });
@@ -82,6 +84,9 @@ check('С2 чужая ждущая — строка есть, кнопки не�
 check('С2 своя рядом — кнопка есть', btn(h, 35) ? 'есть' : 'нет', 'есть');
 press(32, { status: 403, data: { detail: 'согласиться на бронь может только её мастер' } });
 check('С2 нажатие на чужую запроса не шлёт', String(calls.length), '0');
+check('С2 у чужой нет и «Отказаться»', h.includes('data-action="tea-tome-refuse:32"') ? 'кнопка' : 'нет', 'нет');
+R(`teaAction('tea-tome-refuse', '32')`);
+check('С2 отказ чужой не раскрывается', R(`String(TTM.open)`), 'null');
 mine(null); R(`TEA.mineFail = 'код 500'`); enter([row(36, 3, 'pending')]);
 h = screen();
 check('С2 своей карточки нет — кнопки нет, строка есть', (h.includes('data-tome="36"') ? 'строка' : '-') + '/' + (btn(h, 36) ? 'кнопка' : 'нет'), 'строка/нет');
@@ -103,6 +108,31 @@ press(38, { status: 409, data: { detail: 'бронь уже не ждёт мас
 check('С5 перечитан список', calls.join(','), 'POST /tea/bookings/38/accept,GET /tea/bookings/to-me');
 h = screen();
 check('С5 слова сервера под бронью', h.includes('<span class="verbatim">Бронь уже не ждёт мастера: согласовано.</span>') ? 'есть' : 'нет', 'есть');
+
+// С7 tea-ko-mne-otkaz-mastera: «Отказаться» только раскрывает поле, деньги уходят по «Отказать и вернуть деньги»
+mine(3); enter([row(40, 3, 'pending', { price: '1500.50' })]);
+h = screen();
+check('С7 своя ждущая — «Отказаться» есть', h.includes('data-action="tea-tome-refuse:40"') && h.includes('>Отказаться<') ? 'есть' : 'нет', 'есть');
+calls.length = 0; R(`teaAction('tea-tome-refuse', '40')`);
+h = screen();
+check('С7 первый шаг запроса не шлёт, поле раскрыто', String(calls.length) + '/' + (h.includes('id="ttm-note"') && h.includes('Отказать и вернуть деньги') ? 'поле' : '-'), '0/поле');
+R(`TTM.note = '  Заболел, простите.  '`);
+let body = null; const api0 = ctx.api; ctx.api = (m, u, b) => { body = b; return api0(m, u, b); };
+calls.length = 0; reply = { status: 200, data: row(40, 3, 'rejected', { price: '1500.50', refunded: true, refused_by_master: true,
+  note: 'Заболел, простите.', decided_at: '2026-11-27T02:00:00Z' }) };
+R(`teaAction('tea-tome-refuse-send', '40')`); ctx.api = api0;
+check('С7 второй шаг: адрес и тело', calls.join(',') + ' ' + JSON.stringify(body), 'POST /tea/bookings/40/refuse {"note":"Заболел, простите."}');
+h = screen();
+check('С7 после 200: слово сервера, вид no, кнопок нет, весть',
+  (h.includes('<span class="st no"><span class="verbatim">отклонено, деньги возвращены на счёт</span>') ? 'слово' : '-') + '/' +
+  (/tea-tome-(accept|refuse)/.test(h) ? 'кнопки' : 'нет') + '/' +
+  (h.includes('<flash>Вы отказались. Деньги вернулись гостю на счёт.</flash>') ? 'весть' : '-'), 'слово/нет/весть');
+check('С7 строка о возврате с суммой', h.includes('1 500.50 ฿ вернулись гостю на счёт.') ? 'есть' : 'нет', 'есть');
+
+// С8 tea-ko-mne-vozvrat: отказанная с возвратом в списке — строка о возврате; без возврата — строки нет
+mine(3); enter([row(41, 3, 'rejected', { refunded: true, refused_by_master: true }), row(42, 3, 'rejected', { refunded: false })]);
+h = screen();
+check('С8 возврат виден у refunded и только у неё', String((h.match(/600\.00 ฿ вернулись гостю на счёт\./g) || []).length), '1');
 
 // С6: пусто и незнакомое состояние
 mine(3); enter([]);

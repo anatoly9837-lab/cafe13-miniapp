@@ -1835,3 +1835,8 @@ tea.toMe.emptyNote	Здесь появятся брони гостей на ва
 tea.toMe.fail	Брони не загрузились	Bookings did not load	โหลดการจองไม่สำเร็จ	ကြိုတင်စာရင်းသွင်းမှုများ မဖွင့်နိုင်ပါ	js/00-slova.js:199		машинный
 t.ebe22b97	Гость клуба	Club guest	แขกของคลับ	ကလပ်ဧည့်သည်	js/22-ekrany-chay.js:194		машинный
 t.ef556860	мастер согласился, ждёт арт-директора	the master accepted, waiting for the art director	มาสเตอร์ยอมรับแล้ว รออาร์ตไดเรกเตอร์	မာစတာ သဘောတူပြီး အနုပညာဒါရိုက်တာကို စောင့်နေသည်	js/22-ekrany-chay.js:195		машинный
+tea.toMe.refuse	Отказаться	Decline	ปฏิเสธ	ငြင်းပယ်ရန်	js/00-slova.js:200		машинный
+tea.toMe.noteLabel	Причина — её увидит гость. Можно не писать.	Reason — the guest will see it. You may leave it empty.	เหตุผล — แขกจะเห็นข้อความนี้ ไม่ต้องเขียนก็ได้	အကြောင်းပြချက် — ဧည့်သည် မြင်ရမည်။ မရေးဘဲ ထားနိုင်သည်။	js/00-slova.js:201		машинный
+tea.toMe.refunded	{sum} ฿ вернулись гостю на счёт.	{sum} ฿ returned to the guest's account.	{sum} ฿ ถูกคืนเข้าบัญชีของแขกแล้ว	{sum} ฿ ကို ဧည့်သည်၏ အကောင့်သို့ ပြန်အမ်းပြီးပါပြီ။	js/00-slova.js:204		машинный
+tea.toMe.refusedDone	Вы отказались. Деньги вернулись гостю на счёт.	You declined. The money returned to the guest's account.	คุณปฏิเสธแล้ว เงินถูกคืนเข้าบัญชีของแขกแล้ว	သင် ငြင်းပယ်ပြီးပါပြီ။ ငွေကို ဧည့်သည်၏ အကောင့်သို့ ပြန်အမ်းပြီးပါပြီ။	js/00-slova.js:205		машинный
+t.bde36fc8	отклонено, деньги возвращены на счёт	declined, money returned to the account	ถูกปฏิเสธ คืนเงินเข้าบัญชีแล้ว	ငြင်းပယ်ပြီး ငွေကို အကောင့်သို့ ပြန်အမ်းပြီး	js/22-ekrany-chay.js:243		машинный
