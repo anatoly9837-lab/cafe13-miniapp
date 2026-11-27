@@ -204,6 +204,31 @@ var SLOVA = {
     'tea.toMe.refunded': '{sum} ฿ вернулись гостю на счёт.',
     'tea.toMe.refusedDone': 'Вы отказались. Деньги вернулись гостю на счёт.',
     'tea.toMe.refusedPlain': 'Вы отказались.',
+    // teaBooks, teaBookReq (рецепты 42/teaBooks.md, 42/teaBookReq.md, №98): решение арт-директора; слово состояния —
+    // status_ru сервера, не здесь; строка возврата — общая с teaToMe (tea.toMe.refunded)
+    'tea.books.title': 'Брони церемоний',                         // заголовок и вход S2
+    'tea.books.entrySub': 'Мастер согласился — решаете вы',      // S2
+    'tea.books.wait': 'Ждут вашего решения',                      // V0
+    'tea.books.master': 'Ждут мастера',                           // V7
+    'tea.books.past': 'Решённые',                                 // V2
+    'tea.books.row': 'мастер {name} · {when}',                    // V1, V6, V3
+    'tea.books.afterMaster': 'Решать можно после согласия мастера.',   // V6
+    'tea.books.empty': 'Броней нет',                              // V4
+    'tea.books.emptyNote': 'Здесь появятся брони, которые гости делают у чайных мастеров.',
+    'tea.bookReq.master': 'Мастер',                               // U1
+    'tea.bookReq.when': 'Когда',
+    'tea.bookReq.paid': 'Оплачено',
+    'tea.bookReq.noteLabel': 'Слова гостю',                       // U2
+    'tea.bookReq.noteSub': 'Увидит, если откажете. Можно не писать.',
+    'tea.bookReq.yesNote': 'Согласие займёт это время в календаре клуба.',   // U3
+    'tea.bookReq.refund': 'При отказе гостю вернутся все {sum} ฿, доля клуба тоже.',   // U4
+    'tea.bookReq.yes': 'Согласовать',                             // U5
+    'tea.bookReq.no': 'Отказать и вернуть {sum} ฿',              // U6
+    'tea.bookReq.doneYes': 'Бронь согласована.',                  // U7
+    'tea.bookReq.doneNo': 'Вы отказали. {sum} ฿ вернулись гостю на счёт.',   // U8
+    'tea.bookReq.notYet': 'Мастер ещё не согласился. Решать можно после его согласия.',   // U10 у pending
+    'tea.bookReq.decided': 'Эту бронь уже решили.',               // U10 у решённой
+    'tea.bookReq.back': 'К очереди',
     'tea.apply.title': 'Карточка чайного мастера',
     'tea.apply.sub': 'Так карточку увидят в «Услугах». Согласует арт-директор.',
     'tea.apply.editNote': 'Пока арт-директор не решит, в «Услугах» прежняя карточка.',

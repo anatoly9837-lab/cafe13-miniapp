@@ -31,6 +31,10 @@ var TEA_URL = { list: function () { return '/tea/masters'; },
                 toMe: function () { return '/tea/bookings/to-me'; },
                 accept: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/accept'; },
                 refuse: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/refuse'; },
+                // teaBooks, teaBookReq (рецепты 42/teaBooks.md, 42/teaBookReq.md, №98): очередь и решение арт-директора —
+                // api tea_bookings.queue и tea_bookings.decide, бой a04c4dd. Экраны вне WIRED: дверь S2 открывает координатор
+                queue: function () { return '/tea/bookings'; },
+                decide: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/decide'; },
                 hold: function () { return '/master/request'; }, price: function () { return '/master/price'; } };
 function teaLive(k) { return LIVE && typeof TEA_URL[k] === 'function'; }
 
@@ -254,6 +258,90 @@ function teaRefuseSend(id) {
     if (current === 'teaToMe') render();
   });
 }
+/* ── teaBooks, teaBookReq: очередь броней и решение арт-директора (рецепты 42/teaBooks.md, 42/teaBookReq.md, №98) ──
+   Цепочка владельца: гость бронирует → мастер соглашается (teaToMe) → арт-директор решает здесь. Сервер (a04c4dd)
+   решает ТОЛЬКО master_ok: по pending decide отдаёт 409 «мастер ещё не согласился». Очередь — GET /tea/bookings →
+   {bookings: [_row(queue=True)], pending, master_ok}; решение — POST /tea/bookings/{id}/decide {decision, note ≤ 500},
+   ответ — та же строка. Разбор строки — teaToMeFrom (тот же словарь TEA_BOOK_ST, слово — status_ru печатью) плюс
+   имя мастера; цена обязательна: без неё U4 и U6 не назвали бы сумму возврата. */
+function teaQueueFrom(b) {
+  var x = teaToMeFrom(b);
+  if (!x || x.price === null || typeof b.master_name !== 'string') return null;
+  x.masterName = b.master_name;
+  return x;
+}
+/* Решать можно ТОЛЬКО бронь, с которой мастер согласился. Этим предикатом режутся группы teaBooks (V0 против V7)
+   и рисуются кнопки teaBookReq (U5, U6): кнопка у pending заведомо получила бы 409. */
+function teaMayDecide(b) { return !!b && b.status === 'master_ok'; }
+var TBQ = { list: null, fail: '', masterOk: null, gen: 0, busy: null, err: '', note: '' };
+// демонстрация: status_ru — копия STATUS_RU сервера a04c4dd ТОЛЬКО для демо (как teaToMeDemo)
+function teaQueueDemo() {
+  var d = function (n, h) { return Date.parse(ymdAdd(bkk(new Date()).ymd, n) + 'T' + h + ':00+07:00'); };
+  var x = function (id, n, h, status, st, word, refunded) {
+    return { id: id, master: 801, masterName: 'Чайный мастер', at: d(n, h), mins: 90, st: st, status: status, word: word,
+             price: '600', guest: 'Гость клуба', refund: null, note: '', refunded: refunded };
+  };
+  return [x(9102, 3, '19:00', 'master_ok', 'wait', 'мастер согласился, ждёт арт-директора', false),
+          x(9101, 2, '17:00', 'pending', 'wait', 'ждёт решения', false),
+          x(9103, 1, '18:00', 'rejected', 'no', 'отклонено, деньги возвращены на счёт', true)];
+}
+function teaQueueById(id) { return (TBQ.list || []).filter(function (b) { return String(b.id) === String(id); })[0]; }
+function teaLoadQueue() {
+  if (!LIVE) { if (!TBQ.list) TBQ.list = teaQueueDemo(); TBQ.masterOk = TBQ.list.filter(teaMayDecide).length; TBQ.fail = ''; return; }
+  TBQ.fail = '';
+  if (!teaLive('queue')) { TBQ.fail = slovo('tea.noApi'); return; }
+  var gen = ++TBQ.gen;
+  api('GET', TEA_URL.queue()).then(function (r) {
+    if (gen !== TBQ.gen) return;
+    var d = r.status === 200 && r.data ? r.data : null;
+    var got = d && Array.isArray(d.bookings) ? d.bookings.map(teaQueueFrom) : null;
+    // S2 — число сервера master_ok (ждут арт-директора), а не pending (ждут мастера): рецепт masters.md
+    if (got && got.every(Boolean) && typeof d.master_ok === 'number') { TBQ.list = got; TBQ.masterOk = d.master_ok; }
+    else { TBQ.list = null; TBQ.masterOk = null; TBQ.fail = r.status === 403 ? denyText(r) : failText(r); }
+    // бронь пропала из перечитанной очереди — назад в очередь, состояние не выдумывается (teaBookReq «Состояния»)
+    if (current === 'teaBookReq' && TBQ.list && !teaQueueById(param)) { go('teaBooks'); return; }
+    teaRerender({ masters: 1, teaBooks: 1, teaBookReq: 1 });
+  });
+}
+/* U5 «Согласовать» / U6 «Отказать и вернуть». 200 — строка из ответа в очередь, весть, назад на teaBooks; весть о
+   деньгах — по refunded ОТВЕТА (как T10): не вернул — слово сервера, а не обещание. 409 — очередь перечитывается,
+   дальше судит перечитанное состояние (U9 при master_ok, U10 иначе); иной отказ — U9, набранное в U2 цело. */
+function teaDecideSend(id, yes) {
+  var b = teaQueueById(id);
+  if (TBQ.busy !== null || !b || !teaMayDecide(b)) return;
+  var el = document.getElementById('tbr-note'); if (el) TBQ.note = el.value;
+  TBQ.err = '';
+  var swap = function (nb) { TBQ.list = TBQ.list.map(function (x) { return String(x.id) === String(id) ? nb : x; }); };
+  if (!LIVE) {
+    swap(Object.assign({}, b, yes ? { status: 'approved', st: 'ok', word: 'согласовано' }
+                                  : { status: 'rejected', st: 'no', word: 'отклонено, деньги возвращены на счёт', refunded: true }));
+    TBQ.masterOk = TBQ.list.filter(teaMayDecide).length; TBQ.note = '';
+    FLASH = { text: yes ? slovo('tea.bookReq.doneYes') : slovo('tea.bookReq.doneNo', { sum: money(b.price) }), note: slovo('tea.demoNote') };
+    haptic('ok'); go('teaBooks'); return;
+  }
+  if (typeof TEA_URL.decide !== 'function') { TBQ.err = slovo('tea.noApi'); render(); return; }
+  TBQ.busy = yes ? 'yes' : 'no'; render();
+  api('POST', TEA_URL.decide(id), { decision: yes ? 'approved' : 'rejected', note: yes ? '' : String(TBQ.note || '').trim() }).then(function (r) {
+    TBQ.busy = null;
+    var nb = r.status === 200 ? teaQueueFrom(r.data) : null;
+    if (nb && TBQ.list) {
+      swap(nb); TBQ.note = '';
+      FLASH = nb.status === 'approved' ? slovo('tea.bookReq.doneYes')
+        : nb.status === 'rejected' && nb.refunded ? slovo('tea.bookReq.doneNo', { sum: money(nb.price) }) : nb.word;
+      haptic('ok'); go('teaBooks'); return;
+    }
+    TBQ.err = denyText(r); haptic('warn');
+    if (r.status === 409) { TBQ.list = null; teaLoadQueue(); }
+    if (current === 'teaBookReq') render();
+  });
+}
+/* S2 на «Слотах и мастерах» (рецепт 42/masters.md) — вызывается из SCREENS.masters (js/18). Пока teaBooks вне
+   WIRED, в живом входа нет — как T0 у teaToMe и K5 у teaBook. Метка — TBQ.masterOk, до ответа не ноль. */
+function teaBooksEntry(entry) {
+  if (closed('teaBooks')) return '';
+  return entry('data-go="teaBooks"', esc(slovo('tea.books.title')), esc(waitSub(TBQ.masterOk, slovo('tea.books.entrySub'))), waitMark(TBQ.masterOk));
+}
+
 /* Цена заявки на церемонию и доля клуба с гостя — числа сервера (teaHold C1, C4; teaApply A4c, A12) */
 function teaLoadPrice() {
   if (!LIVE) { TEA.amount = TEA_DEMO.amount; TEA.share = TEA_DEMO.share; TEA.priceFail = ''; return; }
@@ -484,6 +572,12 @@ function teaGo(screen, p) {
     if (LIVE && !TEA.mine && !TEA.mineFail) loadTeaMine();     // свой номер мастера — для teaMayAccept
     teaLoadToMe();
   }
+  // очередь броней — на каждый вход на «Слоты и мастера» (метка S2) и в очередь; решение — поля с нуля (рецепты 42/teaBooks.md, 42/teaBookReq.md)
+  if ((screen === 'masters' || screen === 'teaBooks') && current !== screen && (!LIVE || mayMasters())) teaLoadQueue();
+  if (screen === 'teaBookReq' && (current !== 'teaBookReq' || param !== p)) {
+    TBQ.err = ''; TBQ.note = ''; TBQ.busy = null;
+    if (!TBQ.list) teaLoadQueue();
+  }
   if (screen === 'teaHold') {
     if (current !== 'teaHold' && current !== 'calendar')
       THF = { title: '', about: '', seats: '0', entry: '', err: '', deny: '', money: false, busy: false, stale: typeof calPicked === 'function' ? calPicked('teaHold') : null };
@@ -518,6 +612,11 @@ function teaAction(a, arg) {
     if (rb && teaMayAccept(rb) && TTM.busy === null) { TTM.open = rb.id; TTM.note = ''; render(); } return true; }
   if (a === 'tea-tome-refuse-cancel') { TTM.open = null; TTM.note = ''; render(); return true; }
   if (a === 'tea-tome-refuse-send') { haptic(); teaRefuseSend(Number(arg)); return true; }
+  if (a === 'tea-books-open') { haptic(); go('teaBookReq', Number(arg)); return true; }
+  if (a === 'tea-books-retry') { teaLoadQueue(); render(); return true; }
+  // U10 «К очереди» — действием, а не data-go: вход в очередь data-go="teaBooks" ровно один (признак masters.md)
+  if (a === 'tea-books-back') { go('teaBooks'); return true; }
+  if (a === 'tea-books-yes' || a === 'tea-books-no') { haptic(); teaDecideSend(Number(arg), a === 'tea-books-yes'); return true; }
   if (a === 'tea-hold-cal') { teaGrab(); go('calendar', { pick: 'teaHold' }); return true; }
   if (a === 'tea-hold-send') { teaHoldSend(); return true; }
   if (a === 'tea-price-retry') { teaGrab(); teaLoadPrice(); render(); return true; }
@@ -626,6 +725,68 @@ Object.assign(SCREENS, {
     }).join('');
   },
 
+  // рецепт 42/teaBooks.md: группы режет teaMayDecide; порядок — сервера, клиент не пересортировывает
+  teaBooks: function () {
+    if (LIVE && !mayMasters()) return SCREENS.masters();
+    if (!TBQ.list) return TBQ.fail ? teaRetry(slovo('tea.toMe.fail'), 'tea-books-retry') : '<span class="small">' + esc(slovo('tea.card.loading')) + '</span>';
+    var L = TBQ.list, head = FLASH ? flash() : '';
+    if (!L.length) return head + '<div class="card quiet"><div class="col"><b>' + esc(slovo('tea.books.empty')) + '</b>' +
+      '<span class="small">' + esc(slovo('tea.books.emptyNote')) + '</span></div></div>';
+    var dec = L.filter(teaMayDecide);
+    var wait = L.filter(function (b) { return !teaMayDecide(b) && b.status === 'pending'; });
+    var past = L.filter(function (b) { return !teaMayDecide(b) && b.status !== 'pending'; });
+    var text = function (b, extra) {
+      return '<span class="grow"><b class="clamp1">' + esc(b.guest) + '</b>' +
+        '<span class="small">' + esc(slovo('tea.books.row', { name: b.masterName, when: teaWhen(b.at, b.mins) })) + '</span>' + (extra || '') + '</span>' +
+        '<span class="st ' + b.st + '"><span class="verbatim">' + esc(b.word) + '</span></span>';
+    };
+    var grp = function (label, rows) { return rows.length ? '<div class="group"><span class="label">' + esc(label) + '</span>' + rows.join('') + '</div>' : ''; };
+    return head +
+      grp(slovo('tea.books.wait'), dec.map(function (b) {
+        return '<button type="button" class="listitem" data-book="' + esc(b.id) + '" data-action="tea-books-open:' + esc(b.id) + '">' + text(b) + svg(ICON.chev, 'chev') + '</button>';
+      })) +
+      grp(slovo('tea.books.master'), wait.map(function (b) {
+        return '<div class="listitem" data-book="' + esc(b.id) + '">' + text(b, '<span class="small">' + esc(slovo('tea.books.afterMaster')) + '</span>') + '</div>';
+      })) +
+      grp(slovo('tea.books.past'), past.map(function (b) {
+        // V8: возврат — по refunded сервера, не по слову «отказ»
+        return '<div class="listitem" data-book="' + esc(b.id) + '">' + text(b, b.status === 'rejected' && b.refunded
+          ? '<span class="small">' + esc(slovo('tea.toMe.refunded', { sum: money(b.price) })) + '</span>' : '') + '</div>';
+      }));
+  },
+
+  // рецепт 42/teaBookReq.md: кнопки — только под teaMayDecide; иначе U10 по последнему ответу сервера
+  teaBookReq: function (id) {
+    if (LIVE && !mayMasters()) return SCREENS.masters();
+    if (!TBQ.list) return SCREENS.teaBooks();
+    var b = teaQueueById(id);
+    if (!b) return SCREENS.teaBooks();
+    var sum = money(b.price), head = FLASH ? flash() : '';
+    var line = function (k, v) { return '<div><span class="small">' + esc(slovo(k)) + '</span>' + v + '</div>'; };
+    var top = '<div class="rows">' + line('tea.bookReq.master', '<b class="clamp1">' + esc(b.masterName) + '</b>') +
+        line('tea.bookReq.when', '<b>' + esc(teaWhen(b.at, b.mins)) + '</b>') +
+        line('tea.bookReq.paid', '<b class="num">' + esc(sum) + ' ฿</b>') + '</div>' +
+      '<span class="st ' + b.st + '"><span class="verbatim">' + esc(b.word) + '</span></span>';
+    if (!teaMayDecide(b)) return head + top +
+      '<div class="card quiet"><div class="col"><b>' + esc(b.status === 'pending' ? slovo('tea.bookReq.notYet') : slovo('tea.bookReq.decided')) + '</b>' +
+        (b.status === 'rejected' && b.refunded ? '<span class="small">' + esc(slovo('tea.toMe.refunded', { sum: sum })) + '</span>' : '') +
+        '<button type="button" class="btn quiet" data-action="tea-books-back">' + esc(slovo('tea.bookReq.back')) + '</button></div></div>';
+    var off = TBQ.busy !== null ? ' disabled aria-disabled="true"' : '';
+    return head + top +
+      '<div class="card"><div class="field"><label for="tbr-note">' + esc(slovo('tea.bookReq.noteLabel')) + '</label>' +
+        '<textarea id="tbr-note" rows="3" maxlength="500"' + off + '>' + esc(TBQ.note) + '</textarea>' +
+        '<span class="small">' + esc(slovo('tea.bookReq.noteSub')) + '</span></div></div>' +
+      '<span class="small">' + esc(slovo('tea.bookReq.yesNote')) + '</span>' +
+      '<span class="small">' + esc(slovo('tea.bookReq.refund', { sum: sum })) + '</span>' +
+      (TBQ.err ? teaDeny(TBQ.err, true) : '') +
+      '<div class="row">' +
+        '<button type="button" class="btn ghost" data-action="tea-books-no:' + esc(b.id) + '"' + off + '>' +
+          esc(TBQ.busy === 'no' ? slovo('tea.sending') : slovo('tea.bookReq.no', { sum: sum })) + '</button>' +
+        '<button type="button" class="btn" data-action="tea-books-yes:' + esc(b.id) + '"' + off + '>' +
+          esc(TBQ.busy === 'yes' ? slovo('tea.sending') : slovo('tea.bookReq.yes')) + '</button>' +
+      '</div>';
+  },
+
   teaApply: function () {
     var m = TEA.mine, edit = m && m.status === 'approved', back = m && m.status === 'rejected';
     if (TAF.preview) return '<span class="small">' + esc(slovo('tea.apply.previewNote')) + '</span>' +
@@ -715,6 +876,8 @@ Object.assign(SCREENS, {
 });
 
 // заголовки шапки: имя мастера на карточке — словом сервера; прочие — словарём
-Object.assign(TITLES, { teaMasters: slovo('tea.list.title'), teaBook: slovo('tea.book.title'), teaApply: slovo('tea.apply.title'), teaToMe: slovo('tea.toMe.title'),
+Object.assign(TITLES, { teaMasters: slovo('tea.list.title'), teaBook: slovo('tea.book.title'), teaApply: slovo('tea.apply.title'), teaToMe: slovo('tea.toMe.title'), teaBooks: slovo('tea.books.title'),
                         teaHold: slovo('tea.hold.title.screen'), teaJoin: slovo('tea.join.title') });
+// teaBookReq — имя гостя брони (рецепт U-заголовок), словом сервера
+Object.defineProperty(TITLES, 'teaBookReq', { get: function () { var b = teaQueueById(param); return b ? b.guest : ''; }, enumerable: true, configurable: true });
 Object.defineProperty(TITLES, 'teaMaster', { get: function () { return TEA.card ? TEA.card.name : ''; }, enumerable: true, configurable: true });

@@ -1841,3 +1841,20 @@ tea.toMe.refunded	{sum} ฿ вернулись гостю на счёт.	{sum} �
 tea.toMe.refusedDone	Вы отказались. Деньги вернулись гостю на счёт.	You declined. The money returned to the guest's account.	คุณปฏิเสธแล้ว เงินถูกคืนเข้าบัญชีของแขกแล้ว	သင် ငြင်းပယ်ပြီးပါပြီ။ ငွေကို ဧည့်သည်၏ အကောင့်သို့ ပြန်အမ်းပြီးပါပြီ။	js/00-slova.js:205		машинный
 t.bde36fc8	отклонено, деньги возвращены на счёт	declined, money returned to the account	ถูกปฏิเสธ คืนเงินเข้าบัญชีแล้ว	ငြင်းပယ်ပြီး ငွေကို အကောင့်သို့ ပြန်အမ်းပြီး	js/22-ekrany-chay.js:243		машинный
 tea.toMe.refusedPlain	Вы отказались.	You declined.	คุณปฏิเสธแล้ว	သင် ငြင်းပယ်ပြီးပါပြီ။	js/00-slova.js:206		машинный
+tea.books.title	Брони церемоний	Ceremony bookings	การจองพิธี	အခမ်းအနား ကြိုတင်စာရင်းသွင်းမှုများ	js/00-slova.js:209		машинный
+tea.books.entrySub	Мастер согласился — решаете вы	The master accepted — you decide	มาสเตอร์ยอมรับแล้ว — คุณเป็นผู้ตัดสิน	မာစတာ သဘောတူပြီ — သင် ဆုံးဖြတ်ပါ	js/00-slova.js:210		машинный
+tea.books.wait	Ждут вашего решения	Awaiting your decision	รอการตัดสินของคุณ	သင့်ဆုံးဖြတ်ချက်ကို စောင့်နေသည်	js/00-slova.js:211		машинный
+tea.books.master	Ждут мастера	Awaiting the master	รอมาสเตอร์	မာစတာကို စောင့်နေသည်	js/00-slova.js:212		машинный
+tea.books.row	мастер {name} · {when}	master {name} · {when}	มาสเตอร์ {name} · {when}	မာစတာ {name} · {when}	js/00-slova.js:214		машинный
+tea.books.afterMaster	Решать можно после согласия мастера.	You can decide once the master accepts.	ตัดสินได้หลังจากมาสเตอร์ยอมรับ	မာစတာ သဘောတူပြီးမှ ဆုံးဖြတ်နိုင်သည်။	js/00-slova.js:215		машинный
+tea.books.empty	Броней нет	No bookings	ไม่มีการจอง	ကြိုတင်စာရင်းသွင်းမှု မရှိပါ	js/00-slova.js:216		машинный
+tea.books.emptyNote	Здесь появятся брони, которые гости делают у чайных мастеров.	Bookings that guests make with tea masters will appear here.	การจองที่แขกทำกับมาสเตอร์ชาจะแสดงที่นี่	ဧည့်သည်များက လက်ဖက်ရည်မာစတာများထံ ကြိုတင်စာရင်းသွင်းမှုများ ဤနေရာတွင် ပေါ်လာမည်။	js/00-slova.js:217		машинный
+tea.bookReq.noteLabel	Слова гостю	Words to the guest	ข้อความถึงแขก	ဧည့်သည်ထံ စကား	js/00-slova.js:221		машинный
+tea.bookReq.noteSub	Увидит, если откажете. Можно не писать.	The guest sees this if you decline. Optional.	แขกจะเห็นหากคุณปฏิเสธ ไม่ต้องเขียนก็ได้	ငြင်းပယ်ပါက ဧည့်သည် မြင်ရမည်။ မရေးလည်း ရသည်။	js/00-slova.js:222		машинный
+tea.bookReq.yesNote	Согласие займёт это время в календаре клуба.	Approval takes this time in the club calendar.	การอนุมัติจะจองเวลานี้ในปฏิทินของคลับ	အတည်ပြုခြင်းက ကလပ်ပြက္ခဒိန်တွင် ဤအချိန်ကို ယူမည်။	js/00-slova.js:223		машинный
+tea.bookReq.refund	При отказе гостю вернутся все {sum} ฿, доля клуба тоже.	If you decline, the guest gets back all {sum} ฿, the club share too.	หากปฏิเสธ แขกจะได้รับคืนทั้งหมด {sum} ฿ รวมส่วนของคลับด้วย	ငြင်းပယ်ပါက ဧည့်သည်ထံ {sum} ฿ အားလုံး ပြန်ရမည်၊ ကလပ်ဝေစုလည်း ပါသည်။	js/00-slova.js:224		машинный
+tea.bookReq.no	Отказать и вернуть {sum} ฿	Decline and refund {sum} ฿	ปฏิเสธและคืนเงิน {sum} ฿	ငြင်းပယ်ပြီး {sum} ฿ ပြန်အမ်းရန်	js/00-slova.js:226		машинный
+tea.bookReq.doneYes	Бронь согласована.	Booking approved.	อนุมัติการจองแล้ว	ကြိုတင်စာရင်းသွင်းမှု အတည်ပြုပြီး။	js/00-slova.js:227		машинный
+tea.bookReq.doneNo	Вы отказали. {sum} ฿ вернулись гостю на счёт.	You declined. {sum} ฿ went back to the guest's account.	คุณปฏิเสธแล้ว {sum} ฿ คืนเข้าบัญชีของแขกแล้ว	သင် ငြင်းပယ်ပြီး။ {sum} ฿ ဧည့်သည့်အကောင့်သို့ ပြန်ရောက်ပြီ။	js/00-slova.js:228		машинный
+tea.bookReq.notYet	Мастер ещё не согласился. Решать можно после его согласия.	The master has not accepted yet. You can decide after they do.	มาสเตอร์ยังไม่ยอมรับ ตัดสินได้หลังจากมาสเตอร์ยอมรับ	မာစတာ မသဘောတူရသေးပါ။ သဘောတူပြီးမှ ဆုံးဖြတ်နိုင်သည်။	js/00-slova.js:229		машинный
+tea.bookReq.decided	Эту бронь уже решили.	This booking has already been decided.	การจองนี้ตัดสินแล้ว	ဤကြိုတင်စာရင်းသွင်းမှုကို ဆုံးဖြတ်ပြီးပါပြီ။	js/00-slova.js:230		машинный
