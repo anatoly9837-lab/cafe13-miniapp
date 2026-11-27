@@ -1525,7 +1525,6 @@ t.0e5e6b31	Букинг ·	Booking ·	การจอง ·	စာရင်း�
 t.0011621b	Дата и время	Date and time	วันและเวลา	ရက်စွဲနှင့် အချိန်	js/18-ekrany-mastera.js:65	masterReq	машинный
 t.6fedf3b7	День и слот	Day and slot	วันและสล็อต	နေ့နှင့် အချိန်ကွက်	js/18-ekrany-mastera.js:65	masterReq	машинный
 t.00e488c9	Место и мест	Venue and spots	สถานที่และจำนวนที่นั่ง	နေရာနှင့် နေရာအရေအတွက်	js/18-ekrany-mastera.js:66	masterReq	машинный
-t.b34d40ab	Свою заявку решает другой арт-директор.	Your own request is decided by another art director.	คำขอของตัวเองต้องให้อาร์ตไดเรกเตอร์คนอื่นตัดสิน	ကိုယ်ပိုင် လျှောက်လွှာကို အခြား အနုပညာဒါရိုက်တာက ဆုံးဖြတ်သည်။	js/18-ekrany-mastera.js:72	masterReq	машинный
 t.c876099f	Почему отказ и что исправить	Reason for refusal and what to fix	เหตุผลที่ปฏิเสธและสิ่งที่ต้องแก้ไข	ငြင်းပယ်ရသည့် အကြောင်းနှင့် ပြင်ရမည့်အရာ	js/18-ekrany-mastera.js:74	masterReq	машинный
 t.a349cf48	Мастер прочтёт это в своей заявке. До 500 знаков.	The master will read this in their request. Up to 500 characters.	มาสเตอร์จะเห็นข้อความนี้ในคำขอของตน ไม่เกิน 500 ตัวอักษร	မာစတာသည် ၎င်း၏ လျှောက်လွှာတွင် ဤစာကို ဖတ်ရမည်။ စာလုံး 500 အထိ။	js/18-ekrany-mastera.js:76	masterReq	машинный
 t.6d855e39	Отказать и вернуть деньги	Refuse and refund	ปฏิเสธและคืนเงิน	ငြင်းပယ်ပြီး ငွေပြန်အမ်းရန်	js/18-ekrany-mastera.js:78	masterReq	машинный
@@ -1827,3 +1826,4 @@ barCard.done.off	Карточка создана выключенной: в ме
 barCard.part.recipe	Карточка создана выключенной, но рецепт {lang} не сохранился — он остался в поле.	The card was created switched off, but the {lang} recipe was not saved — it stayed in the field.	สร้างการ์ดแบบปิดไว้แล้ว แต่สูตร {lang} ไม่ได้บันทึก — ยังอยู่ในช่อง	ကတ်ကို ပိတ်ထားလျက် ဖန်တီးပြီးသော်လည်း {lang} ချက်နည်း မသိမ်းရပါ — အကွက်ထဲတွင် ကျန်နေသည်။	js/00-slova.js:379		машинный
 barCard.part.review	Карточка создана выключенной, но на утверждение не ушла.	The card was created switched off, but was not sent for approval.	สร้างการ์ดแบบปิดไว้แล้ว แต่ยังไม่ได้ส่งขออนุมัติ	ကတ်ကို ပိတ်ထားလျက် ဖန်တီးပြီးသော်လည်း အတည်ပြုရန် မပို့ရပါ။	js/00-slova.js:380		машинный
 barCard.part.active	Карточка создана выключенной, но в меню не поставлена.	The card was created switched off, but was not put on the menu.	สร้างการ์ดแบบปิดไว้แล้ว แต่ยังไม่ได้ใส่ในเมนู	ကတ်ကို ပိတ်ထားလျက် ဖန်တီးပြီးသော်လည်း မီနူးထဲ မထည့်ရပါ။	js/00-slova.js:381		машинный
+t.a3d9be53	Свою заявку решает арт-директор.	Your own request is decided by the art director.	คำขอของตัวเองให้อาร์ตไดเรกเตอร์ตัดสิน	ကိုယ်ပိုင် လျှောက်လွှာကို အနုပညာဒါရိုက်တာက ဆုံးဖြတ်သည်။	js/18-ekrany-mastera.js:72	masterReq	машинный
