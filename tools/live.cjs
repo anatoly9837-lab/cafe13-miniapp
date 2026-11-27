@@ -15716,25 +15716,31 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.calls.length !== before) bad.push(`${n}: Enter отправил запросы: ${s.calls.slice(before).map(c => c.method + ' ' + c.url).join('; ')}`);
       if (after.hk !== 1) bad.push(`${n}: в Telegram 9.1+ Enter позвал hideKeyboard ${after.hk} раз, ждали 1`);
       // клиент Telegram старше 9.1: метода у него нет — не зовём; фокус Enter снимает всё равно (blur — основа)
-      await s.p.evaluate(() => { Telegram.WebApp.isVersionAtLeast = v => parseFloat(v) <= 7; });
+      await s.p.evaluate(() => { window.__ver = Telegram.WebApp.isVersionAtLeast; Telegram.WebApp.isVersionAtLeast = v => parseFloat(v) <= 7; });
       await s.p.focus('#s-about');
       await s.p.keyboard.press('Enter');
       await s.p.waitForTimeout(60);
       const old = await s.p.evaluate(() => ({ focus: document.activeElement && document.activeElement.id, hk: window.__hk }));
       if (old.hk !== 1) bad.push(`${n}: Telegram 7.0 — hideKeyboard позван (${old.hk - 1} раз), а метода в этой версии нет`);
       if (old.focus === 's-about') bad.push(`${n}: Telegram 7.0 — Enter не снял фокус: blur обязан работать без hideKeyboard`);
-      // textarea: Enter — перенос строки; подсказка, заданная полем, не перетирается
+      // textarea: Enter — перенос строки; подсказка, заданная полем, не перетирается.
+      // Версия снова 9.1+: в textarea Enter не зовёт и hideKeyboard — клавиатура посреди описания не уходит (ревью arhitector31, a-tahk)
       await s.p.evaluate(() => {
+        Telegram.WebApp.isVersionAtLeast = window.__ver;
         const v = document.getElementById('view');
-        v.insertAdjacentHTML('beforeend', '<textarea id="kb-ta"></textarea><input id="kb-own" type="search" enterkeyhint="search">');
+        v.insertAdjacentHTML('beforeend', '<textarea id="kb-ta"></textarea><input id="kb-own" type="search" enterkeyhint="search"><input id="kb-empty">');
         kbdHints(v);
       });
+      if (!(await s.p.evaluate(() => Telegram.WebApp.isVersionAtLeast('9.1'))))
+        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — версия 9.1+ не вернулась, textarea судится не в том Telegram`);
+      const hk0 = await s.p.evaluate(() => window.__hk);
       await s.p.focus('#kb-ta');
       await s.p.keyboard.type('раз');
       await s.p.keyboard.press('Enter');
       // фокус читается СРАЗУ после Enter: набор кириллицы ниже идёт через insertText, и Chromium возвращает фокус
       // в textarea по оставшемуся выделению — прочитанный после набора фокус blur() не видит (проба m-tag 27.11)
       const taFocus = await s.p.evaluate(() => document.activeElement.id);
+      const taHk = await s.p.evaluate(() => window.__hk) - hk0;
       await s.p.keyboard.type('два');
       const ta = await s.p.evaluate(() => ({ v: document.getElementById('kb-ta').value,
                                               hint: document.getElementById('kb-ta').getAttribute('enterkeyhint'),
@@ -15743,6 +15749,15 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (ta.v !== 'раз\nдва') bad.push(`${n}: Enter в textarea не перенёс строку: ${JSON.stringify(ta.v)}`);
       if (ta.hint !== null) bad.push(`${n}: textarea получила enterkeyhint="${ta.hint}"`);
       if (ta.own !== 'search') bad.push(`${n}: заданную полем подсказку «search» перетёрло: «${ta.own}»`);
+      if (taHk !== 0) bad.push(`${n}: в Telegram 9.1+ Enter в textarea позвал hideKeyboard (${taHk}) — клавиатура уходит посреди описания`);
+      // пустое поле: открыл, ничего не набрал, нажал «Готово» — клавиатура обязана уйти (ревью arhitector31, a-empty)
+      await s.p.focus('#kb-empty');
+      if (await s.p.evaluate(() => document.getElementById('kb-empty').value) !== '')
+        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — поле #kb-empty не пустое`);
+      await s.p.keyboard.press('Enter');
+      await s.p.waitForTimeout(60);
+      if (await s.p.evaluate(() => document.activeElement && document.activeElement.id) === 'kb-empty')
+        bad.push(`${n}: Enter в ПУСТОМ однострочном поле не снял фокус — «Готово» без набора клавиатуру не уберёт`);
     }
     if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
