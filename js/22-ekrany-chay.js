@@ -26,6 +26,10 @@ var TEA_URL = { list: function () { return '/tea/masters'; },
                 // myBooks — GET /tea/bookings/mine (api a6d4d4c): ВСЕ брони гостя, без номера мастера в пути; в бою api
                 // ещё d23e45d, где ручки нет, — адрес ставится вместе с включением teaBook, не раньше (наряд 26.11)
                 apply: function () { return '/tea/card'; },
+                // teaToMe (рецепт 42/teaToMe.md, №98): брони ко мне как к мастеру и согласие — api tea_bookings.bookings_to_me
+                // и tea_bookings.accept, бой a04c4dd. Экран вне WIRED: открывается вместе с teaBook, решением координатора
+                toMe: function () { return '/tea/bookings/to-me'; },
+                accept: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/accept'; },
                 hold: function () { return '/master/request'; }, price: function () { return '/master/price'; } };
 function teaLive(k) { return LIVE && typeof TEA_URL[k] === 'function'; }
 
@@ -36,6 +40,7 @@ var TEA = { list: null, listFail: '', listGen: 0,
             card: null, cardId: null, cardFail: '', cardGone: false, cardGen: 0,
             mine: null, mineFail: '', mineGen: 0,
             books: {}, booksGen: 0,
+            toMe: null, toMeFail: '', toMeGen: 0,
             share: null, amount: null, priceFail: '', priceGen: 0 };
 
 /* ── разбор ───────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -164,6 +169,64 @@ function teaLoadBooks(id) {
     var got = r.status === 200 && Array.isArray(r.data) ? r.data.map(teaBookFrom) : null;
     TEA.books[id] = got && got.every(Boolean) ? got.filter(function (b) { return String(b.master) === String(id); }) : null;
     teaRerender({ teaBook: 1 });
+  });
+}
+/* Брони ко мне (teaToMe, №98) — форма api `tea_bookings._row(queue=True)`: та же, что у своих броней, плюс
+   guest_name. Состояние разбирается ТЕМ ЖЕ словарём TEA_BOOK_ST (вид .st), а слово — status_ru сервера печатью:
+   своих слов состояния клиент не заводит (рецепт T3). Незнакомое состояние — весь ответ не принят. */
+function teaToMeFrom(b) {
+  var x = teaBookFrom(b);
+  if (!x || typeof b.id !== 'number' || typeof b.status_ru !== 'string') return null;
+  x.id = b.id; x.status = b.status; x.word = b.status_ru; x.price = teaPrice(b.price);
+  x.guest = typeof b.guest_name === 'string' ? b.guest_name : '';
+  return x;
+}
+/* Кнопка «Согласиться» (T4) — ТОЛЬКО через этот предикат: бронь ждёт мастера И она к МОЕЙ карточке (master_id —
+   номер первой подачи, teaMyId). Сервер отдаёт чужому 403 (tea_bookings._own_booking), но кнопка, обречённая на
+   отказ, — ложь экрана. Номера своей карточки нет — кнопки нет ни у одной брони. */
+function teaMyMaster() { return LIVE ? teaMyId() : TEA_TOME_DEMO_ME; }
+function teaMayAccept(b) { var my = teaMyMaster(); return b.status === 'pending' && my !== null && b.master === my; }
+// демонстрация: мастер 801 (как TEA.books в teaLoadBooks); status_ru — копия STATUS_RU сервера a04c4dd ТОЛЬКО для демо
+var TEA_TOME_DEMO_ME = 801;
+function teaToMeDemo() {
+  var d = function (n, h) { return Date.parse(ymdAdd(bkk(new Date()).ymd, n) + 'T' + h + ':00+07:00'); };
+  return [
+    { id: 9001, master: 801, at: d(2, '17:00'), mins: 90, st: 'wait', status: 'pending', word: 'ждёт решения', price: '600', guest: 'Гость клуба', refund: null, note: '' },
+    { id: 9002, master: 801, at: d(4, '19:00'), mins: 90, st: 'wait', status: 'master_ok', word: 'мастер согласился, ждёт арт-директора', price: '600', guest: 'Гость клуба', refund: null, note: '' }
+  ];
+}
+var TTM = { busy: null, deny: {} };
+function teaLoadToMe() {
+  if (!LIVE) { if (!TEA.toMe) TEA.toMe = teaToMeDemo(); TEA.toMeFail = ''; return; }
+  TEA.toMe = null; TEA.toMeFail = '';
+  if (!teaLive('toMe')) { TEA.toMeFail = 'нет ручки'; return; }
+  var gen = ++TEA.toMeGen;
+  api('GET', TEA_URL.toMe()).then(function (r) {
+    if (gen !== TEA.toMeGen) return;
+    var got = r.status === 200 && Array.isArray(r.data) ? r.data.map(teaToMeFrom) : null;
+    if (got && got.every(Boolean)) TEA.toMe = got; else TEA.toMeFail = failText(r);
+    teaRerender({ teaToMe: 1 });
+  });
+}
+/* Согласие (T4): сразу — кнопка ЭТОЙ брони гаснет; 200 — строка из ответа (бронь остаётся в списке, master_ok);
+   отказ — слова сервера под бронью и перечитывание списка. */
+function teaAcceptSend(id) {
+  var b = (TEA.toMe || []).filter(function (x) { return x.id === id; })[0];
+  if (TTM.busy !== null || !b || !teaMayAccept(b)) return;
+  var swap = function (nb) { TEA.toMe = TEA.toMe.map(function (x) { return x.id === id ? nb : x; }); };
+  delete TTM.deny[id];
+  if (!LIVE) {
+    var nb = Object.assign({}, b, { status: 'master_ok', word: teaToMeDemo()[1].word });
+    swap(nb); FLASH = { text: slovo('tea.toMe.done'), note: slovo('tea.demoNote') }; haptic('ok'); render(); return;
+  }
+  if (typeof TEA_URL.accept !== 'function') { TTM.deny[id] = slovo('tea.noApi'); render(); return; }
+  TTM.busy = id; render();
+  api('POST', TEA_URL.accept(id)).then(function (r) {
+    TTM.busy = null;
+    var nb = r.status === 200 ? teaToMeFrom(r.data) : null;
+    if (nb && TEA.toMe) { swap(nb); FLASH = slovo('tea.toMe.done'); haptic('ok'); }
+    else { TTM.deny[id] = denyText(r); haptic('warn'); teaLoadToMe(); }
+    if (current === 'teaToMe') render();
   });
 }
 /* Цена заявки на церемонию и доля клуба с гостя — числа сервера (teaHold C1, C4; teaApply A4c, A12) */
@@ -390,6 +453,11 @@ function teaGo(screen, p) {
     if (current !== 'teaBook' && current !== 'calendar') TB = { id: id, err: '', busy: false, stale: typeof calPicked === 'function' ? calPicked('teaBook') : null };
     teaLoadCard(id); teaLoadBooks(id);        // и на возврат из календаря (рецепт «Перечитать на входе»)
   }
+  if (screen === 'teaToMe') {
+    if (current !== 'teaToMe') TTM = { busy: null, deny: {} };
+    if (LIVE && !TEA.mine && !TEA.mineFail) loadTeaMine();     // свой номер мастера — для teaMayAccept
+    teaLoadToMe();
+  }
   if (screen === 'teaHold') {
     if (current !== 'teaHold' && current !== 'calendar')
       THF = { title: '', about: '', seats: '0', entry: '', err: '', deny: '', money: false, busy: false, stale: typeof calPicked === 'function' ? calPicked('teaHold') : null };
@@ -418,6 +486,8 @@ function teaAction(a, arg) {
     go('calendar', { pick: 'teaBook', master: { id: c.id, name: c.name, mins: c.mins || 0 } }); return true;
   }
   if (a === 'tea-book-send') { teaBookSend(); return true; }
+  if (a === 'tea-tome-accept') { haptic(); teaAcceptSend(Number(arg)); return true; }
+  if (a === 'tea-tome-retry') { teaLoadToMe(); render(); return true; }
   if (a === 'tea-hold-cal') { teaGrab(); go('calendar', { pick: 'teaHold' }); return true; }
   if (a === 'tea-hold-send') { teaHoldSend(); return true; }
   if (a === 'tea-price-retry') { teaGrab(); teaLoadPrice(); render(); return true; }
@@ -493,6 +563,24 @@ Object.assign(SCREENS, {
           esc(TB.busy ? slovo('tea.sending') : slovo('tea.book.send')) + '</button>' +
       '</div></div>' +
       (TB.err ? teaDeny(TB.err, true) : '');
+  },
+
+  teaToMe: function () {
+    if (TEA.toMeFail) return teaRetry(slovo('tea.toMe.fail'), 'tea-tome-retry');
+    if (!TEA.toMe) return '<span class="small">' + esc(slovo('tea.card.loading')) + '</span>';
+    var head = (FLASH ? flash() : '') + '<span class="small">' + esc(slovo('tea.toMe.sub')) + '</span>';
+    if (!TEA.toMe.length) return head + '<div class="card quiet"><div class="col"><b>' + esc(slovo('tea.toMe.empty')) + '</b>' +
+      '<span class="small">' + esc(slovo('tea.toMe.emptyNote')) + '</span></div></div>';
+    return head + TEA.toMe.map(function (b) {
+      var busy = TTM.busy === b.id;
+      return '<div class="card" data-tome="' + esc(b.id) + '"><div class="col">' +
+        '<div class="row"><b>' + esc(teaWhen(b.at, b.mins)) + '</b><span class="st ' + b.st + '"><span class="verbatim">' + esc(b.word) + '</span></span></div>' +
+        '<div class="row"><span class="small clamp1">' + esc(b.guest) + '</span>' + (b.price !== null ? '<b class="num">' + esc(money(b.price)) + ' ฿</b>' : '') + '</div>' +
+        (teaMayAccept(b) ? '<button type="button" class="btn" data-action="tea-tome-accept:' + esc(b.id) + '"' + (busy || TTM.busy !== null ? ' disabled aria-disabled="true"' : '') + '>' +
+          esc(busy ? slovo('tea.sending') : slovo('tea.toMe.accept')) + '</button>' : '') +
+        (TTM.deny[b.id] ? teaDeny(TTM.deny[b.id], true) : '') +
+      '</div></div>';
+    }).join('');
   },
 
   teaApply: function () {
@@ -584,6 +672,6 @@ Object.assign(SCREENS, {
 });
 
 // заголовки шапки: имя мастера на карточке — словом сервера; прочие — словарём
-Object.assign(TITLES, { teaMasters: slovo('tea.list.title'), teaBook: slovo('tea.book.title'), teaApply: slovo('tea.apply.title'),
+Object.assign(TITLES, { teaMasters: slovo('tea.list.title'), teaBook: slovo('tea.book.title'), teaApply: slovo('tea.apply.title'), teaToMe: slovo('tea.toMe.title'),
                         teaHold: slovo('tea.hold.title.screen'), teaJoin: slovo('tea.join.title') });
 Object.defineProperty(TITLES, 'teaMaster', { get: function () { return TEA.card ? TEA.card.name : ''; }, enumerable: true, configurable: true });

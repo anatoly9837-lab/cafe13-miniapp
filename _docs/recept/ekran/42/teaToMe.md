@@ -150,5 +150,8 @@ DESC, b.starts_at`). Клиент не пересортировывает.
 - `tea-ko-mne-otkaz` — 409 на согласие: `T5` словами сервера, список перечитан.
 
 Мутанты: снять условие «чей мастер» в `teaMayAccept` → краснеет
-`tea-ko-mne-chuzhoj` и только он; убрать `master_ok` из `TEA_BOOK_ST` →
-краснеет `tea-ko-mne-master-ok`.
+`tea-ko-mne-chuzhoj` и только он; снять условие `pending` → краснеют
+`tea-ko-mne-soglasie` (кнопка после 200) и `tea-ko-mne-master-ok`; убрать
+`master_ok` из `TEA_BOOK_ST` → краснеет `tea-ko-mne-master-ok` (список
+пустеет), а с ним `tea-ko-mne-soglasie`: ответ `accept` приходит в `master_ok` и
+тоже не разбирается.
