@@ -18,6 +18,12 @@ function tgHas(v) {
   return !!(inTelegram() && tg.isVersionAtLeast && tg.isVersionAtLeast(v));
 }
 
+// 9.1: дополнение к blur(), не основа — вне приложения Telegram метода нет (клавиатура, слово владельца 27.11.2026)
+function tgHideKeyboard() {
+  if (!tgHas('9.1') || typeof tg.hideKeyboard !== 'function') return;
+  try { tg.hideKeyboard(); } catch (e) { /* старый клиент — blur уже сделал своё */ }
+}
+
 function haptic(kind) {                       // 6.1
   if (!tgHas('6.1') || !tg.HapticFeedback) return;
   try {
