@@ -36,7 +36,7 @@
 # второй редакции тут нарочно нет (копия признака расходится с прибором молча).
 # Что он умеет, чего нет и чем это измерено — проза `tools/imena-ascii.py`.
 # ⚠ ПРЕДЕЛ — ЧЕГО ВОРОТА НЕ ПРОВЕРЯЮТ (Cafe13KPG#789, замер arhitector-62; шаги 11–16 дописаны
-# frontend-40 20.11.2026). Зелёное здесь значит «прошли шаги 1, 4–19», и НЕ значит:
+# frontend-40 20.11.2026). Зелёное здесь значит «прошли шаги 1, 4–21», и НЕ значит:
 #   • `svyaz-kadrov.py` — связь кадр↔экран: ему нужна база кадров `Cafe13KPG`, её в дереве мерджа
 #     нет, а кадры заморожены. Гоняется руками по поводу правки кадров;
 #   • `check-recepty.py` — рецепты README исполняются: прогон зовёт съёмку и обход образом, это
@@ -201,9 +201,27 @@ sudit_sp() { # <прибор> <лог> <код выхода>   (исходник
     else sp_ishod=не-выполнена; sp_pochemu=$last
     fi
 }
-trap 'ec=$?
-if [ "$ec" -eq 0 ] && [ -z "$keep_why" ]; then rm -rf "$W"
-else echo "рабочий каталог прогона ОСТАВЛЕН: $W${keep_why:+ — нашлось: $keep_why}"; fi' EXIT
+# ⚠ НА ЧИСТОМ ЗЕЛЁНОМ СТИРАЕТСЯ ТОЛЬКО ТЯЖЁЛОЕ (Cafe13KPG#1098, слово владельца 25.11.2026: «починить
+# инструмент, чтобы он не затирал доказательства»). Прежняя редакция стирала `$W` целиком, вместе с
+# live/part-N.json — список проверенных случаев пропадал ровно на успехе, и роль тестирования держала
+# фоновый копировщик. Замер на 41 каталоге (28.11): прогон ~33 МБ — tree ~16, png в live/shots ~15;
+# лёгкое (*.json, *.log, *.tsv, *.html вне tree) ~0,5 МБ. Стирается tree/ и каждый *.png, остальное
+# остаётся; `itog` — «sha код» (без git — «derevo:<отпечаток файлов> код»). Размер остатка печатается числом: это приёмка «диск не растёт», а предел
+# держит уборка старше 3 суток при старте (выше). Судит tools/uborka.cjs --самопроверка (шаг 18): тело
+# этой функции и строку trap он читает ОТСЮДА и гоняет на подложенном каталоге.
+uborka() { # <код выхода>
+    local ec=$1 sha
+    # дерево мерджа обычно распаковано `git archive` — git в нём нет; тогда предмет называет отпечаток содержимого
+    sha=$(git -C "$T" rev-parse HEAD 2>/dev/null) ||
+        sha=derevo:$(cd "$T" && find . -type f ! -path './.git/*' -print0 | LC_ALL=C sort -z | xargs -0r sha1sum | sha1sum | cut -c1-40)
+    printf '%s %s\n' "$sha" "$ec" > "$W/itog"
+    if [ "$ec" -eq 0 ] && [ -z "$keep_why" ]; then
+        rm -rf "${W:?}/tree"
+        find "$W" -type f -name '*.png' -delete
+        echo "логи прогона: $W ($(du -sk "$W" | cut -f1) КБ)"
+    else echo "рабочий каталог прогона ОСТАВЛЕН: $W${keep_why:+ — нашлось: $keep_why}"; fi
+}
+trap 'uborka $?' EXIT
 echo "предмет: ДЕРЕВО МЕРДЖА $T"
 echo "образ:   $IMAGE"
 
@@ -643,7 +661,7 @@ verdict 'screens.html равна пересборке из входов дере
 # ⚠ pered-pokazom.cjs (с 26.11.2026, Cafe13KPG#1121) — прибор «показывать можно»: самопроверка судит
 # его ИТОГОВУЮ строку и шаг дыма на подставном вызове — ни git, ни сети, ни docker она не зовёт.
 step '18. самопроверки приборов — --самопроверка каждого (приговор)'
-SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pered-pokazom.cjs pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py teksty.py v-oblasti.py'
+SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pered-pokazom.cjs pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py teksty.py v-oblasti.py uborka.cjs'
 SP_V_SHAGE_5='check-stages.py'
 SP_ZHDUT_GIT=''
 not_done18=''
@@ -711,11 +729,32 @@ else
     verdict 'вложенный экран отмечает вкладку родителя по цепочке «назад»' "$rc"
 fi
 
+# ── 21. vm-приборы экранов чая и календаря — chay-dolya, kalendar-vybor, chay-provodka (приговор) ──
+# miniapp#530: три прибора лежали в tools/, а ворота их не звали (grep по этому файлу давал 0) — правка,
+# которая их краснит, проходила зелёной. Каждый идёт долю секунды, без docker и сети; коды 0/1/2 —
+# зелёное/КРАСНОЕ/не выполнено (Cafe13KPG#1137: упавший случай — 2, а не КРАСНОЕ).
+# Дерево без прибора — «НЕ ВЫПОЛНЕНО», а не зелёное: пропажа прибора не должна молча снимать проверку.
+step '21. vm-приборы чая и календаря — chay-dolya, kalendar-vybor, chay-provodka (приговор)'
+for p in chay-dolya.cjs kalendar-vybor.cjs chay-provodka.cjs; do
+    case "$p" in
+      chay-dolya.cjs)     what='доля клуба и грань входа teaHold (шаг 42), подача ждёт кадр';;
+      kalendar-vybor.cjs) what='календарь «выбрать время»: закрытые полосы, живая занятость /master/slot-busy';;
+      chay-provodka.cjs)  what='проводка адресов каталога и очереди карточек мастеров (шаг 42)';;
+    esac
+    if [ ! -f "$T/tools/$p" ]; then
+        echo "⚠ в дереве нет tools/$p — $what НЕ СУДИЛОСЬ"; [ "$rc_total" -eq 0 ] && rc_total=2; continue
+    fi
+    timeout 120 node "$T/tools/$p" "$T" >"$W/vm-$p.log" 2>&1 </dev/null; rc=$?
+    [ "$rc" -eq 124 ] && echo "⚠ $p висит (120 с)"
+    grep '^✗' "$W/vm-$p.log" | head -6; tail -1 "$W/vm-$p.log"
+    verdict "$p — $what" "$rc"
+done
+
 # ── приговор ────────────────────────────────────────────────────────────────
 [ "$reports_dead" -gt 0 ] && mark "отчётов НЕ ВЫПОЛНЕНО: $reports_dead"
 printf '\n'
 case "$rc_total" in
-  0) echo "ЗЕЛЁНОЕ: дерево мерджа $T прошло все приговорные шаги (1, 4–20)"
+  0) echo "ЗЕЛЁНОЕ: дерево мерджа $T прошло все приговорные шаги (1, 4–21)"
      [ -n "$not_done18" ] && echo "⚠ шаг 18 не гонял самопроверки (ждут живой git): $not_done18 — их приговора нет"
      [ -n "$not_done14" ] && echo "⚠ шаг 14 (экран ↔ рецепт) смотрел не на всё: $not_done14 — это не «сошлось»"
      [ "$reports_dead" -gt 0 ] && echo "⚠ при этом ОТЧЁТОВ НЕ ВЫПОЛНЕНО: $reports_dead — мердж они не держат, но и «всё измерено» это уже не значит";;
