@@ -97,11 +97,13 @@ Object.assign(SCREENS, {
     if (LIVE) {
       var ver = '<span class="small">Версия приложения: <b>' + esc(VERSION) + '</b></span>';
       if (TEST.busy) return '<div class="card quiet"><span class="small">Переключаемся…</span></div>' + ver;
-      if (TEST.as) return (FLASH ? flash() : '') +
+      if (TEST.as && !TEST.pick) return (FLASH ? flash() : '') +
         '<div class="card quiet"><div class="col"><b>Смотрите как ' + esc(TEST.as.name) + '</b>' +
-          '<span class="small">Чтобы выбрать другого, выйдите из просмотра.</span></div></div>' +
-        '<button type="button" class="btn" data-action="test-self">Выйти из просмотра</button>' + ver;
-      if (TEST.on) return (FLASH ? flash() : '') +
+          '<span class="small">' + esc(TEST.as.what) + '</span></div></div>' +
+        '<button type="button" class="btn" data-action="test-pick">Выбрать другого</button>' +
+        '<button type="button" class="btn ghost" data-action="test-off">Выйти из тестового режима</button>' + ver;
+      // Список — до тестового экрана: в тест входят глазами человека, а не собой (Cafe13KPG#408)
+      if (TEST.pick) return (FLASH ? flash() : '') +
         '<div class="group"><span class="label">Смотреть как</span>' +
           (TEST.fail ? '<div class="card quiet"><span class="small">' + esc(TEST.fail) + '</span></div>'
            : TEST.people === null ? '<div class="card quiet"><span class="small">Загружаем список…</span></div>'
@@ -113,11 +115,13 @@ Object.assign(SCREENS, {
              }).join('')) +
         '</div>' +
         '<span class="small">Нажатия в тестовом режиме записываются в тестовую базу: деньги и записи там ненастоящие, боевая база не меняется.</span>' +
-        '<button type="button" class="btn ghost" data-action="test-off">Выйти из тестового режима</button>' + ver;
+        (TEST.on && TEST.as ? '<button type="button" class="btn ghost" data-action="test-cancel">Остаться глазами ' + esc(TEST.as.name) + '</button>' +
+                   '<button type="button" class="btn ghost" data-action="test-off">Выйти из тестового режима</button>'
+                 : '<button type="button" class="btn ghost" data-action="test-cancel">Не входить</button>') + ver;
       return (FLASH ? flash() : '') +
         '<div class="card quiet"><div class="col"><b>Тестовый режим</b>' +
           (TEST.health === 'configured'
-            ? '<span class="small">Приложение переключится на тестовую базу: можно смотреть глазами любого человека из списка и нажимать всё — деньги там ненастоящие.</span>' +
+            ? '<span class="small">Приложение переключится на тестовую базу глазами человека, которого выберете из списка: нажимать можно всё — деньги там ненастоящие.</span>' +
               '<button type="button" class="btn" data-action="test-on">Войти в тестовый режим</button>'
             : TEST.health === 'unset' ? '<span class="small">Тестовая база ещё не выложена — режим недоступен.</span>'
             : TEST.health === 'loading' || TEST.health === '' ? '<span class="small">Проверяем, выложена ли тестовая база…</span>'
