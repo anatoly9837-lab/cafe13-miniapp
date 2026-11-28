@@ -9509,7 +9509,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // не несёт: печатать его дословно значит упрекать того, кто пришёл
       // прочитать. Показываем состояние и кто пишет рецепт.
       ['recipe-net', json(404, { detail: 'у позиции нет живого рецепта: напишите его, иначе её нельзя вернуть в меню' }),
-        'Рецепта пока нет', 'напишите его'],
+        // подпись не повторяет заголовок «Рецепта нет» (Cafe13KPG#391): прежняя начиналась «Рецепта пока нет.»
+        'Его пишет бар или куратор направления', ['напишите его', 'Рецепта пока нет']],
       ['recipe-403', json(403, { detail: 'это делает бар или куратор направления' }),
         'Это делает бар или куратор направления', 'Рецепта нет'],
       ['recipe-set', 'abort', 'Сервер не ответил', 'Рецепта нет'],
@@ -9520,7 +9521,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.waitForTimeout(300);
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет слов «${want}», на экране: «${t.slice(0, 160)}»`);
-      if (t.includes(nope)) bad.push(`${name}: на экране лишнее «${nope}»`);
+      for (const x of [].concat(nope)) if (t.includes(x)) bad.push(`${name}: на экране лишнее «${x}»`);
       await s.ctx.close();
     }
   }
@@ -15504,6 +15505,82 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(300);
       const got = mineAsk(s) - before;
       if (got !== want) bad.push(`${n}: вход в «Клуб» при ${shut ? 'закрытой' : 'открытой'} двери teaApply — GET /tea/card/mine ${got}, ждали ${want}`);
+      await s.ctx.close();
+    }
+  }
+  // №98, дверь чайных броней (#527, ревью arhitektor34-01): признак — ПОВЕДЕНИЕ в живом режиме, не closed()/typeof.
+  // (а) гость: кнопка «Забронировать» на карточке мастера → teaBook, на входе GET /tea/bookings/mine; «Отправить» →
+  //     ровно один POST /tea/bookings с master_id/starts_on/start_local (teaBookBody, api NewBooking).
+  // (б) мастер: кнопка T0 на «Клубе» → teaToMe, на входе GET /tea/bookings/to-me; «Согласиться» → POST …/{id}/accept.
+  // Мутанты, которые случай обязан красить: M1 — снять teaBook/teaToMe/teaBooks/teaBookReq из WIRED (обе половины);
+  // M2 — TEA_URL.book: null (нет POST); M3 — TEA_URL.myBooks: null (нет GET …/mine). Время берётся прямо в CAL.pick:
+  // календарь выбора стерегут случаи teaHold выше, здесь судится только дверь и адреса.
+  if (part(2)) {
+    const CARD = { master_id: 801, name: '[мастер А]', about: 'Пуэр.', price: '600.00', duration_min: 90, shots: 0, status: 'approved',
+                   approved_at: '2026-11-24T10:00:00+07:00' };
+    const ROW = st => ({ id: 9001, master_id: 801, starts_at: '2026-12-20T17:00:00+07:00', duration_min: 90, price: '600.00', status: st,
+                         status_ru: st === 'pending' ? 'ждёт решения' : 'мастер согласился, ждёт арт-директора',
+                         guest_name: 'Гость клуба', note: '', refunded: false });
+    const route = mine => q => {
+      const u = q.url(), m = q.method();
+      if (/\/tea\/masters\/801$/.test(u)) return json(200, CARD);
+      if (/\/tea\/masters$/.test(u)) return json(200, [CARD]);
+      if (/\/tea\/card\/mine$/.test(u)) return json(200, mine ? { status: 'approved', note: '', card: CARD, live: CARD } : { status: 'none', note: '', card: null, live: null });
+      if (/\/tea\/bookings\/mine$/.test(u)) return json(200, []);
+      if (/\/tea\/bookings\/to-me$/.test(u)) return json(200, [ROW('pending')]);
+      if (/\/tea\/bookings\/9001\/accept$/.test(u) && m === 'POST') return json(200, ROW('master_ok'));
+      if (/\/tea\/bookings$/.test(u) && m === 'POST') return json(201, Object.assign(ROW('pending'), { id: 9100 }));
+      if (/\/tea\//.test(u)) return json(404, { detail: 'нет в стенде' });
+      return undefined;
+    };
+    const asked = (s, m, re) => s.calls.filter(c => c.method === m && re.test(c.url));
+    {
+      const n = 'dver-bron-gost';
+      const s = await open(true, true, json(200, OWNER), null, null, null, route(false));
+      await s.p.evaluate(() => go('teaMaster', 801)); await s.p.waitForTimeout(400);
+      if (!await s.p.$('#view [data-action="tea-book:801"]')) bad.push(`${n}: на карточке мастера нет кнопки «Забронировать» (дверь teaBook закрыта)`);
+      else {
+        await s.p.click('#view [data-action="tea-book:801"]'); await s.p.waitForTimeout(400);
+        const cur = await s.p.evaluate(() => current);
+        if (cur !== 'teaBook') bad.push(`${n}: «Забронировать» открыла «${cur}», ждали teaBook`);
+        if (asked(s, 'GET', /\/tea\/bookings\/mine$/).length < 1) bad.push(`${n}: на входе в бронь нет GET /tea/bookings/mine — свои брони не читаются`);
+        await s.p.evaluate(() => { CAL.pick = { src: 'teaBook', ymd: '2026-12-20', from: '17:00', to: '18:30', mins: 90,
+                                                at: Date.parse('2026-12-20T17:00:00+07:00'), label: '20.12, 17:00–18:30' }; render(); });
+        await s.p.waitForTimeout(150);
+        const send = await s.p.$('#view [data-action="tea-book-send"]');
+        if (!send || await send.isDisabled()) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — «Отправить» ${send ? 'погашена' : 'нет'} при выбранном времени`);
+        else {
+          await s.p.click('#view [data-action="tea-book-send"]'); await s.p.waitForTimeout(400);
+          const posts = asked(s, 'POST', /\/tea\/bookings$/);
+          if (posts.length !== 1) bad.push(`${n}: POST /tea/bookings ${posts.length}, ждали 1 — бронь не ушла на сервер`);
+          else {
+            const b = JSON.parse(posts[0].body || 'null') || {};
+            if (b.master_id !== 801 || b.starts_on !== '2026-12-20' || b.start_local !== '17:00')
+              bad.push(`${n}: тело брони ${JSON.stringify(b)}, ждали master_id 801, starts_on 2026-12-20, start_local 17:00`);
+          }
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'dver-soglasie-mastera';
+      const s = await open(true, true, json(200, OWNER), null, null, null, route(true));
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(400);
+      if (!await s.p.$('#view [data-go="teaToMe"]')) bad.push(`${n}: на «Клубе» у мастера нет кнопки T0 «Брони ко мне» (дверь teaToMe закрыта)`);
+      else {
+        await s.p.click('#view [data-go="teaToMe"]'); await s.p.waitForTimeout(400);
+        const cur = await s.p.evaluate(() => current);
+        if (cur !== 'teaToMe') bad.push(`${n}: T0 открыла «${cur}», ждали teaToMe`);
+        if (asked(s, 'GET', /\/tea\/bookings\/to-me$/).length !== 1) bad.push(`${n}: на входе GET /tea/bookings/to-me ${asked(s, 'GET', /\/tea\/bookings\/to-me$/).length}, ждали 1`);
+        if (!await s.p.$('#view [data-action="tea-tome-accept:9001"]')) bad.push(`${n}: у брони 9001 (pending, моя карточка) нет «Согласиться»`);
+        else {
+          await s.p.click('#view [data-action="tea-tome-accept:9001"]'); await s.p.waitForTimeout(400);
+          const acc = asked(s, 'POST', /\/tea\/bookings\/9001\/accept$/).length;
+          if (acc !== 1) bad.push(`${n}: POST /tea/bookings/9001/accept ${acc}, ждали 1 — согласие не ушло`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
   }
