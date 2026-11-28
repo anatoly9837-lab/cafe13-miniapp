@@ -58,7 +58,7 @@ function cardPreviewHtml(deny, lock) {
   var v = CARD.v, mins = String(v['c-mins'] || '').trim();
   var d = { id: '0', title: v['c-title'].trim(), about: (v['c-about'] || '').trim(), price: Number(String(v['c-price']).replace(',', '.')),
             mins: mins, photo: false, shot: 'none' };
-  var po = cardPartnerOnly(), has = cardRecipeLangs().length > 0;
+  var po = cardSelfMenu(), has = cardRecipeLangs().length > 0;
   var busy = function (k, word) { return CARD.busy && CARD.press === k ? slovo('barCard.preview.busy') : word; };
   var main = po ? slovo('barCard.preview.add') : slovo('barCard.preview.review');
   // в демонстрации «в меню» и «выключенной» отвечают плашкой «Это демонстрация» (DEMO_SENDS, js/21): без неё нажатие
@@ -729,10 +729,11 @@ Object.assign(SCREENS, {
     var waiting = has && CARD.body[CARD.lang] === null;
     var acts = '';
     // из `hidden` на проверку возвращает только барная сторона: работнику сервер ответит 403 (prava-rabotnika.md)
-    if (!po && (c.state === 'draft' || (c.state === 'hidden' && !wo)))
+    var sm = cardSelfMenu();   // свой черновик в меню сам — партнёр, куратор направления, админ: «на утверждение» ему не нужно
+    if (!po && ((c.state === 'draft' && !sm) || (c.state === 'hidden' && !wo)))
       acts += '<button type="button" class="btn" data-action="c-review:' + c.id + '"' + lock + '>Отправить на утверждение</button>';
     // шаг 17: свой черновик партнёр ставит в меню сам; без рецепта — погашена (знание из списка), отказ базы — печатью
-    if (po && c.state === 'draft')
+    if (sm && c.state === 'draft')
       acts += (c.recipes.length ? '' : '<span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span>') +
         '<button type="button" class="btn' + (c.recipes.length ? '" data-action="c-approve:' + c.id + '"' + lock : ' ghost" disabled') + '>В меню</button>';
     // половина куратора — шаг 16; работнику её режет cardCurator() (права куратора на этом направлении у него нет)

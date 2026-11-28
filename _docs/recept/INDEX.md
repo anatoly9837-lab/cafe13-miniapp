@@ -101,7 +101,7 @@
 | `43` | `events-dovody` | — | 1455 | 0 | 0 |
 | `43` | `events` | — | 2731 | 5 | 3 |
 | `43` | `sostav` | — | 8820 | 4 | 0 |
-| `44` | `barCard` | — | 10907 | 5 | 22 |
+| `44` | `barCard` | — | 13343 | 6 | 22 |
 | `44` | `sostav` | — | 6552 | 4 | 0 |
 | `bar` | `bar` | — | 12946 | 1 | 12 |
 | `bar` | `barCart` | — | 10781 | 1 | 15 |
@@ -121,7 +121,7 @@
 | `foto` | `eventEdit` | — | 2054 | 1 | 0 |
 | `foto` | `eventNew` | — | 650 | 0 | 0 |
 | `foto` | `masterApply` | — | 4957 | 3 | 9 |
-| `foto` | `masterReq` | — | 6564 | 3 | 1 |
+| `foto` | `masterReq` | — | 6824 | 3 | 1 |
 | `foto` | `sostav-dovody` | — | 4845 | 9 | 0 |
 | `foto` | `sostav` | — | 8418 | 4 | 0 |
 | `foto` | `teaHold` | — | 603 | 0 | 0 |

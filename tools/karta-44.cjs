@@ -15,6 +15,8 @@
 //   mW3, mW4 — снята охрана WHO после ответа на рецепт / на смену состояния;
 //   mF — предпросмотр не выводит FLASH: в демонстрации «в меню»/«выключенной» немые (ворота #496 a0b6fe5);
 //   mU — в бою до ответа нажатая кнопка предпросмотра не говорит «Сохраняем…»;
+//   mKu — куратор/админ НЕ ставит в меню сам (как до слова владельца 28.11);  mKd — куратор ЛЮБОГО направления ставит сам;
+//   mKb — сам ставит вся барная сторона (и бар); mKc — черновик куратора без «В меню»; mKt — Telegram-кнопка по-старому;
 //   mI — цепочка не слышит смену личности (WHO);  mD — в демонстрации «та же группа?» формы заведения — «Это демонстрация» (100e4a9 снят).
 'use strict';
 const vm = require('vm'), path = require('path');
@@ -24,7 +26,7 @@ const { klient } = require(path.resolve(__dirname, 'klient.cjs'));
 const MUT = {
   mR: ['js/16-ekrany-bar.js', 'has = cardRecipeLangs().length > 0;', 'has = true;'],
   mG: ['js/08-kartochki.js', 'if (menu && !langs.length) return;', ';'],
-  mP: ['js/08-kartochki.js', "target = menu ? (cardPartnerOnly() ? 'active' : 'review') : '';", "target = menu ? 'review' : '';"],
+  mP: ['js/08-kartochki.js', "target = menu ? (cardSelfMenu() ? 'active' : 'review') : '';", "target = menu ? 'review' : '';"],
   mB: ['js/16-ekrany-bar.js', "'<b class=\"num\">' + money(d.price) + ' ฿</b></span></span></div></div>' +", "'<b class=\"num\">' + money(d.price) + ' ฿</b></span></span>' + buyBtn(d) + '</div></div>' +"],
   mN: ['js/21-navigaciya.js', "if (a === 'c-create') { cardPreview(); return; }", "if (a === 'c-create') { cardCreate(false); return; }"],
   mZ: ['js/21-navigaciya.js', "barCard: function () { return String(param) === 'preview' ? { s: 'barCard', p: 'new' } : 'barCards'; },", "barCard: 'barCards',"],
@@ -40,6 +42,11 @@ const MUT = {
   mD: ['js/21-navigaciya.js', " && !(/^c-group-(theirs|mine)$/.test(a) && !CARD.edit)) {", ") {"],
   mL: ['js/16-ekrany-bar.js', 'CARD_LANGS.map(function (l) {\n            return \'<div class="field"><label for="c-rec-\'', 'CARD_LANGS.slice(0, 1).map(function (l) {\n            return \'<div class="field"><label for="c-rec-\''],
   mO: ['js/08-kartochki.js', "if (!target) { land(slovo('barCard.done.off')); return; }", ';'],
+  mKu: ['js/08-kartochki.js', "function cardSelfMenu() { return cardPartnerOnly() || (LIVE && !!CARDS.dir && (grant('admin') || grant('curator', CARDS.dir.id))); }", "function cardSelfMenu() { return cardPartnerOnly(); }"],
+  mKd: ['js/08-kartochki.js', "function cardSelfMenu() { return cardPartnerOnly() || (LIVE && !!CARDS.dir && (grant('admin') || grant('curator', CARDS.dir.id))); }", "function cardSelfMenu() { return cardPartnerOnly() || (LIVE && !!CARDS.dir && (grant('admin') || grant('curator'))); }"],
+  mKb: ['js/08-kartochki.js', "function cardSelfMenu() { return cardPartnerOnly() || (LIVE && !!CARDS.dir && (grant('admin') || grant('curator', CARDS.dir.id))); }", "function cardSelfMenu() { return cardPartnerOnly() || cardBarSide(); }"],
+  mKc: ['js/16-ekrany-bar.js', "    if (sm && c.state === 'draft')\n", "    if (po && c.state === 'draft')\n"],
+  mKt: ['js/22-zapusk.js', "{ text: cardSelfMenu() ? slovo('barCard.preview.add')", "{ text: cardPartnerOnly() ? slovo('barCard.preview.add')"],
 };
 if (mutant && !MUT[mutant]) { console.error('нет такого мутанта: ' + mutant); process.exit(2); }
 let k;
@@ -158,6 +165,28 @@ const btn = (h, a) => { const m = h.match(new RegExp('<button[^>]*data-action="'
   start(false); R("CARD.text = { ru: 'рецепт' }; go('barCard', 'preview'); doAction('c-add')"); await tick();
   check('card44-na-utverzhdenie: цепочка', posts(), ['P', 'P/501/recipe ru', 'P/501/state review']);
   check('card44-na-utverzhdenie: заметка', R('CARD.note'), 'Карточка создана и отправлена на утверждение.');
+
+  // card44-v-menu-kurator (слово владельца 28.11: куратор «согласовывает свои карточки и сразу пускает их в работу»):
+  // куратор и админ направления — «Добавить в меню» одним шагом, как партнёр; бар и куратор ЧУЖОГО направления — на
+  // утверждение (сервер active им не даст, bar.py set_product_state). Предикат партнёра здесь false: судится новая половина.
+  const G0 = "[{ role: 'worker', dir: 7 }]";
+  for (const [n, grants, self] of [['kurator', "[{ role: 'curator', dir: 7 }]", true], ['admin', "[{ role: 'admin' }]", true],
+                                   ['bar', "[{ role: 'bar', dir: 7 }]", false], ['kurator-chuzhoj', "[{ role: 'curator', dir: 9 }, { role: 'bar', dir: 7 }]", false]]) {
+    const N = 'card44-v-menu-' + n, word = self ? 'Добавить в меню' : 'Отправить на утверждение';
+    start(false); R('DATA.grants = ' + grants + "; CARD.text = { ru: 'рецепт' }; go('barCard', 'preview')");
+    h = html();
+    check(N + ': надпись главной', new RegExp('data-action="c-add"[^>]*>' + word + '<').test(h), true);
+    check(N + ': Telegram-кнопка', R('JSON.stringify(mainFor())'), JSON.stringify({ text: word, a: 'c-add' }));
+    R("doAction('c-add')"); await tick();
+    check(N + ': цепочка', posts(), ['P', 'P/501/recipe ru', 'P/501/state ' + (self ? 'active' : 'review')]);
+    check(N + ': заметка', R('CARD.note'), self ? 'Карточка в меню: гость её уже видит.' : 'Карточка создана и отправлена на утверждение.');
+    // свой черновик (заведён выключенным): у ставящего сам — «В меню», без «на утверждение»; у остальных — наоборот
+    R("CARDS.list = [{ id: 601, title: 'Флэт-уайт', group: 'Кофе', price: 180, mins: 4, about: '', alcohol: false, state: 'draft', recipes: ['ru'], note: '', photo: null, lastPhoto: null, lastState: null }];" +
+      "CARD.edit = 0; CARD.carry = null; CARD.busy = false; current = 'barCard'; param = '601';");
+    h = R("SCREENS.barCard('601')");
+    check(N + ': черновик — «В меню» / «на утверждение»', [!!btn(h, 'c-approve:601'), !!btn(h, 'c-review:601')], self ? [true, false] : [false, true]);
+  }
+  R('DATA.grants = ' + G0);
 
   // card44-obryv-recepta: второй рецепт отказан — карточка открыта, отказ печатью, несохранённое в поле
   start(true); replies['recipe:en'] = { status: 422, data: { detail: 'рецепт длиннее 4000 знаков' } };
