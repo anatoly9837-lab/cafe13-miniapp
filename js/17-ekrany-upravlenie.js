@@ -9,7 +9,7 @@ Object.assign(SCREENS, {
     // зритель рецепта семьи 13: одна группа «Бизнесы». Прочие группы демо не открывает: их права начинаются
     // с `LIVE`, и часть их дверей вне Telegram отказала бы — дверь в отказ хуже отсутствующей двери
     var demoOps = !LIVE && MR.demo;
-    if (!demoOps && !mayPeople() && !mayTopups() && !mayMasters() && !mayOps() && !(LIVE && msIsMaster()) && !mayWithdraw()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
+    if (!demoOps && !mayPeople() && !mayTopups() && !mayMasters() && !mayOps() && !mayTeaCards() && !(LIVE && msIsMaster()) && !mayWithdraw()) return '<div class="card quiet"><div class="col"><b>Сюда нельзя</b>' +
       '<span class="small">Просьбы о вступлении смотрит и решает глава клуба.</span></div></div>';
     // пока счёт не пришёл — не ноль: ноль значил бы «никто не просится» (кадр E46). То же у денег:
     // `pending` приходит в ответе очереди, и «Ждут решения: 0» отличается от «не посчитано»
@@ -57,7 +57,13 @@ Object.assign(SCREENS, {
       '<button type="button" class="listitem" data-go="partnerReqs"><span class="grow"><b>Заявки в партнёры</b>' +
         '<span class="small">' + waitSub(PR.pending, 'Кто просит бизнес в клубе') + '</span></span>' +
         waitMark(PR.pending) + svg(ICON.chev, 'chev') + '</button></div>' : '';
-    if (!mayPeople()) return money_ + art + biz;
+    // №125 (cafe13-api#250): «Мастера» — очередь карточек чайных мастеров у ОД и главы (решает ОД); прежде строка S1
+    // на «Слотах и мастерах» арт-директора. Группа над «Бизнесами»: ОД согласует людей, это его вторая работа
+    var tea = mayTeaCards() || demoOps ? '<div class="group"><span class="label">' + esc(slovo('manage.masters.label')) + '</span>' +
+      '<button type="button" class="listitem" data-go="teaReqs"><span class="grow"><b>' + esc(slovo('masters.tea.title')) + '</b>' +
+        '<span class="small">' + esc(waitSub(TQ.pending, slovo('masters.tea.sub'))) + '</span></span>' +
+        waitMark(TQ.pending) + svg(ICON.chev, 'chev') + '</button></div>' : '';
+    if (!mayPeople()) return money_ + art + tea + biz;
     return '<div class="group"><span class="label">Кто в клубе</span>' +
       '<button type="button" class="listitem" data-go="joinQueue"><span class="grow"><b>Заявки на доступ</b>' +
         '<span class="small">' + waitSub(wait, 'Кто просится в клуб') + '</span></span>' +
@@ -67,7 +73,7 @@ Object.assign(SCREENS, {
       // шаг 31 (рецепт 31/clubStats, C0): статистика клуба — у главы и админа, тот же предикат, что у группы
       (mayClubStats() ? '<button type="button" class="listitem" data-go="clubStats"><span class="grow"><b>Статистика клуба</b></span>' +
         svg(ICON.chev, 'chev') + '</button>' : '') +
-    '</div>' + money_ + art + biz;
+    '</div>' + money_ + art + tea + biz;
   },
 
   // ── шаг 13 (Cafe13KPG#889): рецепт `_docs/recept/ekran/13-zayavka-v-partnyory.md` (cafe13-miniapp#257) ──

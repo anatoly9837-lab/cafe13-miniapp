@@ -2087,8 +2087,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const g = await opsGroups(s);
         // кадр E46е (#882): ровно одна группа «Бизнесы»; прав главы, пополнений и мастеров у него нет.
         // Шаг 13 (рецепт `_docs/recept/ekran/13/manage.md`, R3): в той же группе под «Бизнесами клуба» — «Заявки в партнёры»
-        if (JSON.stringify(g) !== JSON.stringify([{ label: 'Бизнесы', items: ['Бизнесы клуба', 'Заявки в партнёры'] }]))
-          bad.push(`${n}: на «Управлении» у операционного директора ${JSON.stringify(g)}, ждали одну группу «Бизнесы» → «Бизнесы клуба», «Заявки в партнёры» (кадр E46е, рецепт 13/manage)`);
+        // №125 (cafe13-api#250): над «Бизнесами» — «Мастера» → «Карточки чайных мастеров» (очередь карточек у ОД)
+        if (JSON.stringify(g) !== JSON.stringify([{ label: 'Мастера', items: ['Карточки чайных мастеров'] },
+                                                  { label: 'Бизнесы', items: ['Бизнесы клуба', 'Заявки в партнёры'] }]))
+          bad.push(`${n}: на «Управлении» у операционного директора ${JSON.stringify(g)}, ждали «Мастера» → «Карточки чайных мастеров» и «Бизнесы» → «Бизнесы клуба», «Заявки в партнёры» (кадр E46е, рецепт 13/manage, №125)`);
         if ((await s.view()).includes('Сюда нельзя')) bad.push(`${n}: «Управление» отказало операционному директору`);
         await s.p.screenshot({ path: `${OUT}/live-${n}.png` });
       }
@@ -2110,6 +2112,74 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if ((await m.view()).includes('[партнёр]')) bad.push(`${n}: члену клуба без ролей показан партнёр бизнеса`);
       if (m.errs.length) bad.push(`${n}: ошибки страницы ${m.errs.join('; ')}`);
       await m.ctx.close();
+    }
+
+    /* Карточки чайных мастеров — №125 (cafe13-api#250, tea.py READS/DECIDES): очередь видят ОД и глава, решает ОД;
+       арт-директору ни двери, ни экрана, ни запроса. Дверь — «Управление» → «Мастера» (рецепт 42/masters.md, teaReqs.md).
+       Админ — в обоих (`_may` пускает is_admin, tea.py:177): видит и решает.
+       Мутанты: снять grant('head') из mayTeaCards → tea-cards-glava; снять проверку mayDecideTeaCards на teaReq →
+       tea-cards-glava (кнопки у главы); вернуть mayMasters в mayTeaCards → tea-cards-ardir;
+       снять grant('admin') из mayTeaCards или mayDecideTeaCards → tea-cards-admin. */
+    {
+      const TQ_CARD = { id: 11, master_id: 5, name: 'Образец', about: 'Пуэр.', price: '600.00', duration_min: 90, shots: 0,
+        status: 'pending', approved_at: null, status_ru: 'ждёт решения', note: '', created_at: '2026-11-26T01:00:00Z', decided_at: null, live: null };
+      const tqOpen = async roles => {
+        const s = await open(true, true, json(200, opsWho(roles)), null, null, null, q => {
+          const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+          if (u === '/directions') return json(200, BIZ);
+          if (u === '/tea/cards') return roles.some(r => r === 'ops_director' || r === 'head' || r === 'admin')
+            ? json(200, { pending: 1, cards: [TQ_CARD] }) : json(403, { detail: 'очередь карточек мастеров видят операционный директор и глава клуба' });
+          return undefined;
+        });
+        await s.p.waitForTimeout(250);
+        return s;
+      };
+      const tqGets = s => s.calls.filter(c => c.method === 'GET' && /\/tea\/cards$/.test(c.url)).length;
+      for (const [n, roles, decides] of [['tea-cards-od', ['ops_director'], true], ['tea-cards-glava', ['head'], false], ['tea-cards-admin', ['admin'], true]]) {
+        const s = await tqOpen(roles);
+        if (!(await s.p.$('#tabs [data-go="manage"]'))) bad.push(`${n}: нет вкладки «Управление»`);
+        else {
+          await s.p.click('#tabs [data-go="manage"]'); await s.p.waitForTimeout(300);
+          const g = (await opsGroups(s)).find(x => x.label === 'Мастера');
+          if (!g || JSON.stringify(g.items) !== JSON.stringify(['Карточки чайных мастеров']))
+            bad.push(`${n}: на «Управлении» нет группы «Мастера» → «Карточки чайных мастеров»: ${JSON.stringify(await opsGroups(s))}`);
+          if (!(await s.p.$('#view [data-go="teaReqs"]'))) bad.push(`${n}: нет входа [data-go="teaReqs"]`);
+          else {
+            await s.p.click('#view [data-go="teaReqs"]'); await s.p.waitForTimeout(300);
+            if (!tqGets(s)) bad.push(`${n}: очередь не спрошена (GET /tea/cards)`);
+            const row = await s.p.$('#view [data-action="tc-open:11"]');
+            if (!row) bad.push(`${n}: в очереди нет ждущей строки: ${(await s.view()).slice(0, 160)}`);
+            else {
+              await row.click(); await s.p.waitForTimeout(250);
+              const t = await s.view();
+              const btns = await s.p.$$eval('#view [data-action^="tc-yes"], #view [data-action^="tc-no"]', b => b.length);
+              const note = !!(await s.p.$('#view #tc-note'));
+              if (decides && (btns !== 2 || !note)) bad.push(`${n}: у решающего (ОД, админ) на карточке кнопок ${btns} из 2, поле слов ${note ? 'есть' : 'нет'}`);
+              if (!decides && (btns || note)) bad.push(`${n}: у главы на карточке кнопок решения ${btns}, поле слов ${note ? 'есть' : 'нет'} — решает только ОД (cafe13-api#250)`);
+              if (!decides && !t.includes('Решает операционный директор.')) bad.push(`${n}: у главы нет строки «Решает операционный директор.»`);
+              if (decides && t.includes('Решает операционный директор.')) bad.push(`${n}: у решающего (ОД, админ) строка «Решает операционный директор.» вместо кнопок`);
+            }
+          }
+        }
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
+      // арт-директор: карточки больше не его — ни двери на «Управлении» и «Слотах и мастерах», ни экрана, ни запроса
+      {
+        const n = 'tea-cards-ardir';
+        const s = await tqOpen(['art_director']);
+        await s.p.evaluate(() => go('manage')); await s.p.waitForTimeout(250);
+        if (await s.p.$('#view [data-go="teaReqs"]')) bad.push(`${n}: у арт-директора на «Управлении» вход в очередь карточек`);
+        await s.p.evaluate(() => go('masters')); await s.p.waitForTimeout(250);
+        if (await s.p.$('#view [data-go="teaReqs"]')) bad.push(`${n}: у арт-директора на «Слотах и мастерах» вход в очередь карточек (S1 снят №125)`);
+        if (!(await s.p.$('#view [data-go="masterReqs"]'))) bad.push(`${n}: контроль: у арт-директора нет «Заявок в мастера» — экран «Слоты и мастера» не тот`);
+        await s.p.evaluate(() => go('teaReqs')); await s.p.waitForTimeout(250);
+        if ((await s.view()).includes('Карточек нет') || await s.p.$('#view [data-action^="tc-open"]'))
+          bad.push(`${n}: прямой go('teaReqs') открыл арт-директору очередь`);
+        if (tqGets(s)) bad.push(`${n}: без права спрошен GET /tea/cards (${tqGets(s)} раз) — сервер ответил бы 403`);
+        if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+        await s.ctx.close();
+      }
     }
 
     // ops-businesses: плашка бара с партнёром, без партнёра — словами, открыт/закрыт по смене.
