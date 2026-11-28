@@ -15889,6 +15889,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
+  // Cafe13KPG#209: на вложенном экране ровно одна вкладка несёт aria-current — вкладка его родителя по цепочке «назад»
+  // (tabOf, js/21). Выбор вкладки судит node tools/vkladka-roditelya.cjs; здесь — что выбор доходит до DOM (render).
+  // Мутант: в render `t[0] === at` → `t[0] === current` — краснеет `tabs-nested: на «people»…` своим текстом.
+  if (part(2)) {
+    const n = 'tabs-nested';
+    const s = await open(true, true, json(200, OWNER));
+    const cur = () => s.p.$$eval('#tabs button[aria-current="page"]', b => b.map(x => x.getAttribute('data-go')));
+    const has = await s.p.$$eval('#tabs button', b => b.map(x => x.getAttribute('data-go')));
+    if (!has.includes('manage') || !has.includes('home')) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — у владельца нет вкладок «Клуб» и «Управление» (${has.join(',')})`);
+    for (const [g, want] of [['home', 'home'], ['people', 'manage'], ['pass', 'home']]) {
+      await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
+      const got = await cur();
+      if (got.length !== 1 || got[0] !== want) bad.push(`${n}: на «${g}» отмечено вкладок ${got.length} (${got.join(',')}), а ждали одну «${want}»`);
+    }
+    await s.ctx.close();
+  }
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.
   if (!MINE && Object.keys(LATE_STUBS).length !== LATE_WANT) bad.push(`shape: ПРОВЕРКА НЕ ВЫПОЛНЕНА — join-заглушек в реестре ${Object.keys(LATE_STUBS).length}, ждали ${LATE_WANT}`);
