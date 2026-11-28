@@ -58,7 +58,7 @@ function cardPreviewHtml(deny, lock) {
   var v = CARD.v, mins = String(v['c-mins'] || '').trim();
   var d = { id: '0', title: v['c-title'].trim(), about: (v['c-about'] || '').trim(), price: Number(String(v['c-price']).replace(',', '.')),
             mins: mins, photo: false, shot: 'none' };
-  var po = cardPartnerOnly(), has = cardRecipeLangs().length > 0;
+  var po = cardSelfMenu(), has = cardRecipeLangs().length > 0;
   var busy = function (k, word) { return CARD.busy && CARD.press === k ? slovo('barCard.preview.busy') : word; };
   var main = po ? slovo('barCard.preview.add') : slovo('barCard.preview.review');
   // в демонстрации «в меню» и «выключенной» отвечают плашкой «Это демонстрация» (DEMO_SENDS, js/21): без неё нажатие
@@ -729,10 +729,11 @@ Object.assign(SCREENS, {
     var waiting = has && CARD.body[CARD.lang] === null;
     var acts = '';
     // из `hidden` на проверку возвращает только барная сторона: работнику сервер ответит 403 (prava-rabotnika.md)
-    if (!po && (c.state === 'draft' || (c.state === 'hidden' && !wo)))
+    var sm = cardSelfMenu();   // свой черновик в меню сам — партнёр, куратор направления, админ: «на утверждение» ему не нужно
+    if (!po && ((c.state === 'draft' && !sm) || (c.state === 'hidden' && !wo)))
       acts += '<button type="button" class="btn" data-action="c-review:' + c.id + '"' + lock + '>Отправить на утверждение</button>';
     // шаг 17: свой черновик партнёр ставит в меню сам; без рецепта — погашена (знание из списка), отказ базы — печатью
-    if (po && c.state === 'draft')
+    if (sm && c.state === 'draft')
       acts += (c.recipes.length ? '' : '<span class="small">Сначала рецепт — без него позиция не попадёт в меню.</span>') +
         '<button type="button" class="btn' + (c.recipes.length ? '" data-action="c-approve:' + c.id + '"' + lock : ' ghost" disabled') + '>В меню</button>';
     // половина куратора — шаг 16; работнику её режет cardCurator() (права куратора на этом направлении у него нет)
@@ -777,7 +778,9 @@ Object.assign(SCREENS, {
       '</div>' + note + photoBlock(c) +
       (recipe ? '<div class="group"><span class="label">Рецепт</span>' + langs +
         '<div class="field"><label for="c-recipe">Рецепт (' + CARD.lang.toUpperCase() + ')' + (has ? '' : ' — пока нет') + '</label>' +
-          '<textarea id="c-recipe" rows="6"' + (waiting ? ' disabled' : lock) + '>' + esc(text) + '</textarea></div>' +
+          // предел — сервера (api 13baa65 bar.py:324 NewRecipe.body max_length=4000), как у описания ивента (Cafe13KPG#395)
+          '<textarea id="c-recipe" rows="6" maxlength="' + RECIPE_MAX + '"' + (waiting ? ' disabled' : lock) + '>' + esc(text) + '</textarea>' +
+          '<span class="small">До 4000 знаков.</span></div>' +
         (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
         '<span class="small">Рецепт видит только бар, гость — нет.</span>' +
         '<button type="button" class="btn ghost" data-action="c-recipe:' + c.id + '"' + (waiting ? ' disabled' : lock) + '>' +

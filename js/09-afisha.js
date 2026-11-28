@@ -969,10 +969,12 @@ function recipeFail(r) {
   // записи рецепта здесь нет вовсе (решение координатора, 22.10.2026).
   // Поручение без кнопки читается как упрёк.
   if (r.status === 404) return { none: true,
-    text: 'Рецепта пока нет. Его пишет бар или куратор направления.' };
+    // подпись объясняет, а не повторяет заголовок «Рецепта нет» (Cafe13KPG#391)
+    text: 'Его пишет бар или куратор направления.' };
   return { none: false, text: detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r) };
 }
 
+var RECIPE_MAX = 4000;   // NewRecipe.body max_length, api 13baa65 app/routers/bar.py:324
 function loadRecipe(pid) {
   if (!LIVE || !mayRecipe()) return;
   var gen = ++RECIPE.gen;
@@ -1108,14 +1110,14 @@ function afishaHome() {
    ⚠ FOTO_ON — включение ЗАГРУЗКИ в живом режиме ПО ЭКРАНАМ ФОРМ (решение координатора 26.11, Cafe13KPG#1123):
    дверь открывается там, где за ней есть комната. Снимки в бою есть (api 913eeef, /health "media":"configured").
    eventNew, eventEdit — открыты: загрузка есть и показ есть (.album на карточке события).
-   teaHold — закрыт: шлёт на тот же /master/request, и при согласии decide переносит снимки на карточку ивента
-   (api master.py:637, здесь :152) — в публичное без просмотра. masterApply — закрыт по той же причине: арт-директор
-   приложенного не видел. С рецепта foto/masterReq.md (шаг 44) видит: fromMasterReq читает photos, masterReq рисует
-   альбом до кнопки решения. Флаги после этого открывает координатор, не правка показа. Закрытый экран в живом: блока
-   «Фото» в форме нет, `photo_ids` не уходит. Показ снимков на карточке от флага не зависит: нет `photos` в
+   teaHold и masterApply — открыты (слово cafe13kpg-coordinator-3 28.11 через park-koord-27, v235): оба шлют на
+   /master/request, и при согласии decide переносит снимки на карточку ивента (api master.py:637) — в публичное. Пока
+   арт-директор приложенного не видел, обе двери стояли закрытыми. Теперь видит: fromMasterReq читает photos, masterReq
+   рисует альбом до «Согласовать» (рецепт foto/masterReq.md), и это судит случай ms-album в настоящем DOM (tools/live.cjs,
+   miniapp#508, 661cfbb). Закрытый экран (нет в карте или не true) в живом: блока «Фото» в форме нет, `photo_ids` не уходит. Показ снимков на карточке от флага не зависит: нет `photos` в
    ответе — блока нет (F5). Вне Telegram (витрина, опись) блок виден везде и в сеть не ходит. */
 // экрана нет в карте — он закрыт: fotoOn ждёт строгое true, новая форма с загрузкой открывается только строкой здесь
-var FOTO_ON = { eventNew: true, eventEdit: true, teaHold: false, masterApply: false };
+var FOTO_ON = { eventNew: true, eventEdit: true, teaHold: true, masterApply: true };
 function fotoOn(form) { return FOTO_ON[form] === true; }
 var FOTO_URL = { up: function () { return '/photos'; }, del: function (id) { return '/photos/' + id + '/delete'; } };
 var FOTO_MAX = 3, FOTO_IN_MAX = 8 * 1024 * 1024, FOTO_SIDE = 1600, FOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];

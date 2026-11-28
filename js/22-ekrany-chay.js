@@ -19,20 +19,22 @@
 /* Живые ручки: заявка церемонии — POST /master/request с occupancy 'tea', цена — GET /master/price (доля клуба
    `share` — строкой, teaPrice). Каталог — GET /tea/masters (только согласованные, №66), чужая карточка —
    GET /tea/masters/{master_id} (404 — нет согласованной), своя — GET /tea/card/mine, подача и правка —
-   POST /tea/card (api tea.py, бой d23e45d). Кадра (shot), своих броней (myBooks) и брони (book) на сервере нет. */
+   POST /tea/card (api tea.py, бой d23e45d). Кадра (shot) на сервере нет. Бронь (book) и свои брони (myBooks) —
+   api tea_bookings.py, бой c2167c5 (POST /tea/bookings :203, GET /tea/bookings/mine :281). */
 var TEA_URL = { list: function () { return '/tea/masters'; },
                 card: function (id) { return '/tea/masters/' + encodeURIComponent(id); },
-                shot: null, mine: function () { return '/tea/card/mine'; }, myBooks: null, book: null,
-                // myBooks — GET /tea/bookings/mine (api a6d4d4c): ВСЕ брони гостя, без номера мастера в пути; в бою api
-                // ещё d23e45d, где ручки нет, — адрес ставится вместе с включением teaBook, не раньше (наряд 26.11)
+                shot: null, mine: function () { return '/tea/card/mine'; },
+                // myBooks — GET /tea/bookings/mine: ВСЕ брони гостя, без номера мастера в пути; book — POST /tea/bookings
+                // (NewBooking: master_id, starts_on, start_local). Адреса поставлены вместе с включением teaBook (бой c2167c5)
+                myBooks: function () { return '/tea/bookings/mine'; }, book: function () { return '/tea/bookings'; },
                 apply: function () { return '/tea/card'; },
                 // teaToMe (рецепт 42/teaToMe.md, №98): брони ко мне как к мастеру и согласие — api tea_bookings.bookings_to_me
-                // и tea_bookings.accept, бой a04c4dd. Экран вне WIRED: открывается вместе с teaBook, решением координатора
+                // и tea_bookings.accept, бой c2167c5. В WIRED вместе с teaBook (наряд coordinator-3 28.11)
                 toMe: function () { return '/tea/bookings/to-me'; },
                 accept: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/accept'; },
                 refuse: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/refuse'; },
                 // teaBooks, teaBookReq (рецепты 42/teaBooks.md, 42/teaBookReq.md, №98): очередь и решение арт-директора —
-                // api tea_bookings.queue и tea_bookings.decide, бой a04c4dd. Экраны вне WIRED: дверь S2 открывает координатор
+                // api tea_bookings.queue и tea_bookings.decide, бой c2167c5. В WIRED вместе с teaBook: дверь S2 открыта
                 queue: function () { return '/tea/bookings'; },
                 decide: function (id) { return '/tea/bookings/' + encodeURIComponent(id) + '/decide'; },
                 hold: function () { return '/master/request'; }, price: function () { return '/master/price'; } };
@@ -565,7 +567,7 @@ function teaApplySend() {
 /* «заново» (№97, №109 «б»): подача, заполненная как у прошедшей церемонии `id` (строка архива, histById).
    Переносится: название, описание, места (0 — без ограничения), вход. НЕ переносятся: дата, время, длительность —
    их даёт выбор календаря, а прошедшее время сервер не примет (экран говорит это словами, tea.hold.againNote);
-   снимки — подача церемонии их не шлёт (FOTO_ON.teaHold, js/09-afisha.js), вопрос №115 у владельца.
+   снимки прошлой — не переносятся (вопрос №115 у владельца); новые грузятся блоком «Фото» (FOTO_ON.teaHold открыт, v235).
    Строка не церемония или не найдена — пустая форма, а не форма с чужим видом. */
 function teaAgainForm(id, blank) {
   var h = id !== null && id !== undefined && typeof histById === 'function' ? histById(id) : null;

@@ -355,8 +355,13 @@ var WIRED = { home: 1, pass: 1, consent: 1, consentFull: 1, demo: 1, topup: 1, p
               // шаг 42: «провести церемонию» — дверь на «Клубе» и в карточке мастера, выбор времени — календарь выше
               teaHold: 1,
               // шаг 42: каталог и карточка мастера, своя карточка, запись на церемонию (api tea.py, бой d23e45d).
-              // teaBook — НЕТ: POST /tea/bookings на сервере нет (404), экран упёрся бы в стену
               teaMasters: 1, teaMaster: 1, teaApply: 1, teaJoin: 1,
+              // шаг 42, №98 (фича владельца, наряд coordinator-3 28.11): чайные брони — цепочка гость → мастер → арт-директор
+              // на ручках api tea_bookings.py, бой c2167c5: бронь гостя POST /tea/bookings и свои GET /tea/bookings/mine
+              // (teaBook); брони ко мне и согласие мастера GET …/to-me, POST …/{id}/accept|refuse (teaToMe); очередь и
+              // решение арт-директора GET /tea/bookings, POST …/{id}/decide (teaBooks, teaBookReq). Открыты вместе: бронь
+              // без согласия мастера повисла бы в pending — решать арт-директору нечего (decide только из master_ok)
+              teaBook: 1, teaToMe: 1, teaBooks: 1, teaBookReq: 1,
               // фича 10 (Cafe13KPG#1107, рецепт moi-biznesy/myBiz.md): карточка дела — на /directions и ручках бара, новых нет
               myBiz: 1,
               // фича 4 (Cafe13KPG#1009, рецепт odobrenie/; api #176 fc474be, миграция 040): очередь одобрения ивентов
