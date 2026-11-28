@@ -9,13 +9,13 @@
 //   kvadrat — у кадра нет квадрата (aspect-ratio снят: «грузится» сдвигает карточку);
 //   oshibka — не загрузившийся кадр не прячется (битая картинка вместо пустого квадрата);
 //   frozen — F6 видят все, а не автор;  master — вид «два кадра» и у карточки мастера;
-//   vorota — закрытый masterApply открыт в живом (карта FOTO_ON);  tri3 — «Добавить фото» при трёх;
+//   vorota — открытый masterApply закрыт в живом (карта FOTO_ON);  tri3 — «Добавить фото» при трёх;
 //   bolshe8 — файл больше 8 МБ уходит на сервер;  szhat — сжатие сервером молча;  zhdyot — подача при грузящемся кадре;
 //   pervym — «Сделать первым» ставит кадр в конец;  otkaz — отказ сервера переписан клиентом.
 //   mV (мутант ревьюера #486; ссылка на ревью — в теле PR) — гейт `LIVE && fotoOn(form)` снят у fotoBody: правка несогласованного
 //   события в бою шлёт photo_ids, а боевой EventEdit — extra="forbid" (a6d4d4c events.py:92) → 422.
-//   chay — закрытый teaHold открыт в живом (снимки ушли бы на карточку ивента без просмотра);
-//   obshchij — карта FOTO_ON подменена общим флагом (все экраны — как eventNew): teaHold и masterApply открываются.
+//   chay — открытый teaHold закрыт в живом (v235: снимки церемонии согласующий видит, случай ms-album);
+//   obshchij — карта FOTO_ON подменена общим флагом (все экраны — как eventNew): экран вне карты открывается.
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path');
 const root = process.argv[2], mutant = process.argv[3] || '';
@@ -34,7 +34,7 @@ const MUT = {
   oshibka: ['js/22-ekrany-chay.js', "t.style.visibility = 'hidden';", ';'],
   frozen: ['js/09-afisha.js', "(isMyEvent(e) && e.approval === 'approved' ? '<span class=\"small\">' + esc(slovo('foto.frozen'))", "(e.approval === 'approved' ? '<span class=\"small\">' + esc(slovo('foto.frozen'))"],
   master: ['js/22-ekrany-chay.js', 'function teaAlbum(shots, edit, pair) {', 'function teaAlbum(shots, edit, pair) { pair = true;'],
-  vorota: ['js/09-afisha.js', 'teaHold: false, masterApply: false };', 'teaHold: false, masterApply: true };'],
+  vorota: ['js/09-afisha.js', 'teaHold: true, masterApply: true };', 'teaHold: true, masterApply: false };'],
   tri3: ['js/09-afisha.js', "(n < FOTO_MAX ? '<label", "(n <= FOTO_MAX ? '<label"],
   bolshe8: ['js/09-afisha.js', "if (file.size > FOTO_IN_MAX) { b.err = slovo('foto.tooBig'); fotoRedraw(form); return; }", ''],
   szhat: ['js/09-afisha.js', 'if (d.squeezed === true) f.squeezed = true;', ''],
@@ -42,7 +42,7 @@ const MUT = {
   pervym: ['js/09-afisha.js', 'b.list.splice(b.list.indexOf(f), 1); b.list.unshift(f);', 'b.list.splice(b.list.indexOf(f), 1); b.list.push(f);'],
   otkaz: ['js/09-afisha.js', 'gone(); b.err = denyText(r); b.verb = true;', "gone(); b.err = 'Не получилось'; b.verb = true;"],
   mV: ['js/09-afisha.js', 'function fotoBody(form, body) { if (LIVE && fotoOn(form) && FOTO[form])', 'function fotoBody(form, body) { if (FOTO[form])'],
-  chay: ['js/09-afisha.js', 'teaHold: false, masterApply: false };', 'teaHold: true, masterApply: false };'],
+  chay: ['js/09-afisha.js', 'teaHold: true, masterApply: true };', 'teaHold: false, masterApply: true };'],
   obshchij: ['js/09-afisha.js', 'function fotoOn(form) { return FOTO_ON[form] === true; }', 'function fotoOn(form) { return FOTO_ON.eventNew === true; }'],
 };
 if (mutant && !MUT[mutant] && mutant !== 'kvadrat') { console.error('нет такого мутанта: ' + mutant); process.exit(2); }
@@ -123,11 +123,13 @@ ctx.__c = { id: 7, name: 'М', about: 'A', price: '600', mins: 90, status: 'appr
 [1, 2, 3].forEach((n, i) => { ctx.__c.shots = ['/s1.jpg', '/s2.jpg', '/s3.jpg'].slice(0, n);
   check('П0 карточка мастера, кадров ' + n + ' — побайтно как df86750', R('teaCardHtml(__c,{book:false})') === MASTER_DF86750[i] ? 'та же' : 'другая', 'та же'); });
 
-// ── ворота: в живом masterApply закрыт (арт-директор приложенного не видит; Cafe13KPG#1123) ──
+// ── ворота: в живом masterApply открыт (v235: арт-директор приложенное видит — случай ms-album, miniapp#508) ──
 R("FOTO = {};");
-check('ворота: живой режим — блока «Фото» в форме нет', R("fotoBlock('masterApply', 'Добавить фото')") === '' ? 'нет' : 'есть', 'нет');
-check('ворота: живой режим — photo_ids в подачу не идёт', 'photo_ids' in R("fotoBody('masterApply', {})") ? 'идёт' : 'нет', 'нет');
-// ── разделение карты (Cafe13KPG#1123): в живом открыты eventNew и eventEdit, закрыты teaHold и masterApply — одним
+check('ворота: живой режим — блок «Фото» в форме есть', R("fotoBlock('masterApply', 'Добавить фото')") === '' ? 'нет' : 'есть', 'есть');
+R("fotoOf('masterApply', null, [{ id: 5, url: '/x5.jpg' }])");
+check('ворота: живой режим — photo_ids в подачу идёт', 'photo_ids' in R("fotoBody('masterApply', {})") ? 'идёт' : 'нет', 'идёт');
+R("FOTO = {};");
+// ── разделение карты (Cafe13KPG#1123, v235): в живом открыты все четыре формы; экран вне карты закрыт — одним
 // замером на карте как в выкладке: блок «Фото» в форме, photo_ids в подаче, снятие черновика POST /photos/{id}/delete
 {
   const dropped = []; const api0 = ctx.api; ctx.api = (m, u) => { dropped.push(m + ' ' + u); return new Promise(() => {}); };
@@ -137,8 +139,9 @@ check('ворота: живой режим — photo_ids в подачу не и
     dropped.length = 0; R("fotoDrop('" + form + "', 5)"); const drop = dropped.length > 0;
     return form + ': ' + (blok && ids && drop ? 'открыт' : !blok && !ids && !drop ? 'закрыт' : 'вразнобой (блок ' + blok + ', ids ' + ids + ', снятие ' + drop + ')');
   };
-  check('ворота-karta: живой — открыт там, где есть показ; закрыт там, где снимок уйдёт без просмотра',
-    ['eventNew', 'eventEdit', 'teaHold', 'masterApply'].map(door).join('; '), 'eventNew: открыт; eventEdit: открыт; teaHold: закрыт; masterApply: закрыт');
+  check('ворота-karta: живой — открыт там, где есть показ; экран вне карты закрыт (fotoOn ждёт строгое true)',
+    ['eventNew', 'eventEdit', 'teaHold', 'masterApply', 'zzzVneKarty'].map(door).join('; '),
+    'eventNew: открыт; eventEdit: открыт; teaHold: открыт; masterApply: открыт; zzzVneKarty: закрыт');
   ctx.api = api0; R("FOTO = {}");
 }
 
