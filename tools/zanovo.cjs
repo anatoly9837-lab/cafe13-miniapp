@@ -28,7 +28,7 @@ const MUT = {
     NOTE_C13 + "\n      fotoBlock('teaHold', slovo('foto.add')) +\n      '<div class=\"card\"><div class=\"col\"><span class=\"label\">' + esc(slovo('tea.time')) + '</span>' +"],
   'hist-render': ['js/09-afisha.js', '{ bookings: 1, event: 1, thanks: 1, masterStats: 1 }[current]', '{ bookings: 1, event: 1, thanks: 1 }[current]'],
   'hist-retry': ['js/21-navigaciya.js', "    if (a === 'mst-hist-retry') { loadHistory(); render(); return; }\n", ''],
-  'foto-hold': ['js/09-afisha.js', 'teaHold: false, masterApply', 'teaHold: true, masterApply'],
+  'foto-hold': ['js/09-afisha.js', 'teaHold: true, masterApply', 'teaHold: false, masterApply'],
 };
 if (mutant && !MUT[mutant]) fail('незнакомый мутант: ' + mutant);
 
@@ -154,8 +154,8 @@ check('Z13 C13 — внутри карточки «Время»: после её
   [iTime >= 0, iTime < iNote, iNote < iCal, iTime >= 0 && iNote > iTime && !hold.slice(iTime, iNote).includes('class="card')],
   [true, true, true, true]);
 
-// Z16: на форме «заново» блока «Фото» нет — подача церемонии снимков не шлёт (FOTO_ON.teaHold, вопрос №115)
-check('Z16 на форме «заново» нет «Фото» (foto.label)', hold.includes('<span class="label">' + R(`esc(slovo('foto.label'))`) + '</span>'), false);
+// Z16: на форме «заново» блок «Фото» есть — загрузка церемонии открыта (FOTO_ON.teaHold, v235); перенос снимков прошлой — вопрос №115
+check('Z16 на форме «заново» есть «Фото» (foto.label)', hold.includes('<span class="label">' + R(`esc(slovo('foto.label'))`) + '</span>'), true);
 
 // Z14: ответ архива на открытой статистике перерисовывает экран (render в приборе — счётчик, не заглушка)
 ctx.__renders = 0;
