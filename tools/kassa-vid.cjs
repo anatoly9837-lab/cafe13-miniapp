@@ -5,7 +5,10 @@
 // cancelled_by). Экран tillDay в живом заморожен (FROZEN, js/02) — случаи батареи о нём спят, класс держит этот прибор.
 // Мутанты (каждый обязан дать КРАСНОЕ и rc=1):
 //   kind — прежнее условие `!TD_KIND[r.kind]` вернуто;  how — прежнее `!TD_HOW[r.method]`;
-//   undo — у незнакомого вида кнопка «Отменить» (касса подменила бы отмену брони).
+//   undo — у незнакомого вида кнопка «Отменить» (касса подменила бы отмену брони);
+//   whole — нечитаемая строка снова отвергает весь день (Cafe13KPG#718; краснеют К7, К8, К10);
+//   vilka — при пропуске счёт сверяется строго, без вилки live ≤ count_live ≤ live + skipped (К7: законный пропуск — «не сходится»);
+//   fraza — фраза о пропущенных строках снята с экрана tillDay (К9).
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
 if (!root) { console.error('корень клиента первым аргументом'); process.exit(2); }
@@ -24,8 +27,16 @@ const sub = (a, b) => { if (!src.includes(a)) { console.error('подмена н
 if (mutant === 'kind') sub("typeof r.kind !== 'string'", '!TD_KIND[r.kind]');
 if (mutant === 'how') sub("typeof r.method !== 'string'", '!TD_HOW[r.method]');
 if (mutant === 'undo') sub('canUndo: !!TD_UNDO[r.kind]', 'canUndo: true');
+if (mutant === 'whole') sub('{ skipped++; continue; }', 'return null;');
+if (mutant === 'vilka') sub('odd: skipped ? !(live <= d.count_live && d.count_live <= live + skipped) : ', 'odd: ');
+let scr = fs.readFileSync(root + '/js/13-ekrany-kassa.js', 'utf8');
+if (mutant === 'fraza') { const a = "(d.skipped ? '<div class=\"note\" role=\"status\">'";
+  if (!scr.includes(a)) { console.error('подмена не применилась: fraza'); process.exit(2); } scr = scr.replace(a, "(false ? '<div>'"); console.log('подлог наложен'); }
 try { load('js/05-kassa.js', src); } catch (e) { console.error('js/05-kassa.js не загрузился: ' + e.message); process.exit(2); }
+const R0 = c => vm.runInContext(c, ctx);
 for (const f of ['js/10-utility.js']) { try { load(f); } catch (e) {} }
+R0('var SCREENS = typeof SCREENS === "object" ? SCREENS : {}');
+try { load('js/13-ekrany-kassa.js', scr); } catch (e) { /* SCREENS объявлен выше файла — нужное поднято */ }
 if (typeof ctx.fromTillDay !== 'function' || typeof ctx.tillDayRow !== 'function') { console.error('fromTillDay/tillDayRow не найдены'); process.exit(2); }
 const R = c => vm.runInContext(c, ctx);
 R("var TD = TD || {}; TD.busy = -1; TD.ask = -1; TD.deny = null; if (typeof svg !== 'function') svg = function () { return ''; }");
@@ -59,8 +70,23 @@ check('К5 незнакомый способ — день открыт', d5 ? '�
   'день, итог 500, наличными 200, другим способом');
 // К6: знакомый вид по-прежнему отменяется из кассы (отрицательная пара к К3)
 check('К6 у знакомого вида «Отменить» есть', d0 ? (() => { ctx.__r = d0.rows[0]; return R('tillDayRow(__r, 0)').includes('td-ask:') ? 'есть' : 'нет'; })() : 'дня нет', 'есть');
-// К7: сломанная строка (вид не строкой) — день по-прежнему отвергается: послабление не шире предмета
-check('К7 вид не строкой — день отвергнут', parse(day([row(1, 7, 'cash', 10)])) ? 'разобран' : 'не разобран', 'не разобран');
+// К7 (Cafe13KPG#718): нечитаемая строка (вид не строкой) — пропуск ОДНОЙ строки, день открыт; итог — число сервера;
+// count_live сервера (2) в вилке live 1 ≤ 2 ≤ 1 + 1 — «сходится» законно
+const d7 = parse(day([row(1, 'topup', 'cash', 500), row(2, 7, 'cash', 10)]));
+check('К7 вид не строкой — строка пропущена, день открыт', d7 ? 'день, строк ' + d7.rows.length + ', пропущено ' + d7.skipped + ', итог ' + d7.total +
+  (d7.odd ? ' НЕ СХОДИТСЯ' : '') : 'не разобран', 'день, строк 1, пропущено 1, итог 510');
+// К8: вилка держит — сервер насчитал живых больше, чем live + skipped: «не сходится»
+const d8 = parse(Object.assign(day([row(1, 'topup', 'cash', 500), row(2, 'topup', 'cash', 'x')]), { count_live: 5, total_live: '500' }));
+check('К8 count_live вне вилки — не сходится', d8 ? (d8.odd ? 'не сходится' : 'сходится') : 'не разобран', 'не сходится');
+// К9: экран называет пропуск числом — день без строки полным не выглядит
+R("LIVE = false; FLASH = null; TD.fail = ''"); ctx.__d7 = d7;
+check('К9 на экране «Строк не разобрано: 1»', d7 ? (() => { R('TD.data = __d7'); let h = ''; try { h = R('SCREENS.tillDay()'); } catch (e) { return 'экран упал: ' + e.message; }
+  return h.includes('Строк не разобрано: 1') ? 'есть' : 'нет'; })() : 'дня нет', 'есть');
+// К10: битая ссылка отмены у одной строки — пропущена она одна, соседняя на месте
+const d10 = parse(day([row(1, 'topup', 'cash', 300), row(2, 'topup', 'cash', 200, { cancels_id: 'ноль' })]));
+check('К10 битая ссылка отмены — пропущена одна', d10 ? 'строк ' + d10.rows.length + ', пропущено ' + d10.skipped : 'не разобран', 'строк 1, пропущено 1');
+// К11: оболочка ответа без rows — отказ целиком, как прежде: послабление не шире строки
+check('К11 нет rows — день отвергнут', parse({ count_live: 0, total_live: '0' }) ? 'разобран' : 'не разобран', 'не разобран');
 
 const red = ok.filter(x => !x).length;
 console.log(red ? `КРАСНОЕ: ${red} из ${ok.length}` : `ЗЕЛЁНОЕ: ${ok.length} из ${ok.length}`);

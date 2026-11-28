@@ -6142,9 +6142,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // Пустой день (E36b), неразобранный и не сходящийся — каждый своими словами.
   if (part(1)) if (thawed('касса')) for (const [name, reply, want, never] of [
     ['till-day-empty', json(200, Object.assign({}, DAY_OK, { rows: [], total_live: '0.00', count_live: 0 })), 'Сегодня через кассу ничего не прошло', 'Строки за сегодня'],
-    // сломанная строка (вид не строкой) — день отвергнут. Прежде случай брал незнакомый вид 'expense' и ждал отказа
-    // всего дня — ровно дефект, грозивший трижды (donation, withdraw, tea — сервер прячет их фильтром); незнакомый вид теперь не отказ
-    ['till-day-bad', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 7 })] })), 'Ответ сервера не разобран', 'Через книгу за день'],
+    // сломанная строка (вид не строкой) — пропуск ОДНОЙ строки, день открыт и называет пропуск числом (Cafe13KPG#718;
+    // vm — tools/kassa-vid.cjs К7–К10). Прежде здесь ждали отказа всего дня — ровно дефект карточки. count_live 1 в вилке 0 ≤ 1 ≤ 0 + 1
+    ['till-day-bad', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 7 })], total_live: '3000.00', count_live: 1 })), 'Строк не разобрано: 1', 'Ответ сервера не разобран'],
     // ВЫДУМАННЫЙ вид, которого нет ни в клиенте, ни на сервере: день открыт, строка «Прочее» (tools/kassa-vid.cjs К1)
     ['till-day-neznakomyj', json(200, Object.assign({}, DAY_OK, { rows: [DROW({ kind: 'zzz-nevedomyy', method: 'account' })], total_live: '3000.00', count_live: 1 })),
       'Прочее', 'Ответ сервера не разобран'],

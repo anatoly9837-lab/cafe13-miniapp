@@ -83,8 +83,11 @@ Object.assign(SCREENS, {
           '<span class="small">со счёта <b class="num">' + money(d.by.account) + '</b></span></div>' +
         '<div><span class="small">Живых строк</span><b class="num">' + d.count + '</b></div></div>') +
       (TD.fail ? '<span class="small">Не перечитался: ' + esc(TD.fail) + '</span>' : '') +
-      (d.rows.length
-        ? '<div class="group"><span class="label">Строки за сегодня</span>' + d.rows.map(tillDayRow).join('') + '</div>' +
+      (d.rows.length || d.skipped
+        ? (d.rows.length ? '<div class="group"><span class="label">Строки за сегодня</span>' + d.rows.map(tillDayRow).join('') + '</div>' : '') +
+          // Cafe13KPG#718: пропущенная строка названа числом — день без неё полным не выглядит
+          (d.skipped ? '<div class="note" role="status">' + svg(ICON.info) + '<span>Строк не разобрано: ' + d.skipped +
+            '. Их суммы есть в итоге сервера, но не в строках и не в числах по способам — сообщите администратору клуба.</span></div>' : '') +
           '<div class="note">' + svg(ICON.info) + '<span>Исправить строку нельзя — только отменить и внести заново: книга клуба дописывается, а не правится. Поэтому отмена стоит отдельной строкой, а отменённая остаётся видимой.</span></div>'
         : '<div class="card quiet"><div class="col"><b>Сегодня через кассу ничего не прошло</b>' +
           '<span class="small">Сутки считаются по часам клуба, от полуночи до полуночи по Пхангану: вечерняя выручка не уезжает во вчера.</span></div></div>');
