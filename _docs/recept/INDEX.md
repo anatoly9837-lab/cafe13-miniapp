@@ -121,8 +121,9 @@
 | `foto` | `eventEdit` | — | 2054 | 1 | 0 |
 | `foto` | `eventNew` | — | 650 | 0 | 0 |
 | `foto` | `masterApply` | — | 4957 | 3 | 9 |
+| `foto` | `masterReq` | — | 4999 | 3 | 1 |
 | `foto` | `sostav-dovody` | — | 4845 | 9 | 0 |
-| `foto` | `sostav` | — | 8145 | 4 | 0 |
+| `foto` | `sostav` | — | 8418 | 4 | 0 |
 | `foto` | `teaHold` | — | 603 | 0 | 0 |
 | `master` | `home` | — | 6776 | 8 | 10 |
 | `master` | `masterApply` | — | 15817 | 9 | 22 |
