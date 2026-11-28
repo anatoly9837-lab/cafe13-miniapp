@@ -357,13 +357,30 @@ var BACK = {
     // 0.1 «Путь мастера»: «назад» — на «Клуб». На бар — только с самого бара и только пока он не заморожен:
     // в живом прежнее «всё, что не главная, — бар» уводило с ЛЮБОГО экрана рамки (кошелёк в шапке есть везде)
     // на замороженный «Бар» и звало его ручки (/directions, /bar/menu) — замер frontend-upravlenie 05.11.2026
-    return TOPUP.from === 'bar' && !frozen('bar') ? 'bar' : 'home';
+    return topupUp();
   },
   barMoney: function () { return BOOK.from; },
   barDay: function () { return LIVE ? DAY.from : homeOf(); },
   // съёмка открывается и с бара, и из кабинета куратора — «назад» зависит от роли
   barShot: function () { return DATA.role === 'curator' ? 'curator' : 'barQueue'; }
 };
+// чистая часть «назад» пополнения: её же спрашивает подсветка вкладки (tabOf), не сбрасывая TUP
+function topupUp() { return TOPUP.from === 'bar' && !frozen('bar') ? 'bar' : 'home'; }
+/* Cafe13KPG#209: на вложенном экране отмечена вкладка, к которой ведёт цепочка «назад» — та же карта BACK, что
+   у кнопки, а не второй перечень родителей. Без этого `t[0] === current` гасил отметку на всех вложенных экранах:
+   ни одна вкладка не несла aria-current. Шаг цепочки состояния не трогает (topup — своей чистой частью).
+   Цепочка не дошла до вкладки за 8 шагов или замкнулась — не отмечено ничего, как прежде. */
+function tabOf(keys) {
+  var s = current, seen = {};
+  for (var i = 0; i < 8 && s && !seen[s]; i++) {
+    if (keys.indexOf(s) >= 0) return s;
+    seen[s] = 1;
+    var b = s === 'topup' ? topupUp() : BACK[s];
+    if (typeof b === 'function') b = b();
+    s = b && typeof b === 'object' ? b.s : b || homeOf();
+  }
+  return null;
+}
 function goBack() { var b = backTo(); if (b && typeof b === 'object') go(b.s, b.p); else go(b); }
 function backTo() {
   var b = BACK[current];
@@ -456,8 +473,9 @@ function render() {
   var list = bare() ? [] : tabList();
   tabs.hidden = !list.length;
   document.body.classList.toggle('no-tabs', !list.length);
+  var at = tabOf(list.map(function (t) { return t[0]; }));
   tabs.innerHTML = list.map(function (t) {
-    var on = t[0] === current;
+    var on = t[0] === at;
     // замороженная вкладка — серая и не нажимается, а не спрятана (буква владельца, Cafe13KPG#510)
     return '<button type="button" data-go="' + t[0] + '"' + (on ? ' aria-current="page"' : '') +
       (closed(t[0]) ? ' disabled aria-disabled="true"' : '') + '>' +
