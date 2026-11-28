@@ -35,6 +35,10 @@ function cardPartnerDir() { var d = (BW.dirs || [])[0]; return d ? { id: d.id, t
 function cardPartner() { return !!CARDS.dir && (BW.dirs || []).some(function (d) { return d.id === CARDS.dir.id; }); }
 // только партнёр ЭТОГО направления: не бар, не куратор и не работник его — решает, но карточку не ведёт
 function cardPartnerOnly() { var w = cardWorkerDir(); return LIVE && cardPartner() && !cardBarSide() && !(w && CARDS.dir && w.dir === CARDS.dir.id); }
+// ставит свою карточку в меню сам, одним шагом: партнёр (№99 «б») и тот, кто утверждает карточки направления, — куратор
+// его и админ (слово владельца 28.11: куратор «согласовывает свои карточки и сразу пускает их в работу»). Сервер: draft → active
+// куратору и партнёру без запрета «своё» (api 790bce9 bar.py set_product_state). Бар и работник — по-прежнему на утверждение
+function cardSelfMenu() { return cardPartnerOnly() || (LIVE && !!CARDS.dir && (grant('admin') || grant('curator', CARDS.dir.id))); }
 // замечание возврата: «Вернуть» и подпись — на ВВОДЕ, без перерисовки (как prNoteSync), иначе набор терял бы фокус
 function cardReasonSync() {
   var f = document.getElementById('c-reason'); if (!f) return;
@@ -208,7 +212,7 @@ function cardCreate(menu) {
   if (CARD.busy || !CARDS.dir || cardMissing()) return;
   var langs = cardRecipeLangs();
   if (menu && !langs.length) return;          // кнопка погашена; Telegram-кнопки в этом состоянии нет (mainFor)
-  var body = cardNewBody(), target = menu ? (cardPartnerOnly() ? 'active' : 'review') : '';
+  var body = cardNewBody(), target = menu ? (cardSelfMenu() ? 'active' : 'review') : '';
   var text = {}; langs.forEach(function (l) { text[l] = CARD.text[l].trim(); });
   // сторож цепочки — ЛИЧНОСТЬ (WHO), не свежесть списка (CARDS.gen): после 201 карточка уже есть на сервере, и уход в
   // список (loadCards двигает gen) не должен молча терять её рецепты; при смене личности цепочка обрывается

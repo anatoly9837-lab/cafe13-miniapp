@@ -1456,7 +1456,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     //   кадра псевдоэлементом самой рамки, mix-blend-mode, однотонную картинку от сервера, рамку исчезающе малого размера
     //   (2 px засчитаны видимыми: порога размера нет). Проверяется центр рамки, не края.
     // Флаги загрузки FOTO_ON здесь не трогаются: показ от них не зависит (рецепт M1), и случай это держит сам —
-    // он бежит при закрытых masterApply/teaHold, как в стволе.
+    // он бежит при флагах masterApply/teaHold как в стволе (с v235 — открыты).
     {
       const n = 'ms-album', AD = mem(9000, ['art_director']), got = [];
       const shot = id => ({ id, url: '/photos/' + id + '/' + 'ab'.repeat(16) + '.jpg', width: 1600, height: 1200 });
@@ -1470,8 +1470,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         return api(q);
       });
       const flags = await s.p.evaluate(() => typeof FOTO_ON === 'object' ? [FOTO_ON.masterApply, FOTO_ON.teaHold] : null);
-      if (!flags || flags[0] !== false || flags[1] !== false)
-        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — флаги загрузки masterApply/teaHold не закрыты (${JSON.stringify(flags)}), случай судит не ту дверь`);
+      if (!flags || flags[0] !== true || flags[1] !== true)
+        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — флаги загрузки masterApply/teaHold не открыты, как в стволе v235 (${JSON.stringify(flags)}), случай судит не ту дверь`);
       await s.p.waitForTimeout(300);
       await s.p.evaluate(() => go('masterReqs')); await s.p.waitForTimeout(300);
       const look = id => s.p.evaluate(async id => {
@@ -3409,6 +3409,38 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const kept = await s.p.evaluate(() => localStorage.getItem('cafe13.pass'));
     if (wiped && kept) bad.push(`${name}: запас не стёрт после отказа`);
     if (!wiped && (!kept || JSON.parse(kept).code !== 'XIII-0042')) bad.push(`${name}: запас испорчен без отказа сервера: ${kept}`);
+    await s.ctx.close();
+  }
+  // Отказ пропуска ЧУЖИМИ ГЛАЗАМИ — словами сервера (Cafe13KPG#400, решение park-koord2-27): только при X-Act-As.
+  // Без просмотра те же слова не печатаются — это держат pass-403* выше. Заглушка кода и пустой detail — общая фраза.
+  // pass-403-test-bez-glaz — тестовый режим БЕЗ чужих глаз (TEST.as = null, X-Act-As нет): член «&& TEST.as»
+  // условия в loadPass судится только им (возврат arhitektor43 на 5b1c33c, мутант mF): pass-403* идут без
+  // тестового режима, а остальные три ставят TEST.as.
+  const GLAZA = { id: 501, name: 'Образец', what: 'Куратор направления · Бар' };
+  if (part(1)) for (const [name, as, body, want, not] of [
+    ['pass-403-act-as', GLAZA, { detail: 'пропуск чужими глазами не показывается: по коду списывают деньги' },
+      'Пропуск чужими глазами не показывается: по коду списывают деньги.', 'Сервер отказал в пропуске'],
+    ['pass-403-act-as-zaglushka', GLAZA, { detail: 'Forbidden' }, 'Сервер отказал в пропуске.', 'Forbidden'],
+    ['pass-403-act-as-pusto', GLAZA, {}, 'Сервер отказал в пропуске.', null],
+    ['pass-403-test-bez-glaz', null, { detail: 'членство не активно' }, 'Сервер отказал в пропуске.', 'Членство не активно']]) {
+    const asked = [];
+    const s = await open(true, true, json(200, OWNER), null, null, SAVED, q => {
+      if (!q.url().endsWith('/pass')) return undefined;
+      const h = q.headers(); asked.push([h['x-test-mode'] || '', h['x-act-as'] || '']);
+      return h['x-test-mode'] === '1' ? json(403, body) : undefined;
+    });
+    await s.p.evaluate((as) => { TEST.on = true; TEST.as = as; PASS = null; PASS_FAIL = ''; go('pass'); }, as);
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    // контроль входа: с глазами — спрошен глазами 501; без глаз — спрошен в тестовом режиме и НИ РАЗУ с X-Act-As
+    const vhod = as ? asked.some(a => a[0] === '1' && a[1] === '501')
+                    : asked.some(a => a[0] === '1') && !asked.some(a => a[1]);
+    if (!vhod) bad.push(`${name}: /pass не спрошен ${as ? 'глазами 501' : 'в тестовом режиме без x-act-as'} — судить нечего: ${JSON.stringify(asked)}`);
+    else {
+      if (!t.includes('Пропуска нет') || !t.includes(want)) bad.push(`${name}: нет отказа «${want}»: ${t.slice(0, 160)}`);
+      if (not && t.includes(not)) bad.push(`${name}: на экране «${not}» — ждали «${want}»`);
+    }
+    if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
 
