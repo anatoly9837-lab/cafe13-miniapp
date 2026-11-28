@@ -2,7 +2,8 @@
 
 Ингредиенты двух предметов: показ снимков на карточке события (`event.md`)
 и блок «Фото» в формах подачи (`masterApply.md`; `teaHold.md`, `eventNew.md` —
-как он; `eventEdit.md` — как `eventNew`, с заморозкой). Разрешённые шкалы и уровни — `../../sostav-shkaly.md`. **Числа здесь
+как он; `eventEdit.md` — как `eventNew`, с заморозкой); показ снимков заявки
+тому, кто её решает (`masterReq.md`). Разрешённые шкалы и уровни — `../../sostav-shkaly.md`. **Числа здесь
 не повторяются.** Доводы — `sostav-dovody.md`.
 
 Основание — рамка владельца 26.11 и его ответы №81 «а», №82 «а», №83 «а»
@@ -20,12 +21,12 @@
 
 ## Что этот предмет берёт из словаря
 
-<!-- ЭКРАНЫ-СЕМЬИ: event masterApply teaHold eventNew eventEdit -->
+<!-- ЭКРАНЫ-СЕМЬИ: event masterApply teaHold eventNew eventEdit masterReq -->
 <!-- ШАГИ-СЕМЬИ: шаг44 -->
 
 | класс | уровень | радиус | цвет | где |
 |---|---|---|---|---|
-| `.album` | блок | `12px` у кадра | фон кадра `--surface` | `event`: показ; `masterApply`, `teaHold`, `eventNew`, `eventEdit`: блок «Фото»; КЛАСС ОБЩИЙ (шаг 42) |
+| `.album` | блок | `12px` у кадра | фон кадра `--surface` | `event`, `masterReq`: показ; `masterApply`, `teaHold`, `eventNew`, `eventEdit`: блок «Фото»; КЛАСС ОБЩИЙ (шаг 42) |
 | `.album-thumbs` | ряд | — | — | `event`, `masterApply`: второй и третий кадр; КЛАСС ОБЩИЙ |
 | `.album-cap` | подпись кадра | — | — | `masterApply`: «Убрать», «Сделать первым», «Загружаем…»; КЛАСС ОБЩИЙ |
 | `.btn quiet` | элемент | `9px` (долг: `11px`) | `--surface` / `--ink`, линия `--line` | `masterApply`: «Добавить фото»; КЛАСС ОБЩИЙ |
@@ -70,6 +71,7 @@
 | `eventLive` (`js/09-afisha.js:1097`) | `.album` перед `.rows` — `event.md` |
 | формы `masterApply`, `teaHold`, `eventNew` | блок «Фото» — `masterApply.md` |
 | `eventEdit` (`js/14-ekrany-meropriyatiya.js:205`) | блок «Фото» или заморозка — `eventEdit.md` |
+| `fromMasterReq` (`js/07-mastera.js`), `masterReq` (`js/18-ekrany-mastera.js`) | снимки заявки у арт-директора — `masterReq.md` |
 | `js/00-slova.js` | новые слова ключами `foto.*` (№22) |
 
 ## Ответы на Ф1–Ф3

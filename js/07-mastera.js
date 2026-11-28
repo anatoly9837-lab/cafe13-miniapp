@@ -100,6 +100,9 @@ function fromMasterReq(x, queue) {
   r.at = x.starts_at;
   // шаг 42 (api#225): заявка на чайную церемонию — та же заявка мастера с `occupancy: 'tea'`; поля нет — ивент (сервер до #225)
   r.tea = x.occupancy === 'tea';
+  // шаг 44 (рецепт foto/masterReq.md): снимки заявки — их видит тот, кто решает (api ROW_SQL, master.py:246). Поля нет или
+  // оно пусто — [] и альбома нет; битый кадр отбрасывает fotoFrom, строку он не роняет: снимок не условие заявки (Ф1)
+  r.photos = fotoFrom(x.photos);
   if (queue) { if (typeof x.first_name !== 'string') return null; r.who = msName(x); }
   return r;
 }
