@@ -2389,14 +2389,21 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (/членств|взнос|вступлен/i.test(t)) bad.push(`${n}: форма возврата продаёт членство словами («членство», «взнос», «вступление»)`);
       if (s.calls.some(c => /\/join\/requisites\//.test(c.url))) bad.push(`${n}: экран просьбы спросил реквизиты — денег на нём нет`);
       if (await s.p.$('[data-action="join-send"][disabled]')) bad.push(`${n}: без слов просьба заперта — поле необязательное`);
-      await s.p.fill('#join-said', 'хочу вернуться');
-      state = withReq('pending');
-      await tap(s, '[data-action="join-send"]');
-      if (JSON.stringify(s.posted) !== JSON.stringify([{ said: 'хочу вернуться' }])) bad.push(`${n}: просьба ушла так: ${JSON.stringify(s.posted)}`);
-      t = await s.view();
-      if (!t.includes('Просьба у главы клуба. Ответ придёт сюда.') || !t.includes('ЖДЁТ ОТВЕТА')) bad.push(`${n}: после отправки нет J4 и «ждёт ответа»`);
-      if (/посмотрит чек/.test(t)) bad.push(`${n}: ожидание обещает проверку чека — чека нет`);
-      if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: у ждущей просьбы есть отправка`);
+      /* Поле — проверкой появления, а не `fill` вслепую (Cafe13KPG#480): без поля `fill` ждал 30 с и ронял ВЕСЬ
+         прогон — строки остальных случаев не печатались, и подлог «переход без loadJoin» (#107) читался красным
+         по коду возврата, а не по тексту. Нет поля — свой текст, отправка этого случая не судится (иначе вторая
+         и третья строка той же поломки). */
+      if (!(await s.p.$('#join-said'))) bad.push(`${n}: нет поля «Что передать главе клуба» (#join-said) — просьбу не написать, отправка не судилась`);
+      else {
+        await s.p.fill('#join-said', 'хочу вернуться');
+        state = withReq('pending');
+        await tap(s, '[data-action="join-send"]');
+        if (JSON.stringify(s.posted) !== JSON.stringify([{ said: 'хочу вернуться' }])) bad.push(`${n}: просьба ушла так: ${JSON.stringify(s.posted)}`);
+        t = await s.view();
+        if (!t.includes('Просьба у главы клуба. Ответ придёт сюда.') || !t.includes('ЖДЁТ ОТВЕТА')) bad.push(`${n}: после отправки нет J4 и «ждёт ответа»`);
+        if (/посмотрит чек/.test(t)) bad.push(`${n}: ожидание обещает проверку чека — чека нет`);
+        if (await s.p.$('[data-action="join-send"]')) bad.push(`${n}: у ждущей просьбы есть отправка`);
+      }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
       // J5: 410 за деньги в теле (старый клиент из кэша) и 409 «уже ждёт» — слова сервера ЦЕЛИКОМ, своих нет
