@@ -919,7 +919,7 @@ function accessSig(x) {
 function meStrip() {
   if (!LIVE || !ME_NEW || bare()) return '';
   return '<div class="card me-new"><div class="row"><span class="col"><b>Ваши права в клубе изменились</b>' +
-    '<span class="small">Обновите — приложение откроется заново с новыми правами.</span></span>' +
+    '<span class="small">Нажмите «Обновить» — новые права применятся без перезагрузки.</span></span>' +
     '<button type="button" class="btn mini" data-action="me-apply">Обновить</button></div></div>';
 }
 function refreshMe() {

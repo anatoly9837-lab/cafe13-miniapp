@@ -2256,11 +2256,14 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   // До правки refreshMe брал из ответа только остаток, роли выбрасывал — человек не видел ничего до перезапуска.
   // Применять сразу нельзя (панель вкладок и экран сменятся под пальцем) — поэтому строка «обновите» и нажатие.
   if (part(1)) {
-    const st = { roles: [] };
+    const st = { roles: [], slow: 0 };
     const meNow = () => { const p = clone(OWNER); p.roles = st.roles; p.balance = 1000; return p; };
     const s = await open(true, true, json(200, meNow()), null, null, null, q => {
       const u = q.url().replace(/^https?:\/\/[^/]+/, '');
-      return u === '/me' ? json(200, meNow()) : undefined;
+      if (u !== '/me') return undefined;
+      const body = json(200, meNow());
+      if (st.slow) { const ms = st.slow; st.slow = 0; return new Promise(r => setTimeout(() => r(body), ms)); }
+      return body;
     });
     await s.p.waitForTimeout(300);
     const n = 'me-new';
@@ -2277,6 +2280,17 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (await strip() !== 1) bad.push(`${n}: сервер выдал роль bar, человек вернулся — строки «права изменились» ${await strip()}, ждали 1`);
     if (await roles() !== roles0) bad.push(`${n}: роли применены без нажатия — ${await roles()}`);
     if (await tabs() !== tabs0) bad.push(`${n}: вкладки сменились без нажатия: ${tabs0} → ${await tabs()}`);
+    // права вернулись к применённым — строка гаснет сама (не о чем обновлять)
+    st.roles = [];
+    await s.p.evaluate(() => { BACK_AT = 0; }); await back();
+    if (await strip() !== 0) bad.push(`${n}: права вернулись к прежним, а строка «права изменились» стоит`);
+    // ответ, ушедший до смены человека (переключение теста: WHO++), о новом человеке молчит
+    st.roles = [{ role: 'bar', direction_id: null }]; st.slow = 600;
+    await s.p.evaluate(() => { BACK_AT = 0; window.dispatchEvent(new Event('focus')); });
+    await s.p.waitForTimeout(100); await s.p.evaluate(() => { WHO++; }); await s.p.waitForTimeout(800);
+    if (await strip() !== 0) bad.push(`${n}: ответ о прежнем человеке после смены (WHO) зажёг строку чужими правами`);
+    await s.p.evaluate(() => { BACK_AT = 0; }); await back();
+    if (await strip() !== 1) bad.push(`${n}: второй раз права пришли — строки ${await strip()}, ждали 1`);
     // переход на другой экран (полная перерисовка) строку не теряет; с него же «Обновить» ведёт домой
     await s.p.evaluate(() => go('topup')); await s.p.waitForTimeout(300);
     if (await strip() !== 1) bad.push(`${n}: на «Пополнении» строки ${await strip()}, ждали 1`);
