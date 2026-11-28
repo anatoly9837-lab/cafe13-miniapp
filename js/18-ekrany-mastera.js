@@ -15,7 +15,7 @@ Object.assign(SCREENS, {
       entry('data-go="masterReqs"', 'Заявки в мастера', waitSub(n, 'Кто просится в мастера'), waitMark(n)) +
       // шаг 42 (рецепт 42/masters.md): вторым — очередь карточек чайных мастеров; число до ответа — не ноль
       entry('data-go="teaReqs"', esc(slovo('masters.tea.title')), esc(waitSub(TQ.pending, slovo('masters.tea.sub'))), waitMark(TQ.pending)) +
-      // S2 (рецепт 42/masters.md): третьим, сразу под S1 — брони, ждущие арт-директора (master_ok); вне WIRED в живом нет
+      // S2 (рецепт 42/masters.md): третьим, сразу под S1 — брони, ждущие арт-директора (master_ok); в WIRED с teaBook
       (typeof teaBooksEntry === 'function' ? teaBooksEntry(entry) : '') +
       entry('data-go="masterEvents"', 'Ивенты', 'выключить или включить в афише') +
       entry('data-go="masterList"', 'Мастера', 'их слоты в расписании') +

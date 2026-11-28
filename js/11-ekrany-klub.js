@@ -25,7 +25,7 @@ function teaMineBlock() {
   if (m.status === 'approved' || m.status === 'edit') return '<div class="card"><div class="col">' + line('ok', slovo('home.tea.st.ok')) +
       (m.status === 'edit' ? '<span class="small">' + esc(slovo('home.tea.editWait')) + '</span>' : '') +
       '<button type="button" class="btn quiet" data-go="teaApply">' + esc(slovo('home.tea.change')) + '</button>' +
-      // T0 (рецепт 42/teaToMe.md): брони ко мне — пока teaToMe вне WIRED, в живом кнопки нет (как K5 у teaBook)
+      // T0 (рецепт 42/teaToMe.md): брони ко мне — с teaToMe в WIRED кнопка есть и в живом; closed() держит заморозку
       (closed('teaToMe') ? '' : '<button type="button" class="btn quiet" data-go="teaToMe">' + esc(slovo('home.tea.toMe')) + '</button>') +
       '</div></div>';
   if (m.status === 'rejected') return '<div class="card quiet"><div class="col">' + line('no', slovo('home.tea.st.no')) +
