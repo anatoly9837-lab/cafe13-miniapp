@@ -1,6 +1,7 @@
 // Проводка адресов шага 42 (каталог и очередь карточек) без браузера: node tools/chay-provodka.cjs <корень клиента> [мутант]
 // Форма ответов — сервер cafe13-api app/routers/tea.py (бой d23e45d): _card(), GET /tea/cards → {cards, pending},
 // POST /tea/cards/{id}/decide {decision, note}. Подмен api — ответ по адресу; адрес, которого сервер не держит, — 404.
+// Коды: 0 — зелёное, 1 — КРАСНОЕ, 2 — ПРОВЕРКА НЕ ВЫПОЛНЕНА (код не найден или случай упал). Зовётся шагом 21 ворот.
 // Мутанты (каждый обязан дать КРАСНОЕ и rc=1):
 //   stub   — очередь на прежних адресах-заглушках (/tea/cards/requests, /approve, /reject);
 //   items  — очередь читает r.data.items, а не r.data.cards;
@@ -10,6 +11,8 @@
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
 if (!root) { console.error('корень клиента первым аргументом'); process.exit(2); }
+// упавший случай (исключение) — «ПРОВЕРКА НЕ ВЫПОЛНЕНА», код 2, а не КРАСНОЕ: rc=1 значит только «проверка сказала нет» (Cafe13KPG#1137)
+process.on('uncaughtException', e => { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: случай упал — ' + (e && e.message || e)); process.exit(2); });
 const calls = [];
 const card = (id, st, over) => Object.assign({ master_id: id, name: 'Образец', about: 'Пуэр.', price: '600.00', duration_min: 90,
   shots: 0, status: st, approved_at: st === 'approved' ? '2026-11-25T21:58:34.566750Z' : null }, over || {});
