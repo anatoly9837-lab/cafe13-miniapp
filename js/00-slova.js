@@ -122,6 +122,11 @@ var SLOVA = {
     'masterStats.money.nowNote': 'Счёт, вывод и ожидаемое — на сегодня, а не за период.',
     'masterStats.list.title': 'Ивенты периода',
     'masterStats.list.row': '{date} · Записей: {bookings}',
+    // №97, №109 «б», №110 «а» (27–28.11): прошедшие церемонии периода и «заново» — на этой же странице
+    'masterStats.tea.title': 'Прошедшие церемонии',
+    'masterStats.tea.note': '«Заново» откроет подачу церемонии с теми же названием, описанием, местами и входом. Дату и время выберете сами.',
+    'masterStats.tea.again': 'Заново',
+    'masterStats.tea.fail': 'Прошедшие церемонии не загрузились.',
     'masterStats.noData': 'нет данных',
     'masterStats.error': 'Статистика не загрузилась.',
     'masterStats.retry': 'Повторить',
@@ -189,6 +194,46 @@ var SLOVA = {
     'tea.book.stOk': 'согласована',
     'tea.book.stNo': 'отказ',
     'tea.book.refund': '{sum} ฿ вернулись на счёт.',
+    // teaToMe (рецепт 42/teaToMe.md, №98): брони ко мне — согласие мастера; слово состояния — status_ru сервера, не здесь
+    'tea.toMe.title': 'Брони ко мне',
+    'tea.toMe.sub': 'Гости забронировали у вас церемонию. Согласитесь — бронь уйдёт арт-директору, он решает последним.',
+    'tea.toMe.accept': 'Согласиться',
+    'tea.toMe.done': 'Вы согласились. Бронь ушла арт-директору — решает он.',
+    'tea.toMe.empty': 'Броней пока нет',
+    'tea.toMe.emptyNote': 'Здесь появятся брони гостей на вашу церемонию.',
+    'tea.toMe.fail': 'Брони не загрузились',
+    'tea.toMe.refuse': 'Отказаться',
+    'tea.toMe.noteLabel': 'Причина — её увидит гость. Можно не писать.',
+    'tea.toMe.refuseSend': 'Отказать и вернуть деньги',
+    'tea.toMe.refuseCancel': 'Не отказывать',
+    'tea.toMe.refunded': '{sum} ฿ вернулись гостю на счёт.',
+    'tea.toMe.refusedDone': 'Вы отказались. Деньги вернулись гостю на счёт.',
+    'tea.toMe.refusedPlain': 'Вы отказались.',
+    // teaBooks, teaBookReq (рецепты 42/teaBooks.md, 42/teaBookReq.md, №98): решение арт-директора; слово состояния —
+    // status_ru сервера, не здесь; строка возврата — общая с teaToMe (tea.toMe.refunded)
+    'tea.books.title': 'Брони церемоний',                         // заголовок и вход S2
+    'tea.books.entrySub': 'Мастер согласился — решаете вы',      // S2
+    'tea.books.wait': 'Ждут вашего решения',                      // V0
+    'tea.books.master': 'Ждут мастера',                           // V7
+    'tea.books.past': 'Решённые',                                 // V2
+    'tea.books.row': 'мастер {name} · {when}',                    // V1, V6, V3
+    'tea.books.afterMaster': 'Решать можно после согласия мастера.',   // V6
+    'tea.books.empty': 'Броней нет',                              // V4
+    'tea.books.emptyNote': 'Здесь появятся брони, которые гости делают у чайных мастеров.',
+    'tea.bookReq.master': 'Мастер',                               // U1
+    'tea.bookReq.when': 'Когда',
+    'tea.bookReq.paid': 'Оплачено',
+    'tea.bookReq.noteLabel': 'Слова гостю',                       // U2
+    'tea.bookReq.noteSub': 'Увидит, если откажете. Можно не писать.',
+    'tea.bookReq.yesNote': 'Согласие займёт это время в календаре клуба.',   // U3
+    'tea.bookReq.refund': 'При отказе гостю вернутся все {sum} ฿, доля клуба тоже.',   // U4
+    'tea.bookReq.yes': 'Согласовать',                             // U5
+    'tea.bookReq.no': 'Отказать и вернуть {sum} ฿',              // U6
+    'tea.bookReq.doneYes': 'Бронь согласована.',                  // U7
+    'tea.bookReq.doneNo': 'Вы отказали. {sum} ฿ вернулись гостю на счёт.',   // U8
+    'tea.bookReq.notYet': 'Мастер ещё не согласился. Решать можно после его согласия.',   // U10 у pending
+    'tea.bookReq.decided': 'Эту бронь уже решили.',               // U10 у решённой
+    'tea.bookReq.back': 'К очереди',
     'tea.apply.title': 'Карточка чайного мастера',
     'tea.apply.sub': 'Так карточку увидят в «Услугах». Согласует арт-директор.',
     'tea.apply.editNote': 'Пока арт-директор не решит, в «Услугах» прежняя карточка.',
@@ -228,6 +273,7 @@ var SLOVA = {
     'tea.hold.noTitle': 'Без названия церемонию не согласуют.',
     'tea.hold.moneyNote': 'Пополнить счёт — кошельком в шапке.',
     'tea.hold.priceFail': 'Цена не загрузилась',
+    'tea.hold.againNote': 'Заполнено как в прошлой церемонии. Дату и время выберите заново: на прошедшее время церемонию не подать.',
     'tea.join.title': 'Чайная церемония',
     'tea.join.pill': 'Чайная церемония',
     'tea.join.host': 'Проводит {name}',
@@ -283,6 +329,7 @@ var SLOVA = {
     'home.tea.st.no': 'отказ',
     'home.tea.pending': 'Решает арт-директор.',
     'home.tea.change': 'Изменить карточку',
+    'home.tea.toMe': 'Брони ко мне',                              // T0, рецепт 42/teaToMe.md
     'home.tea.editWait': 'Правка ждёт арт-директора. До решения в «Услугах» прежняя карточка.',
     'home.tea.again': 'Подать заново',
     'home.tea.fail': 'Карточка не загрузилась',
