@@ -791,6 +791,10 @@ function mayTopups() { return LIVE && (grant('topups') || grant('admin')); }
 /* шаг 3 — право ровно как у сервера: решают `art_director` и админ (`_may_decide`, cafe13-api
    app/routers/master.py:91, на бою `bbf09f8`). Главы здесь нет: сервер ответил бы ему 403. */
 function mayMasters() { return LIVE && (grant('art_director') || grant('admin')); }
+/* Свою заявку решает только арт-директор (слово владельца 27.11.2026: «мог согласовывать мероприятия любых людей,
+   так как он директор»). Ровно как у сервера: `_may_decide_own` (cafe13-api#240) — роль, а не `mayMasters`:
+   `admin` без роли свою по-прежнему не решает (сервер ответит ему 409). */
+function mayDecideOwnMaster() { return grant('art_director'); }
 /* шаг 12 — операционный директор (Cafe13KPG#877): право ровно как у сервера (`_is_ops`, cafe13-api#876):
    `ops_director` и админ. Главы здесь нет: выдаёт роль глава, но бизнесы видит не он. */
 function mayOps() { return LIVE && (grant('ops_director') || grant('admin')); }

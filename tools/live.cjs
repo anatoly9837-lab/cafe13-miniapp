@@ -1403,18 +1403,42 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
-    // своя заявка арт-директора — по номеру из ЕГО /master/requests/mine: без «Согласовать»/«Отказать»
-    {
-      const n = 'offer-own-ad';
-      const own = mreq(501, 'pending');
-      const o = { mine: () => [own], queue: [Object.assign({ first_name: '[арт-директор]', last_name: '', username: 'ab' }, own)], posted: [] };
-      const s = await open(true, true, json(200, mem(9000, ['art_director'])), null, null, null, masterApi(o));
+    // своя заявка — по номеру из СВОИХ /master/requests/mine. Слово владельца 27.11.2026: арт-директор решает
+    // и свою (сервер cafe13-api#240, `_may_decide_own`); `admin` без роли арт-директора свою не решает — у него
+    // кнопок нет, слова «Свою заявку решает арт-директор.». Признак — `mayDecideOwnMaster()`, вызовом.
+    // offer-other-admin (возврат arhitector30, мутант `own &&` снят): у ЧУЖОЙ заявки admin кнопки обязаны быть —
+    // иначе «своя» заметка закрыла бы ему решение по всем заявкам. 501 в очереди, но не в его mine.
+    for (const [n, roles, decides, mine] of [['offer-own-ad', ['art_director'], true, true], ['offer-own-admin', ['admin'], false, true],
+                                           ['offer-other-admin', ['admin'], true, false]]) {
+      const own = mreq(501, 'pending'), decided = [];
+      const o = { mine: () => (mine ? [own] : []), queue: [Object.assign({ first_name: '[арт-директор]', last_name: '', username: 'ab' }, own)], posted: [] };
+      const api = masterApi(o);
+      const s = await open(true, true, json(200, mem(9000, roles)), null, null, null, q => {
+        const m = q.url().replace(/^https?:\/\/[^/]+/, '').match(/^\/master\/requests\/(\d+)\/decide$/);
+        if (m && q.method() === 'POST') { const b = JSON.parse(q.postData() || '{}'); decided.push({ id: Number(m[1]), b });
+          return json(200, Object.assign(mreq(Number(m[1]), b.decision), { decision_note: b.note, events: [] })); }
+        return api(q);
+      });
       await s.p.waitForTimeout(300);
       await s.p.evaluate(() => go('masterReqs')); await s.p.waitForTimeout(300);
       await s.p.evaluate(() => go('masterReq', 501)); await s.p.waitForTimeout(300);
       const t = await s.view();
-      if (await s.p.$('[data-action^="ms-yes"], [data-action^="ms-no"], [data-action^="ms-ask"]')) bad.push(`${n}: у своей заявки есть «Согласовать»/«Отказать» — сервер ответит 409`);
-      if (!t.includes('Свою заявку решает другой арт-директор')) bad.push(`${n}: не сказано, кто решает свою заявку`);
+      const pred = await s.p.evaluate(() => mayDecideOwnMaster());
+      const ownWant = roles.includes('art_director');
+      if (pred !== ownWant) bad.push(`${n}: mayDecideOwnMaster() = ${pred}, ждали ${ownWant}`);
+      const btn = await s.p.$('#view [data-action="ms-yes:501"]');
+      if (decides) {
+        if (!btn || !(await s.p.$('#view [data-action="ms-ask:501"]'))) bad.push(`${n}: у заявки нет «Согласовать»/«Отказать» — решить её нечем`);
+        if (t.includes('Свою заявку решает')) bad.push(`${n}: решающему сказано, что заявку решает кто-то другой`);
+        if (btn) {
+          await tapIf(s, n, '#view [data-action="ms-yes:501"]', '«Согласовать»'); await s.p.waitForTimeout(300);
+          if (decided.length !== 1 || decided[0].id !== 501 || decided[0].b.decision !== 'approved')
+            bad.push(`${n}: согласие заявки ушло не одним POST на 501: ${JSON.stringify(decided)}`);
+        }
+      } else {
+        if (await s.p.$('#view [data-action^="ms-yes"], #view [data-action^="ms-no"], #view [data-action^="ms-ask"]')) bad.push(`${n}: у своей заявки не арт-директора есть «Согласовать»/«Отказать» — сервер ответит 409`);
+        if (!t.includes('Свою заявку решает арт-директор.')) bad.push(`${n}: не сказано, кто решает свою заявку`);
+      }
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
