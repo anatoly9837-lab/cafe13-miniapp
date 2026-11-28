@@ -1448,6 +1448,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // Здесь он судится настоящим DOM: 611 — три снимка, 612 — снимков нет. У 611 альбом ВИДЕН (рамки с высотой,
     // кадры загружены с адреса сервера клуба), стоит ДО «Согласовать»; у 612 блока нет, а кнопки есть — экран тот же.
     // Отрицательный контроль: снять строку альбома в js/18 (masterReq) — красное `ms-album-vidno`.
+    // «ВИДЕН» ЗДЕСЬ ЗНАЧИТ ровно это (требование координатора: назвать покрытое, иначе «виден» прочтут полной проверкой):
+    //   ловит — альбома нет в разметке; рамка без размера (display:none, scale(0)); img не загружен или visibility:hidden;
+    //   обрезка предком (overflow + height:0), перекрытие другим элементом, visibility:hidden у предка — через
+    //   elementFromPoint в центре рамки после прокрутки к ней; opacity:0 у img или любого предка до body;
+    //   НЕ ловит — частичную прозрачность (opacity 0.05), filter (opacity(0), brightness(0)), clip-path, заливку поверх
+    //   кадра псевдоэлементом самой рамки, mix-blend-mode, однотонную картинку от сервера. Проверяется центр рамки, не края.
     // Флаги загрузки FOTO_ON здесь не трогаются: показ от них не зависит (рецепт M1), и случай это держит сам —
     // он бежит при закрытых masterApply/teaHold, как в стволе.
     {
@@ -1473,9 +1479,19 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const fr = a[0] ? [...a[0].querySelectorAll('.album-frame')] : [];
         return { albums: a.length, yes: !!yes, title: v.textContent.includes('Проба мастера'),
                  before: !!(a[0] && yes && (a[0].compareDocumentPosition(yes) & Node.DOCUMENT_POSITION_FOLLOWING)),
-                 frames: fr.map(f => { const r = f.getBoundingClientRect(), i = f.querySelector('img');
-                   return { h: Math.round(r.height), w: Math.round(r.width), src: i ? i.getAttribute('src') : null,
-                            ok: !!(i && i.complete && i.naturalWidth > 0 && getComputedStyle(i).visibility !== 'hidden') }; }) };
+                 frames: await (async () => { const out = [];
+                   for (const f of fr) {
+                     // виден ГЛАЗАМИ, а не только в разметке (возврат arhitektor39-8e, мутант N5: обёртка height:0;overflow:hidden
+                     // оставляла рамке размер и загруженный img — судья был зелёным): рамка в окне, в её центре сверху лежит
+                     // она сама или её img, и ни один предок до #view не прозрачен (N4: opacity:0 точкой не ловится)
+                     f.scrollIntoView({ block: 'center' }); await new Promise(r => setTimeout(r, 120));
+                     const r = f.getBoundingClientRect(), i = f.querySelector('img');
+                     const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                     let clear = true; for (let e = i || f; e && e !== document.body; e = e.parentElement) if (Number(getComputedStyle(e).opacity) === 0) clear = false;
+                     out.push({ h: Math.round(r.height), w: Math.round(r.width), src: i ? i.getAttribute('src') : null,
+                       ok: !!(i && i.complete && i.naturalWidth > 0 && getComputedStyle(i).visibility !== 'hidden'),
+                       seen: !!(top && (top === f || f.contains(top))) && clear }); }
+                   return out; })() };
       }, id);
       await s.p.evaluate(() => go('masterReq', 611)); await s.p.waitForTimeout(300);
       const a = await look(611);
@@ -1491,6 +1507,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
           if (flat.length) bad.push(`${n}-vidno: рамок без размера ${flat.length} из ${a.frames.length} — альбом в разметке, но не виден`);
           const dead = a.frames.filter(f => !f.ok);
           if (dead.length) bad.push(`${n}-vidno: кадров не показано ${dead.length} из ${a.frames.length} (img не загружен или спрятан)`);
+          const hid = a.frames.filter(f => !f.seen);
+          if (hid.length) bad.push(`${n}-vidno: кадров не видно глазами ${hid.length} из ${a.frames.length} (в центре рамки лежит другое или предок прозрачен)`);
           if (!a.before) bad.push(`${n}-poryadok: альбом не стоит до «Согласовать» (кнопка ${a.yes ? 'есть' : 'нет'}) — решают раньше, чем видят`);
         }
         if (!got.length) bad.push(`${n}-vidno: снимки у сервера не спрошены ни разу — кадры не грузились`);
