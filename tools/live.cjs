@@ -3411,6 +3411,38 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (!wiped && (!kept || JSON.parse(kept).code !== 'XIII-0042')) bad.push(`${name}: запас испорчен без отказа сервера: ${kept}`);
     await s.ctx.close();
   }
+  // Отказ пропуска ЧУЖИМИ ГЛАЗАМИ — словами сервера (Cafe13KPG#400, решение park-koord2-27): только при X-Act-As.
+  // Без просмотра те же слова не печатаются — это держат pass-403* выше. Заглушка кода и пустой detail — общая фраза.
+  // pass-403-test-bez-glaz — тестовый режим БЕЗ чужих глаз (TEST.as = null, X-Act-As нет): член «&& TEST.as»
+  // условия в loadPass судится только им (возврат arhitektor43 на 5b1c33c, мутант mF): pass-403* идут без
+  // тестового режима, а остальные три ставят TEST.as.
+  const GLAZA = { id: 501, name: 'Образец', what: 'Куратор направления · Бар' };
+  if (part(1)) for (const [name, as, body, want, not] of [
+    ['pass-403-act-as', GLAZA, { detail: 'пропуск чужими глазами не показывается: по коду списывают деньги' },
+      'Пропуск чужими глазами не показывается: по коду списывают деньги.', 'Сервер отказал в пропуске'],
+    ['pass-403-act-as-zaglushka', GLAZA, { detail: 'Forbidden' }, 'Сервер отказал в пропуске.', 'Forbidden'],
+    ['pass-403-act-as-pusto', GLAZA, {}, 'Сервер отказал в пропуске.', null],
+    ['pass-403-test-bez-glaz', null, { detail: 'членство не активно' }, 'Сервер отказал в пропуске.', 'Членство не активно']]) {
+    const asked = [];
+    const s = await open(true, true, json(200, OWNER), null, null, SAVED, q => {
+      if (!q.url().endsWith('/pass')) return undefined;
+      const h = q.headers(); asked.push([h['x-test-mode'] || '', h['x-act-as'] || '']);
+      return h['x-test-mode'] === '1' ? json(403, body) : undefined;
+    });
+    await s.p.evaluate((as) => { TEST.on = true; TEST.as = as; PASS = null; PASS_FAIL = ''; go('pass'); }, as);
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    // контроль входа: с глазами — спрошен глазами 501; без глаз — спрошен в тестовом режиме и НИ РАЗУ с X-Act-As
+    const vhod = as ? asked.some(a => a[0] === '1' && a[1] === '501')
+                    : asked.some(a => a[0] === '1') && !asked.some(a => a[1]);
+    if (!vhod) bad.push(`${name}: /pass не спрошен ${as ? 'глазами 501' : 'в тестовом режиме без x-act-as'} — судить нечего: ${JSON.stringify(asked)}`);
+    else {
+      if (!t.includes('Пропуска нет') || !t.includes(want)) bad.push(`${name}: нет отказа «${want}»: ${t.slice(0, 160)}`);
+      if (not && t.includes(not)) bad.push(`${name}: на экране «${not}» — ждали «${want}»`);
+    }
+    if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
+    await s.ctx.close();
+  }
 
   // Привратник на /pass (`code: 'no_access'`) — отказ во входе целиком, а не «пропуска нет».
   // Второй случай — те же признак и причина ДРУГИМИ словами (Cafe13KPG#914): экран обязан остаться.
