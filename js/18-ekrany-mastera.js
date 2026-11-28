@@ -68,6 +68,9 @@ Object.assign(SCREENS, {
         '<div><span class="small">Место и мест</span><b>' + esc(q.place + ' · ' + q.seats) + '</b></div>' +
         '<div><span class="small">Списано</span><b class="num">' + money(q.amount) + ' ฿</b></div></div>' +
       '<div class="card quiet"><div class="col"><b>' + esc(q.title) + '</b>' + (q.about ? '<span class="small">' + esc(q.about) + '</span>' : '') + '</div></div>' +
+      // шаг 44 (foto/masterReq.md): M1 — приложенные снимки рядом с тем, что согласуют; при согласии сервер переносит их на
+      // карточку ивента (decide), поэтому видны ДО кнопки. Нет снимков — блока нет (как F5). От FOTO_ON показ не зависит
+      (q.photos && q.photos.length ? teaAlbum(q.photos, null, true) : '') +
       err +
       (q.status !== 'pending' ? '<div class="card quiet"><div class="row"><span class="small">Решено ' + esc(topupDay(q.done, true)) + '</span>' +
           '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div></div>'
