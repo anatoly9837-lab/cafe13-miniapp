@@ -95,7 +95,7 @@ Object.assign(SCREENS, {
       '</div></div>' : '') +
 
       '<div class="field"><label for="f-title">Название</label>' +
-        '<input id="f-title" type="text" value="' + keep('f-title') + '" placeholder="Например: звуковая практика">' +
+        '<input id="f-title" type="text" maxlength="200" value="' + keep('f-title') + '" placeholder="Например: звуковая практика">' +
         '<span class="small">До 200 знаков.</span></div>' +
 
       '<div class="row" style="gap:10px;align-items:stretch">' +
