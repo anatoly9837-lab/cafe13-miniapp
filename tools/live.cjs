@@ -12225,7 +12225,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
             if (!qRow.text.includes(w)) bad.push(`${n}: в строке входа на «Заказах» нет «${w}» (кадр E41)`);
           if (!homeRow) bad.push(`${n}: НЕ ВЫПОЛНЕНО — эталона нет, в «Клубе» у работника с членством строки входа не нашлось`);
           else {
-            if (qRow.html !== homeRow.html) bad.push(`${n}: строка входа на «Заказах» разошлась со строкой в «Клубе»: «${qRow.text}» против «${homeRow.text}» (кадр E41)`);
+            // сравнивается разметка, а печатался текст: расхождение в атрибуте (.chev, класс) давало два одинаковых текста
+            // (Cafe13KPG#425) — печатается первое расходящееся место разметки, по 40 знаков от него в обе строки
+            if (qRow.html !== homeRow.html) {
+              let k = 0; while (k < qRow.html.length && qRow.html[k] === homeRow.html[k]) k++;
+              const at = h => JSON.stringify(h.slice(Math.max(0, k - 40), k + 40));
+              bad.push(`${n}: строка входа на «Заказах» разошлась со строкой в «Клубе» со знака ${k}: ${at(qRow.html)} против ${at(homeRow.html)} (кадр E41)`);
+            }
             if (qRow.label !== homeRow.label) bad.push(`${n}: группа входа на «Заказах» подписана «${qRow.label}», в «Клубе» — «${homeRow.label}» (кадр E41)`);
           }
           await s.p.click('#view [data-go="barCards"]'); await s.p.waitForTimeout(300);
