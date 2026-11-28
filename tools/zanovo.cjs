@@ -11,6 +11,7 @@ const root = process.argv[2], mutant = process.argv[3] || '';
 const fail = m => { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: ' + m); process.exit(2); };
 if (!root || !fs.existsSync(root + '/js')) fail('нет корня клиента: ' + root);
 
+const NOTE_C13 = "(THF.again && !pick ? '<div class=\"note\">' + svg(ICON.info) + '<span>' + esc(slovo('tea.hold.againNote')) + '</span></div>' : '') +";
 // мутации: [файл, образец, замена]; образец обязан стоять в файле ровно один раз, замена — отличаться
 const MUT = {
   occ: ['js/18-ekrany-mastera.js', "h && h.occ === 'tea' && h.done", 'h && h.done'],
@@ -21,6 +22,13 @@ const MUT = {
   'note-pick': ['js/22-ekrany-chay.js', '(THF.again && !pick ?', '(THF.again ?'],
   back: ['js/21-navigaciya.js', "teaHold: function () { return THF.again ? 'masterStats' : 'home'; },", "teaHold: 'home',"],
   nohist: ['js/21-navigaciya.js', ' if (mayMasterStats()) loadHistory(); }', ' }'],
+  // C13 уезжает из карточки времени к полям: перед блоком «Фото», вне карточки «Время» (мутант P1 ревью #506)
+  'note-place': ['js/22-ekrany-chay.js',
+    "fotoBlock('teaHold', slovo('foto.add')) +\n      '<div class=\"card\"><div class=\"col\"><span class=\"label\">' + esc(slovo('tea.time')) + '</span>' +\n        " + NOTE_C13,
+    NOTE_C13 + "\n      fotoBlock('teaHold', slovo('foto.add')) +\n      '<div class=\"card\"><div class=\"col\"><span class=\"label\">' + esc(slovo('tea.time')) + '</span>' +"],
+  'hist-render': ['js/09-afisha.js', '{ bookings: 1, event: 1, thanks: 1, masterStats: 1 }[current]', '{ bookings: 1, event: 1, thanks: 1 }[current]'],
+  'hist-retry': ['js/21-navigaciya.js', "    if (a === 'mst-hist-retry') { loadHistory(); render(); return; }\n", ''],
+  'foto-hold': ['js/09-afisha.js', 'teaHold: false, masterApply', 'teaHold: true, masterApply'],
 };
 if (mutant && !MUT[mutant]) fail('незнакомый мутант: ' + mutant);
 
@@ -135,6 +143,33 @@ R(`MST.data = fromMasterStats({ events: { count: 6, bookings: 30, collected: '10
 const p2 = R(`SCREENS.masterStats()`);
 check('Z12 архив не загрузился — T3 и mst-hist-retry, список L на месте',
   [p2.includes(R(`esc(slovo('masterStats.tea.fail'))`)), p2.includes('data-action="mst-hist-retry"'), p2.includes('data-action="mst-event:11"')], [true, true, true]);
+
+// Z13: C13 — в карточке «Время», над кнопкой календаря (рецепт 42/teaHold.md, C3/C13); «есть на странице» (Z8) места не судит
+R(`HIST = fromEvents(__hist); HIST.reverse(); HIST_STATE = 'ok'; CAL.pick = null; current = 'masterStats';`);
+R(`go('teaHold', { again: '11' }); current = 'teaHold';`);
+const hold = R(`SCREENS.teaHold()`);
+const iTime = hold.indexOf('<span class="label">' + R(`esc(slovo('tea.time'))`) + '</span>'), iNote = hold.indexOf(note),
+  iCal = hold.indexOf('data-action="tea-hold-cal"');
+check('Z13 C13 — внутри карточки «Время»: после её заголовка, перед кнопкой календаря, без новой карточки между',
+  [iTime >= 0, iTime < iNote, iNote < iCal, iTime >= 0 && iNote > iTime && !hold.slice(iTime, iNote).includes('class="card')],
+  [true, true, true, true]);
+
+// Z16: на форме «заново» блока «Фото» нет — подача церемонии снимков не шлёт (FOTO_ON.teaHold, вопрос №115)
+check('Z16 на форме «заново» нет «Фото» (foto.label)', hold.includes('<span class="label">' + R(`esc(slovo('foto.label'))`) + '</span>'), false);
+
+// Z14: ответ архива на открытой статистике перерисовывает экран (render в приборе — счётчик, не заглушка)
+ctx.__renders = 0;
+R(`render = function () { __renders++; }; HIST = null; HIST_STATE = ''; current = 'masterStats';`);
+replies['GET /events/history'] = { status: 200, data: hist };
+R(`loadHistory()`);
+check('Z14 архив пришёл на masterStats — экран перерисован один раз, архив из ответа (5 строк) на месте',
+  [ctx.__renders, R(`HIST_STATE`), R(`HIST.length`)], [1, 'ok', 5]);
+
+// Z15: «Повторить» у T3 — запрос архива, а не только кнопка в разметке (Z12)
+R(`HIST = null; HIST_STATE = 'код 500'; current = 'masterStats';`); calls.length = 0;
+R(`doAction('mst-hist-retry')`);
+check('Z15 «Повторить» (mst-hist-retry) — GET /events/history', calls.filter(c => c.startsWith('GET /events/history')).length, 1);
+delete replies['GET /events/history'];
 
 const red = ok.filter(x => !x).length;
 console.log(red ? 'КРАСНОЕ: ' + red + ' из ' + ok.length : 'ЗЕЛЁНОЕ: ' + ok.length + ' из ' + ok.length);
