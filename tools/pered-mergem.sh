@@ -201,9 +201,25 @@ sudit_sp() { # <прибор> <лог> <код выхода>   (исходник
     else sp_ishod=не-выполнена; sp_pochemu=$last
     fi
 }
-trap 'ec=$?
-if [ "$ec" -eq 0 ] && [ -z "$keep_why" ]; then rm -rf "$W"
-else echo "рабочий каталог прогона ОСТАВЛЕН: $W${keep_why:+ — нашлось: $keep_why}"; fi' EXIT
+# ⚠ НА ЧИСТОМ ЗЕЛЁНОМ СТИРАЕТСЯ ТОЛЬКО ТЯЖЁЛОЕ (Cafe13KPG#1098, слово владельца 25.11.2026: «починить
+# инструмент, чтобы он не затирал доказательства»). Прежняя редакция стирала `$W` целиком, вместе с
+# live/part-N.json — список проверенных случаев пропадал ровно на успехе, и роль тестирования держала
+# фоновый копировщик. Замер на 41 каталоге (28.11): прогон ~33 МБ — tree ~16, png в live/shots ~15;
+# лёгкое (*.json, *.log, *.tsv, *.html вне tree) ~0,5 МБ. Стирается tree/ и каждый *.png, остальное
+# остаётся; `itog` — «sha код». Размер остатка печатается числом: это приёмка «диск не растёт», а предел
+# держит уборка старше 3 суток при старте (выше). Судит tools/uborka.cjs --самопроверка (шаг 18): тело
+# этой функции и строку trap он читает ОТСЮДА и гоняет на подложенном каталоге.
+uborka() { # <код выхода>
+    local ec=$1 sha
+    sha=$(git -C "$T" rev-parse HEAD 2>/dev/null) || sha=нет-git
+    printf '%s %s\n' "$sha" "$ec" > "$W/itog"
+    if [ "$ec" -eq 0 ] && [ -z "$keep_why" ]; then
+        rm -rf "${W:?}/tree"
+        find "$W" -type f -name '*.png' -delete
+        echo "логи прогона: $W ($(du -sk "$W" | cut -f1) КБ)"
+    else echo "рабочий каталог прогона ОСТАВЛЕН: $W${keep_why:+ — нашлось: $keep_why}"; fi
+}
+trap 'uborka $?' EXIT
 echo "предмет: ДЕРЕВО МЕРДЖА $T"
 echo "образ:   $IMAGE"
 
@@ -643,7 +659,7 @@ verdict 'screens.html равна пересборке из входов дере
 # ⚠ pered-pokazom.cjs (с 26.11.2026, Cafe13KPG#1121) — прибор «показывать можно»: самопроверка судит
 # его ИТОГОВУЮ строку и шаг дыма на подставном вызове — ни git, ни сети, ни docker она не зовёт.
 step '18. самопроверки приборов — --самопроверка каждого (приговор)'
-SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pered-pokazom.cjs pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py teksty.py v-oblasti.py'
+SP_PRIBORY='api-roles.cjs bez-zova.py catalog.py check-opis.py check-recepty.py check-sostav.py imena-ascii.py klient.cjs klient.py pered-pokazom.cjs pometki-do-sborki.py recepty-index.py reestr-oblika.py sverka-razmetki.py sverka-recepta.py svyaz-kadrov.py teksty.py v-oblasti.py uborka.cjs'
 SP_V_SHAGE_5='check-stages.py'
 SP_ZHDUT_GIT=''
 not_done18=''
