@@ -7050,7 +7050,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (s.calls.some(c => c.test || c.as)) bad.push('test-unset: тестовые заголовки ушли без входа в режим');
     await s.ctx.close();
   }
-  // Полный путь: войти → список → глазами куратора → запись → выйти из просмотра → выйти из теста.
+  // Полный путь: войти → список → глазами куратора → запись → выбрать другого → выйти из теста.
+  // Вход в тест = выбор человека (Cafe13KPG#408, слово владельца 27.10): «Войти» открывает список, а тестовой
+  // базы СОБОЙ нет — ни /me с одним X-Test-Mode, ни полосы без «Смотрите как».
   if (part(1)) {
     const saved = { code: 'XIII-0001', name: 'Тест', level: 'Член клуба', ends: null, lifelong: true, uid: 1 };
     const s = await open(true, true, json(200, OWNER), null, null, saved, testApi()); s.name = 'test-path';
@@ -7060,9 +7062,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.waitForTimeout(300);
       const pc = s.calls.filter(c => c.url.endsWith('/act-as/people'));
       if (pc.length !== 1 || pc[0].test !== '1' || pc[0].as) bad.push('test-path: список запрошен не тем: ' + JSON.stringify(pc.map(c => [c.test, c.as])));
-      // после входа сам за себя — на главной, полоса «Вы сами»
-      if (!((await strip(s)) || '').includes('Вы сами')) bad.push('test-path: после входа нет полосы «Тестовая база · Вы сами»');
-      await s.p.click('#demo-btn'); await s.p.waitForTimeout(200);
+      if (s.calls.some(c => c.url.endsWith('/me') && c.test)) bad.push('test-path: «Войти» перечитал /me в тестовой базе — вошёл сам собой, без человека (#408)');
+      if ((await strip(s)) !== null) bad.push('test-path: до выбора человека уже стоит полоса тестовой базы: ' + (await strip(s)));
+      const scr = await s.p.evaluate(() => current);
+      if (scr !== 'demo') bad.push('test-path: «Войти» увёл с панели (стоит «' + scr + '») — список людей не виден');
       const t = await s.view();
       if (!t.includes('Образец') || !t.includes('Куратор направления · Бар') || !t.includes('Второй') || !t.includes('Куратор направления · Чай'))
         bad.push('test-path: в списке нет людей словами: ' + t.slice(0, 300));
@@ -7088,11 +7091,18 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (after.some(c => c.test !== '1' || c.as !== '501')) bad.push('test-path: в просмотре ушёл запрос без заголовков: ' + JSON.stringify(after.filter(c => c.test !== '1' || c.as !== '501').map(c => c.url)));
         const kept = JSON.parse(await s.p.evaluate(() => localStorage.getItem('cafe13.pass')) || 'null');
         if (!kept || kept.code !== 'XIII-0001') bad.push('test-path: запас пропуска владельца переписан в тестовом режиме: ' + JSON.stringify(kept));
-        if (await tap(s, '#view .test-strip [data-action="test-self"]')) {
-          await s.p.waitForTimeout(400);
-          const me2 = s.calls.filter(c => c.url.endsWith('/me')).pop();
-          if (me2.test !== '1' || me2.as) bad.push('test-path: выход из просмотра не вернул «сам в тестовой базе»');
-          if (!((await strip(s)) || '').includes('Вы сами')) bad.push('test-path: после выхода из просмотра полоса не «Вы сами»');
+        const sb = await s.p.$$eval('#view .test-strip [data-action]', a => a.map(e => e.getAttribute('data-action')));
+        if (JSON.stringify(sb) !== '["test-off"]') bad.push('test-path: на полосе не одна «Выйти из теста»: ' + JSON.stringify(sb));
+        // «Выбрать другого»: список — снова без X-Act-As, а экран остаётся глазами выбранного
+        if (await toPanel(s) && await tap(s, '[data-action="test-pick"]')) {
+          await s.p.waitForTimeout(300);
+          const pc2 = s.calls.filter(c => c.url.endsWith('/act-as/people'));
+          if (pc2.length !== 2 || pc2[1].test !== '1' || pc2[1].as) bad.push('test-path: «Выбрать другого» спросил список не тем: ' + JSON.stringify(pc2.map(c => [c.test, c.as])));
+          if (!((await strip(s)) || '').includes('Смотрите как Образец')) bad.push('test-path: «Выбрать другого» сбросил просмотр до выбора');
+          if (!(await s.view()).includes('Второй')) bad.push('test-path: «Выбрать другого» не показал список');
+          if (await tap(s, '[data-action="test-cancel"]')) { await s.p.waitForTimeout(200); if (!(await s.view()).includes('Смотрите как Образец')) bad.push('test-path: «Остаться» не вернул панель просмотра'); }
+        }
+        {
           if (await tap(s, '#view .test-strip [data-action="test-off"]')) {
             await s.p.waitForTimeout(400);
             const n0 = s.calls.length;

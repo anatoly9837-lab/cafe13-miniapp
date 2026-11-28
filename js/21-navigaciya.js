@@ -946,13 +946,14 @@ function doAction(a) {
     if (a === 'book-retry') { bookLoad(); render(); return; }
     if (a === 'test-health') { loadHealth(); render(); return; }
     if (a === 'day-reload') { loadDay(); render(); return; }
-    if (a === 'test-on' && isGod()) { switchTo(true, null); loadPeople(); return; }
-    if (a === 'test-as' && isGod() && TEST.on && TEST.people) {
+    // вход и «Выбрать другого» — одно: открыть список, экран не переключать (#408)
+    if ((a === 'test-on' || a === 'test-pick') && isGod() && !TEST.busy) { TEST.pick = true; loadPeople(); render(); return; }
+    if (a === 'test-cancel') { TEST.pick = false; if (!TEST.on) TEST.people = null; render(); return; }
+    if (a === 'test-as' && isGod() && TEST.pick && TEST.people) {
       var who = TEST.people.filter(function (x) { return String(x.id) === arg; })[0];
       if (who) switchTo(true, who);
       return;
     }
-    if (a === 'test-self' && TEST.on) { switchTo(true, null); loadPeople(); return; }
     if (a === 'test-off' && TEST.on) { switchTo(false, null); return; }
     if (a.slice(0, 2) === 'b-') {
       if (BOOK.busy) return;

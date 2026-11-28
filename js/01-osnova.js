@@ -36,7 +36,7 @@
    принят: мой вывод был шире замера). Замер — выложить номер, не меняя
    кнопки, и посмотреть номер в Telegram без перезапуска; до него кнопку
    трогают по слову devops5, а не по этой строке. */
-var VERSION = 'v243 · 0.2 «Путь бизнеса» · 28.11.2026';
+var VERSION = 'v244 · 0.2 «Путь бизнеса» · 28.11.2026';
 
 var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
@@ -226,7 +226,10 @@ var LIVE = false;          // true — данные на экране пришл
 var FAIL = '';             // чем кончилась неудачная попытка, для экрана apiDown
 var FAIL_NET = false;      // сервер не ответил вовсе — тогда можно показать сохранённый пропуск
 
-function api(method, path, body) {
+// test — {on, as} вместо TEST на один запрос: список «Смотреть как» спрашивается в тестовой базе БЕЗ X-Act-As,
+// пока сам экран ещё не тестовый или смотрит глазами другого (Cafe13KPG#408)
+function api(method, path, body, test) {
+  var t = test || TEST;
   var ctl = typeof AbortController === 'function' ? new AbortController() : null;
   // Шаг 44: тело — САМ ФАЙЛ (Blob) у `POST /photos` (api 4c0aae0, routers/photos.py): без JSON, тип — тип файла.
   // Срок длиннее: сервер держит снимок в очереди на сжатие до 30 с и только потом отвечает 503 photo_busy.
@@ -234,8 +237,8 @@ function api(method, path, body) {
   var timer = ctl ? setTimeout(function () { ctl.abort(); }, raw ? 45000 : 10000) : null;
   var opt = { method: method, headers: { 'X-Telegram-Init-Data': tg.initData } };
   // Тестовый режим — на КАЖДОМ запросе, иначе часть экрана придёт из боевой базы.
-  if (TEST.on) opt.headers['X-Test-Mode'] = '1';
-  if (TEST.on && TEST.as) opt.headers['X-Act-As'] = String(TEST.as.id);
+  if (t.on) opt.headers['X-Test-Mode'] = '1';
+  if (t.on && t.as) opt.headers['X-Act-As'] = String(t.as.id);
   if (ctl) opt.signal = ctl.signal;
   if (raw) {
     opt.headers['Content-Type'] = body.type || 'application/octet-stream';
