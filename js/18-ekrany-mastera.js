@@ -57,7 +57,7 @@ Object.assign(SCREENS, {
     var q = MR.q.filter(function (x) { return x.id === Number(id); })[0];
     if (!q) return '<div class="card quiet"><div class="col"><b>Такой заявки нет</b>' +
       '<span class="small">Вернитесь к заявкам в мастера.</span></div></div>';
-    // своя — по номеру заявки в СВОИХ (`/master/requests/mine`): номера человека в очереди нет
+    // своя — по номеру заявки в СВОИХ (`/master/requests/mine`): номера человека в очереди нет; свою решает арт-директор
     var own = !!(MR.mine && MR.mine.some(function (x) { return x.id === q.id; }));
     var busy = MR.busy ? ' disabled' : '';
     var err = MR.qErr ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(MR.qErr) + '</span></div>' : '';
@@ -71,7 +71,7 @@ Object.assign(SCREENS, {
       err +
       (q.status !== 'pending' ? '<div class="card quiet"><div class="row"><span class="small">Решено ' + esc(topupDay(q.done, true)) + '</span>' +
           '<span class="st ' + TOPQ_ST[q.status] + '">' + esc(q.word) + '</span></div></div>'
-      : own ? '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает другой арт-директор.</span></div>'
+      : own && !mayDecideOwnMaster() ? '<div class="note">' + svg(ICON.info) + '<span>Свою заявку решает арт-директор.</span></div>'
       // отказ (#696): форма причины, как у пополнений; почему кнопка не нажимается — строкой у неё (как v123)
       : MR.ask === q.id ? '<div class="field"><label for="ms-note">Почему отказ и что исправить</label>' +
           '<textarea id="ms-note" rows="4" maxlength="500">' + esc(MR.note) + '</textarea>' +
