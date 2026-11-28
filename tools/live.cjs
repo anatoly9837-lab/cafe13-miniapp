@@ -2162,10 +2162,12 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
               if (!decides && (btns || note)) bad.push(`${n}: у главы на карточке кнопок решения ${btns}, поле слов ${note ? 'есть' : 'нет'} — решает только ОД (cafe13-api#250)`);
               if (!decides && !t.includes('Решает операционный директор.')) bad.push(`${n}: у главы нет строки «Решает операционный директор.»`);
               if (decides && t.includes('Решает операционный директор.')) bad.push(`${n}: у решающего (ОД, админ) строка «Решает операционный директор.» вместо кнопок`);
-              // «назад»: teaReq → teaReqs → «Управление» (рецепт: назад manage; мутант arhitektor44 №2 — BACK.teaReqs)
+              // «назад»: teaReq → teaReqs → «Управление» (рецепт: назад manage; мутант arhitektor44 №2 — BACK.teaReqs).
+              // Случай живой, в Telegram: нарисованная #back скрыта всегда (js/22-zapusk.js tgChrome), «назад» —
+              // системная BackButton, её заглушка держит window.__back/__backShown (как pass-back-login)
               for (const want of ['teaReqs', 'manage']) {
-                if (!(await s.p.isVisible('#back'))) { bad.push(`${n}: нет «назад» на пути к ${want}`); break; }
-                await s.p.click('#back'); await s.p.waitForTimeout(250);
+                if (!(await s.p.evaluate(() => window.__backShown === true && typeof window.__back === 'function'))) { bad.push(`${n}: нет системной «назад» на пути к ${want}`); break; }
+                await s.p.evaluate(() => window.__back()); await s.p.waitForTimeout(250);
                 const cur = await s.p.evaluate(() => current);
                 if (cur !== want) { bad.push(`${n}: «назад» привёл на ${cur}, ждали ${want}`); break; }
               }
@@ -15016,7 +15018,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         if (s.calls.length !== before) bad.push(`demo-work ${scr}: в демонстрации ушло запросов к серверу: ${s.calls.length - before}`);
       }
       // «Управление» вне Telegram (Cafe13KPG#935): не отказ «Сюда нельзя», а группа «Бизнесы» на демо-наборе —
-      // строка «Заявки в партнёры» с чипом ждущих (в наборе ждёт одна, 921), под плашкой прототипа; других групп нет,
+      // строка «Заявки в партнёры» с чипом ждущих (в наборе ждёт одна, 921), под плашкой прототипа; над ней с №125 — «Мастера» (демо ОД), других групп нет,
       // к серверу не ходит. Живой отказ без прав держит случай manage-live-net ниже
       {
         const before = s.calls.length;
@@ -15030,7 +15032,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const t = await s.view();
         if (m.cur !== 'manage' || t.includes('Сюда нельзя')) bad.push(`demo-work manage: вне Telegram отказ «Сюда нельзя» вместо экрана: ${JSON.stringify(m)}`);
         if (m.cnt !== '1' || !m.biz) bad.push(`demo-work manage: нет «Бизнесы клуба» и «Заявки в партнёры» со счётчиком 1: ${JSON.stringify(m)}`);
-        if (JSON.stringify(m.labels) !== '["Бизнесы"]') bad.push(`demo-work manage: групп не одна «Бизнесы»: ${JSON.stringify(m.labels)}`);
+        // №125 (cafe13-api#250, #526): над «Бизнесами» — «Мастера» (очередь карточек чайных мастеров, демо ОД, `|| demoOps`)
+        if (JSON.stringify(m.labels) !== '["Мастера","Бизнесы"]') bad.push(`demo-work manage: группы не «Мастера», «Бизнесы»: ${JSON.stringify(m.labels)}`);
         if (!m.proto) bad.push('demo-work manage: нет плашки «Прототип» — примерные данные выданы за живые');
         if (s.calls.length !== before) bad.push(`demo-work manage: в демонстрации ушло запросов к серверу: ${s.calls.length - before}`);
       }
