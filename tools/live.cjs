@@ -1442,6 +1442,66 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
+    // ── снимки заявки видит тот, кто её решает (шаг 44, рецепт foto/masterReq.md M1; наряд 28.11 «случай, который
+    // даст открыть дверь снимков») ──
+    // Альбом на экране решения живёт только кодом: в демо-наборе у заявок снимков нет, и шаг 14 ворот его не мерит.
+    // Здесь он судится настоящим DOM: 611 — три снимка, 612 — снимков нет. У 611 альбом ВИДЕН (рамки с высотой,
+    // кадры загружены с адреса сервера клуба), стоит ДО «Согласовать»; у 612 блока нет, а кнопки есть — экран тот же.
+    // Отрицательный контроль: снять строку альбома в js/18 (masterReq) — красное `ms-album-vidno`.
+    // Флаги загрузки FOTO_ON здесь не трогаются: показ от них не зависит (рецепт M1), и случай это держит сам —
+    // он бежит при закрытых masterApply/teaHold, как в стволе.
+    {
+      const n = 'ms-album', AD = mem(9000, ['art_director']), got = [];
+      const shot = id => ({ id, url: '/photos/' + id + '/' + 'ab'.repeat(16) + '.jpg', width: 1600, height: 1200 });
+      const qrow = (id, photos) => Object.assign({ first_name: '[мастер]', last_name: '', username: 'm' + id }, mreq(id, 'pending', { photos }));
+      const o = { mine: () => [], queue: [qrow(611, [shot(71), shot(72), shot(73)]), qrow(612, [])], posted: [] };
+      const api = masterApi(o);
+      const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+      const s = await open(true, true, json(200, AD), null, null, null, q => {
+        const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+        if (/^\/photos\/\d+\//.test(u)) { got.push(u); return { status: 200, contentType: 'image/png', body: PNG1 }; }
+        return api(q);
+      });
+      const flags = await s.p.evaluate(() => typeof FOTO_ON === 'object' ? [FOTO_ON.masterApply, FOTO_ON.teaHold] : null);
+      if (!flags || flags[0] !== false || flags[1] !== false)
+        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — флаги загрузки masterApply/teaHold не закрыты (${JSON.stringify(flags)}), случай судит не ту дверь`);
+      await s.p.waitForTimeout(300);
+      await s.p.evaluate(() => go('masterReqs')); await s.p.waitForTimeout(300);
+      const look = id => s.p.evaluate(async id => {
+        const v = document.getElementById('view'), a = v.querySelectorAll('.album'), yes = v.querySelector('[data-action="ms-yes:' + id + '"]');
+        if (a[0]) { a[0].scrollIntoView(); await new Promise(r => setTimeout(r, 400)); }
+        const fr = a[0] ? [...a[0].querySelectorAll('.album-frame')] : [];
+        return { albums: a.length, yes: !!yes, title: v.textContent.includes('Проба мастера'),
+                 before: !!(a[0] && yes && (a[0].compareDocumentPosition(yes) & Node.DOCUMENT_POSITION_FOLLOWING)),
+                 frames: fr.map(f => { const r = f.getBoundingClientRect(), i = f.querySelector('img');
+                   return { h: Math.round(r.height), w: Math.round(r.width), src: i ? i.getAttribute('src') : null,
+                            ok: !!(i && i.complete && i.naturalWidth > 0 && getComputedStyle(i).visibility !== 'hidden') }; }) };
+      }, id);
+      await s.p.evaluate(() => go('masterReq', 611)); await s.p.waitForTimeout(300);
+      const a = await look(611);
+      await s.p.screenshot({ path: `${OUT}/live-${n}-611.png` });
+      if (!a.title) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — экран заявки 611 не открылся (нет «Проба мастера»)`);
+      else {
+        if (a.albums !== 1) bad.push(`${n}-vidno: у заявки с тремя снимками альбомов ${a.albums}, ждали 1 — арт-директор приложенного не видит`);
+        const want = [71, 72, 73].map(i => 'https://api.cafe13.club/photos/' + i + '/' + 'ab'.repeat(16) + '.jpg');
+        if (a.albums === 1) {
+          if (JSON.stringify(a.frames.map(f => f.src)) !== JSON.stringify(want))
+            bad.push(`${n}-vidno: кадры ${JSON.stringify(a.frames.map(f => f.src))}, ждали три с сервера клуба в порядке мастера`);
+          const flat = a.frames.filter(f => !(f.h > 0 && f.w > 0));
+          if (flat.length) bad.push(`${n}-vidno: рамок без размера ${flat.length} из ${a.frames.length} — альбом в разметке, но не виден`);
+          const dead = a.frames.filter(f => !f.ok);
+          if (dead.length) bad.push(`${n}-vidno: кадров не показано ${dead.length} из ${a.frames.length} (img не загружен или спрятан)`);
+          if (!a.before) bad.push(`${n}-poryadok: альбом не стоит до «Согласовать» (кнопка ${a.yes ? 'есть' : 'нет'}) — решают раньше, чем видят`);
+        }
+        if (!got.length) bad.push(`${n}-vidno: снимки у сервера не спрошены ни разу — кадры не грузились`);
+      }
+      await s.p.evaluate(() => go('masterReq', 612)); await s.p.waitForTimeout(300);
+      const b = await look(612);
+      if (!b.title || !b.yes) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — экран заявки 612 без снимков не открылся (название ${b.title}, «Согласовать» ${b.yes})`);
+      else if (b.albums !== 0) bad.push(`${n}-net: у заявки без снимков альбомов ${b.albums}, ждали 0 — блок рисуется пустым`);
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
     // ── отказ в мастерстве — с причиной, обязательно (слово владельца, Cafe13KPG#696; кадр E55ж) ──
     // Арт-директор решает ЧУЖИЕ заявки 601 и 602. Причина уходит в теле `note` обрезанной; пустая и из одних
     // пробелов не уходит НИ кнопкой, ни прямым вызовом decideMaster. Согласие причины не просит (note '').
