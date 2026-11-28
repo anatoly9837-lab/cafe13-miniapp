@@ -2119,7 +2119,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
        Админ — в обоих (`_may` пускает is_admin, tea.py:177): видит и решает.
        Мутанты: снять grant('head') из mayTeaCards → tea-cards-glava; снять проверку mayDecideTeaCards на teaReq →
        tea-cards-glava (кнопки у главы); вернуть mayMasters в mayTeaCards → tea-cards-ardir;
-       снять grant('admin') из mayTeaCards или mayDecideTeaCards → tea-cards-admin. */
+       снять grant('admin') из mayTeaCards или mayDecideTeaCards → tea-cards-admin;
+       снять загрузку очереди на входе в manage → .count на двери (все три); подменить BACK.teaReqs → «назад» (все три). */
     {
       const TQ_CARD = { id: 11, master_id: 5, name: 'Образец', about: 'Пуэр.', price: '600.00', duration_min: 90, shots: 0,
         status: 'pending', approved_at: null, status_ru: 'ждёт решения', note: '', created_at: '2026-11-26T01:00:00Z', decided_at: null, live: null };
@@ -2145,6 +2146,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
             bad.push(`${n}: на «Управлении» нет группы «Мастера» → «Карточки чайных мастеров»: ${JSON.stringify(await opsGroups(s))}`);
           if (!(await s.p.$('#view [data-go="teaReqs"]'))) bad.push(`${n}: нет входа [data-go="teaReqs"]`);
           else {
+            // число ждущих — на двери ДО входа: очередь грузится на входе в «Управление» (мутант arhitektor44 №1)
+            const cnt = await s.p.$eval('#view [data-go="teaReqs"]', b => { const c = b.querySelector('.count'); return c ? c.textContent.trim() : null; });
+            if (cnt !== '1') bad.push(`${n}: на двери «Карточки чайных мастеров» до входа число ждущих ${JSON.stringify(cnt)}, ждали "1"`);
             await s.p.click('#view [data-go="teaReqs"]'); await s.p.waitForTimeout(300);
             if (!tqGets(s)) bad.push(`${n}: очередь не спрошена (GET /tea/cards)`);
             const row = await s.p.$('#view [data-action="tc-open:11"]');
@@ -2158,6 +2162,13 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
               if (!decides && (btns || note)) bad.push(`${n}: у главы на карточке кнопок решения ${btns}, поле слов ${note ? 'есть' : 'нет'} — решает только ОД (cafe13-api#250)`);
               if (!decides && !t.includes('Решает операционный директор.')) bad.push(`${n}: у главы нет строки «Решает операционный директор.»`);
               if (decides && t.includes('Решает операционный директор.')) bad.push(`${n}: у решающего (ОД, админ) строка «Решает операционный директор.» вместо кнопок`);
+              // «назад»: teaReq → teaReqs → «Управление» (рецепт: назад manage; мутант arhitektor44 №2 — BACK.teaReqs)
+              for (const want of ['teaReqs', 'manage']) {
+                if (!(await s.p.isVisible('#back'))) { bad.push(`${n}: нет «назад» на пути к ${want}`); break; }
+                await s.p.click('#back'); await s.p.waitForTimeout(250);
+                const cur = await s.p.evaluate(() => current);
+                if (cur !== want) { bad.push(`${n}: «назад» привёл на ${cur}, ждали ${want}`); break; }
+              }
             }
           }
         }
