@@ -12411,6 +12411,9 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const ru = await val(s, '#c-recipe', 'cards-recipe');
       if (ru !== null && ru !== 'старый рецепт') bad.push('cards-recipe: прежний рецепт RU не в поле');
       if (!(await s.view()).includes('Заменить рецепт (RU)')) bad.push('cards-recipe: у RU с рецептом нет «Заменить»');
+      // предел поля — серверный 4000 (api 13baa65 bar.py:324, Cafe13KPG#395): длиннее сервер отвечает 422 уже после набора
+      const ml = await s.p.getAttribute('#c-recipe', 'maxlength').catch(() => null);
+      if (ml !== '4000') bad.push(`cards-recipe: у поля рецепта maxlength ${ml}, а предел сервера 4000`);
       await click(s, 'c-lang:th'); await s.p.waitForTimeout(200);
       const th = await val(s, '#c-recipe', 'cards-recipe');
       if (th !== null && th !== '') bad.push('cards-recipe: в поле TH чужой текст');
