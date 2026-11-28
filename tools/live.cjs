@@ -1456,7 +1456,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     //   кадра псевдоэлементом самой рамки, mix-blend-mode, однотонную картинку от сервера, рамку исчезающе малого размера
     //   (2 px засчитаны видимыми: порога размера нет). Проверяется центр рамки, не края.
     // Флаги загрузки FOTO_ON здесь не трогаются: показ от них не зависит (рецепт M1), и случай это держит сам —
-    // он бежит при закрытых masterApply/teaHold, как в стволе.
+    // он бежит при флагах masterApply/teaHold как в стволе (с v235 — открыты).
     {
       const n = 'ms-album', AD = mem(9000, ['art_director']), got = [];
       const shot = id => ({ id, url: '/photos/' + id + '/' + 'ab'.repeat(16) + '.jpg', width: 1600, height: 1200 });
@@ -1470,8 +1470,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         return api(q);
       });
       const flags = await s.p.evaluate(() => typeof FOTO_ON === 'object' ? [FOTO_ON.masterApply, FOTO_ON.teaHold] : null);
-      if (!flags || flags[0] !== false || flags[1] !== false)
-        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — флаги загрузки masterApply/teaHold не закрыты (${JSON.stringify(flags)}), случай судит не ту дверь`);
+      if (!flags || flags[0] !== true || flags[1] !== true)
+        bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — флаги загрузки masterApply/teaHold не открыты, как в стволе v235 (${JSON.stringify(flags)}), случай судит не ту дверь`);
       await s.p.waitForTimeout(300);
       await s.p.evaluate(() => go('masterReqs')); await s.p.waitForTimeout(300);
       const look = id => s.p.evaluate(async id => {
@@ -3409,6 +3409,38 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     const kept = await s.p.evaluate(() => localStorage.getItem('cafe13.pass'));
     if (wiped && kept) bad.push(`${name}: запас не стёрт после отказа`);
     if (!wiped && (!kept || JSON.parse(kept).code !== 'XIII-0042')) bad.push(`${name}: запас испорчен без отказа сервера: ${kept}`);
+    await s.ctx.close();
+  }
+  // Отказ пропуска ЧУЖИМИ ГЛАЗАМИ — словами сервера (Cafe13KPG#400, решение park-koord2-27): только при X-Act-As.
+  // Без просмотра те же слова не печатаются — это держат pass-403* выше. Заглушка кода и пустой detail — общая фраза.
+  // pass-403-test-bez-glaz — тестовый режим БЕЗ чужих глаз (TEST.as = null, X-Act-As нет): член «&& TEST.as»
+  // условия в loadPass судится только им (возврат arhitektor43 на 5b1c33c, мутант mF): pass-403* идут без
+  // тестового режима, а остальные три ставят TEST.as.
+  const GLAZA = { id: 501, name: 'Образец', what: 'Куратор направления · Бар' };
+  if (part(1)) for (const [name, as, body, want, not] of [
+    ['pass-403-act-as', GLAZA, { detail: 'пропуск чужими глазами не показывается: по коду списывают деньги' },
+      'Пропуск чужими глазами не показывается: по коду списывают деньги.', 'Сервер отказал в пропуске'],
+    ['pass-403-act-as-zaglushka', GLAZA, { detail: 'Forbidden' }, 'Сервер отказал в пропуске.', 'Forbidden'],
+    ['pass-403-act-as-pusto', GLAZA, {}, 'Сервер отказал в пропуске.', null],
+    ['pass-403-test-bez-glaz', null, { detail: 'членство не активно' }, 'Сервер отказал в пропуске.', 'Членство не активно']]) {
+    const asked = [];
+    const s = await open(true, true, json(200, OWNER), null, null, SAVED, q => {
+      if (!q.url().endsWith('/pass')) return undefined;
+      const h = q.headers(); asked.push([h['x-test-mode'] || '', h['x-act-as'] || '']);
+      return h['x-test-mode'] === '1' ? json(403, body) : undefined;
+    });
+    await s.p.evaluate((as) => { TEST.on = true; TEST.as = as; PASS = null; PASS_FAIL = ''; go('pass'); }, as);
+    await s.p.waitForTimeout(300);
+    const t = await s.view();
+    // контроль входа: с глазами — спрошен глазами 501; без глаз — спрошен в тестовом режиме и НИ РАЗУ с X-Act-As
+    const vhod = as ? asked.some(a => a[0] === '1' && a[1] === '501')
+                    : asked.some(a => a[0] === '1') && !asked.some(a => a[1]);
+    if (!vhod) bad.push(`${name}: /pass не спрошен ${as ? 'глазами 501' : 'в тестовом режиме без x-act-as'} — судить нечего: ${JSON.stringify(asked)}`);
+    else {
+      if (!t.includes('Пропуска нет') || !t.includes(want)) bad.push(`${name}: нет отказа «${want}»: ${t.slice(0, 160)}`);
+      if (not && t.includes(not)) bad.push(`${name}: на экране «${not}» — ждали «${want}»`);
+    }
+    if (s.errs.length) bad.push(`${name}: ошибки страницы ${s.errs.join('; ')}`);
     await s.ctx.close();
   }
 
@@ -7127,6 +7159,28 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (s.calls.some(c => c.test || c.as)) bad.push('test-nogod: не бог включил тестовый режим');
     await s.ctx.close();
   }
+  // Дата заявки (askedWhen): год — у прошлогодней, у этого года — без (Cafe13KPG#593). Подлог — дата
+  // ЭТОГО года не сегодня и не вчера: мутация «год всегда» краснеет на нём, «года нет» — на прошлогодней.
+  if (part(1)) {
+    const s = await open(true, true, json(200, OWNER)); s.name = 'asked-god';
+    const r = await s.p.evaluate(() => {
+      const y = Number(bkk(new Date()).ymd.slice(0, 4)), md = bkk(new Date()).ymd.slice(5);
+      const mid = md === '06-15' || md === '06-16' ? '03-15' : '06-15';
+      return { y, mine: askedWhen(y + '-' + mid + 'T05:00:00Z', true), old: askedWhen((y - 1) + '-12-20T05:00:00Z', true), mid };
+    });
+    if (!/^\d+ [а-я]+$/.test(r.mine)) bad.push(`asked-god: дата этого года не «день месяц»: «${r.mine}»`);
+    if (r.old !== '20 декабря ' + (r.y - 1)) bad.push(`asked-god: прошлогодняя заявка без года: «${r.old}», ждали «20 декабря ${r.y - 1}»`);
+    if (s.errs.length) bad.push('asked-god: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+    // Год — по часам КЛУБА, не телефона: 31.12 18:00Z — на острове уже 1 января 2027, телефон в UTC
+    // ещё в 2026. Мутация «год по часам телефона» печатает «20 декабря» без года — краснеет здесь.
+    const t = await open(true, true, json(200, OWNER), null, null, null, null, 'UTC', '2026-12-31T18:00:00Z'); t.name = 'asked-god-novyj-god';
+    const q = await t.p.evaluate(() => ({ old: askedWhen('2026-12-20T05:00:00Z', true), mine: askedWhen('2027-06-15T05:00:00Z', true) }));
+    if (q.old !== '20 декабря 2026') bad.push(`asked-god: в новогоднюю ночь острова год взят не по часам клуба: «${q.old}», ждали «20 декабря 2026»`);
+    if (q.mine !== '15 июня') bad.push(`asked-god: в новогоднюю ночь острова дата нового года с годом: «${q.mine}», ждали «15 июня»`);
+    if (t.errs.length) bad.push('asked-god: ошибки страницы ' + t.errs.join('; '));
+    await t.ctx.close();
+  }
 
   // ── вход в очередь по роли, а не по уровню членства ──
   // Бармен без членства и бармен с членством — обе ветки уровня; оба
@@ -9463,7 +9517,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       // не несёт: печатать его дословно значит упрекать того, кто пришёл
       // прочитать. Показываем состояние и кто пишет рецепт.
       ['recipe-net', json(404, { detail: 'у позиции нет живого рецепта: напишите его, иначе её нельзя вернуть в меню' }),
-        'Рецепта пока нет', 'напишите его'],
+        // подпись не повторяет заголовок «Рецепта нет» (Cafe13KPG#391): прежняя начиналась «Рецепта пока нет.»
+        'Его пишет бар или куратор направления', ['напишите его', 'Рецепта пока нет']],
       ['recipe-403', json(403, { detail: 'это делает бар или куратор направления' }),
         'Это делает бар или куратор направления', 'Рецепта нет'],
       ['recipe-set', 'abort', 'Сервер не ответил', 'Рецепта нет'],
@@ -9474,7 +9529,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.p.waitForTimeout(300);
       const t = await s.view();
       if (!t.includes(want)) bad.push(`${name}: нет слов «${want}», на экране: «${t.slice(0, 160)}»`);
-      if (t.includes(nope)) bad.push(`${name}: на экране лишнее «${nope}»`);
+      for (const x of [].concat(nope)) if (t.includes(x)) bad.push(`${name}: на экране лишнее «${x}»`);
       await s.ctx.close();
     }
   }
@@ -15464,6 +15519,82 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       await s.ctx.close();
     }
   }
+  // №98, дверь чайных броней (#527, ревью arhitektor34-01): признак — ПОВЕДЕНИЕ в живом режиме, не closed()/typeof.
+  // (а) гость: кнопка «Забронировать» на карточке мастера → teaBook, на входе GET /tea/bookings/mine; «Отправить» →
+  //     ровно один POST /tea/bookings с master_id/starts_on/start_local (teaBookBody, api NewBooking).
+  // (б) мастер: кнопка T0 на «Клубе» → teaToMe, на входе GET /tea/bookings/to-me; «Согласиться» → POST …/{id}/accept.
+  // Мутанты, которые случай обязан красить: M1 — снять teaBook/teaToMe/teaBooks/teaBookReq из WIRED (обе половины);
+  // M2 — TEA_URL.book: null (нет POST); M3 — TEA_URL.myBooks: null (нет GET …/mine). Время берётся прямо в CAL.pick:
+  // календарь выбора стерегут случаи teaHold выше, здесь судится только дверь и адреса.
+  if (part(2)) {
+    const CARD = { master_id: 801, name: '[мастер А]', about: 'Пуэр.', price: '600.00', duration_min: 90, shots: 0, status: 'approved',
+                   approved_at: '2026-11-24T10:00:00+07:00' };
+    const ROW = st => ({ id: 9001, master_id: 801, starts_at: '2026-12-20T17:00:00+07:00', duration_min: 90, price: '600.00', status: st,
+                         status_ru: st === 'pending' ? 'ждёт решения' : 'мастер согласился, ждёт арт-директора',
+                         guest_name: 'Гость клуба', note: '', refunded: false });
+    const route = mine => q => {
+      const u = q.url(), m = q.method();
+      if (/\/tea\/masters\/801$/.test(u)) return json(200, CARD);
+      if (/\/tea\/masters$/.test(u)) return json(200, [CARD]);
+      if (/\/tea\/card\/mine$/.test(u)) return json(200, mine ? { status: 'approved', note: '', card: CARD, live: CARD } : { status: 'none', note: '', card: null, live: null });
+      if (/\/tea\/bookings\/mine$/.test(u)) return json(200, []);
+      if (/\/tea\/bookings\/to-me$/.test(u)) return json(200, [ROW('pending')]);
+      if (/\/tea\/bookings\/9001\/accept$/.test(u) && m === 'POST') return json(200, ROW('master_ok'));
+      if (/\/tea\/bookings$/.test(u) && m === 'POST') return json(201, Object.assign(ROW('pending'), { id: 9100 }));
+      if (/\/tea\//.test(u)) return json(404, { detail: 'нет в стенде' });
+      return undefined;
+    };
+    const asked = (s, m, re) => s.calls.filter(c => c.method === m && re.test(c.url));
+    {
+      const n = 'dver-bron-gost';
+      const s = await open(true, true, json(200, OWNER), null, null, null, route(false));
+      await s.p.evaluate(() => go('teaMaster', 801)); await s.p.waitForTimeout(400);
+      if (!await s.p.$('#view [data-action="tea-book:801"]')) bad.push(`${n}: на карточке мастера нет кнопки «Забронировать» (дверь teaBook закрыта)`);
+      else {
+        await s.p.click('#view [data-action="tea-book:801"]'); await s.p.waitForTimeout(400);
+        const cur = await s.p.evaluate(() => current);
+        if (cur !== 'teaBook') bad.push(`${n}: «Забронировать» открыла «${cur}», ждали teaBook`);
+        if (asked(s, 'GET', /\/tea\/bookings\/mine$/).length < 1) bad.push(`${n}: на входе в бронь нет GET /tea/bookings/mine — свои брони не читаются`);
+        await s.p.evaluate(() => { CAL.pick = { src: 'teaBook', ymd: '2026-12-20', from: '17:00', to: '18:30', mins: 90,
+                                                at: Date.parse('2026-12-20T17:00:00+07:00'), label: '20.12, 17:00–18:30' }; render(); });
+        await s.p.waitForTimeout(150);
+        const send = await s.p.$('#view [data-action="tea-book-send"]');
+        if (!send || await send.isDisabled()) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — «Отправить» ${send ? 'погашена' : 'нет'} при выбранном времени`);
+        else {
+          await s.p.click('#view [data-action="tea-book-send"]'); await s.p.waitForTimeout(400);
+          const posts = asked(s, 'POST', /\/tea\/bookings$/);
+          if (posts.length !== 1) bad.push(`${n}: POST /tea/bookings ${posts.length}, ждали 1 — бронь не ушла на сервер`);
+          else {
+            const b = JSON.parse(posts[0].body || 'null') || {};
+            if (b.master_id !== 801 || b.starts_on !== '2026-12-20' || b.start_local !== '17:00')
+              bad.push(`${n}: тело брони ${JSON.stringify(b)}, ждали master_id 801, starts_on 2026-12-20, start_local 17:00`);
+          }
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+    {
+      const n = 'dver-soglasie-mastera';
+      const s = await open(true, true, json(200, OWNER), null, null, null, route(true));
+      await s.p.evaluate(() => go('home')); await s.p.waitForTimeout(400);
+      if (!await s.p.$('#view [data-go="teaToMe"]')) bad.push(`${n}: на «Клубе» у мастера нет кнопки T0 «Брони ко мне» (дверь teaToMe закрыта)`);
+      else {
+        await s.p.click('#view [data-go="teaToMe"]'); await s.p.waitForTimeout(400);
+        const cur = await s.p.evaluate(() => current);
+        if (cur !== 'teaToMe') bad.push(`${n}: T0 открыла «${cur}», ждали teaToMe`);
+        if (asked(s, 'GET', /\/tea\/bookings\/to-me$/).length !== 1) bad.push(`${n}: на входе GET /tea/bookings/to-me ${asked(s, 'GET', /\/tea\/bookings\/to-me$/).length}, ждали 1`);
+        if (!await s.p.$('#view [data-action="tea-tome-accept:9001"]')) bad.push(`${n}: у брони 9001 (pending, моя карточка) нет «Согласиться»`);
+        else {
+          await s.p.click('#view [data-action="tea-tome-accept:9001"]'); await s.p.waitForTimeout(400);
+          const acc = asked(s, 'POST', /\/tea\/bookings\/9001\/accept$/).length;
+          if (acc !== 1) bad.push(`${n}: POST /tea/bookings/9001/accept ${acc}, ждали 1 — согласие не ушло`);
+        }
+      }
+      if (s.errs.length) bad.push(`${n}: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+  }
   if (part(2)) {
     const CHAI = { id: 9, title: 'Чайная у моря', is_active: true, is_open: true };
     // дело без гранта (3) и закрытое направление с грантом (5) — в «Мои бизнесы» не попадают
@@ -15892,6 +16023,22 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
   }
 
   // Пять join-заглушек — в реестре; блок, не дошедший до регистрации, — не «сверено».
+  // Cafe13KPG#209: на вложенном экране ровно одна вкладка несёт aria-current — вкладка его родителя по цепочке «назад»
+  // (tabOf, js/21). Выбор вкладки судит node tools/vkladka-roditelya.cjs; здесь — что выбор доходит до DOM (render).
+  // Мутант: в render `t[0] === at` → `t[0] === current` — краснеет `tabs-nested: на «people»…` своим текстом.
+  if (part(2)) {
+    const n = 'tabs-nested';
+    const s = await open(true, true, json(200, OWNER));
+    const cur = () => s.p.$$eval('#tabs button[aria-current="page"]', b => b.map(x => x.getAttribute('data-go')));
+    const has = await s.p.$$eval('#tabs button', b => b.map(x => x.getAttribute('data-go')));
+    if (!has.includes('manage') || !has.includes('home')) bad.push(`${n}: ПРОВЕРКА НЕ ВЫПОЛНЕНА — у владельца нет вкладок «Клуб» и «Управление» (${has.join(',')})`);
+    for (const [g, want] of [['home', 'home'], ['people', 'manage'], ['pass', 'home']]) {
+      await s.p.evaluate(x => go(x), g); await s.p.waitForTimeout(200);
+      const got = await cur();
+      if (got.length !== 1 || got[0] !== want) bad.push(`${n}: на «${g}» отмечено вкладок ${got.length} (${got.join(',')}), а ждали одну «${want}»`);
+    }
+    await s.ctx.close();
+  }
   // ── КОНЕЦ СЛУЧАЕВ: ниже сводка, она идёт в каждой части (граница сторожа частей) ──
   // Под частью реестр неполон по построению (блоки E44* и E45 в разных частях): счёт судит сводка по объединению.
   if (!MINE && Object.keys(LATE_STUBS).length !== LATE_WANT) bad.push(`shape: ПРОВЕРКА НЕ ВЫПОЛНЕНА — join-заглушек в реестре ${Object.keys(LATE_STUBS).length}, ждали ${LATE_WANT}`);
