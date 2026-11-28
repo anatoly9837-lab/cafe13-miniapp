@@ -359,6 +359,34 @@ function msNum(v, money) {
   return v === null ? '<span class="small">' + esc(slovo('masterStats.noData')) + '</span>' : '<b class="num">' + esc(money ? bmSum(v) : String(v)) + '</b>';
 }
 
+/* №97, №109 «б» (27.11): прошедшие церемонии периода и кнопка «заново» — на ЭТОЙ странице, нового экрана нет.
+   Строка — пересечение списка периода (`/stats/master` list: свои, одобренные, не отменённые) с архивом
+   (`/events/history`: сервер отдаёт только кончившееся, `event_end <= now()`, api queries.py:436) по номеру.
+   Церемония — `occ === 'tea'` строки архива (колонка events.occupancy, CHECK IN ('event','tea'), api миграция 045);
+   незнакомый вид разбор (fromEvents) читает как 'event' — «заново» на НЕ церемонии не встаёт.
+   Архив держится с открытия экрана: ивент, кончившийся позже, в нём ещё не стоит — его здесь нет до следующего входа,
+   а не стоит «прошедшим» раньше времени. */
+function msTeaPast(list) {
+  if (!HIST) return [];
+  return list.map(function (x) { var h = histById(x.id); return h && h.occ === 'tea' && h.done ? { x: x, h: h } : null; })
+    .filter(Boolean);
+}
+function msTeaBlock(s) {
+  if (!LIVE || s.count === 0 || !s.list.length) return '';
+  if (!HIST) return HIST_STATE === 'loading' || HIST_STATE === '' ? ''
+    : '<div class="card quiet"><div class="row"><span class="small">' + esc(slovo('masterStats.tea.fail')) + '</span>' +
+      '<button type="button" class="btn quiet" data-action="mst-hist-retry">' + esc(slovo('masterStats.retry')) + '</button></div></div>';
+  var rows = msTeaPast(s.list);
+  if (!rows.length) return '';
+  return '<span class="label">' + esc(slovo('masterStats.tea.title')) + '</span><div class="list">' +
+    rows.map(function (r) {
+      return '<div class="listitem"><span class="grow"><b class="clamp1">' + esc(r.x.title) + '</b>' +
+        '<span class="small">' + esc(msDate(r.x.ymd)) + '</span></span>' +
+        '<button type="button" class="btn quiet mini" data-action="mst-again:' + r.x.id + '">' + esc(slovo('masterStats.tea.again')) + '</button></div>';
+    }).join('') + '</div>' +
+    '<span class="small">' + esc(slovo('masterStats.tea.note')) + '</span>';
+}
+
 var ER = { id: null, from: '', data: null, fail: '', deny: '', gen: 0 };
 /* Ключа нет — блока нет (третье состояние, не 0 и не null): has.money / has.slot у ответа зрителя false. */
 function fromEventReport(d) {
@@ -436,7 +464,7 @@ Object.assign(SCREENS, {
           '<span class="small">' + esc(slovo('masterStats.list.row', { date: msDate(x.ymd), bookings: x.bookings })) + '</span></span>' +
           msNum(x.collected, true) + svg(ICON.chev, 'chev') + '</button>';
       }).join('') + '</div>';
-    return seg + nav + E + Pc + D + L;
+    return seg + nav + E + Pc + D + L + msTeaBlock(s);
   },
   eventReport: function () {
     if (ER.deny) return '<div class="deny" role="alert">' + svg(ICON.info) + '<span class="verbatim">' + esc(ER.deny) + '</span></div>';
