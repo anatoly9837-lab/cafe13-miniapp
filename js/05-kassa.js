@@ -372,21 +372,23 @@ var TD_UNDO = { membership: 1, topup: 1, event: 1, service: 1 };
    На бою `02f0ac6` сервер говорит правду сам (`till.py`: «возврата за запись в
    приложении пока нет…»), подмена снята — о выкладке сказал сторож батареи. */
 
-// Строка без чего-нибудь нужного — отказ целиком: день с выпавшей строкой
-// выглядит полным. Итог, не сходящийся со строками, снимает только ЧИСЛА
-// (итог и суммы по способу — производные), а строки остаются: они печатаются
-// из ответа дословно (кадр E36g, designer-55).
+// НЕЧИТАЕМАЯ строка (нет id, суммы, времени; вид или способ не строкой; битые ссылки отмены) — пропуск ОДНОЙ
+// строки, а не отказ дня (Cafe13KPG#718, решение координатора в карточке): счёт пропущенных — `skipped`, и экран
+// говорит о нём фразой в конце списка, так что день с выпавшей строкой полным не выглядит. Отказ целиком — только
+// у оболочки ответа (rows, count_live, total_live). Итог, не сходящийся со строками, снимает только ЧИСЛА
+// (итог и суммы по способу — производные), а строки остаются: они печатаются из ответа дословно (кадр E36g).
+// При skipped > 0 сумма не проверяется (сумма пропущенной неизвестна), счёт — вилкой live ≤ count_live ≤ live + skipped.
 function fromTillDay(d) {
   if (!d || typeof d !== 'object' || !Array.isArray(d.rows) || typeof d.count_live !== 'number') return null;
-  var total = num(d.total_live), rows = [], sum = 0, live = 0, by = { cash: 0, card: 0, account: 0 };
+  var total = num(d.total_live), rows = [], sum = 0, live = 0, skipped = 0, by = { cash: 0, card: 0, account: 0 };
   if (!isFinite(total)) return null;
   for (var i = 0; i < d.rows.length; i++) {
     var r = d.rows[i], amt = r && num(r.amount);
     // вид и способ — строкой, но НЕ из перечня: незнакомое показывается нейтрально (см. TD_OTHER_KIND)
-    if (!r || typeof r.id !== 'number' || typeof r.kind !== 'string' || typeof r.method !== 'string' || !(amt >= 0) || !hm(r.at)) return null;
-    if ((r.cancels_id !== null && typeof r.cancels_id !== 'number') ||
+    if (!r || typeof r.id !== 'number' || typeof r.kind !== 'string' || typeof r.method !== 'string' || !(amt >= 0) || !hm(r.at) ||
+        (r.cancels_id !== null && typeof r.cancels_id !== 'number') ||
         (r.cancelled_by !== null && typeof r.cancelled_by !== 'number') ||
-        (r.note !== null && typeof r.note !== 'string')) return null;
+        (r.note !== null && typeof r.note !== 'string')) { skipped++; continue; }
     // заметка строки — дословно и только у услуги: «заказ бара N» там
     // соглашение, а не схема, его может набрать и кассир (designer-55)
     var row = { id: r.id, kind: r.kind, amount: amt, time: hm(r.at), how: TD_HOW[r.method] || TD_OTHER_HOW,
@@ -396,8 +398,8 @@ function fromTillDay(d) {
     if (!row.undo && !row.gone) { live++; sum += amt; if (TD_HOW[r.method]) by[r.method] = Math.round((by[r.method] + amt) * 100) / 100; }
     rows.push(row);
   }
-  return { rows: rows, total: total, count: live, by: by,
-           odd: live !== d.count_live || Math.abs(sum - total) > 0.005 };
+  return { rows: rows, total: total, count: live, by: by, skipped: skipped,
+           odd: skipped ? !(live <= d.count_live && d.count_live <= live + skipped) : live !== d.count_live || Math.abs(sum - total) > 0.005 };
 }
 
 function tillDayLoad() {
