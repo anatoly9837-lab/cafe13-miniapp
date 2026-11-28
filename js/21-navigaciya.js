@@ -425,7 +425,7 @@ function render() {
   RENDERED = here;
   // полоса просмотра — и на экране входа, когда бог смотрит ЧУЖИМИ глазами: человек без членства теперь стартует на
   // просьбе (0.1), и без полосы владелец не видел бы, чьими глазами смотрит, и не вышел бы из просмотра
-  view.innerHTML = (bare() && !(TEST.on && TEST.as) ? '' : testStrip()) + (PROTO[current] || !LIVE && MS_DEMO[current] ? protoStrip() : '') +
+  view.innerHTML = (bare() && !(TEST.on && TEST.as) ? '' : testStrip()) + meStrip() + (PROTO[current] || !LIVE && MS_DEMO[current] ? protoStrip() : '') +
     SCREENS[frozen(current) ? 'frozen' : LIVE && !WIRED[current] && !PROTO[current] ? 'soon' : current](param);
   // вход на замороженный экран гаснет ПО СВОЙСТВУ, а не перечнем кнопок: любой [data-go] туда
   // (Cafe13KPG#510); облик — общий .btn[disabled]
@@ -954,6 +954,8 @@ function doAction(a) {
     }
     if (a === 'test-self' && TEST.on) { switchTo(true, null); loadPeople(); return; }
     if (a === 'test-off' && TEST.on) { switchTo(false, null); return; }
+    // Cafe13KPG#455: свежий /me с другими правами — применить по нажатию и начать с домашнего экрана
+    if (a === 'me-apply' && ME_NEW) { var nm = ME_NEW; applyMe(nm); if (!TEST.on) SELF = nm.roles; go(homeOf()); return; }
     if (a.slice(0, 2) === 'b-') {
       if (BOOK.busy) return;
       bookGrab();
