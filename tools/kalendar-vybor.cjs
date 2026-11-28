@@ -1,13 +1,31 @@
-// Случаи режима «выбрать» календаря (шаг 43) без браузера: node tools/kalendar-vybor.cjs <корень клиента> [band-press]
+// Случаи режима «выбрать» календаря (шаг 43) без браузера: node tools/kalendar-vybor.cjs <корень клиента> [band-press|nofail]
 // band-press — мутант «закрытую полосу удалось нажать»: обязан дать КРАСНОЕ и rc=1.
+// nofail — мутант «неудачный ответ занятости не ставит CALB.fail»: экран вечно «узнаём» вместо L17 — КРАСНОЕ.
+// Коды: 0 — зелёное, 1 — КРАСНОЕ, 2 — ПРОВЕРКА НЕ ВЫПОЛНЕНА (код не загрузился или случай упал, Cafe13KPG#1137).
+// api — в ctx: живой режим спрашивает GET /master/slot-busy (calLoadBusy); ответ — liveReply(путь), обещанием.
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
+if (!root) { console.error('ПРОВЕРКА НЕ ВЫПОЛНЕНА: корень клиента первым аргументом'); process.exit(2); }
+if (!['', 'band-press', 'nofail'].includes(mutant)) { console.error('ПРОВЕРКА НЕ ВЫПОЛНЕНА: мутант неизвестен: ' + mutant); process.exit(2); }
+// упавший случай (исключение) — «ПРОВЕРКА НЕ ВЫПОЛНЕНА», код 2, а не КРАСНОЕ: rc=1 значит только «проверка сказала нет»
+const nevyp = e => { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: случай упал — ' + (e && e.message || e)); process.exit(2); };
+process.on('uncaughtException', nevyp); process.on('unhandledRejection', nevyp);
+const calls = [];
+let liveReply = () => ({ status: 0, data: null });
 const ctx = { console, Date, Math, JSON, Object, Number, String, Array, RegExp, isNaN, parseInt,
   document: { addEventListener() {}, getElementById() { return null; } }, window: {},
-  SCREENS: {}, TITLES: {}, LIVE: false, EVENTS: null, EVENTS_STATE: 'ok', haptic() {}, render() {}, go() {},
-  eventRow: e => '<button data-event="' + e.id + '">' + e.title + '</button>', svg: () => '' };
+  SCREENS: {}, TITLES: {}, LIVE: false, current: 'calendar', EVENTS: null, EVENTS_STATE: 'ok', haptic() {}, render() {}, go() {},
+  eventRow: e => '<button data-event="' + e.id + '">' + e.title + '</button>', svg: () => '',
+  api(m, u) { calls.push(m + ' ' + u); return Promise.resolve(liveReply(u)); } };
 vm.createContext(ctx);
-let src23 = fs.readFileSync(root + '/js/23-kalendar.js', 'utf8');
+let src23;
+try { src23 = fs.readFileSync(root + '/js/23-kalendar.js', 'utf8'); }
+catch (e) { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: код не загрузился — ' + e); process.exit(2); }
+if (mutant === 'nofail') {
+  const a = 'if (a && b) CALB.rows = a.concat(b); else CALB.fail = true;';
+  if (!src23.includes(a)) { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: подмена не применилась'); process.exit(2); }
+  src23 = src23.replace(a, 'if (a && b) CALB.rows = a.concat(b);'); console.log('подлог наложен');
+}
 if (mutant === 'band-press') {   // мутант: закрытая полоса получает действие нажатия
   const a = `'<div class="tband off" aria-disabled="true">'`, b = `'<button type="button" class="tband off" data-action="cal-band:' + calHm(sg.s) + '@' + (sg.e >= 1440 ? '24:00' : calHm(sg.e)) + '">'`;
   if (!src23.includes(a)) throw 'подмена не применилась';
@@ -15,9 +33,11 @@ if (mutant === 'band-press') {   // мутант: закрытая полоса 
   const a2 = `  if (!sg || sg.why) return;\n`; if (!src23.includes(a2)) throw 'подмена 2 не применилась'; src23 = src23.replace(a2, '');
   console.log('подлог наложен');
 }
-for (const f of ['js/00-slova.js', 'js/10-utility.js', 'js/09-afisha.js']) { try { vm.runInContext(fs.readFileSync(root + '/' + f, 'utf8'), ctx, { filename: f }); } catch (e) { console.log('load', f, e.message); } }
-ctx.LIVE = false;
-vm.runInContext(src23, ctx, { filename: '23' });
+try {
+  for (const f of ['js/00-slova.js', 'js/10-utility.js', 'js/09-afisha.js']) vm.runInContext(fs.readFileSync(root + '/' + f, 'utf8'), ctx, { filename: f });
+  ctx.LIVE = false;
+  vm.runInContext(src23, ctx, { filename: '23' });
+} catch (e) { console.log('ПРОВЕРКА НЕ ВЫПОЛНЕНА: код не загрузился — ' + e); process.exit(2); }
 const R = c => vm.runInContext(c, ctx);
 // данные: завтра ивент 18:00–20:00, четыре церемонии 15:00–16:00 при ёмкости 4
 R(`var TOM = ymdAdd(bkk(new Date()).ymd, 1);
@@ -55,8 +75,19 @@ R(`calGo('calendar', { pick: 'teaBook', day: TOM, master: { id: 'm2', name: 'Б'
 out.otherMaster = /<button[^>]*tband[^>]*>12:00–13:00/.test(h) || /<button[^>]*tband[^>]*>\d\d:\d\d–1[5-9]:\d\d · можно выбрать[^<]*<\/button>/.test(h);
 // прошлое
 R(`calGo('calendar', { pick: 'teaHold', day: ymdAdd(TOM, -3) })`); h = R('SCREENS.calendar()'); out.past = (h.match(/tband/g) || []).length + ' ' + /уже прошло/.test(h);
-// живой режим без ручки — L17
-R(`LIVE = true; calGo('calendar', { pick: 'teaHold', day: TOM })`); h = R('SCREENS.calendar()'); out.live = h.includes('Не удалось узнать'); R('LIVE = false');
+(async () => {
+const tick = () => new Promise(f => setImmediate(f));
+// живой режим: пока занятость не пришла — «узнаём»; ответ не 200 — L17 «Не удалось узнать» с «Повторить»
+R(`LIVE = true; calGo('calendar', { pick: 'teaHold', day: TOM })`); h = R('SCREENS.calendar()');
+out.liveWait = h.includes('Узнаём, какое время занято') && calls.some(c => c === 'GET /master/slot-busy?date=' + R('TOM') + '&occupancy=tea');
+await tick(); h = R('SCREENS.calendar()'); out.live = h.includes('Не удалось узнать') && h.includes('data-action="cal-busy-retry"');
+// ответ сервера 200: ивент из busy закрывает полосу (сервер — источник, не демо-ивенты)
+liveReply = u => { const d = /date=([\d-]+)/.exec(u)[1];
+  return { status: 200, data: { date: d, busy: d === R('TOM') ? [{ title: 'С сервера', occupancy: 'event', starts_at: d + 'T13:00:00+07:00', ends_at: d + 'T14:00:00+07:00' }] : [] } }; };
+R(`calBusyRetry()`); await tick(); h = R('SCREENS.calendar()');
+out.liveOk = /tband off[^>]*>13:00–14:00 · занято ивентом «С сервера»/.test(h) && !h.includes('«Вечер»');
+R('LIVE = false');
 console.log(JSON.stringify(out, null, 1));
-const bad = [!out.offEvent && 'offEvent', !out.offFull && 'offFull', out.svobodno && 'svobodno', out.pressClosed !== '10:00' && 'ЗАКРЫТУЮ ПОЛОСУ УДАЛОСЬ НАЖАТЬ', out.offAction && 'у закрытой полосы есть data-action', !out.chooseOff && 'chooseOff', !out.tri && 'tri', !out.minutaOk && 'minuta', !out.master && 'master', out.dlit !== 'до 20:37' && 'dlit', !out.live && 'live', !out.polnochOk && 'polnochOk', !out.polnoch && 'polnoch'].filter(Boolean);
+const bad = [!out.liveWait && 'liveWait', !out.liveOk && 'liveOk', !out.offEvent && 'offEvent', !out.offFull && 'offFull', out.svobodno && 'svobodno', out.pressClosed !== '10:00' && 'ЗАКРЫТУЮ ПОЛОСУ УДАЛОСЬ НАЖАТЬ', out.offAction && 'у закрытой полосы есть data-action', !out.chooseOff && 'chooseOff', !out.tri && 'tri', !out.minutaOk && 'minuta', !out.master && 'master', out.dlit !== 'до 20:37' && 'dlit', !out.live && 'live', !out.polnochOk && 'polnochOk', !out.polnoch && 'polnoch'].filter(Boolean);
 console.log(bad.length ? 'КРАСНОЕ: ' + bad.join(', ') : 'ЗЕЛЁНОЕ'); process.exit(bad.length ? 1 : 0);
+})().catch(nevyp);

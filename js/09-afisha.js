@@ -974,6 +974,7 @@ function recipeFail(r) {
   return { none: false, text: detail ? cap(detail) + (/[.!?]$/.test(detail) ? '' : '.') : failText(r) };
 }
 
+var RECIPE_MAX = 4000;   // NewRecipe.body max_length, api 13baa65 app/routers/bar.py:324
 function loadRecipe(pid) {
   if (!LIVE || !mayRecipe()) return;
   var gen = ++RECIPE.gen;

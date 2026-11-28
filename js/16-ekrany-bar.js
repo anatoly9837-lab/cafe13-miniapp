@@ -778,7 +778,9 @@ Object.assign(SCREENS, {
       '</div>' + note + photoBlock(c) +
       (recipe ? '<div class="group"><span class="label">Рецепт</span>' + langs +
         '<div class="field"><label for="c-recipe">Рецепт (' + CARD.lang.toUpperCase() + ')' + (has ? '' : ' — пока нет') + '</label>' +
-          '<textarea id="c-recipe" rows="6"' + (waiting ? ' disabled' : lock) + '>' + esc(text) + '</textarea></div>' +
+          // предел — сервера (api 13baa65 bar.py:324 NewRecipe.body max_length=4000), как у описания ивента (Cafe13KPG#395)
+          '<textarea id="c-recipe" rows="6" maxlength="' + RECIPE_MAX + '"' + (waiting ? ' disabled' : lock) + '>' + esc(text) + '</textarea>' +
+          '<span class="small">До 4000 знаков.</span></div>' +
         (CARD.err ? '<div class="deny" role="alert">' + svg(ICON.info) + '<span>' + esc(CARD.err) + '</span></div>' : '') +
         '<span class="small">Рецепт видит только бар, гость — нет.</span>' +
         '<button type="button" class="btn ghost" data-action="c-recipe:' + c.id + '"' + (waiting ? ' disabled' : lock) + '>' +

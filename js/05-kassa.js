@@ -982,8 +982,11 @@ window.addEventListener('focus', onReturn);
    полосой над каждым экраном — иначе запись глазами куратора легко
    принять за настоящую.
    Право на солнышко — по СВОИМ ролям (SELF), а не по ролям того, чьими
-   глазами смотрим: иначе из просмотра куратора не вернуться. */
-var TEST = { on: false, as: null, people: null, fail: '', health: '', busy: false };
+   глазами смотрим: иначе из просмотра куратора не вернуться.
+   ВХОД В ТЕСТ = ВЫБОР ЧЕЛОВЕКА (слово владельца 27.10.2026, Cafe13KPG#408: «в тест нельзя заходить без роли
+   (человека)»). Состояния «Вы сами» нет: «Войти» только открывает список (pick), а тестовым экран становится
+   нажатием на человека. Цена названа в карточке: тестовую базу СОБОЙ не посмотреть — нужен человек с ролями. */
+var TEST = { on: false, as: null, pick: false, people: null, fail: '', health: '', busy: false };
 var SELF = [];
 
 function personWords(p) {
@@ -1014,7 +1017,7 @@ function loadHealth() {
 }
 function loadPeople() {
   TEST.people = null; TEST.fail = '';
-  api('GET', '/act-as/people').then(function (r) {
+  api('GET', '/act-as/people', undefined, { on: true, as: null }).then(function (r) {
     var detail = detailOf(r);
     var ppl = r.status === 200 ? fromPeople(r.data) : null;
     if (ppl) TEST.people = ppl;
@@ -1054,6 +1057,7 @@ function switchTo(on, as) {
     peopleReset(); PEOPLE.card = null; PEOPLE.list = null; PEOPLE.fail = ''; PEOPLE.gen++;
     cardReset(); CARDS.list = null; CARDS.fail = ''; CARDS.gen++;
     if (!on) TEST.people = null;
+    TEST.pick = false;
     applyMe(me);
     haptic('ok');
     go(startScreen());
@@ -1062,10 +1066,10 @@ function switchTo(on, as) {
 function testStrip() {
   if (!LIVE || !TEST.on) return '';
   return '<div class="test-strip"><span class="col"><b>Тестовая база</b><span class="small">' +
-    (TEST.as ? 'Смотрите как ' + esc(TEST.as.name) + ' · ' + esc(TEST.as.what) : 'Вы сами') +
-    ' · деньги ненастоящие</span></span>' +
-    (TEST.busy ? '' : TEST.as ? '<button type="button" class="btn mini" data-action="test-self">Выйти из просмотра</button>'
-                              : '<button type="button" class="btn mini" data-action="test-off">Выйти из теста</button>') +
+    (TEST.as ? 'Смотрите как ' + esc(TEST.as.name) + ' · ' + esc(TEST.as.what) + ' · ' : '') +
+    'деньги ненастоящие</span></span>' +
+    // одна кнопка: «Выйти из просмотра» оставляла тест без человека — то самое снятое состояние (#408)
+    (TEST.busy ? '' : '<button type="button" class="btn mini" data-action="test-off">Выйти из теста</button>') +
   '</div>';
 }
 
