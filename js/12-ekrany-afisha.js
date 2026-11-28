@@ -202,15 +202,23 @@ Object.assign(SCREENS, {
         '<button type="button" class="btn' + (mine.length ? ' quiet' : '') + '" data-go="events">Вся афиша</button>' +
         '<div class="group"><span class="label">Прошедшие записи</span>' + pastBookings() + '</div>';
     }
-    return '<div class="group"><span class="label">Предстоящие</span>' +
-      DATA.upcoming.map(function (b) {
-        return '<div class="card' + (b.tone === 'on' ? ' accent' : '') + '">' +
-          '<div class="row top"><div class="col"><h2>' + esc(b.title) + '</h2>' +
-          '<span class="small">' + esc(b.when) + '</span></div>' +
-          '<span class="pill' + (b.tone === 'on' ? ' on' : '') + '">' + esc(b.state) + '</span></div>' +
-        '</div>';
-      }).join('') + '</div>' +
-      '<div class="group"><span class="label">Прошедшие</span>' +
+    /* ДЕМО — той же раскладкой, что живая ветка выше (Cafe13KPG#394): заголовок группы — день, в строке дня нет,
+       второй заголовок — «Прошедшие записи». Прежде демо держало снятые #384 «Предстоящие»/«Прошедшие», и
+       показанное в тестовом режиме расходилось с тем, что человек получит у себя. */
+    var demoDays = [];
+    DATA.upcoming.forEach(function (b) { if (demoDays.indexOf(b.day) === -1) demoDays.push(b.day); });
+    return demoDays.map(function (d) {
+        return '<div class="group"><span class="label">' + esc(d) + '</span>' +
+          DATA.upcoming.filter(function (b) { return b.day === d; }).map(function (b) {
+            return '<div class="card' + (b.tone === 'on' ? ' accent' : '') + '">' +
+              '<div class="row top"><div class="col"><h2>' + esc(b.title) + '</h2>' +
+              '<span class="small">' + esc(b.line) + '</span></div>' +
+              '<span class="pill' + (b.tone === 'on' ? ' on' : '') + '">' + esc(b.state) + '</span></div>' +
+            '</div>';
+          }).join('') + '</div>';
+      }).join('') +
+      '<button type="button" class="btn quiet" data-go="events">Вся афиша</button>' +
+      '<div class="group"><span class="label">Прошедшие записи</span>' +
       DATA.past.map(function (b) {
         return '<div class="card"><div class="row"><div class="col">' +
           '<b>' + esc(b.title) + '</b><span class="small">' + esc(b.when) + '</span>' +
