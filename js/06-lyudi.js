@@ -799,10 +799,11 @@ function mayDecideOwnMaster() { return grant('art_director'); }
    `ops_director` и админ. Главы здесь нет: выдаёт роль глава, но бизнесы видит не он. */
 function mayOps() { return LIVE && (grant('ops_director') || grant('admin')); }
 /* Карточки чайных мастеров (№125, cafe13-api#250, tea.py): очередь `GET /tea/cards` видят `ops_director` и
-   `head` (READS), решает только `ops_director` (DECIDES). Право ровно как у сервера: админа в перечнях НЕТ —
-   сервер ответил бы ему 403, а арт-директору карточки больше не принадлежат (у него остались церемонии). */
-function mayTeaCards() { return LIVE && (grant('ops_director') || grant('head')); }
-function mayDecideTeaCards() { return LIVE && grant('ops_director'); }
+   `head` (READS), решает только `ops_director` (DECIDES), и в обоих — админ: `_may` пускает `is_admin` мимо перечня
+   (cafe13-api#250 72fabae, app/routers/tea.py:176–177), как `mayOps`/`mayMasters`. Арт-директору карточки больше
+   не принадлежат (у него остались церемонии). */
+function mayTeaCards() { return LIVE && (grant('ops_director') || grant('head') || grant('admin')); }
+function mayDecideTeaCards() { return LIVE && (grant('ops_director') || grant('admin')); }
 
 /* «Бизнесы клуба» (кадры E75/E75b/E75v) — `GET /directions`. Партнёра сервер отдаёт только тем, кому
    `_is_ops`: тремя ключами `partner_id`, `partner_first_name`, `partner_last_name`. Доли — шаг 21, `fromShares`. Закрытые бизнесы (`is_active: false`) в список не идут: кадр E75b

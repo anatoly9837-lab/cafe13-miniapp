@@ -2116,8 +2116,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
 
     /* Карточки чайных мастеров — №125 (cafe13-api#250, tea.py READS/DECIDES): очередь видят ОД и глава, решает ОД;
        арт-директору ни двери, ни экрана, ни запроса. Дверь — «Управление» → «Мастера» (рецепт 42/masters.md, teaReqs.md).
+       Админ — в обоих (`_may` пускает is_admin, tea.py:177): видит и решает.
        Мутанты: снять grant('head') из mayTeaCards → tea-cards-glava; снять проверку mayDecideTeaCards на teaReq →
-       tea-cards-glava (кнопки у главы); вернуть mayMasters в mayTeaCards → tea-cards-ardir. */
+       tea-cards-glava (кнопки у главы); вернуть mayMasters в mayTeaCards → tea-cards-ardir;
+       снять grant('admin') из mayTeaCards или mayDecideTeaCards → tea-cards-admin. */
     {
       const TQ_CARD = { id: 11, master_id: 5, name: 'Образец', about: 'Пуэр.', price: '600.00', duration_min: 90, shots: 0,
         status: 'pending', approved_at: null, status_ru: 'ждёт решения', note: '', created_at: '2026-11-26T01:00:00Z', decided_at: null, live: null };
@@ -2125,7 +2127,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         const s = await open(true, true, json(200, opsWho(roles)), null, null, null, q => {
           const u = q.url().replace(/^https?:\/\/[^/]+/, '');
           if (u === '/directions') return json(200, BIZ);
-          if (u === '/tea/cards') return roles.some(r => r === 'ops_director' || r === 'head')
+          if (u === '/tea/cards') return roles.some(r => r === 'ops_director' || r === 'head' || r === 'admin')
             ? json(200, { pending: 1, cards: [TQ_CARD] }) : json(403, { detail: 'очередь карточек мастеров видят операционный директор и глава клуба' });
           return undefined;
         });
@@ -2133,7 +2135,7 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
         return s;
       };
       const tqGets = s => s.calls.filter(c => c.method === 'GET' && /\/tea\/cards$/.test(c.url)).length;
-      for (const [n, roles, decides] of [['tea-cards-od', ['ops_director'], true], ['tea-cards-glava', ['head'], false]]) {
+      for (const [n, roles, decides] of [['tea-cards-od', ['ops_director'], true], ['tea-cards-glava', ['head'], false], ['tea-cards-admin', ['admin'], true]]) {
         const s = await tqOpen(roles);
         if (!(await s.p.$('#tabs [data-go="manage"]'))) bad.push(`${n}: нет вкладки «Управление»`);
         else {
@@ -2152,10 +2154,10 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
               const t = await s.view();
               const btns = await s.p.$$eval('#view [data-action^="tc-yes"], #view [data-action^="tc-no"]', b => b.length);
               const note = !!(await s.p.$('#view #tc-note'));
-              if (decides && (btns !== 2 || !note)) bad.push(`${n}: у ОД на карточке кнопок ${btns} из 2, поле слов ${note ? 'есть' : 'нет'}`);
+              if (decides && (btns !== 2 || !note)) bad.push(`${n}: у решающего (ОД, админ) на карточке кнопок ${btns} из 2, поле слов ${note ? 'есть' : 'нет'}`);
               if (!decides && (btns || note)) bad.push(`${n}: у главы на карточке кнопок решения ${btns}, поле слов ${note ? 'есть' : 'нет'} — решает только ОД (cafe13-api#250)`);
               if (!decides && !t.includes('Решает операционный директор.')) bad.push(`${n}: у главы нет строки «Решает операционный директор.»`);
-              if (decides && t.includes('Решает операционный директор.')) bad.push(`${n}: у ОД строка «Решает операционный директор.» вместо кнопок`);
+              if (decides && t.includes('Решает операционный директор.')) bad.push(`${n}: у решающего (ОД, админ) строка «Решает операционный директор.» вместо кнопок`);
             }
           }
         }

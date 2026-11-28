@@ -33,7 +33,7 @@ const ctx = { console, Date, Math, JSON, Object, Number, String, Array, RegExp, 
   failText: r => 'код ' + r.status, detailOf: r => r.data && typeof r.data.detail === 'string' ? r.data.detail : '',
   denyText: r => 'отказ ' + r.status, mayMasters: () => true,
   // №125 (cafe13-api#250): очередь видят ОД и глава, решает ОД; ROLE — кто смотрит (П11 ставит главу)
-  ROLE: 'ops_director', mayTeaCards: () => ctx.ROLE === 'ops_director' || ctx.ROLE === 'head', mayDecideTeaCards: () => ctx.ROLE === 'ops_director', DATA: { member: { uid: 4242 } }, API: '',
+  ROLE: 'ops_director', mayTeaCards: () => ['ops_director', 'head', 'admin'].includes(ctx.ROLE), mayDecideTeaCards: () => ['ops_director', 'admin'].includes(ctx.ROLE), DATA: { member: { uid: 4242 } }, API: '',
   api(m, u, body) {
     calls.push({ m, u, body });
     const r = m === 'POST' && /^\/tea\/cards\/\d+\/decide$/.test(u) ? decideReply : SERVER[m + ' ' + u] || { status: 404, data: { detail: 'Not Found' } };
