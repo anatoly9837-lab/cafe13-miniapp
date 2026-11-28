@@ -674,9 +674,12 @@ function manageBlock(e) {
 var EVN_BUSY = false;      // создание в пути: второе нажатие молчит
 var EVN_ERR = '';          // чем кончилась неудачная попытка — текст на форме
 
+// Перечень — тот же, что у сервера (`_may_create`, cafe13-api events.py): art_director там есть (Cafe13KPG#588);
+// curator снят вместе с сервером (№120, api#246): роль направления не даёт права на общую афишу — куратор бара
+// заводил мероприятия клуба и становился их организатором. Выкладывать вместе с api#246
 function mayCreateEvent() {
   return LIVE && (grant('admin') || grant('director') || grant('staff') ||
-                  grant('head') || grant('curator') ||
+                  grant('head') || grant('art_director') ||
                   DATA.role === 'organizer' || DATA.role === 'partner');
 }
 /* «Свои мероприятия» — шире, чем «завести»: мастер правит и смотрит свои, но не заводит (слово владельца

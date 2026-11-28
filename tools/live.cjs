@@ -9556,7 +9556,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // и кнопки нет.
     for (const [name, me, want] of [
       ['sozdat-knopka-rol', json(200, OWNER), true],
-      ['sozdat-knopka-kurator', json(200, curatorOnly), true],
+      // куратор направления без уровня — БЕЗ кнопки: №120, api#246 снял curator из `_may_create`
+      ['sozdat-knopka-kurator', json(200, curatorOnly), false],
       ['sozdat-knopka-uroven', json(200, levelOrg), true],
       ['sozdat-knopka-chlen', json(200, member), false]]) {
       const s = await open(true, true, me, null, null, null, evReply(json(200, [])), null, NOWFIX);
@@ -10072,6 +10073,23 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
       const sent = s.calls.filter(c => c.method === 'POST');
       if (sent.length) bad.push(`sozdat-net-prava: прямой вызов createEvent() отправил ${sent.length} запрос`);
       if (s.errs.length) bad.push(`sozdat-net-prava: ошибки страницы ${s.errs.join('; ')}`);
+      await s.ctx.close();
+    }
+
+    /* Арт-директор заводит мероприятия: сервер пускает (`_may_create`, cafe13-api app/routers/events.py —
+       "director", "staff", "head", "curator", "art_director"), а перечень клиента роли не называл, и форма
+       ему говорила «заводят не все» (Cafe13KPG#588). Свидетель — ТОЛЬКО art_director: уровень member и ни
+       одной роли из прочего перечня, иначе мутация «снять art_director» прошла бы по чужой ветви. */
+    {
+      const ardir = clone(member); ardir.roles = [{ role: 'art_director' }];
+      const s = await open(true, true, json(200, ardir), null, null, null,
+                           evReply(json(200, [])), null, NOWFIX);
+      await s.p.evaluate(() => go('eventNew'));
+      await s.p.waitForTimeout(150);
+      if (!(await s.p.$('#f-title')) || (await s.view()).includes('Мероприятия заводят не все'))
+        bad.push('sozdat-ardir: «Новое мероприятие» арт-директору — отказ «заводят не все», а сервер его пускает (_may_create, Cafe13KPG#588)');
+      if (!(await s.p.evaluate(() => mayCreateEvent()))) bad.push('sozdat-ardir: mayCreateEvent() ложно у art_director');
+      if (s.errs.length) bad.push(`sozdat-ardir: ошибки страницы ${s.errs.join('; ')}`);
       await s.ctx.close();
     }
   }
