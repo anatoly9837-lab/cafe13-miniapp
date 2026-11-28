@@ -140,6 +140,11 @@
 | `popolnenie` | `sostav` | — | 4762 | 4 | 0 |
 | `popolnenie` | `tillTopup` | — | 12084 | 10 | 12 |
 | `popolnenie` | `topup` | — | 6847 | 4 | 0 |
+| `soglasie` | `consent-dovody` | — | 747 | 2 | 0 |
+| `soglasie` | `consent` | — | 4237 | 3 | 8 |
+| `soglasie` | `consentFull-dovody` | — | 761 | 1 | 0 |
+| `soglasie` | `consentFull` | — | 4449 | 3 | 4 |
+| `soglasie` | `sostav` | — | 3670 | 3 | 0 |
 
 ## Брендбук: классов с уровнем — 24, шкал — 5
 - `Исключение, а не долг: чем они отличаются` — строк 7
