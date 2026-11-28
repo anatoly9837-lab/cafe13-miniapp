@@ -123,14 +123,15 @@ function membershipLive() {
 
 /* Заявки главы клуба — кадры E42* (Cafe13KPG#428). */
 var REQ_PILL = { pending: 'ЖДЁТ', approved: 'СОГЛАСОВАНА', rejected: 'ОТКАЗАНО', cancelled: 'ОТМЕНЕНА', completed: 'ОФОРМЛЕНА' };
-// «сегодня, 14:20» / «вчера, 19:05» / «26 октября» — по часам клуба
+// «сегодня, 14:20» / «вчера, 19:05» / «26 октября» / «26 октября 2025» — по часам клуба; год — только не текущий:
+// заявка, пролежавшая с прошлого декабря, без года читалась бы декабрём ЭТОГО (Cafe13KPG#593)
 function askedWhen(iso, withTime) {
   var d = new Date(iso); if (!iso || isNaN(d.getTime())) return '';
-  var p = bkk(d), now = new Date();
-  if (p.ymd === bkk(now).ymd) return withTime ? 'сегодня, ' + p.hm : 'сегодня';
+  var p = bkk(d), now = new Date(), today = bkk(now).ymd;
+  if (p.ymd === today) return withTime ? 'сегодня, ' + p.hm : 'сегодня';
   if (p.ymd === bkk(new Date(now.getTime() - 86400000)).ymd) return withTime ? 'вчера, ' + p.hm : 'вчера';
   var x = p.ymd.split('-');
-  return Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '');
+  return Number(x[2]) + ' ' + (MONTHS[Number(x[1]) - 1] || '') + (x[0] === today.split('-')[0] ? '' : ' ' + Number(x[0]));
 }
 function requestCard(q) {
   var busy = MREQS.busy ? ' disabled' : '', t = tierOf(q.code), asking = MREQS.ask === q.id;

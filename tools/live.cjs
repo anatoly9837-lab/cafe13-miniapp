@@ -7159,6 +7159,28 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     if (s.calls.some(c => c.test || c.as)) bad.push('test-nogod: не бог включил тестовый режим');
     await s.ctx.close();
   }
+  // Дата заявки (askedWhen): год — у прошлогодней, у этого года — без (Cafe13KPG#593). Подлог — дата
+  // ЭТОГО года не сегодня и не вчера: мутация «год всегда» краснеет на нём, «года нет» — на прошлогодней.
+  if (part(1)) {
+    const s = await open(true, true, json(200, OWNER)); s.name = 'asked-god';
+    const r = await s.p.evaluate(() => {
+      const y = Number(bkk(new Date()).ymd.slice(0, 4)), md = bkk(new Date()).ymd.slice(5);
+      const mid = md === '06-15' || md === '06-16' ? '03-15' : '06-15';
+      return { y, mine: askedWhen(y + '-' + mid + 'T05:00:00Z', true), old: askedWhen((y - 1) + '-12-20T05:00:00Z', true), mid };
+    });
+    if (!/^\d+ [а-я]+$/.test(r.mine)) bad.push(`asked-god: дата этого года не «день месяц»: «${r.mine}»`);
+    if (r.old !== '20 декабря ' + (r.y - 1)) bad.push(`asked-god: прошлогодняя заявка без года: «${r.old}», ждали «20 декабря ${r.y - 1}»`);
+    if (s.errs.length) bad.push('asked-god: ошибки страницы ' + s.errs.join('; '));
+    await s.ctx.close();
+    // Год — по часам КЛУБА, не телефона: 31.12 18:00Z — на острове уже 1 января 2027, телефон в UTC
+    // ещё в 2026. Мутация «год по часам телефона» печатает «20 декабря» без года — краснеет здесь.
+    const t = await open(true, true, json(200, OWNER), null, null, null, null, 'UTC', '2026-12-31T18:00:00Z'); t.name = 'asked-god-novyj-god';
+    const q = await t.p.evaluate(() => ({ old: askedWhen('2026-12-20T05:00:00Z', true), mine: askedWhen('2027-06-15T05:00:00Z', true) }));
+    if (q.old !== '20 декабря 2026') bad.push(`asked-god: в новогоднюю ночь острова год взят не по часам клуба: «${q.old}», ждали «20 декабря 2026»`);
+    if (q.mine !== '15 июня') bad.push(`asked-god: в новогоднюю ночь острова дата нового года с годом: «${q.mine}», ждали «15 июня»`);
+    if (t.errs.length) bad.push('asked-god: ошибки страницы ' + t.errs.join('; '));
+    await t.ctx.close();
+  }
 
   // ── вход в очередь по роли, а не по уровню членства ──
   // Бармен без членства и бармен с членством — обе ветки уровня; оба
