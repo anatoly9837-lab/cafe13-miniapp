@@ -1069,7 +1069,7 @@ function loadHistory() {
     if (gen !== HIST_GEN) return;
     var list = r.status === 200 ? fromEvents(r.data) : null;
     if (list) { HIST = list.reverse(); HIST_STATE = 'ok'; } else HIST_STATE = failText(r);
-    if ({ bookings: 1, event: 1, thanks: 1 }[current]) render();
+    if ({ bookings: 1, event: 1, thanks: 1, masterStats: 1 }[current]) render();
   });
 }
 function segOf(e) { return e.seg || partOf(e.time); }

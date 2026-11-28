@@ -562,6 +562,17 @@ function teaApplySend() {
    уже есть у карточки, — их можно убрать и переставить первым. */
 
 /* ── крючки навигации (вписаны ЧАЙ-Б в js/21-navigaciya.js) ──────────────────────────────────────────────── */
+/* «заново» (№97, №109 «б»): подача, заполненная как у прошедшей церемонии `id` (строка архива, histById).
+   Переносится: название, описание, места (0 — без ограничения), вход. НЕ переносятся: дата, время, длительность —
+   их даёт выбор календаря, а прошедшее время сервер не примет (экран говорит это словами, tea.hold.againNote);
+   снимки — подача церемонии их не шлёт (FOTO_ON.teaHold, js/09-afisha.js), вопрос №115 у владельца.
+   Строка не церемония или не найдена — пустая форма, а не форма с чужим видом. */
+function teaAgainForm(id, blank) {
+  var h = id !== null && id !== undefined && typeof histById === 'function' ? histById(id) : null;
+  if (!h || h.occ !== 'tea') return blank;
+  blank.title = h.title; blank.about = h.about; blank.seats = String(h.of); blank.entry = String(h.price); blank.again = h.eid;
+  return blank;
+}
 function teaGo(screen, p) {
   if (screen === 'teaMasters') teaLoadList();
   if ((screen === 'teaMaster' || screen === 'teaBook') && LIVE && !TEA.mine && !TEA.mineFail) loadTeaMine();   // «своя» — по ней
@@ -585,7 +596,8 @@ function teaGo(screen, p) {
   }
   if (screen === 'teaHold') {
     if (current !== 'teaHold' && current !== 'calendar')
-      THF = { title: '', about: '', seats: '0', entry: '', err: '', deny: '', money: false, busy: false, stale: typeof calPicked === 'function' ? calPicked('teaHold') : null };
+      THF = teaAgainForm(p && typeof p === 'object' ? p.again : null,
+        { title: '', about: '', seats: '0', entry: '', err: '', deny: '', money: false, busy: false, stale: typeof calPicked === 'function' ? calPicked('teaHold') : null });
     teaLoadPrice();
   }
   if (screen === 'teaApply' && current !== 'teaApply') {
@@ -848,6 +860,7 @@ Object.assign(SCREENS, {
       // шаг 44 (foto/teaHold.md): блок «Фото» после полей (C2), перед временем (C3); №81 «а» — тот же механизм, что у ивента
       fotoBlock('teaHold', slovo('foto.add')) +
       '<div class="card"><div class="col"><span class="label">' + esc(slovo('tea.time')) + '</span>' +
+        (THF.again && !pick ? '<div class="note">' + svg(ICON.info) + '<span>' + esc(slovo('tea.hold.againNote')) + '</span></div>' : '') +
         (pick ? '<div class="row"><b>' + esc(pick.label) + '</b><button type="button" class="btn quiet mini" data-action="tea-hold-cal">' + esc(slovo('tea.timeChange')) + '</button></div>'
               : '<button type="button" class="btn quiet" data-action="tea-hold-cal">' + esc(slovo('tea.timePick')) + '</button>') +
       '</div></div>' +
