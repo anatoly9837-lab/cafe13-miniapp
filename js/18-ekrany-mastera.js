@@ -13,9 +13,9 @@ Object.assign(SCREENS, {
     var n = MR.pending;
     return (FLASH ? flash() : '') + '<div class="group"><span class="label">Слоты и мастера</span>' +
       entry('data-go="masterReqs"', 'Заявки в мастера', waitSub(n, 'Кто просится в мастера'), waitMark(n)) +
-      // шаг 42 (рецепт 42/masters.md): вторым — очередь карточек чайных мастеров; число до ответа — не ноль
-      entry('data-go="teaReqs"', esc(slovo('masters.tea.title')), esc(waitSub(TQ.pending, slovo('masters.tea.sub'))), waitMark(TQ.pending)) +
-      // S2 (рецепт 42/masters.md): третьим, сразу под S1 — брони, ждущие арт-директора (master_ok); вне WIRED в живом нет
+      // Очереди карточек чайных мастеров здесь больше нет (№125, cafe13-api#250): карточки решает ОД, дверь — в
+      // «Управлении», группа «Мастера» (js/17). Церемонии остались у арт-директора.
+      // S2 (рецепт 42/masters.md): вторым — брони, ждущие арт-директора (master_ok); вне WIRED в живом нет
       (typeof teaBooksEntry === 'function' ? teaBooksEntry(entry) : '') +
       entry('data-go="masterEvents"', 'Ивенты', 'выключить или включить в афише') +
       entry('data-go="masterList"', 'Мастера', 'их слоты в расписании') +
@@ -493,7 +493,8 @@ Object.assign(SCREENS, {
 });
 
 /* ── шаг 42: очередь карточек чайных мастеров (рецепты 42/teaReqs.md, 42/teaReq.md) ───────────────────────
-   Зритель — арт-директор (mayMasters). Решение — только на `teaReq`, где видна вся карточка; в строке очереди кнопок нет.
+   Зритель — ОД и глава (mayTeaCards, №125, cafe13-api#250), решает только ОД (mayDecideTeaCards); прежде — арт-директор.
+   Вход — «Управление» → «Мастера». Решение — только на `teaReq`, где видна вся карточка; в строке очереди кнопок нет.
    Разметка карточки (R2) — ОДНА, у руки ЧАЙ-A: teaCardHtml(c, {book:false}), разбор — teaCardFrom(raw), js/22-ekrany-chay.js.
    Ручки (api app/routers/tea.py, бой d23e45d): очередь — GET /tea/cards → {cards: [...], pending}, строка — поля
    карточки плоско (как teaCardFrom) + id подачи, created_at, decided_at, note, live (у ждущей правки — что сейчас
@@ -534,14 +535,14 @@ function loadTeaQueue() {
     var list = arr && arr.map(tqFrom);
     if (list && list.every(Boolean)) { TQ.list = list; } else { TQ.list = null; TQ.fail = r.status === 403 ? denyText(r) : failText(r); }
     tqCount();
-    if ({ masters: 1, teaReqs: 1, teaReq: 1, manage: 1 }[current]) render();
+    if ({ teaReqs: 1, teaReq: 1, manage: 1 }[current]) render();
   });
 }
 function tqById(id) { return (TQ.list || []).filter(function (q) { return q.id === String(id); })[0]; }
 
-// вход: очередь — на каждый вход на «Слоты и мастера» и в очередь (рецепт «Перечитать на входе»); заявка — поля с нуля
+// вход: очередь — на каждый вход в «Управление» и в очередь (рецепт «Перечитать на входе»); заявка — поля с нуля
 function tqGo(screen, p) {
-  if ((screen === 'masters' || screen === 'teaReqs' || screen === 'manage') && current !== screen && mayMasters()) loadTeaQueue();
+  if ((screen === 'teaReqs' || screen === 'manage') && current !== screen && (!LIVE || mayTeaCards())) loadTeaQueue();
   if (screen === 'teaReq' && (current !== 'teaReq' || param !== p)) { TQ.err = ''; TQ.note = ''; TQ.gone = 0; if (!TQ.list) loadTeaQueue(); }
 }
 function tqGrab() { var f = document.getElementById('tc-note'); if (f) TQ.note = f.value; }
@@ -553,6 +554,7 @@ function tqAction(a, arg) {
   // «Повторить» блока «Чайный мастер» на «Клубе» (js/11): загрузка — руки ЧАЙ-A
   if (a === 'tc-mine-retry') { if (typeof loadTeaMine === 'function') { TEA.mineFail = ''; loadTeaMine(); } render(); return true; }
   if (a !== 'tc-yes' && a !== 'tc-no') return false;
+  if (LIVE && !mayDecideTeaCards()) return true;
   tqGrab();
   var q = tqById(arg);
   if (!q || TQ.busy) return true;
@@ -584,7 +586,7 @@ Object.assign(SCREENS, {
 
   // рецепт 42/teaReqs.md: ждущие сверху (вход на teaReq), решённые ниже — тихие, без перехода
   teaReqs: function () {
-    if (LIVE && !mayMasters()) return SCREENS.masters();
+    if (LIVE && !mayTeaCards()) return SCREENS.manage();
     if (!TQ.list) return TQ.fail ? '<div class="card strong"><h2>' + esc(slovo('teaReqs.fail.title')) + '</h2><p class="verbatim">' + esc(TQ.fail) + '</p>' +
         '<button type="button" class="btn" data-action="tc-retry">' + esc(slovo('teaReqs.fail.retry')) + '</button></div>'
       : '<div class="card quiet"><span class="small">' + esc(slovo('teaReqs.loading')) + '</span></div>';
@@ -608,7 +610,7 @@ Object.assign(SCREENS, {
 
   // рецепт 42/teaReq.md: арт-директор только решает — полей карточки на экране нет; отказ слов не требует
   teaReq: function (id) {
-    if (LIVE && !mayMasters()) return SCREENS.masters();
+    if (LIVE && !mayTeaCards()) return SCREENS.manage();
     if (!TQ.list) return SCREENS.teaReqs();
     var q = tqById(id);
     if (!q || TQ.gone === q.id || q.status !== 'pending') return '<div class="card quiet"><div class="col"><b>' + esc(slovo('teaReq.gone')) + '</b>' +
@@ -624,6 +626,8 @@ Object.assign(SCREENS, {
           (changed.length ? '<span class="small">' + esc(slovo('teaReq.edit.changed', { what: changed.join(' / ') })) + '</span>' : '') +
         '</div></div>' : '') +
       card +
+      // глава видит очередь, но не решает (READS ⊃ DECIDES, cafe13-api#250): ни поля, ни кнопок — строка, чьё это решение
+      (LIVE && !mayDecideTeaCards() ? '<div class="card quiet"><span class="small">' + esc(slovo('teaReq.onlyOps')) + '</span></div>' :
       '<div class="card"><div class="field"><label for="tc-note">' + esc(slovo('teaReq.note.label')) + '</label>' +
         '<textarea id="tc-note" rows="3" maxlength="500"' + off + '>' + esc(TQ.note) + '</textarea>' +
         '<span class="small">' + esc(slovo('teaReq.note.sub')) + '</span></div></div>' +
@@ -631,6 +635,6 @@ Object.assign(SCREENS, {
       '<div class="row">' +
         '<button type="button" class="btn ghost" data-action="tc-no:' + esc(q.id) + '"' + off + '>' + esc(slovo('teaReq.no')) + '</button>' +
         '<button type="button" class="btn" data-action="tc-yes:' + esc(q.id) + '"' + off + '>' + esc(slovo('teaReq.yes')) + '</button>' +
-      '</div>';
+      '</div>');
   }
 });

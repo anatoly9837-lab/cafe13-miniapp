@@ -336,7 +336,7 @@ var BACK = {
   // отчёт по ивенту — назад на ту страницу статистики, откуда пришли (её период цел)
   eventReport: function () { return ER.from || 'masterStats'; }, eventApproval: 'manage', roleAccount: 'home', topupReq: 'topupQueue', memberRequests: 'home',
   // шаг 42 (рецепт 42/sostav.md, «Что сборка обязана тронуть»)
-  teaMasters: 'guest', teaMaster: 'teaMasters', teaBook: 'teaMaster', teaToMe: 'home', teaApply: 'home', teaHold: function () { return THF.again ? 'masterStats' : 'home'; }, teaReqs: 'masters', teaReq: 'teaReqs', teaBooks: 'masters', teaBookReq: 'teaBooks',
+  teaMasters: 'guest', teaMaster: 'teaMasters', teaBook: 'teaMaster', teaToMe: 'home', teaApply: 'home', teaHold: function () { return THF.again ? 'masterStats' : 'home'; }, teaReqs: 'manage', teaReq: 'teaReqs', teaBooks: 'masters', teaBookReq: 'teaBooks',
   teaJoin: function () { return typeof CAL !== 'undefined' && CAL.ret ? 'calendar' : 'events'; },
   masters: 'manage', masterReqs: 'masters', masterReq: 'masterReqs', masterEvents: 'masters', masterEvent: 'masterEvents', masterList: 'masters', masterApply: 'home',
   payouts: 'manage', payout: 'payouts', businesses: 'manage', partnerApply: 'home', partnerReqs: 'manage', partnerReq: 'partnerReqs', bizWorkers: 'home', bizMoney: 'home', myBiz: 'home',

@@ -6,7 +6,8 @@
 //   items  — очередь читает r.data.items, а не r.data.cards;
 //   list   — каталог без адреса (TEA_URL.list = null);
 //   gone409 — 409 «свою карточку решает другой арт-директор» показывается как «уже решена»;
-//   reload409 — на 409 очередь не перечитывается: решённая другим строка остаётся «ждущей» (П10, мутант arhitector7-a1).
+//   reload409 — на 409 очередь не перечитывается: решённая другим строка остаётся «ждущей» (П10, мутант arhitector7-a1);
+//   glava   — снята проверка mayDecideTeaCards в tqAction: глава отправляет решение (П11, №125 cafe13-api#250).
 const vm = require('vm'), fs = require('fs');
 const root = process.argv[2], mutant = process.argv[3] || '';
 if (!root) { console.error('корень клиента первым аргументом'); process.exit(2); }
@@ -30,7 +31,9 @@ const ctx = { console, Date, Math, JSON, Object, Number, String, Array, RegExp, 
   SCREENS: {}, TITLES: {}, LIVE: true, current: 'teaReqs', param: undefined, FLASH: null,
   haptic() {}, render() {}, go(s) { ctx.wentTo = s; }, svg: () => '', refreshMe() {}, closed: () => false,
   failText: r => 'код ' + r.status, detailOf: r => r.data && typeof r.data.detail === 'string' ? r.data.detail : '',
-  denyText: r => 'отказ ' + r.status, mayMasters: () => true, DATA: { member: { uid: 4242 } }, API: '',
+  denyText: r => 'отказ ' + r.status, mayMasters: () => true,
+  // №125 (cafe13-api#250): очередь видят ОД и глава, решает ОД; ROLE — кто смотрит (П11 ставит главу)
+  ROLE: 'ops_director', mayTeaCards: () => ctx.ROLE === 'ops_director' || ctx.ROLE === 'head', mayDecideTeaCards: () => ctx.ROLE === 'ops_director', DATA: { member: { uid: 4242 } }, API: '',
   api(m, u, body) {
     calls.push({ m, u, body });
     const r = m === 'POST' && /^\/tea\/cards\/\d+\/decide$/.test(u) ? decideReply : SERVER[m + ' ' + u] || { status: 404, data: { detail: 'Not Found' } };
@@ -47,6 +50,7 @@ if (mutant === 'items') s18 = sub(s18, 'Array.isArray(r.data.cards) ? r.data.car
 if (mutant === 'list') s22 = sub(s22, "var TEA_URL = { list: function () { return '/tea/masters'; },", 'var TEA_URL = { list: null,');
 if (mutant === 'reload409') s18 = sub(s18, 'TQ.err = detailOf(r) || failText(r); loadTeaQueue(); render(); return; }',
   'TQ.err = detailOf(r) || failText(r); render(); return; }');
+if (mutant === 'glava') s18 = sub(s18, "  if (LIVE && !mayDecideTeaCards()) return true;\n", '');
 if (mutant === 'gone409') s18 = sub(s18, 'if (r.status === 409) { TQ.err = detailOf(r) || failText(r); loadTeaQueue(); render(); return; }',
   'if (r.status === 409) { TQ.gone = q.id; loadTeaQueue(); render(); return; }');
 vm.runInContext(s22, ctx, { filename: '22' });
@@ -95,6 +99,11 @@ decideReply = { status: 409, data: { detail: 'карточка уже решен
 calls.length = 0; R("TQ.busy = false; TQ.err = ''; tqAction('tc-yes', '11')");
 check('П10 409 «уже решена» — перечитка, строка решена', String(calls.filter(c => c.m === 'GET' && c.u === '/tea/cards').length) + ' / ' +
   R("tqById('11') ? tqById('11').status : 'нет'"), '1 / approved');
+// П11: глава видит очередь, но решение не уходит — ни POST, ни занятости (№125, cafe13-api#250: decide только у ОД)
+ctx.ROLE = 'head'; decideReply = { status: 200, data: {} };
+calls.length = 0; R("TQ.busy = false; TQ.err = ''; tqAction('tc-yes', '11'); tqAction('tc-no', '11')");
+check('П11 глава не решает: POST не ушёл', String(calls.filter(c => c.m === 'POST').length) + ' / busy=' + R('TQ.busy'), '0 / busy=false');
+ctx.ROLE = 'ops_director';
 
 const red = ok.filter(x => !x).length;
 console.log(red ? `КРАСНОЕ: ${red} из ${ok.length}` : `ЗЕЛЁНОЕ: ${ok.length} из ${ok.length}`);
