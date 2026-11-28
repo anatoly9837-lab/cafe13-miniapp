@@ -3,11 +3,11 @@
 //
 // Судит НЕ свою копию, а тело функции `uborka()` и строку `trap` из tools/pered-mergem.sh того же дерева:
 // вырезает функцию, гоняет её bash-ем на подложенном каталоге прогона и смотрит, что осталось на диске.
-// Ни docker, ни сети, ни git (дерево `T` подложено без git — `itog` пишет «нет-git»).
+// Ни docker, ни сети, ни git (дерево `T` подложено без git — `itog` пишет «derevo:<отпечаток> код»).
 //
 // Случаи (что обязано быть ПОСЛЕ уборки — существование файлов, не чтение лога):
 //   З   чистое зелёное (код 0, находок нет) — live/part-1.json, live/part-1.log, sp.log, shots/razmetka.json НА МЕСТЕ;
-//       каждый *.png и tree/ УБРАНЫ; itog = «нет-git 0»; строка «логи прогона: <каталог> (N КБ)», N — число;
+//       каждый *.png и tree/ УБРАНЫ; itog = «derevo:<40 hex> 0»; строка «логи прогона: <каталог> (N КБ)», N — число;
 //   К   красное (1), Н — «не выполнено» через die (2), ЗН — зелёное с находкой отчёта: НЕ ТРОНУТО ничего, png и tree
 //       на месте, строка «ОСТАВЛЕН»; itog с тем же кодом;
 //   T   строка trap в pered-mergem.sh ровно одна и зовёт `uborka $?` — иначе функцию никто не зовёт.
@@ -28,7 +28,9 @@ function trapOk(src) {
 const LEGKOE = ['live/part-1.json', 'live/part-1.log', 'sp.log', 'shots/razmetka.json', 'vid/vidimost.json'];
 const TYAZH = ['live/live-bar.png', 'shots/home.png', 'tree/index.html', 'tree/js/01-osnova.js'];
 function prognat(fn, ec, keep) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'uborka-'));
+  // не в /tmp: на хостах парка это общая ОЗУ (CLAUDE.md); каталог свой, mkdtemp, убирается в finally
+  const kesh = path.join(os.homedir(), '.cache', 'cafe13-uborka'); fs.mkdirSync(kesh, { recursive: true });
+  const base = fs.mkdtempSync(path.join(kesh, 'proba-'));
   try {
     const W = path.join(base, 'run-x'), T = path.join(base, 'derevo');
     fs.mkdirSync(T);
@@ -45,13 +47,13 @@ const SLUCHAI = [
   ['З чистое зелёное: лёгкое на месте, png и tree убраны, размер числом', 0, '', p =>
     p.legkoe.length !== LEGKOE.length ? 'пропало лёгкое: ' + LEGKOE.filter(f => !p.legkoe.includes(f)).join(' ')
     : p.tyazh.length || p.tree ? 'осталось тяжёлое: ' + p.tyazh.join(' ')
-    : p.itog !== 'нет-git 0\n' ? 'itog ' + JSON.stringify(p.itog)
+    : !/^derevo:[0-9a-f]{40} 0\n$/.test(p.itog || '') ? 'itog ' + JSON.stringify(p.itog)
     : !new RegExp('^логи прогона: ' + p.W.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\(\\d+ КБ\\)$', 'm').test(p.out) ? 'нет строки размера: ' + JSON.stringify(p.out.slice(0, 120))
     : ''],
   ...[['К красное', 1, ''], ['Н не выполнено (die)', 2, ''], ['ЗН зелёное с находкой отчёта', 0, 'отчёт 2']].map(([imya, ec, keep]) => [
     imya + ': не тронуто ничего, «ОСТАВЛЕН»', ec, keep, p =>
       p.legkoe.length !== LEGKOE.length || p.tyazh.length !== TYAZH.length ? 'стёрто: ' + LEGKOE.concat(TYAZH).filter(f => !p.legkoe.includes(f) && !p.tyazh.includes(f)).join(' ')
-      : p.itog !== 'нет-git ' + ec + '\n' ? 'itog ' + JSON.stringify(p.itog)
+      : !new RegExp('^derevo:[0-9a-f]{40} ' + ec + '\\n$').test(p.itog || '') ? 'itog ' + JSON.stringify(p.itog)
       : !p.out.includes('рабочий каталог прогона ОСТАВЛЕН: ' + p.W) ? 'нет строки ОСТАВЛЕН' : '']),
 ];
 function sudit(fn, src) {   // → перечень упавших случаев ([имя, почему])
