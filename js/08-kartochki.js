@@ -412,6 +412,7 @@ function cardRow(c) {
 }
 
 function applyMe(me) {
+  ME_NEW = null;      // применено целиком — строка «права изменились» больше не о чём (Cafe13KPG#455)
   DATA.role = me.role;
   DATA.roles = me.roles;
   DATA.barSide = me.barSide;

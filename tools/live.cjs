@@ -2252,6 +2252,42 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     }
   }
 
+  // ── права пришли посреди сеанса (Cafe13KPG#455): свежий /me с другими ролями не применяется молча ──
+  // До правки refreshMe брал из ответа только остаток, роли выбрасывал — человек не видел ничего до перезапуска.
+  // Применять сразу нельзя (панель вкладок и экран сменятся под пальцем) — поэтому строка «обновите» и нажатие.
+  if (part(1)) {
+    const st = { roles: [] };
+    const meNow = () => { const p = clone(OWNER); p.roles = st.roles; p.balance = 1000; return p; };
+    const s = await open(true, true, json(200, meNow()), null, null, null, q => {
+      const u = q.url().replace(/^https?:\/\/[^/]+/, '');
+      return u === '/me' ? json(200, meNow()) : undefined;
+    });
+    await s.p.waitForTimeout(300);
+    const n = 'me-new';
+    const strip = () => s.p.evaluate(() => document.querySelectorAll('#view .me-new').length);
+    const roles = () => s.p.evaluate(() => JSON.stringify(DATA.roles));
+    const tabs = () => s.p.$$eval('#tabs [data-go]', b => b.map(x => x.getAttribute('data-go')).join(','));
+    const back = async () => { await s.p.evaluate(() => window.dispatchEvent(new Event('focus'))); await s.p.waitForTimeout(300); };
+    // отрицательный контроль: возврат с теми же правами — строки нет
+    await back();
+    if (await strip() !== 0) bad.push(`${n}: права те же, а строка «права изменились» стоит`);
+    const tabs0 = await tabs(), roles0 = await roles();
+    st.roles = [{ role: 'bar', direction_id: null }];
+    await s.p.evaluate(() => { BACK_AT = 0; }); await back();
+    if (await strip() !== 1) bad.push(`${n}: сервер выдал роль bar, человек вернулся — строки «права изменились» ${await strip()}, ждали 1`);
+    if (await roles() !== roles0) bad.push(`${n}: роли применены без нажатия — ${await roles()}`);
+    if (await tabs() !== tabs0) bad.push(`${n}: вкладки сменились без нажатия: ${tabs0} → ${await tabs()}`);
+    // переход на другой экран (полная перерисовка) строку не теряет; с него же «Обновить» ведёт домой
+    await s.p.evaluate(() => go('topup')); await s.p.waitForTimeout(300);
+    if (await strip() !== 1) bad.push(`${n}: на «Пополнении» строки ${await strip()}, ждали 1`);
+    await s.p.evaluate(() => { const b = document.querySelector('#view .me-new [data-action="me-apply"]'); if (b) b.click(); });
+    await s.p.waitForTimeout(300);
+    if (!(await roles()).includes('"bar"')) bad.push(`${n}: после «Обновить» роли ${await roles()}, ждали bar`);
+    if (await strip() !== 0) bad.push(`${n}: после «Обновить» строка осталась`);
+    if (await s.p.evaluate(() => current) !== await s.p.evaluate(() => homeOf())) bad.push(`${n}: после «Обновить» экран не домашний`);
+    await s.ctx.close();
+  }
+
   // ── водяной знак (кадр E53, Cafe13KPG#509): виден, неподвижен, долей окна; гаснет ПО СВОЙСТВУ ──
   if (part(1)) {
     // свойство одно на все экраны: есть машиночитаемый код (.code-box — QR пропуска, .qr — реквизиты) ⇔ знака не видно

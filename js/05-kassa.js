@@ -908,14 +908,39 @@ function confirmReceived() {
 }
 
 var ME_GEN = 0;
+/* Свежий /me с ДРУГИМИ правами (Cafe13KPG#455): роль или выданные роли не те, что применены на старте.
+   Применять посреди сеанса нельзя — сменится панель вкладок и экран под пальцем; поэтому ответ лежит
+   здесь, над экраном строка «обновите», и применяется он только нажатием. Любое полное применение
+   (applyMe: старт, переключение теста) его снимает. */
+var ME_NEW = null;
+function accessSig(x) {
+  return JSON.stringify([x.role, (x.grants || []).map(function (g) { return g.role + ':' + (g.dir == null ? '' : g.dir); }).sort()]);
+}
+function meStrip() {
+  if (!LIVE || !ME_NEW || bare()) return '';
+  return '<div class="card me-new"><div class="row"><span class="col"><b>Ваши права в клубе изменились</b>' +
+    '<span class="small">Обновите — приложение откроется заново с новыми правами.</span></span>' +
+    '<button type="button" class="btn mini" data-action="me-apply">Обновить</button></div></div>';
+}
 function refreshMe() {
   // поздний ответ прежнего перечитывания молчит: свежее уже в пути
-  var gen = ++ME_GEN;
+  var gen = ++ME_GEN, who = WHO;
   api('GET', '/me').then(function (r) {
     if (gen !== ME_GEN) return;
     var me = r.status === 200 ? fromMe(r.data) : null;
     // не ответил — остаток остаётся прежним, а не обнуляется: известное не затирается пустым (Cafe13KPG#638)
     if (!me || !DATA.member) return;
+    // ответ о прежнем человеке после переключения теста — не о нём
+    if (who !== WHO || TEST.busy) return;
+    var had = !!ME_NEW;
+    ME_NEW = accessSig(me) !== accessSig(DATA) ? me : null;
+    // строка встаёт над экраном без перерисовки: набранное в полях остаётся (render её сохранит — meStrip)
+    var view = document.getElementById('view'), strip = view && view.querySelector('.me-new');
+    if (ME_NEW && !had && view && !strip) {
+      var ts = view.querySelector('.test-strip');      // порядок тот же, что у render: полоса теста выше
+      if (ts) ts.insertAdjacentHTML('afterend', meStrip()); else view.insertAdjacentHTML('afterbegin', meStrip());
+    }
+    if (!ME_NEW && strip) strip.remove();
     var was = DATA.member.balance;
     DATA.member.balance = me.member.balance;
     if (was === me.member.balance) return;
