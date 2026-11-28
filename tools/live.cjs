@@ -9556,7 +9556,8 @@ const MINE = ONLY ? Number(ONLY[0]) : 0;
     // и кнопки нет.
     for (const [name, me, want] of [
       ['sozdat-knopka-rol', json(200, OWNER), true],
-      ['sozdat-knopka-kurator', json(200, curatorOnly), true],
+      // куратор направления без уровня — БЕЗ кнопки: №120, api#246 снял curator из `_may_create`
+      ['sozdat-knopka-kurator', json(200, curatorOnly), false],
       ['sozdat-knopka-uroven', json(200, levelOrg), true],
       ['sozdat-knopka-chlen', json(200, member), false]]) {
       const s = await open(true, true, me, null, null, null, evReply(json(200, [])), null, NOWFIX);
