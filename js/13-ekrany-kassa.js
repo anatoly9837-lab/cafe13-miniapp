@@ -81,7 +81,11 @@ Object.assign(SCREENS, {
         '<div><span class="small">наличными <b class="num">' + money(d.by.cash) + '</b></span>' +
           '<span class="small">картой <b class="num">' + money(d.by.card) + '</b></span>' +
           '<span class="small">со счёта <b class="num">' + money(d.by.account) + '</b></span></div>' +
-        '<div><span class="small">Живых строк</span><b class="num">' + d.count + '</b></div></div>') +
+        '<div><span class="small">Живых строк</span><b class="num">' + d.count + '</b></div></div>' +
+      /* Подпись называет, ЧТО в числе (Cafe13KPG#722): выборка дня — `method NOT IN ('transfer','crypto')`
+         (cafe13-api till.py), и это верно — переводов и крипты нет в ящике, попади они в итог, недостача была
+         бы кассира. Врёт не отбор, а «за день» без оговорки. Лечь обязана ДО разморозки экрана (FROZEN). */
+      '<span class="small">В числе — наличные, карта и со счёта. Перевод и крипта сюда не входят: их нет в ящике кассы.</span>') +
       (TD.fail ? '<span class="small">Не перечитался: ' + esc(TD.fail) + '</span>' : '') +
       (d.rows.length
         ? '<div class="group"><span class="label">Строки за сегодня</span>' + d.rows.map(tillDayRow).join('') + '</div>' +
