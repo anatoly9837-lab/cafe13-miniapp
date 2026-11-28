@@ -674,9 +674,10 @@ function manageBlock(e) {
 var EVN_BUSY = false;      // создание в пути: второе нажатие молчит
 var EVN_ERR = '';          // чем кончилась неудачная попытка — текст на форме
 
+// Перечень — тот же, что у сервера (`_may_create`, cafe13-api events.py): art_director там есть (Cafe13KPG#588)
 function mayCreateEvent() {
   return LIVE && (grant('admin') || grant('director') || grant('staff') ||
-                  grant('head') || grant('curator') ||
+                  grant('head') || grant('curator') || grant('art_director') ||
                   DATA.role === 'organizer' || DATA.role === 'partner');
 }
 /* «Свои мероприятия» — шире, чем «завести»: мастер правит и смотрит свои, но не заводит (слово владельца
